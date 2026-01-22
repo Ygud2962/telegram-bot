@@ -1,0 +1,57 @@
+# Токены и пароли
+токен.txt
+token.txt
+config.py
+config.ini
+.env
+*.env
+secrets.txt
+password.txt
+
+# Базы данных
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Временные файлы Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Логи
+*.log
+logs/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Файлы IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Картинки (если они не нужны в коде)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+avatar/
+
+# Документы
+*.xlsx
+*.xls
+*.pdf
+*.doc
+*.docx
+
+# Прочее
+.replit
+*.tmp
+temp/
