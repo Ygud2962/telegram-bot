@@ -18,8 +18,7 @@ def init_db():
             old_subject TEXT,
             new_subject TEXT,
             old_teacher TEXT,
-            new_teacher TEXT,
-            class_name TEXT
+            new_teacher TEXT
         )
     ''')
 
@@ -70,13 +69,13 @@ def get_user(user_id):
 
 # ===================== ЗАМЕНЫ =====================
 
-def add_substitution(date, day_of_week, lesson_num, old_subj, new_subj, old_teacher, new_teacher, class_name):
+def add_substitution(date, day_of_week, lesson_num, old_subj, new_subj, old_teacher, new_teacher):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute('''INSERT INTO substitutions 
-                   (date, day_of_week, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                (date, day_of_week, lesson_num, old_subj, new_subj, old_teacher, new_teacher, class_name))
+                   (date, day_of_week, lesson_number, old_subject, new_subject, old_teacher, new_teacher) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                (date, day_of_week, lesson_num, old_subj, new_subj, old_teacher, new_teacher))
     conn.commit()
     conn.close()
 
@@ -103,14 +102,5 @@ def delete_substitution(sub_id):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("DELETE FROM substitutions WHERE id = ?", (sub_id,))
-    conn.commit()
-    conn.close()
-
-
-def clear_all_substitutions():
-    """Очищает все записи о заменах"""
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-    cur.execute("DELETE FROM substitutions")
     conn.commit()
     conn.close()
