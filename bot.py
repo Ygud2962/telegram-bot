@@ -31,7 +31,7 @@ REQUEST_TIMEOUT = 30.0
 TEACHER_IDS = {
     'Коротчикова Л.В': 1665763898,
     'Вергейчик В.Л.': 1970780275,
-    'Нечаева Е.Я.': 0,
+    'Нечаева Е.Я.': 7241182510,
     'Лебедевская М.П': 0,
     'Сивый А.В.': 0,
     'Пинчук А.В.': 0,
@@ -44,7 +44,7 @@ TEACHER_IDS = {
     'Тихоненко О.А.': 0,
     'Мележ А.Г.': 0,
     'Михасёв В.А.': 0,
-    'Прихач Е.В.': 0,
+    'Прихач Е.В.': 967925839,
     'Михалко Е.П.': 0,
     'Явош С.В.': 0,
     'Гапоненко Ю.В.': 0,
@@ -99,7 +99,8 @@ BELLS_SCHEDULE_HTML = """
 """
 
 # ================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
-SCHEDULE_STRUCTURED = {'5а': {
+SCHEDULE_STRUCTURED = {
+    '5а': {
         'Понедельник': [
             (1, 'Математика', 'Коротчикова Л.В'),
             (2, 'Физкультура', 'Вергейчик В.Л.'),
@@ -767,9 +768,8 @@ SCHEDULE_STRUCTURED = {'5а': {
             (5, 'Математика', 'Коротчикова Л.В'),
             (6, 'Биология/Англ. яз', 'Канунова В.Г./Тихоненко О.А.'),
             (7, 'Химия(проф)', 'Корольчук О.Г.')
-            ]
+        ]
     }
-    # Здесь вы добавите остальные классы...
 }
 
 # Настройка логирования
@@ -806,17 +806,11 @@ def format_schedule_day(structured_lessons):
 
 def format_substitution(sub):
     """Форматирует замену в красивом виде."""
-    # Проверяем, есть ли информация о классе
-    if len(sub) >= 9:
-        class_name = sub[8]  # Поле class_name
-        return (f"<b>↪️ {sub[3]} урок (Класс: {class_name}):</b>\n"
-                f"   <code>{sub[4]}</code> <i>({sub[6]})</i>\n"
-                f"   → <code>{sub[5]}</code> <i>({sub[7]})</i>")
-    else:
-        # Для обратной совместимости со старыми записями
+    if len(sub) >= 8:
         return (f"<b>↪️ {sub[3]} урок:</b>\n"
                 f"   <code>{sub[4]}</code> <i>({sub[6]})</i>\n"
                 f"   → <code>{sub[5]}</code> <i>({sub[7]})</i>")
+    return str(sub)
 
 def get_all_teachers():
     """Извлекает всех уникальных учителей из расписания."""
@@ -992,7 +986,6 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             f"<b>🔔 ВАМ НАЗНАЧЕНА ЗАМЕНА!</b>\n\n"
             f"<b>📅 Дата:</b> {substitution_data['date']}\n"
             f"<b>📅 День недели:</b> {substitution_data['day']}\n"
-            f"<b>🏫 Класс:</b> {substitution_data.get('class_name', 'Не указан')}\n"
             f"<b>🕐 Время урока:</b> {lesson_time}\n"
             f"<b>🔢 Номер урока:</b> {substitution_data['lesson']}\n"
             f"<b>📚 Замена:</b> {substitution_data['old_subject']} ({substitution_data['old_teacher']}) → "
@@ -1320,7 +1313,6 @@ async def show_teacher_schedule(query, context):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 async def show_bells_schedule(query):
     """Показывает расписание звонков."""
     keyboard = add_start_button()
@@ -1330,8 +1322,14 @@ async def show_bells_schedule(query):
 async def show_class_selection(query):
     """Показывает выбор класса."""
     keyboard = [
-        [InlineKeyboardButton("5А", callback_data='class_5а')],
-        # Здесь вы добавите остальные классы...
+        [InlineKeyboardButton("5А", callback_data='class_5а'), InlineKeyboardButton("5Б", callback_data='class_5б')],
+        [InlineKeyboardButton("5В", callback_data='class_5в'), InlineKeyboardButton("6А", callback_data='class_6а')],
+        [InlineKeyboardButton("6Б", callback_data='class_6б'), InlineKeyboardButton("6В", callback_data='class_6в')],
+        [InlineKeyboardButton("7А", callback_data='class_7а'), InlineKeyboardButton("7Б", callback_data='class_7б')],
+        [InlineKeyboardButton("7В", callback_data='class_7в'), InlineKeyboardButton("8А", callback_data='class_8а')],
+        [InlineKeyboardButton("8Б", callback_data='class_8б'), InlineKeyboardButton("9А", callback_data='class_9а')],
+        [InlineKeyboardButton("9Б", callback_data='class_9б'), InlineKeyboardButton("10А", callback_data='class_10а')],
+        [InlineKeyboardButton("10Б", callback_data='class_10б'), InlineKeyboardButton("11", callback_data='class_11')]
     ]
     keyboard = add_start_button(keyboard)
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1667,13 +1665,6 @@ async def handle_adding_substitution(query, context):
         )
         return
 
-    # Обработка выбора класса
-    if query.data.startswith('sub_class_'):
-        class_name = query.data.split('_', 2)[2]
-        context.user_data['class_name'] = class_name
-        await save_substitution(query, context)
-        return
-
     if step == 'date':
         if query.data.startswith('date_'):
             date_str = query.data.split('_')[1]
@@ -1720,8 +1711,7 @@ async def handle_adding_substitution(query, context):
         if query.data.startswith('teacher_'):
             new_teacher = query.data.split('_', 1)[1]
             context.user_data['new_teacher'] = new_teacher
-            context.user_data['step'] = 'class'  # Добавляем шаг выбора класса
-            await show_class_selection_for_substitution(query, context)
+            await save_substitution(query, context)
 
 async def show_date_selection(query, context):
     """Показывает выбор даты."""
@@ -1905,48 +1895,6 @@ async def show_teacher_selection(query, context, is_old=True):
         parse_mode='HTML'
     )
 
-async def show_class_selection_for_substitution(query, context):
-    """Показывает выбор класса для замены."""
-    all_classes = list(SCHEDULE_STRUCTURED.keys())
-    
-    keyboard = []
-    row = []
-    for i, class_name in enumerate(all_classes):
-        button_text = class_name.upper()
-        callback_data = f'sub_class_{class_name}'
-        row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
-        if len(row) == 3:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-    
-    keyboard.append([
-        InlineKeyboardButton("◀️ Назад", callback_data='back_to_new_teacher'),
-        InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
-    ])
-    keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    text = (
-        f"<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ</b>\n\n"
-        f"<b>📅 Дата:</b> {context.user_data.get('date', 'не выбран')}\n"
-        f"<b>📅 День недели:</b> {context.user_data.get('day', 'не выбран')}\n"
-        f"<b>🔢 Урок:</b> {context.user_data.get('lesson', 'не выбран')}\n"
-        f"<b>📚 Старый предмет:</b> {context.user_data.get('old_subject', 'не выбран')}\n"
-        f"<b>📚 Новый предмет:</b> {context.user_data.get('new_subject', 'не выбран')}\n"
-        f"<b>👨‍🏫 Старый учитель:</b> {context.user_data.get('old_teacher', 'не выбран')}\n"
-        f"<b>👨‍🏫 Новый учитель:</b> {context.user_data.get('new_teacher', 'не выбран')}\n"
-        f"<b>🏫 Выберите класс:</b>"
-    )
-    
-    await query.edit_message_text(
-        text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
-
 async def save_substitution(query, context):
     """Сохраняет замену в БД и отправляет уведомление новому учителю."""
     date = context.user_data['date']
@@ -1956,15 +1904,13 @@ async def save_substitution(query, context):
     new_subject = context.user_data['new_subject']
     old_teacher = context.user_data['old_teacher']
     new_teacher = context.user_data['new_teacher']
-    class_name = context.user_data.get('class_name', 'Не указан')
 
     try:
         # Сохраняем замену в БД
         db.add_substitution(
             date, day, lesson,
             old_subject, new_subject,
-            old_teacher, new_teacher,
-            class_name  # Добавляем класс
+            old_teacher, new_teacher
         )
 
         # Отправляем уведомление новому учителю
@@ -1975,8 +1921,7 @@ async def save_substitution(query, context):
             'old_subject': old_subject,
             'new_subject': new_subject,
             'old_teacher': old_teacher,
-            'new_teacher': new_teacher,
-            'class_name': class_name
+            'new_teacher': new_teacher
         }
         await send_substitution_notification(context, new_teacher, substitution_data)
 
@@ -1990,7 +1935,6 @@ async def save_substitution(query, context):
             f"<b>📅 Дата:</b> {date}\n"
             f"<b>📅 День недели:</b> {day}\n"
             f"<b>🔢 Урок:</b> {lesson}\n"
-            f"<b>🏫 Класс:</b> {class_name}\n"
             f"<b>📚 Старый предмет:</b> {old_subject}\n"
             f"<b>📚 Новый предмет:</b> → <code>{new_subject}</code>\n"
             f"<b>👨‍🏫 Старый учитель:</b> {old_teacher}\n"
@@ -2149,7 +2093,6 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
                     reply_markup=reply_markup,
                     parse_mode='HTML'
                 )
-
 # ================== ТЕСТОВАЯ КОМАНДА ==================
 async def test_notification(update: Update, context: CallbackContext):
     """Тестовая команда для проверки уведомлений."""
