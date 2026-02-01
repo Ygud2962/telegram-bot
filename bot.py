@@ -72,10 +72,14 @@ ALL_CLASSES = ['5а', '5б', '5в', '6а', '6б', '6в', '7а', '7б', '7в', '8
 
 # Список предметов для выбора
 SUBJECTS = [
-    "Математика", "Русский язык", "Белорусский язык", "Английский язык",
-    "Физика", "Химия", "Биология", "Информатика",
-    "История", "География", "Физкультура", "Литература",
-    "Обществоведение", "ОБЖ", "Трудовое обучение", "Искусство"
+    "Математика", "Математика(проф.)", "Русский язык", "Русский язык(проф.)",
+    "Белорусский язык", "Белорусский язык(проф.)", "Русская литература", 
+    "Белорусская литература", "Физика", "Информатика",
+    "Английский язык", "Английский язык(проф.)", "Химия", "Химия(проф.)",
+    "Биология", "Биология(проф.)", "Обществоведение", "Обществоведение(проф.)",
+    "История", "География", "Физкультура", "ОБЖ", "Трудовое обучение", 
+    "Искусство", "Астрономия", "ЧЗС", "Черчение", "ДП", "МП", "Человек и мир"
+
 ]
 
 # Дни недели
@@ -583,7 +587,7 @@ SCHEDULE_STRUCTURED = {
             (4, 'Математика', 'Анисковец Н.В.'),
             (5, 'Бел. литература', 'Лукьяненко Л.И.'),
             (6, 'География', 'Юнах Т.В.'),
-            (7, 'Английский язык', 'Нечаева Е.Я.'),
+            (7, 'Английский язык', 'Нечаева Е.Я.')
         ],
         'Четверг': [
             (1, 'Белорусский язык', 'Лукьяненко Л.И.'),
@@ -619,7 +623,7 @@ SCHEDULE_STRUCTURED = {
             (4, 'Бел. литература', 'Брель Ю.В.'),
             (5, 'История', 'Бельский С.В.'),
             (6, 'Математика', 'Гуд Ю.П.'),
-            (7, 'Обществоведение', 'Сивый А.В.'),
+            (7, 'Обществоведение', 'Сивый А.В.')
         ],
         'Среда': [
             (1, 'Белорусский язык', 'Брель Ю.В.'),
@@ -714,7 +718,7 @@ SCHEDULE_STRUCTURED = {
             (4, 'История', 'Королёва Ж.В./Сивый А.В.'),
             (5, 'Англ. язык/История', 'Тихоненко О.А./Королёва Ж.В.'),
             (6, 'Русский язык', 'Леонова Д.А.'),
-            (7, 'Биология/химия', 'Даниленко А.А./Корольчук О.Г.'),
+            (7, 'Биология/химия', 'Даниленко А.А./Корольчук О.Г.')
         ],
         'Четверг': [
             (1, 'География', 'Юнах Т.В.'),
@@ -723,7 +727,7 @@ SCHEDULE_STRUCTURED = {
             (4, 'Физкультура', 'Смольский С.М.'),
             (5, 'Математика', 'Назаренко Т.К.'),
             (6, 'ДП/МП', 'Даниленко А.А./Смольский С.М.'),
-            (7, 'Английский язык', 'Приходько И.Н.'),
+            (7, 'Английский язык', 'Приходько И.Н.')
         ],
         'Пятница': [
             (1, 'Черчение', 'Михасёв В.А.'),
@@ -797,9 +801,14 @@ def get_lesson_time(lesson_number):
         4: "11:00-11:45",
         5: "12:00-12:45",
         6: "12:55-13:40",
-        7: "14:00-14:45"
+        7: "14:00-14:45",
+        8: "15:00-15:45",
+        9: "16:00-16:45",
+        10: "17:00-17:45"
     }
     return lesson_times.get(lesson_number, "??:??-??:??")
+
+# ... (остальной код остается без изменений) ...
 
 def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     """Форматирует расписание на день в новом формате с заменами."""
@@ -825,19 +834,25 @@ def format_schedule_day(class_name, day, structured_lessons, target_date=None):
         }
 
     result_lines = []
-    result_lines.append(f"📅 <b>{day.upper()} - {class_name.upper()}</b>")
-    result_lines.append("─" * 40)
+    # Заголовок дня и класса
+    header = f"📅 <b>{day.upper()} - {class_name.upper()}</b>"
+    result_lines.append(header)
+    
+    # Линия под заголовком - длина равна длине заголовка (без HTML тегов)
+    header_length = len(day) + 3 + len(class_name)  # день + " - " + класс
+    result_lines.append("─" * header_length)
 
     for lesson_num, subject, teacher in structured_lessons:
         lesson_time = get_lesson_time(lesson_num)
         
-        # Основная строка урока
+        # Основная строка урока в новом формате
         if lesson_num <= 6:
             emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
             lesson_str = f"{emoji}"
         else:
             lesson_str = f"{lesson_num}."
         
+        # Новый формат: 1️⃣ 08:00-08:45➡️Физкультура✅Явош С.В.
         main_line = f"{lesson_str} <b>{lesson_time}</b>➡️{subject}✅{teacher}"
         result_lines.append(main_line)
         
@@ -847,30 +862,55 @@ def format_schedule_day(class_name, day, structured_lessons, target_date=None):
             # Проверяем, совпадает ли предмет и учитель с заменой
             if (subject == sub['old_subject'] and teacher == sub['old_teacher']) or \
                (subject in sub['old_subject'] and teacher in sub['old_teacher']):
-                result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']} - {sub['new_teacher']}")
+                result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']}✅{sub['new_teacher']}")
             else:
-                result_lines.append(f"   └─ 🔄 <b>ДОП. ЗАМЕНА:</b> {sub['new_subject']} - {sub['new_teacher']}")
-        
-        result_lines.append("─" * 40)
+                result_lines.append(f"   └─ 🔄 <b>ДОП. ЗАМЕНА:</b> {sub['new_subject']}✅{sub['new_teacher']}")
 
     return "\n".join(result_lines)
 
+
 def format_weekly_schedule(class_name):
-    """Форматирует расписание на всю неделю."""
+    """Форматирует расписание на всю неделю в новом формате."""
     if class_name not in SCHEDULE_STRUCTURED:
         return f"Расписание для класса {class_name} не найдено."
     
     result_lines = []
     result_lines.append(f"📅 <b>РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}</b>")
-    result_lines.append("═" * 50)
+    result_lines.append("═" * (len(f"РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}") + 2))
     
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
     
     for day in days_order:
         if day in SCHEDULE_STRUCTURED[class_name]:
             lessons = SCHEDULE_STRUCTURED[class_name][day]
+            if lessons:  # Проверяем, есть ли уроки в этот день
+                # Заголовок дня
+                result_lines.append(f"\n<b>📌 {day.upper()}:</b>")
+                
+                # Линия под заголовком дня - длина равна длине дня недели
+                day_length = len(day) + 1  # +1 для двоеточия
+                result_lines.append("─" * day_length)
+                
+                for lesson_num, subject, teacher in lessons:
+                    lesson_time = get_lesson_time(lesson_num)
+                    if lesson_num <= 6:
+                        emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                        lesson_str = f"{emoji}"
+                    else:
+                        lesson_str = f"{lesson_num}."
+                    
+                    # Новый формат: 1️⃣ 08:00-08:45➡️Физкультура✅Явош С.В.
+                    line = f"{lesson_str} <b>{lesson_time}</b>➡️{subject}✅{teacher}"
+                    result_lines.append(line)
+    
+    # Добавляем субботу, если есть уроки в субботу
+    if "Суббота" in SCHEDULE_STRUCTURED[class_name]:
+        day = "Суббота"
+        lessons = SCHEDULE_STRUCTURED[class_name][day]
+        if lessons:
             result_lines.append(f"\n<b>📌 {day.upper()}:</b>")
-            result_lines.append("─" * 40)
+            day_length = len(day) + 1  # +1 для двоеточия
+            result_lines.append("─" * day_length)
             
             for lesson_num, subject, teacher in lessons:
                 lesson_time = get_lesson_time(lesson_num)
@@ -880,11 +920,12 @@ def format_weekly_schedule(class_name):
                 else:
                     lesson_str = f"{lesson_num}."
                 
-                line = f"{lesson_str} <b>{lesson_time}</b> │ {subject} - {teacher}"
+                line = f"{lesson_str} <b>{lesson_time}</b>➡️{subject}✅{teacher}"
                 result_lines.append(line)
-                result_lines.append("─" * 40)
     
     return "\n".join(result_lines)
+
+# ... (остальной код остается без изменений) ...
 
 def format_substitution(sub):
     """Форматирует замену в красивом виде."""
@@ -941,58 +982,237 @@ def get_teacher_schedule(teacher_name):
     return schedule
 
 def format_teacher_schedule(teacher_name, schedule):
-    """Форматирует расписание учителя."""
-    if not schedule:
-        return f"<b>👨‍🏫 {teacher_name}</b>\n\n" \
-               "<i>❌ Учитель не ведет уроки в текущем расписании или расписание не найдено.</i>"
+    """Форматирует расписание учителя с учетом ВСЕХ замен."""
+    # Получаем ВСЕ замены для этого учителя на ближайшие 30 дней
+    today = datetime.now().date()
+    teacher_substitutions = {}
+    
+    # Получаем замены на 30 дней вперед
+    for i in range(30):
+        target_date = today + timedelta(days=i)
+        date_str = str(target_date)
+        subs = db.get_substitutions_by_teacher_and_date(teacher_name, date_str)
+        if subs:
+            teacher_substitutions[date_str] = subs
 
-    total_lessons = sum(len(lessons) for lessons in schedule.values())
-    classes = set()
-    subjects = set()
-
-    for day_lessons in schedule.values():
-        for lesson in day_lessons:
-            classes.add(lesson['class'])
-            subjects.add(lesson['subject'])
-
+    # Основная информация об учителе
     text = f"<b>👨‍🏫 {teacher_name}</b>\n\n"
-    text += f"<b>📊 Статистика:</b>\n"
-    text += f"• Всего уроков в неделю: <b>{total_lessons}</b>\n"
-    text += f"• Классы: <b>{', '.join(sorted(classes))}</b>\n"
-    text += f"• Предметы: <b>{', '.join(sorted(subjects))}</b>\n\n"
-    text += "─" * 40 + "\n\n"
+    
+    # Статистика по расписанию (если есть)
+    if schedule:
+        total_lessons = sum(len(lessons) for lessons in schedule.values())
+        classes = set()
+        subjects = set()
 
+        for day_lessons in schedule.values():
+            for lesson in day_lessons:
+                classes.add(lesson['class'])
+                subjects.add(lesson['subject'])
+
+        text += f"<b>📊 Статистика по расписанию:</b>\n"
+        text += f"• Уроков в неделю: <b>{total_lessons}</b>\n"
+        text += f"• Классы: <b>{', '.join(sorted(classes))}</b>\n"
+        text += f"• Предметы: <b>{', '.join(sorted(subjects))}</b>\n"
+    else:
+        text += "<i>❌ Нет уроков в основном расписании</i>\n\n"
+
+    # Считаем ВСЕ замены
+    total_subs = sum(len(subs) for subs in teacher_substitutions.values())
+    if total_subs > 0:
+        text += f"• <b>⚠️ ВСЕГО замен: {total_subs}</b>\n"
+    
+    text += "\n" + "═" * 50 + "\n\n"
+
+    # ПЕРВОЕ: Основное расписание на неделю
+    text += "<b>📅 ОСНОВНОЕ РАСПИСАНИЕ НА НЕДЕЛЮ:</b>\n\n"
+    
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
-
+    has_main_schedule = False
+    
     for day in days_order:
         if day in schedule and schedule[day]:
-            text += f"<b>📅 {day.upper()}</b>\n"
-
-            for lesson in schedule[day]:
+            has_main_schedule = True
+            # Подсчитываем длину дня недели в символах (без учета эмодзи и тегов)
+            day_length = len(day) + 1  # +1 для двоеточия
+            text += f"<b>{day.upper()}:</b>\n"
+            text += "─" * day_length + "\n"
+            
+            sorted_lessons = sorted(schedule[day], key=lambda x: x['number'])
+            for lesson in sorted_lessons:
                 if lesson['number'] <= 7:
                     emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson['number'] - 1]
                     lesson_marker = emoji
                 else:
                     lesson_marker = f"{lesson['number']}."
-
+                
                 col1 = f"{lesson_marker} <b>{lesson['time']}</b>"
                 col2 = f"<code>{lesson['class'].upper()}</code>➡️{lesson['subject']}"
-
+                
                 teachers = lesson['full_teacher'].split('/')
                 if len(teachers) > 1:
                     col2 += " <i>(с совм.)</i>"
-
+                
                 text += f"{col1}   {col2}\n"
-
             text += "\n"
+    
+    if not has_main_schedule:
+        text += "<i>Нет уроков в основном расписании</i>\n\n"
+    
+    # Если есть замена в субботу (день не в основном расписании), добавляем его отдельно
+    if "Суббота" in schedule and schedule["Суббота"]:
+        has_main_schedule = True
+        day = "Суббота"
+        day_length = len(day) + 1  # +1 для двоеточия
+        text += f"<b>{day.upper()}:</b>\n"
+        text += "─" * day_length + "\n"
+        
+        sorted_lessons = sorted(schedule[day], key=lambda x: x['number'])
+        for lesson in sorted_lessons:
+            if lesson['number'] <= 7:
+                emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson['number'] - 1]
+                lesson_marker = emoji
+            else:
+                lesson_marker = f"{lesson['number']}."
+            
+            col1 = f"{lesson_marker} <b>{lesson['time']}</b>"
+            col2 = f"<code>{lesson['class'].upper()}</code>➡️{lesson['subject']}"
+            
+            teachers = lesson['full_teacher'].split('/')
+            if len(teachers) > 1:
+                col2 += " <i>(с совм.)</i>"
+            
+            text += f"{col1}   {col2}\n"
+        text += "\n"
+    
+    text += "═" * 50 + "\n\n"
 
-    empty_days = [day for day in days_order if day not in schedule or not schedule[day]]
-    if empty_days and len(empty_days) < len(days_order):
-        text += f"<i>Выходные дни: {', '.join(empty_days)}</i>\n\n"
+    # ВТОРОЕ: Замены в дни с уроками
+    if teacher_substitutions:
+        text += "<b>🔄 ЗАМЕНЫ В ДНИ С УРОКАМИ:</b>\n\n"
+        
+        # Создаем словарь дат для дней недели на ближайшие 30 дней
+        days_with_dates = {}
+        current_date = today
+        for i in range(30):
+            day_index = current_date.weekday()
+            if day_index < 6:  # Пн-Сб
+                day_name_ru = DAYS_OF_WEEK[day_index] if day_index < 5 else "Суббота"
+                days_with_dates[day_name_ru] = days_with_dates.get(day_name_ru, [])
+                days_with_dates[day_name_ru].append(str(current_date))
+            current_date += timedelta(days=1)
 
-    text += "─" * 40 + "\n"
-    text += "<i>ℹ️ Для уточнения расписания обращайтесь в учительскую.</i>"
+        days_shown = set()
+        found_substitutions = False
+        
+        for day in days_order:
+            # Получаем все даты для этого дня недели
+            day_dates = days_with_dates.get(day, [])
+            
+            for date_str in day_dates[:7]:  # Показываем только ближайшие 7 дат этого дня
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+                
+                # Проверяем есть ли замены на эту дату
+                if date_str in teacher_substitutions:
+                    day_subs = teacher_substitutions[date_str]
+                    
+                    # Группируем замены по типу
+                    teacher_as_new = []  # Учитель назначен на замену
+                    teacher_as_old = []  # Учителя заменили
+                    
+                    for sub in day_subs:
+                        if sub[7] == teacher_name:  # teacher_name - новый учитель
+                            teacher_as_new.append(sub)
+                        elif sub[6] == teacher_name:  # teacher_name - старый учитель
+                            teacher_as_old.append(sub)
+                    
+                    # Показываем день если есть замены, связанные с этим учителем
+                    if teacher_as_new or teacher_as_old:
+                        found_substitutions = True
+                        # Для дней с заменой используем ту же логику: линия = длина названия дня
+                        day_length = len(day) + 12  # эмодзи + пробел + дата (примерно)
+                        text += f"<b>📅 {day.upper()}</b> <i>({date_obj.strftime('%d.%m')})</i>\n"
+                        text += "─" * day_length + "\n"
+                        
+                        # Показываем замены, где учитель назначен на замену
+                        if teacher_as_new:
+                            for sub in teacher_as_new:
+                                lesson_num = sub[3]
+                                lesson_time = get_lesson_time(lesson_num)
+                                
+                                if lesson_num <= 7:
+                                    emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                                    lesson_marker = emoji
+                                else:
+                                    lesson_marker = f"{lesson_num}."
+                                
+                                text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> - {sub[5]}\n"
+                                text += f"   🔄 <b>ЗАМЕНА:</b> вместо {sub[6]} ({sub[4]})\n\n"
+                        
+                        # Показываем замены, где учителя заменили
+                        if teacher_as_old:
+                            for sub in teacher_as_old:
+                                lesson_num = sub[3]
+                                lesson_time = get_lesson_time(lesson_num)
+                                
+                                if lesson_num <= 7:
+                                    emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                                    lesson_marker = emoji
+                                else:
+                                    lesson_marker = f"{lesson_num}."
+                                
+                                text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> - {sub[4]}\n"
+                                text += f"   🔄 <b>ЗАМЕНЕН:</b> {sub[7]} ({sub[5]})\n\n"
+                        
+                        days_shown.add(date_str)
+        
+        if not found_substitutions:
+            text += "<i>На ближайшие 7 дней замен в дни с уроками нет</i>\n\n"
 
+        # ТРЕТЬЕ: Замены в дни без уроков (если еще не показаны)
+        text += "\n<b>🔄 ЗАМЕНЫ В ДНИ БЕЗ УРОКОВ:</b>\n\n"
+        
+        extra_subs_shown = False
+        for date_str, subs in teacher_substitutions.items():
+            if date_str in days_shown:
+                continue  # Уже показали выше
+                
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+            day_index = date_obj.weekday()
+            
+            if day_index < 6:  # Пн-Сб
+                day_name = DAYS_OF_WEEK[day_index] if day_index < 5 else "Суббота"
+                
+                # Показываем только замены, где учитель назначен на замену
+                teacher_as_new = [sub for sub in subs if sub[7] == teacher_name]
+                if teacher_as_new:
+                    extra_subs_shown = True
+                    day_length = len(day_name) + 12  # эмодзи + пробел + дата
+                    text += f"<b>📅 {day_name}</b> <i>({date_obj.strftime('%d.%m')})</i>\n"
+                    text += "─" * day_length + "\n"
+                    
+                    for sub in teacher_as_new:
+                        lesson_num = sub[3]
+                        lesson_time = get_lesson_time(lesson_num)
+                        
+                        if lesson_num <= 7:
+                            emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                            lesson_marker = emoji
+                        else:
+                            lesson_marker = f"{lesson_num}."
+                        
+                        text += f"  {lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> - {sub[5]}\n"
+                        text += f"    <i>вместо {sub[6]} ({sub[4]})</i>\n\n"
+        
+        if not extra_subs_shown:
+            text += "<i>Нет дополнительных замен в дни без уроков</i>\n\n"
+    
+    else:
+        text += "<b>🔄 ЗАМЕНЫ:</b>\n\n"
+        text += "<i>На ближайшие 30 дней замен нет</i>\n\n"
+    
+    text += "═" * 50 + "\n"
+    text += f"<i>ℹ️ Показаны уроки по расписанию и замены на ближайшие 30 дней</i>"
+    
     return text
 
 async def send_substitution_notification(context, teacher_name, substitution_data):
@@ -2185,7 +2405,7 @@ async def test_notification(update: Update, context: CallbackContext):
             f"<b>👨‍💻 От:</b> Администратор бота\n"
             f"<b>🕐 Время:</b> {datetime.now().strftime('%H:%M %d.%m.%Y')}\n\n"
             f"✅ Система уведомлений работает корректно!\n\n"
-            f"<i>Это тестовое сообствие для проверки работы бота.</i>"
+            f"<i>Это тестовое сообщение для проверки работы бота.</i>"
         )
 
         await context.bot.send_message(
@@ -2258,7 +2478,7 @@ async def teachers_list(update: Update, context: CallbackContext):
 # ================== ГЛАВНАЯ ФУНКЦИЯ ==================
 def main():
     """Запуск бота."""
-         # Инициализация базы данных
+    # Инициализация базы данных
     try:
         db.init_db()
         # Обновляем структуру базы данных при запуске
