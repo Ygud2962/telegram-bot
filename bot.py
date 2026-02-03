@@ -4,11 +4,11 @@ import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, CallbackContext
-from telegram.error import TimedOut, NetworkError
+from telegram.error import TimedOut, NetworkError, BadRequest
 import database as db
 import os
+import pytz  # pip install pytz
 
-# Получаем токен из переменных окружения
 TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную BOT_TOKEN")
@@ -59,7 +59,6 @@ TEACHER_IDS = {
     'Артюх М.П.': 0,
     'Хорошко Т.А.': 0
 }
-
 ALL_CLASSES = ['5а', '5б', '5в', '6а', '6б', '6в', '7а', '7б', '7в', '8а', '8б', '9а', '9б', '10а', '10б', '11']
 SUBJECTS = [
     "Математика", "Математика(проф.)", "Русский язык", "Русский язык(проф.)",
@@ -787,16 +786,63 @@ def get_lesson_time(lesson_number):
     }
     return lesson_times.get(lesson_number, "??:??-??:??")
 
+def get_current_lesson_info():
+    """Определяет текущий/следующий урок по времени в часовом поясе Минска (UTC+3)."""
+    tz_minsk = pytz.timezone('Europe/Minsk')
+    now = datetime.now(tz_minsk)
+    current_hour = now.hour
+    current_minute = now.minute
+    current_minutes = current_hour * 60 + current_minute
+    
+    # Правильные интервалы уроков согласно расписанию звонков школы
+    lesson_intervals = [
+        (8, 0, 8, 45, 1),    # 1 урок
+        (9, 0, 9, 45, 2),    # 2 урок
+        (10, 0, 10, 45, 3),  # 3 урок
+        (11, 0, 11, 45, 4),  # 4 урок
+        (12, 0, 12, 45, 5),  # 5 урок
+        (12, 55, 13, 40, 6), # 6 урок НАЧИНАЕТСЯ В 12:55 (не 13:00!)
+        (14, 0, 14, 45, 7)   # 7 урок
+    ]
+    
+    # Проверяем, идёт ли сейчас урок
+    for start_h, start_m, end_h, end_m, num in lesson_intervals:
+        start_total = start_h * 60 + start_m
+        end_total = end_h * 60 + end_m
+        if start_total <= current_minutes <= end_total:
+            time_left = end_total - current_minutes
+            return {
+                'status': 'lesson',
+                'number': num,
+                'time_left': time_left,
+                'start_time': f"{start_h:02d}:{start_m:02d}",
+                'end_time': f"{end_h:02d}:{end_m:02d}"
+            }
+    
+    # Проверяем следующий урок
+    for start_h, start_m, end_h, end_m, num in lesson_intervals:
+        start_total = start_h * 60 + start_m
+        if current_minutes < start_total:
+            minutes_until = start_total - current_minutes
+            return {
+                'status': 'break',
+                'next_number': num,
+                'minutes_until': minutes_until,
+                'start_time': f"{start_h:02d}:{start_m:02d}",
+                'end_time': f"{end_h:02d}:{end_m:02d}"
+            }
+    
+    # После всех уроков или до начала первого урока
+    return {'status': 'finished'}
+
 def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     """Форматирует расписание на день в новом формате с заменами."""
     if not structured_lessons:
         return "На этот день расписания нет."
-    
     structured_lessons.sort(key=lambda x: x[0])
     substitutions = []
-    if target_date:
+    if target_date and target_date not in ('None', 'null', None):
         substitutions = db.get_substitutions_for_class_date(class_name, target_date)
-    
     sub_dict = {}
     for sub in substitutions:
         lesson_num = sub[3]
@@ -806,78 +852,62 @@ def format_schedule_day(class_name, day, structured_lessons, target_date=None):
             'old_teacher': sub[6],
             'new_teacher': sub[7]
         }
-    
     result_lines = []
     header = f"📅 <b>{day.upper()} - {class_name.upper()}</b>"
     result_lines.append(header)
-    header_length = len(day) + 3 + len(class_name)
-    result_lines.append("─" * header_length)
-    
+    result_lines.append("─" * 18)
     for lesson_num, subject, teacher in structured_lessons:
         lesson_time = get_lesson_time(lesson_num)
-        if lesson_num <= 6:
+        if lesson_num <= 7:
             emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
             lesson_str = f"{emoji}"
         else:
             lesson_str = f"{lesson_num}."
-        
-        main_line = f"{lesson_str} <b>{lesson_time}</b>➡️{subject}✅{teacher}"
+        main_line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
         result_lines.append(main_line)
-        
         if lesson_num in sub_dict:
             sub = sub_dict[lesson_num]
-            if (subject == sub['old_subject'] and teacher == sub['old_teacher']) or \
-               (subject in sub['old_subject'] and teacher in sub['old_teacher']):
-                result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']}✅{sub['new_teacher']}")
-            else:
-                result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']}✅{sub['new_teacher']}")
-    
+            result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']} ✅ {sub['new_teacher']}")
     return "\n".join(result_lines)
 
 def format_weekly_schedule(class_name):
     """Форматирует расписание на всю неделю в новом формате."""
     if class_name not in SCHEDULE_STRUCTURED:
         return f"Расписание для класса {class_name} не найдено."
-    
     result_lines = []
     result_lines.append(f"📅 <b>РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}</b>")
-    result_lines.append("═" * (len(f"РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}") + 2))
-    
+    result_lines.append("=" * 30)
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
     for day in days_order:
         if day in SCHEDULE_STRUCTURED[class_name]:
             lessons = SCHEDULE_STRUCTURED[class_name][day]
             if lessons:
-                result_lines.append(f"\n<b>📌 {day.upper()}:</b>")
-                day_length = len(day) + 1
-                result_lines.append("─" * day_length)
+                result_lines.append(f"\n<b>📌 {day.upper()}</b>")
+                result_lines.append("─" * 18)
                 for lesson_num, subject, teacher in lessons:
                     lesson_time = get_lesson_time(lesson_num)
-                    if lesson_num <= 6:
+                    if lesson_num <= 7:
                         emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
                         lesson_str = f"{emoji}"
                     else:
                         lesson_str = f"{lesson_num}."
-                    line = f"{lesson_str} <b>{lesson_time}</b>➡️{subject}✅{teacher}"
+                    line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
                     result_lines.append(line)
-    
     if "Суббота" in SCHEDULE_STRUCTURED[class_name]:
         day = "Суббота"
         lessons = SCHEDULE_STRUCTURED[class_name][day]
         if lessons:
-            result_lines.append(f"\n<b>📌 {day.upper()}:</b>")
-            day_length = len(day) + 1
-            result_lines.append("─" * day_length)
+            result_lines.append(f"\n<b>📌 {day.upper()}</b>")
+            result_lines.append("─" * 18)
             for lesson_num, subject, teacher in lessons:
                 lesson_time = get_lesson_time(lesson_num)
-                if lesson_num <= 6:
+                if lesson_num <= 7:
                     emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
                     lesson_str = f"{emoji}"
                 else:
                     lesson_str = f"{lesson_num}."
-                line = f"{lesson_str} <b>{lesson_time}</b>➡️{subject}✅{teacher}"
+                line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
                 result_lines.append(line)
-    
     return "\n".join(result_lines)
 
 def format_substitution(sub):
@@ -925,7 +955,6 @@ def get_teacher_schedule(teacher_name):
                             'full_teacher': current_teacher
                         }
                         schedule[day].append(lesson_info)
-    
     for day in schedule:
         schedule[day].sort(key=lambda x: x['number'])
     return schedule
@@ -940,8 +969,8 @@ def format_teacher_schedule(teacher_name, schedule):
         subs = db.get_substitutions_by_teacher_and_date(teacher_name, date_str)
         if subs:
             teacher_substitutions[date_str] = subs
-    
     text = f"<b>👨‍🏫 {teacher_name}</b>\n"
+    text += "=" * 30 + "\n"
     if schedule:
         total_lessons = sum(len(lessons) for lessons in schedule.values())
         classes = set()
@@ -950,28 +979,24 @@ def format_teacher_schedule(teacher_name, schedule):
             for lesson in day_lessons:
                 classes.add(lesson['class'])
                 subjects.add(lesson['subject'])
-        text += f"<b>📊 Статистика по расписанию:</b>\n"
-        text += f"• Уроков в неделю: <b>{total_lessons}</b>\n"
+        text += f"<b>📊 Статистика:</b>\n"
+        text += f"• Уроков: <b>{total_lessons}</b>\n"
         text += f"• Классы: <b>{', '.join(sorted(classes))}</b>\n"
         text += f"• Предметы: <b>{', '.join(sorted(subjects))}</b>\n"
     else:
-        text += "<i>❌ Нет уроков в основном расписании</i>\n"
-    
+        text += "<i>❌ Нет уроков в расписании</i>\n"
     total_subs = sum(len(subs) for subs in teacher_substitutions.values())
     if total_subs > 0:
-        text += f"• <b>⚠️ ВСЕГО замен: {total_subs}</b>\n"
-    
-    text += "\n" + "═" * 50 + "\n"
-    text += "<b>📅 ОСНОВНОЕ РАСПИСАНИЕ НА НЕДЕЛЮ:</b>\n"
-    
+        text += f"• <b>⚠️ Замен: {total_subs}</b>\n"
+    text += "\n" + "=" * 30 + "\n"
+    text += "<b>📅 ОСНОВНОЕ РАСПИСАНИЕ:</b>\n"
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
     has_main_schedule = False
     for day in days_order:
         if day in schedule and schedule[day]:
             has_main_schedule = True
-            day_length = len(day) + 1
-            text += f"<b>{day.upper()}:</b>\n"
-            text += "─" * day_length + "\n"
+            text += f"<b>{day.upper()}</b>\n"
+            text += "─" * 18 + "\n"
             sorted_lessons = sorted(schedule[day], key=lambda x: x['number'])
             for lesson in sorted_lessons:
                 if lesson['number'] <= 7:
@@ -980,22 +1005,16 @@ def format_teacher_schedule(teacher_name, schedule):
                 else:
                     lesson_marker = f"{lesson['number']}."
                 col1 = f"{lesson_marker} <b>{lesson['time']}</b>"
-                col2 = f"<code>{lesson['class'].upper()}</code>➡️{lesson['subject']}"
+                col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']}"
                 teachers = lesson['full_teacher'].split('/')
                 if len(teachers) > 1:
                     col2 += " <i>(с совм.)</i>"
                 text += f"{col1}   {col2}\n"
             text += "\n"
-    
-    if not has_main_schedule:
-        text += "<i>Нет уроков в основном расписании</i>\n"
-    
     if "Суббота" in schedule and schedule["Суббота"]:
-        has_main_schedule = True
         day = "Суббота"
-        day_length = len(day) + 1
-        text += f"<b>{day.upper()}:</b>\n"
-        text += "─" * day_length + "\n"
+        text += f"<b>{day.upper()}</b>\n"
+        text += "─" * 18 + "\n"
         sorted_lessons = sorted(schedule[day], key=lambda x: x['number'])
         for lesson in sorted_lessons:
             if lesson['number'] <= 7:
@@ -1004,130 +1023,57 @@ def format_teacher_schedule(teacher_name, schedule):
             else:
                 lesson_marker = f"{lesson['number']}."
             col1 = f"{lesson_marker} <b>{lesson['time']}</b>"
-            col2 = f"<code>{lesson['class'].upper()}</code>➡️{lesson['subject']}"
+            col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']}"
             teachers = lesson['full_teacher'].split('/')
             if len(teachers) > 1:
                 col2 += " <i>(с совм.)</i>"
             text += f"{col1}   {col2}\n"
         text += "\n"
-    
-    text += "═" * 50 + "\n"
-    
+    text += "=" * 30 + "\n"
     if teacher_substitutions:
-        text += "<b>🔄 ЗАМЕНЫ В ДНИ С УРОКАМИ:</b>\n"
-        days_with_dates = {}
+        text += "<b>🔄 ЗАМЕНЫ (30 дней):</b>\n"
         current_date = today
+        shown_dates = 0
         for i in range(30):
-            day_index = current_date.weekday()
-            if day_index < 6:
-                day_name_ru = DAYS_OF_WEEK[day_index] if day_index < 5 else "Суббота"
-                days_with_dates[day_name_ru] = days_with_dates.get(day_name_ru, [])
-                days_with_dates[day_name_ru].append(str(current_date))
+            date_str = str(current_date)
+            if date_str in teacher_substitutions:
+                day_name = DAYS_OF_WEEK[current_date.weekday()] if current_date.weekday() < 5 else "Суббота"
+                text += f"<b>{day_name}</b> <i>({current_date.strftime('%d.%m')})</i>\n"
+                text += "─" * 18 + "\n"
+                for sub in teacher_substitutions[date_str]:
+                    lesson_num = sub[3]
+                    lesson_time = get_lesson_time(lesson_num)
+                    if lesson_num <= 7:
+                        emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                        lesson_marker = emoji
+                    else:
+                        lesson_marker = f"{lesson_num}."
+                    if sub[7] == teacher_name:
+                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> ➡️ {sub[5]}\n"
+                        text += f"   🔄 вместо {sub[6]} ({sub[4]})\n"
+                    elif sub[6] == teacher_name:
+                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> ➡️ {sub[4]}\n"
+                        text += f"   🔄 заменён на {sub[7]} ({sub[5]})\n"
+                shown_dates += 1
+                if shown_dates >= 7:
+                    break
             current_date += timedelta(days=1)
-        
-        days_shown = set()
-        found_substitutions = False
-        for day in days_order:
-            day_dates = days_with_dates.get(day, [])
-            for date_str in day_dates[:7]:
-                date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
-                if date_str in teacher_substitutions:
-                    day_subs = teacher_substitutions[date_str]
-                    teacher_as_new = []
-                    teacher_as_old = []
-                    for sub in day_subs:
-                        if sub[7] == teacher_name:
-                            teacher_as_new.append(sub)
-                        elif sub[6] == teacher_name:
-                            teacher_as_old.append(sub)
-                    
-                    if teacher_as_new or teacher_as_old:
-                        found_substitutions = True
-                        day_length = len(day) + 12
-                        text += f"<b>📅 {day.upper()}</b> <i>({date_obj.strftime('%d.%m')})</i>\n"
-                        text += "─" * day_length + "\n"
-                        
-                        if teacher_as_new:
-                            for sub in teacher_as_new:
-                                lesson_num = sub[3]
-                                lesson_time = get_lesson_time(lesson_num)
-                                if lesson_num <= 7:
-                                    emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
-                                    lesson_marker = emoji
-                                else:
-                                    lesson_marker = f"{lesson_num}."
-                                text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> - {sub[5]}\n"
-                                text += f"   🔄 <b>ЗАМЕНА:</b> вместо {sub[6]} ({sub[4]})\n"
-                        
-                        if teacher_as_old:
-                            for sub in teacher_as_old:
-                                lesson_num = sub[3]
-                                lesson_time = get_lesson_time(lesson_num)
-                                if lesson_num <= 7:
-                                    emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
-                                    lesson_marker = emoji
-                                else:
-                                    lesson_marker = f"{lesson_num}."
-                                text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> - {sub[4]}\n"
-                                text += f"   🔄 <b>ЗАМЕНЕН:</b> {sub[7]} ({sub[5]})\n"
-                        
-                        days_shown.add(date_str)
-        
-        if not found_substitutions:
-            text += "<i>На ближайшие 7 дней замен в дни с уроками нет</i>\n"
-        
-        text += "\n<b>🔄 ЗАМЕНЫ В ДНИ БЕЗ УРОКОВ:</b>\n"
-        extra_subs_shown = False
-        for date_str, subs in teacher_substitutions.items():
-            if date_str in days_shown:
-                continue
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
-            day_index = date_obj.weekday()
-            if day_index < 6:
-                day_name = DAYS_OF_WEEK[day_index] if day_index < 5 else "Суббота"
-                teacher_as_new = [sub for sub in subs if sub[7] == teacher_name]
-                if teacher_as_new:
-                    extra_subs_shown = True
-                    day_length = len(day_name) + 12
-                    text += f"<b>📅 {day_name}</b> <i>({date_obj.strftime('%d.%m')})</i>\n"
-                    text += "─" * day_length + "\n"
-                    for sub in teacher_as_new:
-                        lesson_num = sub[3]
-                        lesson_time = get_lesson_time(lesson_num)
-                        if lesson_num <= 7:
-                            emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
-                            lesson_marker = emoji
-                        else:
-                            lesson_marker = f"{lesson_num}."
-                        text += f"  {lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> - {sub[5]}\n"
-                        text += f"     <i>вместо {sub[6]} ({sub[4]})</i>\n"
-        
-        if not extra_subs_shown:
-            text += "<i>Нет дополнительных замен в дни без уроков</i>\n"
+        if shown_dates == 0:
+            text += "<i>На ближайшие 30 дней замен нет</i>\n"
     else:
         text += "<b>🔄 ЗАМЕНЫ:</b>\n"
         text += "<i>На ближайшие 30 дней замен нет</i>\n"
-    
-    text += "═" * 50 + "\n"
-    text += f"<i>ℹ️ Показаны уроки по расписанию и замены на ближайшие 30 дней</i>"
+    text += "\n" + "=" * 30 + "\n"
+    text += f"<i>ℹ️ Расписание и замены на 30 дней</i>"
     return text
 
-# 🔴 🔴 🔴 КРИТИЧЕСКИ ВАЖНОЕ ИСПРАВЛЕНИЕ №1: Улучшенная функция уведомлений 🔴 🔴 🔴
 async def send_substitution_notification(context, teacher_name, substitution_data):
     """Отправляет уведомление учителю о новой замене с логированием и защитой от ошибок."""
-    # ✅ Очищаем имя от возможных артефактов (подчёркивания → пробелы)
     teacher_name_clean = teacher_name.replace('_', ' ').strip()
-    
     teacher_id = TEACHER_IDS.get(teacher_name_clean)
-    
-    # 🔍 Логируем попытку отправки
     logger.info(f"📨 Попытка отправить уведомление учителю: '{teacher_name_clean}' (ID в словаре: {teacher_id})")
-    
-    # ⚠️ Проверка валидности ID
     if not teacher_id or teacher_id == 0:
         logger.warning(f"❌ Учитель '{teacher_name_clean}' не найден в TEACHER_IDS или имеет некорректный ID=0")
-        
-        # ✅ Уведомляем админа о проблеме
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(
@@ -1138,7 +1084,6 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             except Exception as e:
                 logger.error(f"Ошибка отправки уведомления админу: {e}")
         return
-    
     try:
         lesson_time = get_lesson_time(substitution_data['lesson'])
         notification_message = (
@@ -1161,8 +1106,6 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
     except Exception as e:
         error_msg = str(e)
         logger.error(f"❌ Ошибка отправки уведомления учителю {teacher_name_clean} (ID: {teacher_id}): {error_msg}")
-        
-        # ✅ Уведомляем админа об ошибке отправки
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(
@@ -1177,6 +1120,7 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
 async def start(update: Update, context: CallbackContext):
     """Главное меню бота."""
     keyboard = [
+        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
         [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
         [InlineKeyboardButton("🕐 Расписание звонков", callback_data='menu_bells')],
         [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
@@ -1204,13 +1148,154 @@ def add_start_button(keyboard=None):
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     return keyboard
 
+#================== ФУНКЦИИ ДЛЯ "СЕЙЧАС" ==================
+async def show_now_class_selection(query, context):
+    """Показывает выбор класса для функции 'Сейчас'."""
+    keyboard = [
+        [InlineKeyboardButton("5А", callback_data='now_class_5а'), InlineKeyboardButton("5Б", callback_data='now_class_5б'), InlineKeyboardButton("5В", callback_data='now_class_5в')],
+        [InlineKeyboardButton("6А", callback_data='now_class_6а'), InlineKeyboardButton("6Б", callback_data='now_class_6б'), InlineKeyboardButton("6В", callback_data='now_class_6в')],
+        [InlineKeyboardButton("7А", callback_data='now_class_7а'), InlineKeyboardButton("7Б", callback_data='now_class_7б'), InlineKeyboardButton("7В", callback_data='now_class_7в')],
+        [InlineKeyboardButton("8А", callback_data='now_class_8а'), InlineKeyboardButton("8Б", callback_data='now_class_8б')],
+        [InlineKeyboardButton("9А", callback_data='now_class_9а'), InlineKeyboardButton("9Б", callback_data='now_class_9б')],
+        [InlineKeyboardButton("10А", callback_data='now_class_10а'), InlineKeyboardButton("10Б", callback_data='now_class_10б')],
+        [InlineKeyboardButton("11", callback_data='now_class_11')],
+        [InlineKeyboardButton("↩️ Назад", callback_data='back_to_main')]  # Кнопка "Назад" вместо дублирования "Старт"
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        "<b>⏰ ТЕКУЩИЙ УРОК</b>\nВыберите ваш класс:",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+async def show_current_lesson(query, context):
+    """Показывает текущий/следующий урок для выбранного класса с защитой от ошибки 'message not modified'."""
+    # Извлекаем имя класса из коллбэка или из сохранённых данных
+    if query.data.startswith('now_class_'):
+        class_name = query.data.replace('now_class_', '')
+        context.user_data['current_class'] = class_name  # Сохраняем для будущих обновлений
+    else:
+        # Для кнопки "Обновить" используем сохранённый класс
+        class_name = context.user_data.get('current_class', '8а')
+    
+    tz_minsk = pytz.timezone('Europe/Minsk')
+    now = datetime.now(tz_minsk)
+    weekday = now.weekday()
+    
+    # Проверка выходного дня
+    if weekday >= 5:  # Суббота=5, Воскресенье=6
+        day_name = "Суббота" if weekday == 5 else "Воскресенье"
+        keyboard = [
+            [InlineKeyboardButton("🔄 Обновить", callback_data=f'now_class_{class_name}')],
+            [InlineKeyboardButton("↩️ Назад к выбору класса", callback_data='menu_now')],
+            [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message_text = (
+            f"📅 <b>{day_name}</b>\n\n"
+            f"🕗 Сегодня нет уроков.\n"
+            f"Следующие уроки будут в понедельник.\n"
+            f"<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
+        )
+        try:
+            await query.edit_message_text(
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+        except BadRequest as e:
+            if "message is not modified" in str(e).lower():
+                await query.answer("ℹ️ Информация уже актуальна", show_alert=False)
+            else:
+                raise
+        return
+    
+    day_name = DAYS_OF_WEEK[weekday]
+    current_info = get_current_lesson_info()
+    
+    # Формируем сообщение с временной меткой обновления
+    if current_info['status'] == 'finished':
+        text = f"✅ <b>Уроки закончились!</b>\n\n"
+        text += f"📅 Сегодня: <b>{day_name}</b>\n"
+        text += f"🕗 Все уроки завершены на сегодня.\n"
+        text += f"<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
+    elif current_info['status'] == 'break':
+        minutes = current_info['minutes_until']
+        next_num = current_info['next_number']
+        text = f"⏸️ <b>СЕЙЧАС ПЕРЕМЕНА</b>\n\n"
+        text += f"📅 Сегодня: <b>{day_name}</b>\n"
+        text += f"⏰ Следующий урок (<b>{next_num}</b>) начнётся через <b>{minutes} мин</b>\n"
+        text += f"🕐 Время урока: {current_info['start_time']}–{current_info['end_time']}\n\n"
+        
+        # Показываем расписание следующего урока
+        if class_name in SCHEDULE_STRUCTURED and day_name in SCHEDULE_STRUCTURED[class_name]:
+            lessons = SCHEDULE_STRUCTURED[class_name][day_name]
+            next_lesson = next((l for l in lessons if l[0] == next_num), None)
+            if next_lesson:
+                subject, teacher = next_lesson[1], next_lesson[2]
+                text += f"📚 <b>Предмет:</b> {subject}\n"
+                text += f"👨‍🏫 <b>Учитель:</b> {teacher}\n\n"
+                
+                # Проверяем замены
+                today_str = now.strftime('%Y-%m-%d')
+                subs = db.get_substitutions_for_class_date(class_name, today_str)
+                substitution = next((s for s in subs if s[3] == next_num), None)
+                if substitution:
+                    text += f"⚠️ <b>ЗАМЕНА:</b> {substitution[5]} ({substitution[7]})\n\n"
+        text += f"<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
+    else:  # status == 'lesson'
+        lesson_num = current_info['number']
+        time_left = current_info['time_left']
+        text = f"🔔 <b>СЕЙЧАС ИДЁТ УРОК №{lesson_num}</b>\n\n"
+        text += f"📅 Сегодня: <b>{day_name}</b>\n"
+        text += f"⏰ Урок закончится через <b>{time_left} мин</b>\n"
+        text += f"🕐 Время урока: {current_info['start_time']}–{current_info['end_time']}\n\n"
+        
+        # Показываем расписание текущего урока
+        if class_name in SCHEDULE_STRUCTURED and day_name in SCHEDULE_STRUCTURED[class_name]:
+            lessons = SCHEDULE_STRUCTURED[class_name][day_name]
+            current_lesson = next((l for l in lessons if l[0] == lesson_num), None)
+            if current_lesson:
+                subject, teacher = current_lesson[1], current_lesson[2]
+                text += f"📚 <b>Предмет:</b> {subject}\n"
+                text += f"👨‍🏫 <b>Учитель:</b> {teacher}\n\n"
+                
+                # Проверяем замены
+                today_str = now.strftime('%Y-%m-%d')
+                subs = db.get_substitutions_for_class_date(class_name, today_str)
+                substitution = next((s for s in subs if s[3] == lesson_num), None)
+                if substitution:
+                    text += f"⚠️ <b>ЗАМЕНА:</b> {substitution[5]} ({substitution[7]})\n\n"
+        text += f"<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
+    
+    # 🔑 ИСПРАВЛЕНО: добавлены кнопки "Назад" и "Обновить" без ошибок
+    keyboard = [
+        [InlineKeyboardButton("🔄 Обновить", callback_data=f'now_class_{class_name}')],
+        [InlineKeyboardButton("↩️ Назад к выбору класса", callback_data='menu_now')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Защита от ошибки "message is not modified"
+    try:
+        await query.edit_message_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+    except BadRequest as e:
+        if "message is not modified" in str(e).lower():
+            # Если сообщение не изменилось, просто покажем тихое уведомление
+            await query.answer("✅ Информация актуальна", show_alert=False)
+        else:
+            raise
+
 #================== ОБРАБОТЧИК ВСЕХ КНОПОК ==================
 async def button_handler(update: Update, context: CallbackContext):
     """Обработка нажатий на inline-кнопки."""
     query = update.callback_query
     if not isinstance(context.user_data, dict):
         context.user_data = {}
-    
     try:
         await query.answer()
     except TimedOut:
@@ -1219,7 +1304,8 @@ async def button_handler(update: Update, context: CallbackContext):
     except Exception as e:
         logger.error(f"Ошибка при ответе на callback: {e}")
         return
-    
+
+    # Обработка добавления замен с навигацией "назад"
     if 'adding_substitution' in context.user_data:
         try:
             await handle_adding_substitution(query, context)
@@ -1230,13 +1316,22 @@ async def button_handler(update: Update, context: CallbackContext):
                 parse_mode='HTML'
             )
         return
-    
+
     if query.data == 'back_to_main':
         await show_main_menu(query)
         return
-    
+
     try:
-        if query.data == 'menu_teacher':
+        # Новая функция "Сейчас"
+        if query.data == 'menu_now':
+            await show_now_class_selection(query, context)
+            return
+        elif query.data.startswith('now_class_'):
+            await show_current_lesson(query, context)
+            return
+        
+        # Существующие обработчики
+        elif query.data == 'menu_teacher':
             await show_teacher_menu(query, context)
         elif query.data.startswith('teacher_'):
             await show_teacher_schedule(query, context)
@@ -1250,7 +1345,7 @@ async def button_handler(update: Update, context: CallbackContext):
             context.user_data['searching_teacher'] = True
         elif query.data == 'menu_bells':
             await show_bells_schedule(query)
-        elif query.data == 'menu_schedule':  # 🔴 ДОБАВЛЕНО: обработка меню расписания классов
+        elif query.data == 'menu_schedule':
             await show_class_selection(query)
         elif query.data.startswith('class_'):
             await show_day_selection_for_class(query, context)
@@ -1280,6 +1375,14 @@ async def button_handler(update: Update, context: CallbackContext):
             await clear_all_substitutions(query)
         elif query.data.startswith('teacher_search_'):
             await show_searched_teacher_schedule(query, context)
+        # Обработка навигации "назад" в добавлении замен
+        elif query.data in ['back_to_date', 'back_to_day', 'back_to_class', 'back_to_lesson',
+                           'back_to_old_subject', 'back_to_new_subject', 'back_to_old_teacher', 'back_to_new_teacher',
+                           'cancel_adding']:
+            if 'adding_substitution' in context.user_data:
+                await handle_adding_substitution(query, context)
+            else:
+                await show_main_menu(query)
     except TimedOut:
         logger.error("Timeout при обработке кнопки")
         await query.edit_message_text(
@@ -1292,6 +1395,15 @@ async def button_handler(update: Update, context: CallbackContext):
             "🌐 Проблемы с сетью. Проверьте соединение и попробуйте снова.",
             parse_mode='HTML'
         )
+    except BadRequest as e:
+        if "message is not modified" in str(e).lower():
+            await query.answer("✅ Информация актуальна", show_alert=False)
+        else:
+            logger.error(f"Ошибка BadRequest: {e}")
+            await query.edit_message_text(
+                f"❌ Ошибка: {str(e)[:100]}",
+                parse_mode='HTML'
+            )
     except Exception as e:
         logger.error(f"Неизвестная ошибка в button_handler: {e}")
         await query.edit_message_text(
@@ -1300,8 +1412,9 @@ async def button_handler(update: Update, context: CallbackContext):
         )
 
 async def show_main_menu(query):
-    """Показывает главное меню."""
+    """Показывает главное меню с кнопкой 'Сейчас'."""
     keyboard = [
+        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
         [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
         [InlineKeyboardButton("🕐 Расписание звонков", callback_data='menu_bells')],
         [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
@@ -1333,7 +1446,6 @@ async def show_teacher_menu(query, context):
             row = []
     if row:
         keyboard.append(row)
-    
     context.user_data['teachers_list'] = real_teachers
     keyboard = add_start_button(keyboard)
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1357,7 +1469,7 @@ async def show_teacher_schedule(query, context):
         else:
             raise ValueError("Неверный формат callback_data")
     except (ValueError, IndexError) as e:
-        logger.error(f"Ошибка обработки callback_data: {query.data}, ошибка: {e}")
+        logger.error(f"Ошибка обработки callback_ {query.data}, ошибка: {e}")
         keyboard = add_start_button()
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
@@ -1366,7 +1478,7 @@ async def show_teacher_schedule(query, context):
             parse_mode='HTML'
         )
         return
-    
+
     if not teachers_list or teacher_index >= len(teachers_list):
         keyboard = add_start_button()
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1376,11 +1488,10 @@ async def show_teacher_schedule(query, context):
             parse_mode='HTML'
         )
         return
-    
+
     teacher_name = teachers_list[teacher_index]
     teacher_schedule = get_teacher_schedule(teacher_name)
     schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
-    
     keyboard = [
         [InlineKeyboardButton("↩️ К списку учителей", callback_data='menu_teacher')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -1398,7 +1509,6 @@ async def show_bells_schedule(query):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(BELLS_SCHEDULE_HTML, reply_markup=reply_markup, parse_mode='HTML')
 
-# 🔴 🔴 🔴 КРИТИЧЕСКИ ВАЖНОЕ ИСПРАВЛЕНИЕ №2: Добавлена функция выбора класса 🔴 🔴 🔴
 async def show_class_selection(query):
     """Показывает выбор класса для просмотра расписания."""
     keyboard = [
@@ -1457,13 +1567,11 @@ async def show_daily_schedule(query, context):
         target_date_str = target_date.strftime('%Y-%m-%d')
     else:
         target_date_str = None
-    
     if class_name and class_name in SCHEDULE_STRUCTURED and day in SCHEDULE_STRUCTURED[class_name]:
         structured_lessons = SCHEDULE_STRUCTURED[class_name][day]
         schedule_text = format_schedule_day(class_name, day, structured_lessons, target_date_str)
     else:
         schedule_text = f"Расписание для класса {class_name} на {day} не найдено."
-    
     keyboard = [
         [InlineKeyboardButton("📅 Расписание на всю неделю", callback_data=f'weekly_{class_name}')],
         [InlineKeyboardButton("↩️ Назад к дням", callback_data=f'class_{class_name}')],
@@ -1516,7 +1624,6 @@ async def show_substitutions_for_date(query):
         target_date = today
     else:
         target_date = today + timedelta(days=1)
-    
     subs = db.get_substitutions_for_date(str(target_date))
     if subs:
         text = f"<b>🔄 Замены на {target_date.strftime('%d.%m.%Y')}:</b>\n"
@@ -1524,7 +1631,6 @@ async def show_substitutions_for_date(query):
             text += format_substitution(sub) + "\n"
     else:
         text = f"<b>На {target_date.strftime('%d.%m.%Y')} замен нет.</b>"
-    
     keyboard = [
         [InlineKeyboardButton("↩️ Назад к заменам", callback_data='menu_substitutions')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -1545,10 +1651,8 @@ async def show_all_substitutions(query):
             text += format_substitution(sub) + "\n"
     else:
         text = "Замены отсутствуют."
-    
     if len(text) > 4000:
         text = text[:3900] + "\n... (сообщение обрезано)"
-    
     keyboard = [
         [InlineKeyboardButton("↩️ Назад к заменам", callback_data='menu_substitutions')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -1562,16 +1666,15 @@ async def show_help(query):
 🆘 ПОМОЩЬ И ПОДДЕРЖКА
 Если вы обнаружили ошибку в работе бота или у вас есть предложения по улучшению, обратитесь:
 👨‍💼 Технический администратор:
-• ФИО: Гуд Юрий Петрович(@Yury_hud)
+• ФИО: Гуд Юрий Петрович (@Yury_hud)
 • 📧 Email: uragud.2020@gmail.com
-• ☎️ Телефон: +375336957183
 🕐 Время ответа:
 Пн-Пт: 9:00-18:00
 Сб,Вс: выходной
 Для быстрой помощи укажите:
-Ваше имя и класс
-Время возникновения ошибки
-Скриншот проблемы (если есть)
+• Ваше имя и класс
+• Время возникновения ошибки
+• Скриншот проблемы (если есть)
 """
     keyboard = add_start_button()
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1582,7 +1685,6 @@ async def show_admin_panel(query):
     if query.from_user.id not in ADMIN_IDS:
         await query.edit_message_text("⛔ Доступ запрещен!", parse_mode='HTML')
         return
-    
     keyboard = [
         [InlineKeyboardButton("➕ Добавить замену", callback_data='admin_add_sub')],
         [InlineKeyboardButton("📋 Просмотреть все замены", callback_data='admin_view_subs')],
@@ -1601,7 +1703,6 @@ async def start_adding_substitution(query, context):
     """Начинает процесс добавления замены."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    
     context.user_data['adding_substitution'] = True
     context.user_data['step'] = 'date'
     await show_date_selection(query, context)
@@ -1610,7 +1711,6 @@ async def show_admin_substitutions(query):
     """Показывает все замены для администратора."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    
     subs = db.get_all_substitutions()
     if subs:
         text = "<b>📋 ВСЕ ЗАМЕНЫ В БАЗЕ:</b>\n"
@@ -1619,10 +1719,8 @@ async def show_admin_substitutions(query):
             text += format_substitution(sub) + "\n"
     else:
         text = "<b>В базе данных замен нет.</b>"
-    
     if len(text) > 4000:
         text = text[:3900] + "\n... (сообщение обрезано)"
-    
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -1634,7 +1732,6 @@ async def request_substitution_deletion(query):
     """Запрашивает ID замены для удаления."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    
     await query.edit_message_text(
         "<b>🗑️ УДАЛЕНИЕ ЗАМЕНЫ</b>\n"
         "Введите <b>ID замены</b> для удаления (посмотрите ID в списке всех замен):",
@@ -1645,10 +1742,8 @@ async def confirm_clear_substitutions(query):
     """Запрашивает подтверждение очистки замен."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    
     subs = db.get_all_substitutions()
     sub_count = len(subs) if subs else 0
-    
     keyboard = [
         [
             InlineKeyboardButton("✅ Да, удалить все", callback_data='admin_clear_confirm'),
@@ -1672,10 +1767,8 @@ async def clear_all_substitutions(query):
     """Очищает все замены."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    
     subs_before = db.get_all_substitutions()
     sub_count = len(subs_before) if subs_before else 0
-    
     try:
         db.clear_all_substitutions()
         keyboard = [
@@ -1719,11 +1812,9 @@ async def show_searched_teacher_schedule(query, context):
             parse_mode='HTML'
         )
         return
-    
     teacher_name = found_teachers[teacher_index]
     teacher_schedule = get_teacher_schedule(teacher_name)
     schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
-    
     keyboard = [
         [InlineKeyboardButton("🔍 Новый поиск", callback_data='menu_search_teacher')],
         [InlineKeyboardButton("👨‍🏫 Все учителя", callback_data='menu_teacher')],
@@ -1736,12 +1827,12 @@ async def show_searched_teacher_schedule(query, context):
         parse_mode='HTML'
     )
 
-#================== ФУНКЦИИ ДЛЯ ДОБАВЛЕНИЯ ЗАМЕН ЧЕРЕЗ МЕНЮ ==================
-# 🔴 🔴 🔴 КРИТИЧЕСКИ ВАЖНОЕ ИСПРАВЛЕНИЕ №3: Исправленная обработка имён учителей 🔴 🔴 🔴
+# ================== ОБРАБОТКА ШАГОВ ДОБАВЛЕНИЯ ЗАМЕНЫ С НАВИГАЦИЕЙ "НАЗАД" ==================
 async def handle_adding_substitution(query, context):
-    """Обрабатывает шаги добавления замены через меню с исправлением формата имён."""
+    """Обрабатывает шаги добавления замены через меню с полной навигацией 'назад'."""
     step = context.user_data.get('step')
     
+    # Обработка отмены
     if query.data == 'cancel_adding':
         context.user_data.clear()
         keyboard = add_start_button()
@@ -1753,99 +1844,119 @@ async def handle_adding_substitution(query, context):
         )
         return
     
+    # 🔙 ОБРАБОТКА КНОПОК "НАЗАД" НА КАЖДОМ ШАГЕ
+    if query.data == 'back_to_date':
+        context.user_data['step'] = 'date'
+        await show_date_selection(query, context)
+        return
+    elif query.data == 'back_to_day':
+        context.user_data['step'] = 'date'  # Возвращаемся к выбору даты
+        await show_date_selection(query, context)
+        return
+    elif query.data == 'back_to_class':
+        context.user_data['step'] = 'day'
+        await show_day_selection(query, context)
+        return
+    elif query.data == 'back_to_lesson':
+        context.user_data['step'] = 'class'
+        await show_class_selection_for_substitution(query, context)
+        return
+    elif query.data == 'back_to_old_subject':
+        context.user_data['step'] = 'lesson'
+        await show_lesson_selection(query, context)
+        return
+    elif query.data == 'back_to_new_subject':
+        context.user_data['step'] = 'old_subject'
+        await show_subject_selection(query, context, is_old=True)
+        return
+    elif query.data == 'back_to_old_teacher':
+        context.user_data['step'] = 'new_subject'
+        await show_subject_selection(query, context, is_old=False)
+        return
+    elif query.data == 'back_to_new_teacher':
+        context.user_data['step'] = 'old_teacher'
+        await show_teacher_selection(query, context, is_old=True)
+        return
+    
+    # 📅 ШАГ 1: Выбор даты
     if step == 'date':
         if query.data.startswith('date_'):
             date_str = query.data.split('_')[1]
             context.user_data['date'] = date_str
             context.user_data['step'] = 'day'
             await show_day_selection(query, context)
+        return
     
-    elif step == 'day':
+    # 📅 ШАГ 2: Выбор дня недели
+    if step == 'day':
         if query.data.startswith('day_'):
             day = query.data.split('_', 1)[1]
             context.user_data['day'] = day
             context.user_data['step'] = 'class'
             await show_class_selection_for_substitution(query, context)
+        return
     
-    elif step == 'class':
+    # 🏫 ШАГ 3: Выбор класса
+    if step == 'class':
         if query.data.startswith('sub_class_'):
             class_name = query.data.split('_', 2)[2]
             context.user_data['class_name'] = class_name
             context.user_data['step'] = 'lesson'
             await show_lesson_selection(query, context)
+        return
     
-    elif step == 'lesson':
+    # 🔢 ШАГ 4: Выбор урока
+    if step == 'lesson':
         if query.data.startswith('lesson_'):
             lesson_num = int(query.data.split('_')[1])
             context.user_data['lesson'] = lesson_num
             context.user_data['step'] = 'old_subject'
             await show_subject_selection(query, context, is_old=True)
+        return
     
-    elif step == 'old_subject':
+    # 📚 ШАГ 5: Выбор старого предмета
+    if step == 'old_subject':
         if query.data.startswith('subject_'):
             old_subject = query.data.split('_', 1)[1].replace('_', ' ').strip()
             context.user_data['old_subject'] = old_subject
             context.user_data['step'] = 'new_subject'
             await show_subject_selection(query, context, is_old=False)
+        return
     
-    elif step == 'new_subject':
+    # 📚 ШАГ 6: Выбор нового предмета
+    if step == 'new_subject':
         if query.data.startswith('subject_'):
             new_subject = query.data.split('_', 1)[1].replace('_', ' ').strip()
             context.user_data['new_subject'] = new_subject
             context.user_data['step'] = 'old_teacher'
             await show_teacher_selection(query, context, is_old=True)
+        return
     
-    elif step == 'old_teacher':
+    # 👨‍🏫 ШАГ 7: Выбор старого учителя
+    if step == 'old_teacher':
         if query.data.startswith('teacher_'):
             # ✅ ИСПРАВЛЕНИЕ: заменяем подчёркивания на пробелы!
             old_teacher = query.data.split('_', 1)[1].replace('_', ' ').strip()
             context.user_data['old_teacher'] = old_teacher
             context.user_data['step'] = 'new_teacher'
             await show_teacher_selection(query, context, is_old=False)
+        return
     
-    elif step == 'new_teacher':
+    # 👨‍🏫 ШАГ 8: Выбор нового учителя → сохранение
+    if step == 'new_teacher':
         if query.data.startswith('teacher_'):
             # ✅ ИСПРАВЛЕНИЕ: заменяем подчёркивания на пробелы!
             new_teacher = query.data.split('_', 1)[1].replace('_', ' ').strip()
             context.user_data['new_teacher'] = new_teacher
             await save_substitution(query, context)
-
-async def show_date_selection(query, context):
-    """Показывает выбор даты."""
-    today = datetime.now().date()
-    dates = []
-    for i in range(7):
-        current_date = today + timedelta(days=i)
-        dates.append(current_date)
+        return
     
-    keyboard = []
-    row = []
-    for i, date in enumerate(dates):
-        date_str = date.strftime('%d.%m.%Y')
-        day_of_week = date.strftime('%A')
-        day_short = {
-            'Monday': 'пн', 'Tuesday': 'вт', 'Wednesday': 'ср',
-            'Thursday': 'чт', 'Friday': 'пт', 'Saturday': 'сб', 'Sunday': 'вс'
-        }.get(day_of_week, day_of_week)
-        button_text = f"{date_str} ({day_short})"
-        callback_data = f'date_{date.strftime("%Y-%m-%d")}'
-        row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
-        if len(row) == 2 or i == len(dates) - 1:
-            keyboard.append(row)
-            row = []
-    
-    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')])
-    keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ</b>\n"
-        "<b>📅 Выберите дату:</b>",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    # ⚠️ Если шаг не распознан — показываем текущий шаг
+    await query.answer("⚠️ Неизвестное действие. Пожалуйста, используйте кнопки навигации.", show_alert=True)
 
+# ================== УЛУЧШЕННЫЕ ФУНКЦИИ ПОКАЗА ШАГОВ С КОРРЕКТНЫМИ КНОПКАМИ "НАЗАД" ==================
 async def show_day_selection(query, context):
-    """Показывает выбор дня недели."""
+    """Показывает выбор дня недели с кнопкой 'назад' к дате."""
     keyboard = []
     row = []
     for i, day in enumerate(DAYS_OF_WEEK):
@@ -1859,10 +1970,11 @@ async def show_day_selection(query, context):
         keyboard.append(row)
     
     keyboard.append([
-        InlineKeyboardButton("◀️ Назад", callback_data='back_to_date'),
+        InlineKeyboardButton("◀️ Назад к дате", callback_data='back_to_date'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ</b>\n"
@@ -1873,7 +1985,7 @@ async def show_day_selection(query, context):
     )
 
 async def show_class_selection_for_substitution(query, context):
-    """Показывает выбор класса для замены."""
+    """Показывает выбор класса для замены с кнопкой 'назад' к дню недели."""
     keyboard = []
     row = []
     for i, class_name in enumerate(ALL_CLASSES):
@@ -1887,14 +1999,15 @@ async def show_class_selection_for_substitution(query, context):
         keyboard.append(row)
     
     keyboard.append([
-        InlineKeyboardButton("◀️ Назад", callback_data='back_to_day'),
+        InlineKeyboardButton("◀️ Назад к дню", callback_data='back_to_day'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ</b>\n"
-        f"<b>📅 Дата:</b> {context.user_data['date']}\n"
+        f"<b>📅 Дата:</b> {context.user_data.get('date', 'не выбран')}\n"
         f"<b>📅 День недели:</b> {context.user_data.get('day', 'не выбран')}\n"
         "<b>🏫 Выберите класс:</b>",
         reply_markup=reply_markup,
@@ -1902,7 +2015,7 @@ async def show_class_selection_for_substitution(query, context):
     )
 
 async def show_lesson_selection(query, context):
-    """Показывает выбор урока."""
+    """Показывает выбор урока с кнопкой 'назад' к классу."""
     keyboard = []
     row = []
     for i in range(1, 8):
@@ -1916,10 +2029,11 @@ async def show_lesson_selection(query, context):
         keyboard.append(row)
     
     keyboard.append([
-        InlineKeyboardButton("◀️ Назад", callback_data='back_to_class'),
+        InlineKeyboardButton("◀️ Назад к классу", callback_data='back_to_class'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ</b>\n"
@@ -1932,12 +2046,12 @@ async def show_lesson_selection(query, context):
     )
 
 async def show_subject_selection(query, context, is_old=True):
-    """Показывает выбор предмета."""
+    """Показывает выбор предмета с кнопками 'назад' к предыдущему шагу."""
     subject_type = "старого" if is_old else "нового"
     keyboard = []
     row = []
     for subject in SUBJECTS:
-        button_text = subject
+        button_text = subject[:20] + "..." if len(subject) > 20 else subject
         callback_subject = subject.replace(' ', '_')
         callback_data = f'subject_{callback_subject}'
         row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
@@ -1947,14 +2061,21 @@ async def show_subject_selection(query, context, is_old=True):
     if row:
         keyboard.append(row)
     
-    back_callback = 'back_to_lesson' if is_old else 'back_to_old_subject'
+    # Определяем правильную кнопку "назад" в зависимости от шага
+    if is_old:
+        back_callback = 'back_to_lesson'
+        back_text = "◀️ Назад к уроку"
+    else:
+        back_callback = 'back_to_old_subject'
+        back_text = "◀️ Назад к старому предмету"
+    
     keyboard.append([
-        InlineKeyboardButton("◀️ Назад", callback_data=back_callback),
+        InlineKeyboardButton(back_text, callback_data=back_callback),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
     
+    reply_markup = InlineKeyboardMarkup(keyboard)
     text = (
         f"<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ</b>\n"
         f"<b>📅 Дата:</b> {context.user_data.get('date', 'не выбран')}\n"
@@ -1970,32 +2091,42 @@ async def show_subject_selection(query, context, is_old=True):
     )
 
 async def show_teacher_selection(query, context, is_old=True):
-    """Показывает выбор учителя."""
+    """Показывает выбор учителя с кнопками 'назад' к предыдущему шагу."""
     teachers = list(TEACHER_IDS.keys())
     keyboard = []
     row = []
-    for teacher in teachers:
-        button_text = teacher
+    
+    # Фильтруем учителей с некорректным ID для выбора НОВОГО учителя
+    if not is_old:
+        teachers = [t for t in teachers if TEACHER_IDS.get(t) not in (None, 0)]
+    
+    for i, teacher in enumerate(teachers):
+        button_text = teacher[:20] + "..." if len(teacher) > 20 else teacher
         callback_data = f'teacher_{teacher.replace(" ", "_")}'
         row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
         if len(row) == 2:
             keyboard.append(row)
             row = []
+        if i >= 19:  # Ограничиваем до 20 учителей для удобства
+            break
     if row:
         keyboard.append(row)
     
+    # Определяем правильную кнопку "назад"
     if is_old:
         back_callback = 'back_to_new_subject'
+        back_text = "◀️ Назад к новому предмету"
     else:
         back_callback = 'back_to_old_teacher'
+        back_text = "◀️ Назад к старому учителю"
     
     keyboard.append([
-        InlineKeyboardButton("◀️ Назад", callback_data=back_callback),
+        InlineKeyboardButton(back_text, callback_data=back_callback),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
     
+    reply_markup = InlineKeyboardMarkup(keyboard)
     text = (
         f"<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ</b>\n"
         f"<b>📅 Дата:</b> {context.user_data.get('date', 'не выбран')}\n"
@@ -2008,8 +2139,10 @@ async def show_teacher_selection(query, context, is_old=True):
     if is_old:
         text += f"<b>👨‍🏫 Выберите старого учителя:</b>"
     else:
-        text += f"<b>👨‍🏫 Старый учитель:</b> {context.user_data.get('old_teacher', 'не выбран')}\n"
-        text += f"<b>👨‍🏫 Выберите нового учителя:</b>"
+        text += (
+            f"<b>👨‍🏫 Старый учитель:</b> {context.user_data.get('old_teacher', 'не выбран')}\n"
+            f"<b>👨‍🏫 Выберите НОВОГО учителя (только с активным Telegram):</b>"
+        )
     
     await query.edit_message_text(
         text,
@@ -2035,7 +2168,6 @@ async def save_substitution(query, context):
             old_teacher, new_teacher,
             class_name
         )
-        
         substitution_data = {
             'date': date,
             'day': day,
@@ -2046,10 +2178,7 @@ async def save_substitution(query, context):
             'old_teacher': old_teacher,
             'new_teacher': new_teacher
         }
-        
-        # ✅ Отправляем уведомление с исправленным именем
         await send_substitution_notification(context, new_teacher, substitution_data)
-        
         context.user_data.clear()
         keyboard = add_start_button()
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2082,10 +2211,8 @@ async def handle_message(update: Update, context: CallbackContext):
     """Обработка текстовых сообщений."""
     if not update.message or not update.message.text:
         return
-    
     if not isinstance(context.user_data, dict):
         context.user_data = {}
-    
     if context.user_data.get('searching_teacher'):
         search_query = update.message.text.strip()
         if not search_query:
@@ -2094,13 +2221,11 @@ async def handle_message(update: Update, context: CallbackContext):
                 parse_mode='HTML'
             )
             return
-        
         all_teachers = get_all_teachers()
         found_teachers = []
         for teacher in all_teachers:
             if search_query.lower() in teacher.lower():
                 found_teachers.append(teacher)
-        
         if found_teachers:
             text = f"<b>🔍 Результаты поиска по запросу '{search_query}':</b>\n"
             keyboard = []
@@ -2109,7 +2234,6 @@ async def handle_message(update: Update, context: CallbackContext):
                 if len(teacher) > 20:
                     button_text = teacher[:18] + "..."
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=f'teacher_search_{i}')])
-            
             context.user_data['found_teachers'] = found_teachers
             keyboard.append([InlineKeyboardButton("🔍 Новый поиск", callback_data='menu_search_teacher')])
             keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
@@ -2141,7 +2265,6 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
     """Проверяет сообщения на упоминания учителей."""
     if not update.message or not update.message.text:
         return
-    
     message_text = update.message.text
     user = update.message.from_user
     found_mentions = []
@@ -2151,10 +2274,8 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
         pattern = r'\b' + re.escape(teacher_name.split()[0]) + r'\b'
         if re.search(pattern, message_text, re.IGNORECASE):
             found_mentions.append((teacher_name, teacher_id))
-    
     if not found_mentions:
         return
-    
     for teacher_name, teacher_id in found_mentions:
         try:
             notification = (
@@ -2162,7 +2283,7 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
                 f"<b>👤 От:</b> {user.full_name}\n"
                 f"<b>📅 Время:</b> {datetime.now().strftime('%H:%M %d.%m.%Y')}\n"
                 f"<b>💬 Сообщение:</b>\n"
-                f"<code>\n{message_text[:300]}\n</code>\n"
+                f"<code>{message_text[:300]}</code>\n"
                 f"<i>Чтобы ответить, нажмите «Ответить» на это сообщение.</i>"
             )
             await context.bot.send_message(
@@ -2208,7 +2329,6 @@ async def test_notification(update: Update, context: CallbackContext):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Только администраторы могут тестировать уведомления.", parse_mode='HTML')
         return
-    
     if not context.args:
         teachers_list = "\n".join([f"• {teacher}" for teacher in TEACHER_IDS.keys()])
         await update.message.reply_text(
@@ -2217,23 +2337,19 @@ async def test_notification(update: Update, context: CallbackContext):
             parse_mode='HTML'
         )
         return
-    
     teacher_name = context.args[0]
     found_teacher = None
     for teacher in TEACHER_IDS.keys():
         if teacher_name.lower() in teacher.lower():
             found_teacher = teacher
             break
-    
     if not found_teacher:
         await update.message.reply_text(f"❌ Учитель '{teacher_name}' не найден в списке.", parse_mode='HTML')
         return
-    
     teacher_id = TEACHER_IDS[found_teacher]
     if not teacher_id or teacher_id == 0:
         await update.message.reply_text(f"❌ Для учителя '{found_teacher}' не установлен ID.", parse_mode='HTML')
         return
-    
     try:
         test_message = (
             f"<b>🔔 ТЕСТОВОЕ УВЕДОМЛЕНИЕ</b>\n"
@@ -2283,13 +2399,11 @@ async def teachers_list(update: Update, context: CallbackContext):
             parse_mode='HTML'
         )
         return
-    
     teachers_text = "<b>👨‍🏫 СПИСОК УЧИТЕЛЕЙ:</b>\n"
     for i, teacher in enumerate(all_teachers, 1):
         teachers_text += f"{i}. {teacher}\n"
         if i % 10 == 0:
             teachers_text += "\n"
-    
     keyboard = [
         [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
         [InlineKeyboardButton("📋 Расписание учителей", callback_data='menu_teacher')],
@@ -2311,6 +2425,7 @@ def main():
     except Exception as e:
         logger.error(f"Ошибка инициализации БД: {e}")
         print(f"❌ Ошибка БД: {e}")
+        exit(1)
     
     application = (
         Application.builder()
@@ -2337,6 +2452,7 @@ def main():
     print(f"📊 Всего учителей в расписании: {len(get_all_teachers())}")
     print(f"👑 Администраторы: {ADMIN_IDS}")
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
+    print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     
     try:
         application.run_polling(
@@ -2351,3 +2467,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
