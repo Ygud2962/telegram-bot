@@ -1142,7 +1142,210 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
                 logger.error(f"Ошибка отправки уведомления админу об ошибке: {e2}")
 
 
-#================== ДОБАВЛЕНА ФУНКЦИЯ show_date_selection (ИСПРАВЛЕНИЕ ОШИБКИ) ==================
+#================== ДОБАВЛЕНА ФУНКЦИЯ ПРОСМОТРА ПОЛЬЗОВАТЕЛЕЙ ==================
+async def show_users_stats(query, context):
+    """Показывает статистику пользователей."""
+    if query.from_user.id not in ADMIN_IDS:
+        return
+    
+    user_count = db.get_user_count()
+    users = db.get_all_users()
+    
+    text = f"<b>👥 СТАТИСТИКА ПОЛЬЗОВАТЕЛЕЙ</b>\n"
+    text += f"• Всего пользователей: <b>{user_count}</b>\n\n"
+    
+    if users:
+        text += "<b>Последние 20 пользователей:</b>\n"
+        for user in users[-20:]:
+            user_id, username, first_name, last_name = user
+            name = f"{first_name or ''} {last_name or ''}".strip() or "Без имени"
+            if username:
+                name += f" (@{username})"
+            text += f"• ID: <code>{user_id}</code> — {name}\n"
+    else:
+        text += "<i>Нет зарегистрированных пользователей</i>"
+    
+    keyboard = [
+        [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+
+
+#================== ДОБАВЛЕНА ФУНКЦИЯ РАССЫЛКИ ==================
+async def start_broadcast(query, context):
+    """Начинает процесс рассылки сообщения всем пользователям."""
+    if query.from_user.id not in ADMIN_IDS:
+        return
+    
+    context.user_data['broadcasting'] = True
+    context.user_data['broadcast_step'] = 'message'
+    
+    keyboard = [
+        [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "<b>📢 РАССЫЛКА СООБЩЕНИЯ ВСЕМ ПОЛЬЗОВАТЕЛЯМ</b>\n\n"
+        "Введите текст сообщения для рассылки:\n"
+        "<i>Поддерживаются HTML-теги: &lt;b&gt;, &lt;i&gt;, &lt;u&gt;, &lt;code&gt;, &lt;pre&gt;</i>\n\n"
+        "<b>⚠️ ВНИМАНИЕ:</b> Сообщение будет отправлено <b>ВСЕМ</b> пользователям бота!",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+
+async def handle_broadcast_message(update: Update, context: CallbackContext):
+    """Обрабатывает текст сообщения для рассылки."""
+    if not context.user_data.get('broadcasting') or context.user_data.get('broadcast_step') != 'message':
+        return
+    
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ Пожалуйста, введите текст сообщения.")
+        return
+    
+    message_text = update.message.text.strip()
+    
+    if len(message_text) > 4000:
+        await update.message.reply_text("❌ Сообщение слишком длинное (макс. 4000 символов).")
+        return
+    
+    context.user_data['broadcast_message'] = message_text
+    context.user_data['broadcast_step'] = 'confirm'
+    
+    # Предпросмотр сообщения
+    preview_text = f"<b>🔍 ПРЕДПРОСМОТР СООБЩЕНИЯ:</b>\n\n{message_text}"
+    
+    keyboard = [
+        [InlineKeyboardButton("✅ Отправить всем", callback_data='confirm_broadcast')],
+        [InlineKeyboardButton("✏️ Редактировать", callback_data='edit_broadcast')],
+        [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        preview_text,
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+
+async def confirm_broadcast(query, context):
+    """Подтверждает и отправляет рассылку."""
+    if query.from_user.id not in ADMIN_IDS:
+        return
+    
+    message_text = context.user_data.get('broadcast_message')
+    if not message_text:
+        await query.edit_message_text("❌ Ошибка: сообщение не найдено.")
+        context.user_data.clear()
+        return
+    
+    users = db.get_all_users()
+    total = len(users)
+    sent = 0
+    failed = 0
+    
+    # Отправляем уведомление админу о начале рассылки
+    status_message = await query.edit_message_text(
+        f"<b>📤 НАЧАТА РАССЫЛКА</b>\n"
+        f"Всего пользователей: <b>{total}</b>\n"
+        f"Отправлено: <b>{sent}</b>\n"
+        f"Ошибок: <b>{failed}</b>\n"
+        f"Статус: ⏳ В процессе...",
+        parse_mode='HTML'
+    )
+    
+    # Отправляем сообщение каждому пользователю
+    for i, (user_id, username, first_name, last_name) in enumerate(users):
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                parse_mode='HTML'
+            )
+            sent += 1
+        except Exception as e:
+            failed += 1
+            logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
+        
+        # Обновляем статус каждые 5 пользователей
+        if i % 5 == 0 or i == total - 1:
+            try:
+                await status_message.edit_text(
+                    f"<b>📤 РАССЫЛКА В ПРОЦЕССЕ</b>\n"
+                    f"Всего пользователей: <b>{total}</b>\n"
+                    f"Отправлено: <b>{sent}</b>\n"
+                    f"Ошибок: <b>{failed}</b>\n"
+                    f"Статус: {'✅ Завершено' if i == total - 1 else '⏳ В процессе...'}",
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось обновить статус рассылки: {e}")
+    
+    # Финальное сообщение
+    keyboard = [
+        [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await status_message.edit_text(
+        f"<b>✅ РАССЫЛКА ЗАВЕРШЕНА</b>\n"
+        f"Всего пользователей: <b>{total}</b>\n"
+        f"Успешно отправлено: <b>{sent}</b>\n"
+        f"Ошибок: <b>{failed}</b>\n"
+        f"Текст сообщения:\n\n{message_text}",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+    
+    context.user_data.clear()
+    logger.info(f"Рассылка завершена: отправлено {sent}/{total}, ошибок {failed}")
+
+
+async def cancel_broadcast(query, context):
+    """Отменяет рассылку."""
+    context.user_data.clear()
+    
+    keyboard = [
+        [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "<b>❌ РАССЫЛКА ОТМЕНЕНА</b>\n"
+        "Сообщение не было отправлено никому.",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+
+async def edit_broadcast(query, context):
+    """Возвращает к редактированию сообщения."""
+    context.user_data['broadcast_step'] = 'message'
+    
+    keyboard = [
+        [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "<b>✏️ РЕДАКТИРОВАНИЕ СООБЩЕНИЯ</b>\n\n"
+        "Введите новый текст сообщения для рассылки:",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+
+
+#================== ДОБАВЛЕНА ФУНКЦИЯ ПОКАЗА ДАТЫ ВЫБОРА ==================
 async def show_date_selection(query, context):
     """Показывает выбор даты для добавления замены."""
     tz_minsk = pytz.timezone('Europe/Minsk')
@@ -1176,9 +1379,19 @@ async def show_date_selection(query, context):
     )
 
 
-#================== КОМАНДА /start ==================
+#================== КОМАНДА /start С СОХРАНЕНИЕМ ПОЛЬЗОВАТЕЛЯ ==================
 async def start(update: Update, context: CallbackContext):
-    """Главное меню бота."""
+    """Главное меню бота с сохранением пользователя в БД."""
+    # Сохраняем пользователя в базу данных
+    user = update.effective_user
+    db.add_user(
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        language_code=user.language_code
+    )
+    
     keyboard = [
         [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
         [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
@@ -1211,6 +1424,8 @@ def add_start_button(keyboard=None):
 
 
 #================== ФУНКЦИИ ДЛЯ "СЕЙЧАС" ==================
+# ... [остальные функции без изменений: show_now_class_selection, show_current_lesson] ...
+
 async def show_now_class_selection(query, context):
     """Показывает выбор класса для функции 'Сейчас'."""
     keyboard = [
@@ -1369,7 +1584,19 @@ async def button_handler(update: Update, context: CallbackContext):
         logger.error(f"Ошибка при ответе на callback: {e}")
         return
     
-    # Обработка добавления замен с навигацией "назад"
+    # Обработка рассылки
+    if 'broadcasting' in context.user_data:
+        if query.data == 'cancel_broadcast':
+            await cancel_broadcast(query, context)
+            return
+        elif query.data == 'confirm_broadcast':
+            await confirm_broadcast(query, context)
+            return
+        elif query.data == 'edit_broadcast':
+            await edit_broadcast(query, context)
+            return
+    
+    # Обработка добавления замен
     if 'adding_substitution' in context.user_data:
         try:
             await handle_adding_substitution(query, context)
@@ -1437,6 +1664,10 @@ async def button_handler(update: Update, context: CallbackContext):
             await confirm_clear_substitutions(query)
         elif query.data == 'admin_clear_confirm':
             await clear_all_substitutions(query)
+        elif query.data == 'admin_broadcast':
+            await start_broadcast(query, context)
+        elif query.data == 'admin_users':
+            await show_users_stats(query, context)
         elif query.data.startswith('teacher_search_'):
             await show_searched_teacher_schedule(query, context)
         
@@ -1528,6 +1759,10 @@ async def show_teacher_menu(query, context):
         parse_mode='HTML'
     )
 
+
+# ... [остальные функции без изменений: show_teacher_schedule, show_bells_schedule, show_class_selection, 
+#      show_day_selection_for_class, show_daily_schedule, show_weekly_schedule, show_substitutions_menu,
+#      show_substitutions_for_date, show_all_substitutions, show_help] ...
 
 async def show_teacher_schedule(query, context):
     """Показывает расписание конкретного учителя."""
@@ -1813,6 +2048,8 @@ async def show_admin_panel(query):
         [InlineKeyboardButton("📋 Просмотреть все замены", callback_data='admin_view_subs')],
         [InlineKeyboardButton("🗑️ Удалить замену", callback_data='admin_delete_sub')],
         [InlineKeyboardButton("🧹 Очистка замен", callback_data='admin_clear_subs')],
+        [InlineKeyboardButton("📢 Отправить сообщение всем", callback_data='admin_broadcast')],
+        [InlineKeyboardButton("👥 Статистика пользователей", callback_data='admin_users')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1832,6 +2069,9 @@ async def start_adding_substitution(query, context):
     context.user_data['step'] = 'date'
     await show_date_selection(query, context)
 
+
+# ... [остальные функции без изменений: show_admin_substitutions, request_substitution_deletion, 
+#      confirm_clear_substitutions, clear_all_substitutions, show_searched_teacher_schedule] ...
 
 async def show_admin_substitutions(query):
     """Показывает все замены для администратора."""
@@ -1988,6 +2228,8 @@ async def show_searched_teacher_schedule(query, context):
 
 
 # ================== ОБРАБОТКА ШАГОВ ДОБАВЛЕНИЯ ЗАМЕНЫ С НАВИГАЦИЕЙ "НАЗАД" ==================
+# ... [функция handle_adding_substitution без изменений, но с исправленной фильтрацией учителей] ...
+
 async def handle_adding_substitution(query, context):
     """Обрабатывает шаги добавления замены через меню с полной навигацией 'назад'."""
     step = context.user_data.get('step')
@@ -2127,6 +2369,7 @@ async def handle_adding_substitution(query, context):
 
 # ================== УЛУЧШЕННЫЕ ФУНКЦИИ ПОКАЗА ШАГОВ ==================
 # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: УБРАНА ФИЛЬТРАЦИЯ УЧИТЕЛЕЙ ПРИ ВЫБОРЕ НОВОГО УЧИТЕЛЯ
+
 async def show_class_selection_for_substitution(query, context):
     """Показывает выбор класса для замены с кнопкой 'назад' к дате."""
     keyboard = []
@@ -2250,8 +2493,7 @@ async def show_teacher_selection(query, context, is_old=True):
     row = []
     
     # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: УБРАНА ФИЛЬТРАЦИЯ!
-    # Раньше: фильтровали учителей с некорректным ID для выбора НОВОГО учителя
-    # Теперь: ВСЕ учителя доступны для выбора как нового учителя
+    # Все учителя доступны для выбора как нового учителя
     # Уведомления будут отправляться только тем, у кого есть валидный ID, но замена добавится в любом случае
     
     for i, teacher in enumerate(teachers):
@@ -2382,6 +2624,12 @@ async def handle_message(update: Update, context: CallbackContext):
     if not isinstance(context.user_data, dict):
         context.user_data = {}
     
+    # Обработка рассылки
+    if context.user_data.get('broadcasting') and context.user_data.get('broadcast_step') == 'message':
+        await handle_broadcast_message(update, context)
+        return
+    
+    # Обработка поиска учителя
     if context.user_data.get('searching_teacher'):
         search_query = update.message.text.strip()
         if not search_query:
@@ -2437,6 +2685,8 @@ async def handle_message(update: Update, context: CallbackContext):
 
 
 #================== УВЕДОМЛЕНИЯ УЧИТЕЛЯМ ==================
+# ... [функция handle_teacher_mentions без изменений] ...
+
 async def handle_teacher_mentions(update: Update, context: CallbackContext):
     """Проверяет сообщения на упоминания учителей."""
     if not update.message or not update.message.text:
@@ -2511,6 +2761,8 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
 
 
 #================== ТЕСТОВАЯ КОМАНДА ==================
+# ... [функции test_notification и teachers_list без изменений] ...
+
 async def test_notification(update: Update, context: CallbackContext):
     """Тестовая команда для проверки уведомлений."""
     if update.effective_user.id not in ADMIN_IDS:
@@ -2585,7 +2837,6 @@ async def test_notification(update: Update, context: CallbackContext):
             )
 
 
-#================== СПИСОК УЧИТЕЛЕЙ ==================
 async def teachers_list(update: Update, context: CallbackContext):
     """Команда для отображения списка всех учителей."""
     all_teachers = get_all_teachers()
@@ -2655,6 +2906,7 @@ def main():
     print(f"👑 Администраторы: {ADMIN_IDS}")
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
+    print(f"👥 Пользователей в базе: {db.get_user_count()}")
     
     try:
         application.run_polling(
