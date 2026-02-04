@@ -90,8 +90,8 @@ BELLS_SCHEDULE_HTML = """
 """
 
 #================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
-# Полный словарь SCHEDULE_STRUCTURED из вашего файла (сокращён для краткости в ответе)
-# ⚠️ ВАЖНО: Скопируйте ПОЛНЫЙ словарь из вашего файла сюда!
+# ⚠️ ВАЖНО: Скопируйте ПОЛНЫЙ словарь SCHEDULE_STRUCTURED из вашего файла сюда!
+# Для краткости в этом ответе я оставлю только часть, но в реальном коде должен быть полный словарь
 SCHEDULE_STRUCTURED = {
  '5а': {
         'Понедельник': [
@@ -787,7 +787,6 @@ def get_lesson_time(lesson_number):
     }
     return lesson_times.get(lesson_number, "??:??-??:??")
 
-
 def get_current_lesson_info():
     """Определяет текущий/следующий урок по времени в часовом поясе Минска (UTC+3)."""
     tz_minsk = pytz.timezone('Europe/Minsk')
@@ -837,7 +836,6 @@ def get_current_lesson_info():
     # После всех уроков или до начала первого урока
     return {'status': 'finished'}
 
-
 def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     """Форматирует расписание на день в новом формате с заменами."""
     if not structured_lessons:
@@ -882,7 +880,6 @@ def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     
     return "\n".join(result_lines)
 
-
 def format_weekly_schedule(class_name):
     """Форматирует расписание на всю неделю в новом формате."""
     if class_name not in SCHEDULE_STRUCTURED:
@@ -912,7 +909,6 @@ def format_weekly_schedule(class_name):
     
     return "\n".join(result_lines)
 
-
 def format_substitution(sub):
     """Форматирует замену в красивом виде."""
     if len(sub) >= 9:
@@ -920,7 +916,6 @@ def format_substitution(sub):
                 f"    `{sub[4]}` ({sub[6]})\n"
                 f"   → `{sub[5]}` ({sub[7]})")
     return str(sub)
-
 
 def get_all_teachers():
     """Извлекает всех уникальных учителей из расписания."""
@@ -938,7 +933,6 @@ def get_all_teachers():
                             if teacher_clean and teacher_clean not in ['', ' ']:
                                 teachers.add(teacher_clean)
     return sorted(list(teachers))
-
 
 def get_teacher_schedule(teacher_name):
     """Получает расписание учителя из общей структуры."""
@@ -967,7 +961,6 @@ def get_teacher_schedule(teacher_name):
         schedule[day].sort(key=lambda x: x['number'])
     
     return schedule
-
 
 def format_teacher_schedule(teacher_name, schedule):
     """Форматирует расписание учителя с учетом ВСЕХ замен."""
@@ -1089,7 +1082,6 @@ def format_teacher_schedule(teacher_name, schedule):
     text += f"<i>ℹ️ Расписание и замены на 30 дней</i>"
     return text
 
-
 async def send_substitution_notification(context, teacher_name, substitution_data):
     """Отправляет уведомление учителю о новой замене с логированием и защитой от ошибок."""
     teacher_name_clean = teacher_name.replace('_', ' ').strip()
@@ -1141,8 +1133,7 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             except Exception as e2:
                 logger.error(f"Ошибка отправки уведомления админу об ошибке: {e2}")
 
-
-#================== ДОБАВЛЕНА ФУНКЦИЯ ПРОСМОТРА ПОЛЬЗОВАТЕЛЕЙ ==================
+#================== ФУНКЦИИ РАССЫЛКИ ТЕХНИЧЕСКИХ УВЕДОМЛЕНИЙ ==================
 async def show_users_stats(query, context):
     """Показывает статистику пользователей."""
     if query.from_user.id not in ADMIN_IDS:
@@ -1155,8 +1146,8 @@ async def show_users_stats(query, context):
     text += f"• Всего пользователей: <b>{user_count}</b>\n\n"
     
     if users:
-        text += "<b>Последние 20 пользователей:</b>\n"
-        for user in users[-20:]:
+        text += "<b>Последние 10 пользователей:</b>\n"
+        for user in users[-10:]:
             user_id, username, first_name, last_name = user
             name = f"{first_name or ''} {last_name or ''}".strip() or "Без имени"
             if username:
@@ -1173,15 +1164,13 @@ async def show_users_stats(query, context):
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
-
-#================== ДОБАВЛЕНА ФУНКЦИЯ РАССЫЛКИ ==================
-async def start_broadcast(query, context):
-    """Начинает процесс рассылки сообщения всем пользователям."""
+async def start_technical_broadcast(query, context):
+    """Начинает процесс рассылки технического уведомления."""
     if query.from_user.id not in ADMIN_IDS:
         return
     
     context.user_data['broadcasting'] = True
-    context.user_data['broadcast_step'] = 'message'
+    context.user_data['broadcast_step'] = 'time'
     
     keyboard = [
         [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
@@ -1190,61 +1179,78 @@ async def start_broadcast(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "<b>📢 РАССЫЛКА СООБЩЕНИЯ ВСЕМ ПОЛЬЗОВАТЕЛЯМ</b>\n\n"
-        "Введите текст сообщения для рассылки:\n"
-        "<i>Поддерживаются HTML-теги: &lt;b&gt;, &lt;i&gt;, &lt;u&gt;, &lt;code&gt;, &lt;pre&gt;</i>\n\n"
-        "<b>⚠️ ВНИМАНИЕ:</b> Сообщение будет отправлено <b>ВСЕМ</b> пользователям бота!",
+        "<b>📢 РАССЫЛКА ТЕХНИЧЕСКОГО УВЕДОМЛЕНИЯ</b>\n\n"
+        "Введите <b>время окончания технических работ</b> в формате:\n"
+        "<code>ДД.ММ ЧЧ:ММ</code>\n\n"
+        "Пример: <code>05.02 18:30</code>\n\n"
+        "<i>Это время будет указано в уведомлении всем пользователям.</i>",
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
 
-
-async def handle_broadcast_message(update: Update, context: CallbackContext):
-    """Обрабатывает текст сообщения для рассылки."""
-    if not context.user_data.get('broadcasting') or context.user_data.get('broadcast_step') != 'message':
+async def handle_broadcast_time(update: Update, context: CallbackContext):
+    """Обрабатывает ввод времени технических работ."""
+    if not context.user_data.get('broadcasting') or context.user_data.get('broadcast_step') != 'time':
         return
     
-    if not update.message or not update.message.text:
-        await update.message.reply_text("❌ Пожалуйста, введите текст сообщения.")
+    time_input = update.message.text.strip()
+    
+    # Проверяем формат времени
+    if not re.match(r'^\d{2}\.\d{2} \d{2}:\d{2}$', time_input):
+        await update.message.reply_text(
+            "❌ Неверный формат времени!\n"
+            "Введите в формате: <code>ДД.ММ ЧЧ:ММ</code>\n"
+            "Пример: <code>05.02 18:30</code>",
+            parse_mode='HTML'
+        )
         return
     
-    message_text = update.message.text.strip()
-    
-    if len(message_text) > 4000:
-        await update.message.reply_text("❌ Сообщение слишком длинное (макс. 4000 символов).")
-        return
-    
-    context.user_data['broadcast_message'] = message_text
+    context.user_data['broadcast_time'] = time_input
     context.user_data['broadcast_step'] = 'confirm'
     
-    # Предпросмотр сообщения
-    preview_text = f"<b>🔍 ПРЕДПРОСМОТР СООБЩЕНИЯ:</b>\n\n{message_text}"
+    # Формируем шаблонное сообщение
+    broadcast_message = (
+        f"⚠️ <b>ВНИМАНИЕ! ТЕХНИЧЕСКИЕ РАБОТЫ</b> ⚠️\n\n"
+        f"Сервис временно недоступен в связи с техническими работами.\n\n"
+        f"🕗 <b>Работы завершатся:</b> {time_input}\n\n"
+        f"Приносим извинения за временные неудобства.\n"
+        f"Бот возобновит работу сразу после окончания работ."
+    )
     
+    # Предпросмотр сообщения
     keyboard = [
         [InlineKeyboardButton("✅ Отправить всем", callback_data='confirm_broadcast')],
-        [InlineKeyboardButton("✏️ Редактировать", callback_data='edit_broadcast')],
+        [InlineKeyboardButton("✏️ Изменить время", callback_data='edit_broadcast_time')],
         [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        preview_text,
+        "<b>🔍 ПРЕДПРОСМОТР УВЕДОМЛЕНИЯ:</b>\n\n" + broadcast_message,
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
 
-
 async def confirm_broadcast(query, context):
-    """Подтверждает и отправляет рассылку."""
+    """Подтверждает и отправляет рассылку всем пользователям."""
     if query.from_user.id not in ADMIN_IDS:
         return
     
-    message_text = context.user_data.get('broadcast_message')
-    if not message_text:
-        await query.edit_message_text("❌ Ошибка: сообщение не найдено.")
+    broadcast_time = context.user_data.get('broadcast_time')
+    if not broadcast_time:
+        await query.edit_message_text("❌ Ошибка: время не указано.")
         context.user_data.clear()
         return
+    
+    # Формируем финальное сообщение
+    broadcast_message = (
+        f"⚠️ <b>ВНИМАНИЕ! ТЕХНИЧЕСКИЕ РАБОТЫ</b> ⚠️\n\n"
+        f"Сервис временно недоступен в связи с техническими работами.\n\n"
+        f"🕗 <b>Работы завершатся:</b> {broadcast_time}\n\n"
+        f"Приносим извинения за временные неудобства.\n"
+        f"Бот возобновит работу сразу после окончания работ."
+    )
     
     users = db.get_all_users()
     total = len(users)
@@ -1266,7 +1272,7 @@ async def confirm_broadcast(query, context):
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=message_text,
+                text=broadcast_message,
                 parse_mode='HTML'
             )
             sent += 1
@@ -1280,7 +1286,7 @@ async def confirm_broadcast(query, context):
                 await status_message.edit_text(
                     f"<b>📤 РАССЫЛКА В ПРОЦЕССЕ</b>\n"
                     f"Всего пользователей: <b>{total}</b>\n"
-                    f"Отправлено: <b>{sent}</b>\n"
+                    f"Успешно отправлено: <b>{sent}</b>\n"
                     f"Ошибок: <b>{failed}</b>\n"
                     f"Статус: {'✅ Завершено' if i == total - 1 else '⏳ В процессе...'}",
                     parse_mode='HTML'
@@ -1299,8 +1305,8 @@ async def confirm_broadcast(query, context):
         f"<b>✅ РАССЫЛКА ЗАВЕРШЕНА</b>\n"
         f"Всего пользователей: <b>{total}</b>\n"
         f"Успешно отправлено: <b>{sent}</b>\n"
-        f"Ошибок: <b>{failed}</b>\n"
-        f"Текст сообщения:\n\n{message_text}",
+        f"Ошибок: <b>{failed}</b>\n\n"
+        f"<b>Текст уведомления:</b>\n{broadcast_message}",
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
@@ -1308,6 +1314,24 @@ async def confirm_broadcast(query, context):
     context.user_data.clear()
     logger.info(f"Рассылка завершена: отправлено {sent}/{total}, ошибок {failed}")
 
+async def edit_broadcast_time(query, context):
+    """Возвращает к редактированию времени."""
+    context.user_data['broadcast_step'] = 'time'
+    
+    keyboard = [
+        [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        "<b>✏️ ИЗМЕНЕНИЕ ВРЕМЕНИ</b>\n\n"
+        "Введите новое <b>время окончания технических работ</b> в формате:\n"
+        "<code>ДД.ММ ЧЧ:ММ</code>\n\n"
+        "Пример: <code>05.02 18:30</code>",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
 
 async def cancel_broadcast(query, context):
     """Отменяет рассылку."""
@@ -1321,29 +1345,10 @@ async def cancel_broadcast(query, context):
     
     await query.edit_message_text(
         "<b>❌ РАССЫЛКА ОТМЕНЕНА</b>\n"
-        "Сообщение не было отправлено никому.",
+        "Уведомление не было отправлено никому.",
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
-
-async def edit_broadcast(query, context):
-    """Возвращает к редактированию сообщения."""
-    context.user_data['broadcast_step'] = 'message'
-    
-    keyboard = [
-        [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
-        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "<b>✏️ РЕДАКТИРОВАНИЕ СООБЩЕНИЯ</b>\n\n"
-        "Введите новый текст сообщения для рассылки:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
-
 
 #================== ДОБАВЛЕНА ФУНКЦИЯ ПОКАЗА ДАТЫ ВЫБОРА ==================
 async def show_date_selection(query, context):
@@ -1377,7 +1382,6 @@ async def show_date_selection(query, context):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 #================== КОМАНДА /start С СОХРАНЕНИЕМ ПОЛЬЗОВАТЕЛЯ ==================
 async def start(update: Update, context: CallbackContext):
@@ -1413,7 +1417,6 @@ async def start(update: Update, context: CallbackContext):
         logger.error(f"Ошибка в команде start: {e}")
         await update.message.reply_text("Произошла ошибка. Попробуйте позже.")
 
-
 #================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ КНОПКИ СТАРТ ==================
 def add_start_button(keyboard=None):
     """Добавляет кнопку 'Старт' в клавиатуру."""
@@ -1422,10 +1425,7 @@ def add_start_button(keyboard=None):
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     return keyboard
 
-
 #================== ФУНКЦИИ ДЛЯ "СЕЙЧАС" ==================
-# ... [остальные функции без изменений: show_now_class_selection, show_current_lesson] ...
-
 async def show_now_class_selection(query, context):
     """Показывает выбор класса для функции 'Сейчас'."""
     keyboard = [
@@ -1444,7 +1444,6 @@ async def show_now_class_selection(query, context):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def show_current_lesson(query, context):
     """Показывает текущий/следующий урок для выбранного класса с защитой от ошибки 'message not modified'."""
@@ -1567,7 +1566,6 @@ async def show_current_lesson(query, context):
         else:
             raise
 
-
 #================== ОБРАБОТЧИК ВСЕХ КНОПОК ==================
 async def button_handler(update: Update, context: CallbackContext):
     """Обработка нажатий на inline-кнопки."""
@@ -1584,7 +1582,7 @@ async def button_handler(update: Update, context: CallbackContext):
         logger.error(f"Ошибка при ответе на callback: {e}")
         return
     
-    # Обработка рассылки
+    # Обработка рассылки технических уведомлений
     if 'broadcasting' in context.user_data:
         if query.data == 'cancel_broadcast':
             await cancel_broadcast(query, context)
@@ -1592,8 +1590,8 @@ async def button_handler(update: Update, context: CallbackContext):
         elif query.data == 'confirm_broadcast':
             await confirm_broadcast(query, context)
             return
-        elif query.data == 'edit_broadcast':
-            await edit_broadcast(query, context)
+        elif query.data == 'edit_broadcast_time':
+            await edit_broadcast_time(query, context)
             return
     
     # Обработка добавления замен
@@ -1665,7 +1663,7 @@ async def button_handler(update: Update, context: CallbackContext):
         elif query.data == 'admin_clear_confirm':
             await clear_all_substitutions(query)
         elif query.data == 'admin_broadcast':
-            await start_broadcast(query, context)
+            await start_technical_broadcast(query, context)
         elif query.data == 'admin_users':
             await show_users_stats(query, context)
         elif query.data.startswith('teacher_search_'):
@@ -1708,7 +1706,6 @@ async def button_handler(update: Update, context: CallbackContext):
             parse_mode='HTML'
         )
 
-
 async def show_main_menu(query):
     """Показывает главное меню с кнопкой 'Сейчас'."""
     keyboard = [
@@ -1727,7 +1724,6 @@ async def show_main_menu(query):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def show_teacher_menu(query, context):
     """Показывает меню учителей."""
@@ -1758,7 +1754,6 @@ async def show_teacher_menu(query, context):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 # ... [остальные функции без изменений: show_teacher_schedule, show_bells_schedule, show_class_selection, 
 #      show_day_selection_for_class, show_daily_schedule, show_weekly_schedule, show_substitutions_menu,
@@ -1820,13 +1815,11 @@ async def show_teacher_schedule(query, context):
             parse_mode='HTML'
         )
 
-
 async def show_bells_schedule(query):
     """Показывает расписание звонков."""
     keyboard = add_start_button()
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(BELLS_SCHEDULE_HTML, reply_markup=reply_markup, parse_mode='HTML')
-
 
 async def show_class_selection(query):
     """Показывает выбор класса для просмотра расписания."""
@@ -1847,7 +1840,6 @@ async def show_class_selection(query):
         parse_mode='HTML'
     )
 
-
 async def show_day_selection_for_class(query, context):
     """Показывает выбор дня недели для класса."""
     class_name = query.data.replace('class_', '')
@@ -1867,7 +1859,6 @@ async def show_day_selection_for_class(query, context):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def show_daily_schedule(query, context):
     """Показывает расписание на день."""
@@ -1916,7 +1907,6 @@ async def show_daily_schedule(query, context):
         parse_mode='HTML'
     )
 
-
 async def show_weekly_schedule(query, context):
     """Показывает расписание на всю неделю."""
     class_name = query.data.replace('weekly_', '')
@@ -1938,7 +1928,6 @@ async def show_weekly_schedule(query, context):
         parse_mode='HTML'
     )
 
-
 async def show_substitutions_menu(query):
     """Показывает меню замен."""
     keyboard = [
@@ -1954,7 +1943,6 @@ async def show_substitutions_menu(query):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def show_substitutions_for_date(query):
     """Показывает замены на конкретную дату."""
@@ -1984,7 +1972,6 @@ async def show_substitutions_for_date(query):
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
-
 async def show_all_substitutions(query):
     """Показывает все замены."""
     subs = db.get_all_substitutions()
@@ -2011,7 +1998,6 @@ async def show_all_substitutions(query):
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
-
 async def show_help(query):
     """Показывает справку."""
     help_text = """
@@ -2036,7 +2022,6 @@ async def show_help(query):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(help_text, reply_markup=reply_markup, parse_mode='HTML')
 
-
 async def show_admin_panel(query):
     """Показывает админ-панель."""
     if query.from_user.id not in ADMIN_IDS:
@@ -2045,10 +2030,10 @@ async def show_admin_panel(query):
     
     keyboard = [
         [InlineKeyboardButton("➕ Добавить замену", callback_data='admin_add_sub')],
+        [InlineKeyboardButton("📢 Отправить уведомление", callback_data='admin_broadcast')],
         [InlineKeyboardButton("📋 Просмотреть все замены", callback_data='admin_view_subs')],
         [InlineKeyboardButton("🗑️ Удалить замену", callback_data='admin_delete_sub')],
         [InlineKeyboardButton("🧹 Очистка замен", callback_data='admin_clear_subs')],
-        [InlineKeyboardButton("📢 Отправить сообщение всем", callback_data='admin_broadcast')],
         [InlineKeyboardButton("👥 Статистика пользователей", callback_data='admin_users')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -2059,7 +2044,6 @@ async def show_admin_panel(query):
         parse_mode='HTML'
     )
 
-
 async def start_adding_substitution(query, context):
     """Начинает процесс добавления замены."""
     if query.from_user.id not in ADMIN_IDS:
@@ -2068,7 +2052,6 @@ async def start_adding_substitution(query, context):
     context.user_data['adding_substitution'] = True
     context.user_data['step'] = 'date'
     await show_date_selection(query, context)
-
 
 # ... [остальные функции без изменений: show_admin_substitutions, request_substitution_deletion, 
 #      confirm_clear_substitutions, clear_all_substitutions, show_searched_teacher_schedule] ...
@@ -2099,7 +2082,6 @@ async def show_admin_substitutions(query):
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
-
 async def request_substitution_deletion(query):
     """Запрашивает ID замены для удаления."""
     if query.from_user.id not in ADMIN_IDS:
@@ -2110,7 +2092,6 @@ async def request_substitution_deletion(query):
         "Введите <b>ID замены</b> для удаления (посмотрите ID в списке всех замен):",
         parse_mode='HTML'
     )
-
 
 async def confirm_clear_substitutions(query):
     """Запрашивает подтверждение очистки замен."""
@@ -2139,7 +2120,6 @@ async def confirm_clear_substitutions(query):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def clear_all_substitutions(query):
     """Очищает все замены."""
@@ -2178,7 +2158,6 @@ async def clear_all_substitutions(query):
             reply_markup=reply_markup,
             parse_mode='HTML'
         )
-
 
 async def show_searched_teacher_schedule(query, context):
     """Показывает расписание найденного учителя."""
@@ -2226,10 +2205,7 @@ async def show_searched_teacher_schedule(query, context):
             parse_mode='HTML'
         )
 
-
 # ================== ОБРАБОТКА ШАГОВ ДОБАВЛЕНИЯ ЗАМЕНЫ С НАВИГАЦИЕЙ "НАЗАД" ==================
-# ... [функция handle_adding_substitution без изменений, но с исправленной фильтрацией учителей] ...
-
 async def handle_adding_substitution(query, context):
     """Обрабатывает шаги добавления замены через меню с полной навигацией 'назад'."""
     step = context.user_data.get('step')
@@ -2366,7 +2342,6 @@ async def handle_adding_substitution(query, context):
     # ⚠️ Если шаг не распознан — показываем текущий шаг
     await query.answer("⚠️ Неизвестное действие. Пожалуйста, используйте кнопки навигации.", show_alert=True)
 
-
 # ================== УЛУЧШЕННЫЕ ФУНКЦИИ ПОКАЗА ШАГОВ ==================
 # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: УБРАНА ФИЛЬТРАЦИЯ УЧИТЕЛЕЙ ПРИ ВЫБОРЕ НОВОГО УЧИТЕЛЯ
 
@@ -2402,7 +2377,6 @@ async def show_class_selection_for_substitution(query, context):
         parse_mode='HTML'
     )
 
-
 async def show_lesson_selection(query, context):
     """Показывает выбор урока с кнопкой 'назад' к классу."""
     keyboard = []
@@ -2435,7 +2409,6 @@ async def show_lesson_selection(query, context):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def show_subject_selection(query, context, is_old=True):
     """Показывает выбор предмета с кнопками 'назад' к предыдущему шагу."""
@@ -2484,7 +2457,6 @@ async def show_subject_selection(query, context, is_old=True):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def show_teacher_selection(query, context, is_old=True):
     """Показывает выбор учителя с кнопками 'назад' к предыдущему шагу."""
@@ -2548,7 +2520,6 @@ async def show_teacher_selection(query, context, is_old=True):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 async def save_substitution(query, context):
     """Сохраняет замену в БД и отправляет уведомление новому учителю."""
@@ -2614,7 +2585,6 @@ async def save_substitution(query, context):
             parse_mode='HTML'
         )
 
-
 #================== ОБРАБОТКА СООБЩЕНИЙ ==================
 async def handle_message(update: Update, context: CallbackContext):
     """Обработка текстовых сообщений."""
@@ -2624,9 +2594,9 @@ async def handle_message(update: Update, context: CallbackContext):
     if not isinstance(context.user_data, dict):
         context.user_data = {}
     
-    # Обработка рассылки
-    if context.user_data.get('broadcasting') and context.user_data.get('broadcast_step') == 'message':
-        await handle_broadcast_message(update, context)
+    # Обработка ввода времени для рассылки технических уведомлений
+    if context.user_data.get('broadcasting') and context.user_data.get('broadcast_step') == 'time':
+        await handle_broadcast_time(update, context)
         return
     
     # Обработка поиска учителя
@@ -2683,9 +2653,7 @@ async def handle_message(update: Update, context: CallbackContext):
     else:
         await handle_teacher_mentions(update, context)
 
-
-#================== УВЕДОМЛЕНИЯ УЧИТЕЛЯМ ==================
-# ... [функция handle_teacher_mentions без изменений] ...
+# ... [остальные функции без изменений: handle_teacher_mentions, test_notification, teachers_list] ...
 
 async def handle_teacher_mentions(update: Update, context: CallbackContext):
     """Проверяет сообщения на упоминания учителей."""
@@ -2758,10 +2726,6 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
                     reply_markup=reply_markup,
                     parse_mode='HTML'
                 )
-
-
-#================== ТЕСТОВАЯ КОМАНДА ==================
-# ... [функции test_notification и teachers_list без изменений] ...
 
 async def test_notification(update: Update, context: CallbackContext):
     """Тестовая команда для проверки уведомлений."""
@@ -2836,7 +2800,6 @@ async def test_notification(update: Update, context: CallbackContext):
                 parse_mode='HTML'
             )
 
-
 async def teachers_list(update: Update, context: CallbackContext):
     """Команда для отображения списка всех учителей."""
     all_teachers = get_all_teachers()
@@ -2866,7 +2829,6 @@ async def teachers_list(update: Update, context: CallbackContext):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 
 #================== ГЛАВНАЯ ФУНКЦИЯ ==================
 def main():
@@ -2918,7 +2880,6 @@ def main():
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
         logger.critical(f"Критическая ошибка: {e}")
-
 
 if __name__ == '__main__':
     main()
