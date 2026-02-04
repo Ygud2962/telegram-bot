@@ -8,6 +8,7 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
+    # Таблица замен
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS substitutions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,17 +23,22 @@ def init_db():
         )
     ''')
     
+    # Таблица пользователей (для рассылки)
     cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_date ON substitutions(date)
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            language_code TEXT,
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
     ''')
     
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_class_date ON substitutions(class_name, date)
-    ''')
-    
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_teacher_date ON substitutions(new_teacher, date)
-    ''')
+    # Индексы для оптимизации
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_teacher_date ON substitutions(new_teacher, date)')
     
     conn.commit()
     conn.close()
@@ -43,21 +49,74 @@ def update_database_structure():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Проверяем наличие всех необходимых индексов
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_date ON substitutions(date)
-    ''')
+    # Проверяем наличие таблицы пользователей
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                language_code TEXT,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        print("✅ Добавлена таблица пользователей")
     
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_class_date ON substitutions(class_name, date)
-    ''')
+    # Проверяем наличие индексов
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sub_date'")
+    if not cursor.fetchone():
+        cursor.execute('CREATE INDEX idx_sub_date ON substitutions(date)')
+        print("✅ Добавлен индекс idx_sub_date")
     
-    cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_teacher_date ON substitutions(new_teacher, date)
-    ''')
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sub_class_date'")
+    if not cursor.fetchone():
+        cursor.execute('CREATE INDEX idx_sub_class_date ON substitutions(class_name, date)')
+        print("✅ Добавлен индекс idx_sub_class_date")
+    
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sub_teacher_date'")
+    if not cursor.fetchone():
+        cursor.execute('CREATE INDEX idx_sub_teacher_date ON substitutions(new_teacher, date)')
+        print("✅ Добавлен индекс idx_sub_teacher_date")
     
     conn.commit()
     conn.close()
+
+def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
+    """Добавляет или обновляет пользователя в базе данных."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, language_code)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (user_id, username, first_name, last_name, language_code))
+    
+    conn.commit()
+    conn.close()
+
+def get_all_users():
+    """Возвращает список всех пользователей."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT user_id, username, first_name, last_name FROM users')
+    users = cursor.fetchall()
+    
+    conn.close()
+    return users
+
+def get_user_count():
+    """Возвращает количество пользователей."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT COUNT(*) FROM users')
+    count = cursor.fetchone()[0]
+    
+    conn.close()
+    return count
 
 def add_substitution(date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name):
     """Добавление замены в базу данных."""
