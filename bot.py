@@ -2476,7 +2476,7 @@ async def show_teacher_selection(query, context, is_old=True):
         if len(row) == 2:
             keyboard.append(row)
             row = []
-        if i >= 24:  # Ограничиваем до 25 учителей для удобства
+        if i >= 40:  # Ограничиваем до 25 учителей для удобства
             break
     
     if row:
