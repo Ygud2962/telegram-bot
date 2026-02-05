@@ -208,17 +208,3 @@ def clear_all_substitutions():
     conn.commit()
     conn.close()
     print("✅ Все замены удалены")
-    def add_or_update_user_bulk(user_data_list):
-    """Добавляет или обновляет несколько пользователей за раз."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    for user_data in user_data_list:
-        user_id, username, first_name, last_name, language_code = user_data
-        cursor.execute('''
-            INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, language_code)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (user_id, username, first_name, last_name, language_code))
-    
-    conn.commit()
-    conn.close()
