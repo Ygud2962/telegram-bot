@@ -1233,7 +1233,7 @@ async def handle_broadcast_time(update: Update, context: CallbackContext):
     )
 
 async def confirm_broadcast(query, context):
-    """Подтверждает и отправляет рассылку всем пользователям."""
+    """Подтверждает и отправляет рассылку всем пользователям и учителям."""
     if query.from_user.id not in ADMIN_IDS:
         return
     
@@ -1252,40 +1252,62 @@ async def confirm_broadcast(query, context):
         f"Бот возобновит работу сразу после окончания работ."
     )
     
-    users = db.get_all_users()
+    # Собираем ВСЕХ получателей: пользователи из БД + учителя из списка
+     users = db.get_all_users()
     total = len(users)
+
+    # Добавляем всех учителей из TEACHER_IDS, у которых есть валидный ID
+    teacher_ids = []
+    for teacher_name, teacher_id in TEACHER_IDS.items():
+        if teacher_id and teacher_id != 0:
+            teacher_ids.append(teacher_id)
+    
+    # Объединяем и убираем дубликаты (чтобы не отправлять дважды)
+    all_receivers = list(set(user_ids + teacher_ids))
+    total = len(all_receivers)
+    
+    if total == 0:
+        await query.edit_message_text(
+            "<b>❌ Нет получателей для рассылки.</b>",
+            parse_mode='HTML'
+        )
+        context.user_data.clear()
+        return
+    
     sent = 0
     failed = 0
+    failed_ids = []  # Для отчета о неудачных отправках
     
     # Отправляем уведомление админу о начале рассылки
     status_message = await query.edit_message_text(
         f"<b>📤 НАЧАТА РАССЫЛКА</b>\n"
-        f"Всего пользователей: <b>{total}</b>\n"
+        f"Всего получателей: <b>{total}</b>\n"
         f"Отправлено: <b>{sent}</b>\n"
         f"Ошибок: <b>{failed}</b>\n"
         f"Статус: ⏳ В процессе...",
         parse_mode='HTML'
     )
     
-    # Отправляем сообщение каждому пользователю
-    for i, (user_id, username, first_name, last_name) in enumerate(users):
+    # Отправляем сообщение каждому получателю
+    for i, chat_id in enumerate(all_receivers):
         try:
             await context.bot.send_message(
-                chat_id=user_id,
+                chat_id=chat_id,
                 text=broadcast_message,
                 parse_mode='HTML'
             )
             sent += 1
         except Exception as e:
             failed += 1
-            logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
+            failed_ids.append((chat_id, str(e)))
+            logger.warning(f"Не удалось отправить сообщение пользователю {chat_id}: {e}")
         
         # Обновляем статус каждые 5 пользователей
         if i % 5 == 0 or i == total - 1:
             try:
                 await status_message.edit_text(
                     f"<b>📤 РАССЫЛКА В ПРОЦЕССЕ</b>\n"
-                    f"Всего пользователей: <b>{total}</b>\n"
+                    f"Всего получателей: <b>{total}</b>\n"
                     f"Успешно отправлено: <b>{sent}</b>\n"
                     f"Ошибок: <b>{failed}</b>\n"
                     f"Статус: {'✅ Завершено' if i == total - 1 else '⏳ В процессе...'}",
@@ -1294,7 +1316,37 @@ async def confirm_broadcast(query, context):
             except Exception as e:
                 logger.warning(f"Не удалось обновить статус рассылки: {e}")
     
-    # Финальное сообщение
+    # Формируем подробный отчет
+    report_text = (
+        f"<b>✅ РАССЫЛКА ЗАВЕРШЕНА</b>\n"
+        f"Всего получателей: <b>{total}</b>\n"
+        f"Успешно отправлено: <b>{sent}</b>\n"
+        f"Ошибок: <b>{failed}</b>\n\n"
+    )
+    
+    if failed > 0:
+        report_text += "<b>⚠️ Ошибки отправки:</b>\n"
+        # Группируем ошибки по типу
+        error_counts = {}
+        for chat_id, error_msg in failed_ids:
+            if "chat not found" in error_msg.lower():
+                error_type = "Пользователь не начинал диалог с ботом"
+            elif "blocked" in error_msg.lower():
+                error_type = "Пользователь заблокировал бота"
+            elif "user is deactivated" in error_msg.lower():
+                error_type = "Аккаунт удален/деактивирован"
+            else:
+                error_type = "Другие ошибки"
+            
+            error_counts[error_type] = error_counts.get(error_type, 0) + 1
+        
+        for error_type, count in error_counts.items():
+            report_text += f"• {error_type}: <b>{count}</b>\n"
+        
+        report_text += f"\n<i>Детальный лог ошибок в консоли Render</i>\n\n"
+    
+    report_text += f"<b>Текст уведомления:</b>\n{broadcast_message}"
+    
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -1302,17 +1354,13 @@ async def confirm_broadcast(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await status_message.edit_text(
-        f"<b>✅ РАССЫЛКА ЗАВЕРШЕНА</b>\n"
-        f"Всего пользователей: <b>{total}</b>\n"
-        f"Успешно отправлено: <b>{sent}</b>\n"
-        f"Ошибок: <b>{failed}</b>\n\n"
-        f"<b>Текст уведомления:</b>\n{broadcast_message}",
+        report_text,
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
     
     context.user_data.clear()
-    logger.info(f"Рассылка завершена: отправлено {sent}/{total}, ошибок {failed}")
+    logger.info(f"Рассылка завершена: всего {total}, отправлено {sent}, ошибок {failed}")
 
 async def edit_broadcast_time(query, context):
     """Возвращает к редактированию времени."""
