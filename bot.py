@@ -942,8 +942,19 @@ def get_teacher_schedule(teacher_name):
     return schedule
 
 def format_teacher_schedule(teacher_name, schedule):
-    """Форматирует расписание учителя с учетом ВСЕХ замен."""
+    """Форматирует расписание учителя с отметкой текущего урока (🟢)."""
     today = datetime.now().date()
+    
+    # === ОПРЕДЕЛЕНИЕ ТЕКУЩЕГО УРОКА ДЛЯ ОТМЕТКИ ===
+    tz_minsk = pytz.timezone('Europe/Minsk')
+    now = datetime.now(tz_minsk)
+    current_weekday = now.weekday()
+    current_day_name = DAYS_OF_WEEK[current_weekday] if current_weekday < 5 else ("Суббота" if current_weekday == 5 else "Воскресенье")
+    
+    # Получаем информацию о текущем уроке (только если он идёт прямо сейчас)
+    current_lesson_info = get_current_lesson_info()
+    current_lesson_number = current_lesson_info['number'] if current_lesson_info['status'] == 'lesson' else None
+    
     teacher_substitutions = {}
     for i in range(30):
         target_date = today + timedelta(days=i)
@@ -951,8 +962,10 @@ def format_teacher_schedule(teacher_name, schedule):
         subs = db.get_substitutions_by_teacher_and_date(teacher_name, date_str)
         if subs:
             teacher_substitutions[date_str] = subs
+    
     text = f"<b>👨‍🏫 {teacher_name}</b>\n"
     text += "=" * 30 + "\n"
+    
     if schedule:
         total_lessons = sum(len(lessons) for lessons in schedule.values())
         classes = set()
@@ -967,35 +980,52 @@ def format_teacher_schedule(teacher_name, schedule):
         text += f"• Предметы: <b>{', '.join(sorted(subjects))}</b>\n"
     else:
         text += "<i>❌ Нет уроков в расписании</i>\n"
+    
     total_subs = sum(len(subs) for subs in teacher_substitutions.values())
     if total_subs > 0:
         text += f"• <b>⚠️ Замен: {total_subs}</b>\n"
+    
     text += "\n" + "=" * 30 + "\n"
     text += "<b>📅 ОСНОВНОЕ РАСПИСАНИЕ:</b>\n"
+    
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
     has_main_schedule = False
+    
     for day in days_order:
         if day in schedule and schedule[day]:
             has_main_schedule = True
             text += f"<b>{day.upper()}</b>\n"
             text += "─" * 18 + "\n"
             sorted_lessons = sorted(schedule[day], key=lambda x: x['number'])
+            
             for lesson in sorted_lessons:
+                # Формируем базовые элементы урока
                 if 1 <= lesson['number'] <= 7:
                     emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson['number'] - 1]
                     lesson_marker = emoji
                 else:
                     lesson_marker = f"{lesson['number']}."
+                
                 col1 = f"{lesson_marker} <b>{lesson['time']}</b>"
                 col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']}"
                 teachers = lesson['full_teacher'].split('/')
                 if len(teachers) > 1:
                     col2 += " <i>(с совм.)</i>"
-                text += f"{col1}   {col2}\n"
+                
+                # 🔑 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Добавляем 🟢 если это текущий урок сегодня
+                if day == current_day_name and lesson['number'] == current_lesson_number:
+                    text += f"🟢 {col1}   {col2}\n"
+                else:
+                    text += f"{col1}   {col2}\n"
+            
             text += "\n"
+    
     if not has_main_schedule:
         text += "<i>Нет уроков на неделю</i>\n"
+    
     text += "=" * 30 + "\n"
+    
+    # Раздел замен остаётся без изменений (без 🟢, так как замены на будущее)
     if teacher_substitutions:
         text += "<b>🔄 ЗАМЕНЫ (30 дней):</b>\n"
         current_date = today
@@ -1037,8 +1067,9 @@ def format_teacher_schedule(teacher_name, schedule):
     else:
         text += "<b>🔄 ЗАМЕНЫ:</b>\n"
         text += "<i>На ближайшие 30 дней замен нет</i>\n"
+    
     text += "\n" + "=" * 30 + "\n"
-    text += f"<i>ℹ️ Расписание и замены на 30 дней</i>"
+    text += f"<i>ℹ️ 🟢 — текущий урок | Расписание и замены на 30 дней</i>"
     return text
 
 async def send_substitution_notification(context, teacher_name, substitution_data):
@@ -1765,7 +1796,7 @@ async def button_handler(update: Update, context: CallbackContext):
         return
     
     # Обработка рассылки технических уведомлений
-    if 'broadcasting' in context.user_data:
+    if 'broadcasting' in context.user_
         if query.data == 'cancel_broadcast':
             await cancel_broadcast(query, context)
             return
@@ -1777,7 +1808,7 @@ async def button_handler(update: Update, context: CallbackContext):
             return
     
     # Обработка управления техрежимом
-    if 'setting_maintenance' in context.user_data:
+    if 'setting_maintenance' in context.user_
         if query.data == 'set_maintenance_until':
             await set_maintenance_until(query, context)
             return
@@ -1862,7 +1893,7 @@ async def button_handler(update: Update, context: CallbackContext):
         elif query.data in ['back_to_date', 'back_to_day', 'back_to_class', 'back_to_lesson',
                            'back_to_old_subject', 'back_to_new_subject', 'back_to_old_teacher', 'back_to_new_teacher',
                            'cancel_adding']:
-            if 'adding_substitution' in context.user_data:
+            if 'adding_substitution' in context.user_
                 await handle_adding_substitution(query, context)
             else:
                 await show_main_menu(query)
