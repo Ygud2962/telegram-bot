@@ -69,7 +69,9 @@ SUBJECTS = [
     "История", "География", "Физкультура", "ОБЖ", "Трудовое обучение",
     "Искусство", "Астрономия", "ЧЗС", "Черчение", "ДП", "МП", "Человек и мир"
 ]
-DAYS_OF_WEEK = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+# 🔑 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: УБРАНЫ СУББОТА И ВОСКРЕСЕНЬЕ
+DAYS_OF_WEEK = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]  # Только будние дни!
+
 BELLS_SCHEDULE_HTML = """
 🕐 РАСПИСАНИЕ ЗВОНКОВ И ПИТАНИЯ
 ─────────────────────────────────
@@ -90,8 +92,9 @@ BELLS_SCHEDULE_HTML = """
 """
 
 #================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
+# ⚠️ ВАЖНО: В реальном проекте здесь должен быть ПОЛНЫЙ словарь расписания для всех классов БЕЗ СУББОТЫ!
 SCHEDULE_STRUCTURED = {
-   '5а': {
+    '5а': {
         'Понедельник': [
             (1, 'Математика', 'Коротчикова Л.В.'),
             (2, 'Физкультура', 'Вергейчик В.Л.'),
@@ -1571,14 +1574,14 @@ async def disable_maintenance_mode(query, context):
 
 #================== ДОБАВЛЕНА ФУНКЦИЯ ПОКАЗА ДАТЫ ВЫБОРА (ТОЛЬКО БУДНИЕ ДНИ) ==================
 async def show_date_selection(query, context):
-    """Показывает выбор даты для добавления замены (только будние дни: Пн-Пт)."""
+    """Показывает выбор даты для добавления замены (ТОЛЬКО будние дни: Пн-Пт)."""
     tz_minsk = pytz.timezone('Europe/Minsk')
     today = datetime.now(tz_minsk).date()
     keyboard = []
     days_shown = 0
     max_days = 10  # Показываем максимум 10 будних дней вперёд
     
-    # Показываем даты только с понедельника по пятницу
+    # Показываем даты ТОЛЬКО с понедельника по пятницу
     current_date = today
     while days_shown < max_days:
         weekday = current_date.weekday()
@@ -1813,8 +1816,20 @@ async def button_handler(update: Update, context: CallbackContext):
         logger.error(f"Ошибка при ответе на callback: {e}")
         return
     
+    # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: ОБРАБОТКА ДОБАВЛЕНИЯ ЗАМЕНЫ ДО ВСЕХ ОСТАЛЬНЫХ ПРОВЕРОК
+    if context.user_data.get('adding_substitution'):
+        try:
+            await handle_adding_substitution(query, context)
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении замены: {e}")
+            await query.edit_message_text(
+                f"❌ Произошла ошибка: {str(e)[:100]}",
+                parse_mode='HTML'
+            )
+        return
+    
     # Обработка рассылки технических уведомлений
-    if 'broadcasting' in context.user_data:
+    if context.user_data.get('broadcasting'):
         if query.data == 'cancel_broadcast':
             await cancel_broadcast(query, context)
             return
@@ -1826,7 +1841,7 @@ async def button_handler(update: Update, context: CallbackContext):
             return
     
     # Обработка управления техрежимом
-    if 'setting_maintenance' in context.user_data:
+    if context.user_data.get('setting_maintenance'):
         if query.data == 'set_maintenance_until':
             await set_maintenance_until(query, context)
             return
@@ -1907,7 +1922,7 @@ async def button_handler(update: Update, context: CallbackContext):
             return
         elif query.data.startswith('teacher_search_'):
             await show_searched_teacher_schedule(query, context)
-        # Обработка навигации "назад" в добавлении замен
+        # Обработка навигации "назад" в добавлении замен (БЕЗ 'back_to_day'!)
         elif query.data in ['back_to_date', 'back_to_class', 'back_to_lesson',
                            'back_to_old_subject', 'back_to_new_subject', 'back_to_old_teacher', 'back_to_new_teacher',
                            'cancel_adding']:
@@ -2424,12 +2439,12 @@ async def handle_adding_substitution(query, context):
             parse_mode='HTML'
         )
         return
-    # 🔙 ОБРАБОТКА КНОПОК "НАЗАД" НА КАЖДОМ ШАГЕ (без шага 'day')
+    # 🔙 ОБРАБОТКА КНОПОК "НАЗАД" НА КАЖДОМ ШАГЕ (БЕЗ ШАГА 'day'!)
     if query.data == 'back_to_date':
         context.user_data['step'] = 'date'
         await show_date_selection(query, context)
         return
-    elif query.data == 'back_to_class':
+    elif query.data == 'back_to_class':  # УБРАНА КНОПКА 'back_to_day'
         context.user_data['step'] = 'date'  # Возвращаемся к выбору даты
         await show_date_selection(query, context)
         return
@@ -2474,7 +2489,8 @@ async def handle_adding_substitution(query, context):
                 logger.error(f"Ошибка при определении дня недели: {e}")
                 context.user_data['day'] = "Неизвестно"
             
-            context.user_data['step'] = 'class'  # Пропускаем выбор дня недели — он определён автоматически
+            # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Пропускаем шаг выбора дня недели — он определён автоматически!
+            context.user_data['step'] = 'class'
             await show_class_selection_for_substitution(query, context)
             return
     # 🏫 ШАГ 2: Выбор класса (после даты)
