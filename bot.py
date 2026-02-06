@@ -90,8 +90,6 @@ BELLS_SCHEDULE_HTML = """
 """
 
 #================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
-# ⚠️ ВАЖНО: Скопируйте ПОЛНЫЙ словарь SCHEDULE_STRUCTURED из вашего файла сюда!
-# Для краткости в этом ответе я оставлю только часть, но в реальном коде должен быть полный словарь
 SCHEDULE_STRUCTURED = {
     '5а': {
         'Понедельник': [
@@ -1767,7 +1765,7 @@ async def button_handler(update: Update, context: CallbackContext):
         return
     
     # Обработка рассылки технических уведомлений
-    if 'broadcasting' in context.user_
+    if 'broadcasting' in context.user_data:
         if query.data == 'cancel_broadcast':
             await cancel_broadcast(query, context)
             return
@@ -1779,7 +1777,7 @@ async def button_handler(update: Update, context: CallbackContext):
             return
     
     # Обработка управления техрежимом
-    if 'setting_maintenance' in context.user_
+    if 'setting_maintenance' in context.user_data:
         if query.data == 'set_maintenance_until':
             await set_maintenance_until(query, context)
             return
@@ -1789,18 +1787,6 @@ async def button_handler(update: Update, context: CallbackContext):
         elif query.data == 'skip_maintenance_message':
             await skip_maintenance_message(query, context)
             return
-    
-    # Обработка добавления замен
-    if 'adding_substitution' in context.user_
-        try:
-            await handle_adding_substitution(query, context)
-        except Exception as e:
-            logger.error(f"Ошибка при добавлении замены: {e}")
-            await query.edit_message_text(
-                f"❌ Произошла ошибка: {str(e)[:100]}",
-                parse_mode='HTML'
-            )
-        return
     
     if query.data == 'back_to_main':
         await show_main_menu(query)
@@ -1876,7 +1862,7 @@ async def button_handler(update: Update, context: CallbackContext):
         elif query.data in ['back_to_date', 'back_to_day', 'back_to_class', 'back_to_lesson',
                            'back_to_old_subject', 'back_to_new_subject', 'back_to_old_teacher', 'back_to_new_teacher',
                            'cancel_adding']:
-            if 'adding_substitution' in context.user_
+            if 'adding_substitution' in context.user_data:
                 await handle_adding_substitution(query, context)
             else:
                 await show_main_menu(query)
