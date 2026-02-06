@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, CallbackContext
-from telegram.error import TimedOut, NetworkError, BadRequest
+from telegram.error import TimedOut, NetworkError, BadRequest, Forbidden
 import database as db
 import os
 import pytz  # pip install pytz
@@ -13,7 +13,7 @@ TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
-    
+
 print("Бот запускается с токеном из переменных окружения")
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1283,7 +1283,7 @@ async def handle_broadcast_time(update: Update, context: CallbackContext):
     )
 
 async def confirm_broadcast(query, context):
-    """Подтверждает и отправляет рассылку всем пользователям."""
+    """Подтверждает и отправляет рассылку ВСЕМ пользователям из базы данных."""
     if query.from_user.id not in ADMIN_IDS:
         return
     broadcast_time = context.user_data.get('broadcast_time')
@@ -1312,7 +1312,7 @@ async def confirm_broadcast(query, context):
         f"Статус: ⏳ В процессе...",
         parse_mode='HTML'
     )
-    # Отправляем сообщение каждому пользователю
+    # Отправляем сообщение КАЖДОМУ пользователю из базы данных
     for i, (user_id, username, first_name, last_name) in enumerate(users):
         try:
             await context.bot.send_message(
@@ -1321,6 +1321,10 @@ async def confirm_broadcast(query, context):
                 parse_mode='HTML'
             )
             sent += 1
+        except Forbidden as e:
+            # Пользователь заблокировал бота — пропускаем без ошибки
+            failed += 1
+            logger.warning(f"Пользователь {user_id} заблокировал бота: {e}")
         except Exception as e:
             failed += 1
             logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
@@ -1597,14 +1601,10 @@ async def show_date_selection(query, context):
         parse_mode='HTML'
     )
 
-#================== КОМАНДА /start С СОХРАНЕНИЕМ ПОЛЬЗОВАТЕЛЯ ==================
+#================== КОМАНДА /start С СОХРАНЕНИЕМ ПОЛЬЗОВАТЕЛЯ ДО ПРОВЕРКИ ТЕХРЕЖИМА ==================
 async def start(update: Update, context: CallbackContext):
-    """Главное меню бота с сохранением пользователя в БД."""
-    # Проверяем техрежим ДО сохранения пользователя
-    if await check_maintenance_mode(update, context):
-        return
-    
-    # Сохраняем пользователя в базу данных
+    """Главное меню бота с сохранением пользователя в БД ДО проверки техрежима."""
+    # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Сначала сохраняем пользователя, ПОТОМ проверяем техрежим
     user = update.effective_user
     db.add_user(
         user_id=user.id,
@@ -1613,6 +1613,11 @@ async def start(update: Update, context: CallbackContext):
         last_name=user.last_name,
         language_code=user.language_code
     )
+    
+    # Проверяем техрежим ПОСЛЕ сохранения пользователя
+    if await check_maintenance_mode(update, context):
+        return
+    
     keyboard = [
         [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
         [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
@@ -1781,6 +1786,16 @@ async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     if not isinstance(context.user_data, dict):
         context.user_data = {}
+    
+    # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Сохраняем пользователя при нажатии кнопок тоже
+    user = query.from_user
+    db.add_user(
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        language_code=user.language_code
+    )
     
     # Проверяем техрежим ДО обработки любого действия
     if await check_maintenance_mode(update, context):
@@ -2736,7 +2751,17 @@ async def handle_message(update: Update, context: CallbackContext):
     if not update.message or not update.message.text:
         return
     
-    # Проверяем техрежим ДО обработки сообщения
+    # 🔑 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Сохраняем пользователя при получении любого сообщения
+    user = update.effective_user
+    db.add_user(
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        language_code=user.language_code
+    )
+    
+    # Проверяем техрежим ПОСЛЕ сохранения пользователя
     if await check_maintenance_mode(update, context):
         return
     
