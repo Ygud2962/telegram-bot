@@ -35,6 +35,17 @@ def init_db():
         )
     ''')
     
+    # Таблица статуса бота (техрежим)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bot_status (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            maintenance_mode INTEGER DEFAULT 0,
+            maintenance_until TEXT DEFAULT NULL,
+            maintenance_message TEXT DEFAULT NULL
+        )
+    ''')
+    cursor.execute('INSERT OR IGNORE INTO bot_status (id, maintenance_mode) VALUES (1, 0)')
+    
     # Индексы для оптимизации
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
@@ -63,6 +74,20 @@ def update_database_structure():
             )
         ''')
         print("✅ Добавлена таблица пользователей")
+    
+    # Проверяем наличие таблицы статуса бота
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bot_status'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE bot_status (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                maintenance_mode INTEGER DEFAULT 0,
+                maintenance_until TEXT DEFAULT NULL,
+                maintenance_message TEXT DEFAULT NULL
+            )
+        ''')
+        cursor.execute('INSERT OR IGNORE INTO bot_status (id, maintenance_mode) VALUES (1, 0)')
+        print("✅ Добавлена таблица статуса бота")
     
     # Проверяем наличие индексов
     cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sub_date'")
@@ -208,3 +233,31 @@ def clear_all_substitutions():
     conn.commit()
     conn.close()
     print("✅ Все замены удалены")
+
+# ============ ФУНКЦИИ УПРАВЛЕНИЯ ТЕХРЕЖИМОМ ============
+def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
+    """Включить/выключить техрежим."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE bot_status 
+        SET maintenance_mode = ?, maintenance_until = ?, maintenance_message = ?
+        WHERE id = 1
+    ''', (1 if enabled else 0, until, message))
+    conn.commit()
+    conn.close()
+
+def get_maintenance_status():
+    """Получить текущий статус техрежима."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT maintenance_mode, maintenance_until, maintenance_message FROM bot_status WHERE id = 1')
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            'enabled': bool(row[0]),
+            'until': row[1],
+            'message': row[2]
+        }
+    return {'enabled': False, 'until': None, 'message': None}
