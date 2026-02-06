@@ -13,7 +13,7 @@ TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
-
+    
 print("Бот запускается с токеном из переменных окружения")
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
