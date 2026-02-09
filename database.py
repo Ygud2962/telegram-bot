@@ -20,12 +20,11 @@ def init_db():
             new_subject TEXT NOT NULL,
             old_teacher TEXT NOT NULL,
             new_teacher TEXT NOT NULL,
-            class_name TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            class_name TEXT NOT NULL
         )
     ''')
     
-    # Таблица пользователей (для рассылки и аналитики)
+    # Таблица пользователей (для рассылки)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -38,15 +37,13 @@ def init_db():
         )
     ''')
     
-    # Таблица активности пользователей (для аналитики)
+    # Таблица настроек пользователей (для функции "Мой класс")
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_activity (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            action TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id INTEGER PRIMARY KEY,
             class_name TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
+            teacher_name TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -65,8 +62,6 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_teacher_date ON substitutions(new_teacher, date)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON user_activity(timestamp)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_user ON user_activity(user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)')
     
     conn.commit()
@@ -78,27 +73,76 @@ def update_database_structure():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Проверяем наличие таблицы активности
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_activity'")
+    # Проверяем наличие таблицы пользователей
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
     if not cursor.fetchone():
         cursor.execute('''
-            CREATE TABLE user_activity (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                action TEXT NOT NULL,
-                class_name TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            CREATE TABLE users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                language_code TEXT,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        print("✅ Добавлена таблица активности пользователей")
+        print("✅ Добавлена таблица пользователей")
     
     # Проверяем наличие столбца last_active в таблице users
     cursor.execute("PRAGMA table_info(users)")
-    columns = [col[1] for col in cursor.fetchall()]
+    columns = [column[1] for column in cursor.fetchall()]
     if 'last_active' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
         print("✅ Добавлен столбец last_active в таблицу users")
+    
+    # Проверяем наличие таблицы настроек пользователей
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_settings'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE user_settings (
+                user_id INTEGER PRIMARY KEY,
+                class_name TEXT,
+                teacher_name TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        print("✅ Добавлена таблица user_settings")
+    
+    # Проверяем наличие таблицы статуса бота
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bot_status'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE bot_status (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                maintenance_mode INTEGER DEFAULT 0,
+                maintenance_until TEXT DEFAULT NULL,
+                maintenance_message TEXT DEFAULT NULL
+            )
+        ''')
+        cursor.execute('INSERT OR IGNORE INTO bot_status (id, maintenance_mode) VALUES (1, 0)')
+        print("✅ Добавлена таблица статуса бота")
+    
+    # Проверяем наличие индексов
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sub_date'")
+    if not cursor.fetchone():
+        cursor.execute('CREATE INDEX idx_sub_date ON substitutions(date)')
+        print("✅ Добавлен индекс idx_sub_date")
+    
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sub_class_date'")
+    if not cursor.fetchone():
+        cursor.execute('CREATE INDEX idx_sub_class_date ON substitutions(class_name, date)')
+        print("✅ Добавлен индекс idx_sub_class_date")
+    
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sub_teacher_date'")
+    if not cursor.fetchone():
+        cursor.execute('CREATE INDEX idx_sub_teacher_date ON substitutions(new_teacher, date)')
+        print("✅ Добавлен индекс idx_sub_teacher_date")
+    
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_users_last_active'")
+    if not cursor.fetchone():
+        cursor.execute('CREATE INDEX idx_users_last_active ON users(last_active)')
+        print("✅ Добавлен индекс idx_users_last_active")
     
     conn.commit()
     conn.close()
@@ -108,88 +152,34 @@ def add_user(user_id, username=None, first_name=None, last_name=None, language_c
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Вставляем или обновляем пользователя
-    cursor.execute('''
-        INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, language_code, last_active)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(user_id) DO UPDATE SET
-            username = excluded.username,
-            first_name = excluded.first_name,
-            last_name = excluded.last_name,
-            language_code = excluded.language_code,
-            last_active = CURRENT_TIMESTAMP
-    ''', (user_id, username, first_name, last_name, language_code))
+    # Проверяем, есть ли уже пользователь
+    cursor.execute('SELECT user_id FROM users WHERE user_id = ?', (user_id,))
+    if cursor.fetchone():
+        # Обновляем данные и last_active
+        cursor.execute('''
+            UPDATE users 
+            SET username = ?, first_name = ?, last_name = ?, language_code = ?, last_active = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+        ''', (username, first_name, last_name, language_code, user_id))
+    else:
+        cursor.execute('''
+            INSERT INTO users (user_id, username, first_name, last_name, language_code, last_active)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, username, first_name, last_name, language_code))
     
     conn.commit()
     conn.close()
 
-def log_user_activity(user_id, action, class_name=None):
-    """Логирует активность пользователя для аналитики."""
+def get_all_users():
+    """Возвращает список всех пользователей."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute('''
-        INSERT INTO user_activity (user_id, action, class_name)
-        VALUES (?, ?, ?)
-    ''', (user_id, action, class_name))
-    
-    conn.commit()
-    conn.close()
-
-def get_active_users_24h():
-    """Возвращает количество активных пользователей за последние 24 часа."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    yesterday = (datetime.now() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute('SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE timestamp > ?', (yesterday,))
-    count = cursor.fetchone()[0]
+    cursor.execute('SELECT user_id, username, first_name, last_name FROM users ORDER BY joined_at DESC')
+    users = cursor.fetchall()
     
     conn.close()
-    return count or 0
-
-def get_popular_classes():
-    """Возвращает список популярных классов за последнюю неделю."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute('''
-        SELECT class_name, COUNT(*) as cnt 
-        FROM user_activity 
-        WHERE class_name IS NOT NULL AND timestamp > ?
-        GROUP BY class_name 
-        ORDER BY cnt DESC 
-        LIMIT 5
-    ''', (week_ago,))
-    
-    results = cursor.fetchall()
-    conn.close()
-    
-    return [row[0] for row in results if row[0]] if results else []
-
-def get_peak_hours():
-    """Возвращает пиковые часы использования бота за последнюю неделю."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute('''
-        SELECT strftime('%H', timestamp) as hour, COUNT(*) as cnt 
-        FROM user_activity 
-        WHERE timestamp > ?
-        GROUP BY hour 
-        ORDER BY cnt DESC 
-        LIMIT 3
-    ''', (week_ago,))
-    
-    results = cursor.fetchall()
-    conn.close()
-    
-    if results:
-        hours = [f"{int(row[0]):02d}:00" for row in results]
-        return ", ".join(hours)
-    return "Нет данных"
+    return users
 
 def get_user_count():
     """Возвращает количество пользователей."""
@@ -202,16 +192,43 @@ def get_user_count():
     conn.close()
     return count
 
-def get_all_users():
-    """Возвращает список всех пользователей."""
+def get_active_users_count(days=30):
+    """Возвращает количество активных пользователей за указанное количество дней."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute('SELECT user_id, username, first_name, last_name FROM users')
-    users = cursor.fetchall()
+    cursor.execute('''
+        SELECT COUNT(*) FROM users 
+        WHERE last_active >= datetime('now', ?)
+    ''', (f'-{days} days',))
+    
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_user_class(user_id):
+    """Возвращает сохраненный класс пользователя."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT class_name FROM user_settings WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
     
     conn.close()
-    return users
+    return result[0] if result else None
+
+def set_user_class(user_id, class_name):
+    """Устанавливает класс для пользователя."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_settings (user_id, class_name, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+    ''', (user_id, class_name))
+    
+    conn.commit()
+    conn.close()
 
 def add_substitution(date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name):
     """Добавление замены в базу данных."""
@@ -279,6 +296,37 @@ def get_all_substitutions():
     cursor.execute('''
         SELECT * FROM substitutions ORDER BY date DESC, class_name, lesson_number
     ''')
+    
+    results = cursor.fetchall()
+    conn.close()
+    return results
+
+def get_substitutions_count(days=7):
+    """Возвращает количество замен за указанное количество дней."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT COUNT(*) FROM substitutions 
+        WHERE date >= date('now', ?)
+    ''', (f'-{days} days',))
+    
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_top_classes_by_substitutions(days=7):
+    """Возвращает топ классов по количеству замен за указанное количество дней."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT class_name, COUNT(*) as count 
+        FROM substitutions 
+        WHERE date >= date('now', ?)
+        GROUP BY class_name 
+        ORDER BY count DESC
+    ''', (f'-{days} days',))
     
     results = cursor.fetchall()
     conn.close()
