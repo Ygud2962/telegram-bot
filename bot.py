@@ -1212,31 +1212,57 @@ async def show_class_selection_for_substitution(query, context):
     )
 
 async def show_lesson_selection(query, context):
-    """Показывает выбор урока с автоматическим определением предмета и учителя."""
+    """Показывает выбор урока с полной информацией (время, предмет, учитель) и кнопкой 'назад' к классу."""
+    class_name = context.user_data.get('class_name', '')
+    day = context.user_data.get('day', '')
+    
+    # Получаем расписание для класса и дня
+    lessons = []
+    if class_name in SCHEDULE_STRUCTURED and day in SCHEDULE_STRUCTURED[class_name]:
+        lessons = SCHEDULE_STRUCTURED[class_name][day]
+        lessons.sort(key=lambda x: x[0])  # Сортируем по номеру урока
+    
     keyboard = []
-    row = []
-    for i in range(1, 8):
-        button_text = f"{i} урок"
-        callback_data = f'lesson_{i}'
-        row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
-        if len(row) == 3:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
+    
+    # Формируем кнопки с полной информацией об уроках
+    for lesson_num, subject, teacher in lessons:
+        lesson_time = get_lesson_time(lesson_num)
+        # Берём только первого учителя из списка (если их несколько через /)
+        teacher_main = teacher.split('/')[0].split('(')[0].strip()
+        button_text = f"{lesson_num} урок: {lesson_time} {subject} - {teacher_main}"
+        
+        # Обрезаем текст кнопки до 60 символов, если слишком длинный
+        if len(button_text) > 60:
+            button_text = button_text[:57] + "..."
+        
+        callback_data = f'lesson_{lesson_num}'
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+    
+    # Если нет уроков в расписании
+    if not lessons:
+        keyboard.append([InlineKeyboardButton("❌ В расписании нет уроков", callback_data='back_to_class')])
+    
+    # Кнопка "назад" и отмена
     keyboard.append([
         InlineKeyboardButton("◀️ Назад к классу", callback_data='back_to_class'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Формируем текст сообщения
+    text = (
+        f"<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 3/4)</b>\n"
+        f"<b>📅 Дата:</b> {context.user_data.get('date', '—')}\n"
+        f"<b>📅 День:</b> {day}\n"
+        f"<b>🏫 Класс:</b> {class_name.upper()}\n\n"
+        f"<b>🔢 Выберите урок для замены:</b>\n"
+        f"<i>Показаны уроки из расписания класса</i>"
+    )
+    
     await query.edit_message_text(
-        "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 3/4)</b>\n"
-        f"<b>📅 Дата:</b> {context.user_data.get('date', 'не выбран')}\n"
-        f"<b>📅 День недели:</b> {context.user_data.get('day', 'не выбран')}\n"
-        f"<b>🏫 Класс:</b> {context.user_data.get('class_name', 'не выбран')}\n"
-        "<b>🔢 Выберите номер урока:</b>\n"
-        "<i>Предмет и текущий учитель будут определены автоматически из расписания</i>",
+        text,
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
