@@ -1,6 +1,4 @@
-Вот полный код файла `bot.py` с сокращённым добавлением замен до 4 шагов и расширенной статистикой для администратора:
-
-```python
+python
 import re
 import logging
 import asyncio
