@@ -1145,25 +1145,30 @@ async def disable_maintenance_mode(query, context):
 
 #================== УПРОЩЁННОЕ ДОБАВЛЕНИЕ ЗАМЕН (4 ШАГА) ==================
 async def show_date_selection(query, context):
-    """Показывает выбор даты для добавления замены (ТОЛЬКО будние дни)."""
+    """Показывает выбор даты для добавления замены (ТОЛЬКО будние дни на ближайшую неделю)."""
     tz_minsk = pytz.timezone('Europe/Minsk')
     today = datetime.now(tz_minsk).date()
     keyboard = []
-    days_shown = 0
-    max_days = 10  # Показываем максимум 10 будних дней вперёд
     
-    # Показываем даты ТОЛЬКО с понедельника по пятницу
+    # Показываем даты только на ближайшие 7 календарных дней (сегодня + 6 дней вперёд)
     current_date = today
-    while days_shown < max_days:
+    days_shown = 0
+    max_calendar_days = 7  # Максимум 7 календарных дней (неделя)
+    
+    while days_shown < max_calendar_days:
         weekday = current_date.weekday()
-        # Пропускаем субботу (5) и воскресенье (6)
+        # Пропускаем субботу (5) и воскресенье (6) — показываем ТОЛЬКО будние дни
         if weekday < 5:
             day_name = DAYS_OF_WEEK[weekday]
             date_str = current_date.strftime('%Y-%m-%d')
             button_text = f"{day_name} ({current_date.strftime('%d.%m')})"
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f'date_{date_str}')])
-            days_shown += 1
         current_date += timedelta(days=1)
+        days_shown += 1
+    
+    # Если нет будних дней в ближайшую неделю (маловероятно, но для надёжности)
+    if not keyboard:
+        keyboard.append([InlineKeyboardButton("❌ Нет доступных дат", callback_data='admin_panel')])
     
     keyboard.append([
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
@@ -1178,7 +1183,7 @@ async def show_date_selection(query, context):
     await query.edit_message_text(
         "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 1/4)</b>\n"
         "<b>📅 Выберите дату замены:</b>\n"
-        "<i>Показаны только будние дни (Пн-Пт)</i>",
+        "<i>Показаны только будние дни (Пн-Пт) на ближайшую неделю</i>",
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
