@@ -1,4 +1,3 @@
-python
 import re
 import logging
 import asyncio
@@ -127,6 +126,7 @@ BELLS_SCHEDULE_HTML = """
 """
 
 #================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
+# Полное расписание из вашего файла (сокращено для примера, но в реальном файле должно быть полным)
 SCHEDULE_STRUCTURED = {
     '5а': {
         'Понедельник': [
@@ -2667,7 +2667,6 @@ async def handle_search_teacher_message(update: Update, context: CallbackContext
         )
         return
     
-    # Ограничиваем до 10 результатов
     found_teachers = found_teachers[:10]
     context.user_data['found_teachers'] = found_teachers
     
@@ -2762,13 +2761,8 @@ def main():
         .build()
     )
     
-    # Обработчики команд
     application.add_handler(CommandHandler("start", start))
-    
-    # Обработчики кнопок
     application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Обработчики текстовых сообщений
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
         handle_search_teacher_message
