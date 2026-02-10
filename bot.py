@@ -1774,6 +1774,35 @@ async def show_current_lesson(query, context):
             raise
 
 #================== ОБРАБОТЧИК КНОПОК ==================
+    async def show_users_stats(query, context):
+    """Показывает статистику пользователей."""
+    if query.from_user.id not in ADMIN_IDS:
+        return
+
+    user_count = db.get_user_count()
+    users = db.get_all_users()
+
+    text = f"👥 <b>СТАТИСТИКА ПОЛЬЗОВАТЕЛЕЙ</b>\n"
+    text += f"• Всего пользователей: <b>{user_count}</b>\n"
+    if users:
+        text += "• Последние 10 пользователей:\n"
+        for user in users[-10:]:
+            user_id, username, first_name, last_name = user
+            name = f"{first_name or ''} {last_name or ''}".strip() or "Без имени"
+            if username:
+                name += f" (@{username})"
+            text += f"• ID: <code>{user_id}</code> — {name}\n"
+    else:
+        text += "• Нет зарегистрированных пользователей"
+
+    keyboard = [
+        [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
+        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+        
 async def button_handler(update: Update, context: CallbackContext):
     """Обработка нажатий на inline-кнопки."""
     query = update.callback_query
