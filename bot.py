@@ -2241,6 +2241,7 @@ async def show_teacher_selection(query, context):
         return
     
     old_subject, old_teacher = current_lesson[1], current_lesson[2]
+    
     # Сохраняем старые данные
     context.user_data['old_subject'] = old_subject
     context.user_data['old_teacher'] = old_teacher
@@ -2591,7 +2592,7 @@ async def edit_substitution(query, context):
     context.user_data['step'] = 'lesson'
     await show_lesson_selection(query, context)
 
-#================== ОБРАБОТЧИК ВСЕХ КНОПОК (ОБНОВЛЕННЫЙ) ==================
+#================== ОБРАБОТЧИК ВСЕХ КНОПОК (ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ) ==================
 async def button_handler(update: Update, context: CallbackContext):
     """Обработка нажатий на inline-кнопки."""
     query = update.callback_query
@@ -2851,7 +2852,10 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_searched_teacher_schedule(query, context)
         return
     
-    # Обработка ошибок
+    # Обработка ошибок в рамках одного блока try-except
+    try:
+        # Этот блок уже обработан выше, поэтому здесь ничего не делаем
+        pass
     except TimedOut:
         logger.error("Timeout при обработке кнопки")
         await query.edit_message_text(
@@ -2965,7 +2969,79 @@ async def handle_message(update: Update, context: CallbackContext):
     # Обработка упоминаний учителей
     await handle_teacher_mentions(update, context)
 
-#================== КОМАНДЫ ==================
+async def handle_teacher_mentions(update: Update, context: CallbackContext):
+    """Проверяет сообщения на упоминания учителей."""
+    if not update.message or not update.message.text:
+        return
+    
+    message_text = update.message.text
+    user = update.message.from_user
+    found_mentions = []
+    
+    for teacher_name, teacher_id in TEACHER_IDS.items():
+        if not teacher_id or teacher_id == 0:
+            continue
+        
+        # Извлекаем фамилию из полного имени
+        surname = teacher_name.split()[0]
+        pattern = r'\b' + re.escape(surname) + r'\b'
+        
+        if re.search(pattern, message_text, re.IGNORECASE):
+            found_mentions.append((teacher_name, teacher_id))
+    
+    if not found_mentions:
+        return
+    
+    for teacher_name, teacher_id in found_mentions:
+        try:
+            notification = (
+                f"<b>🔔 Вас упомянули в школьном боте!</b>\n"
+                f"<b>👤 От:</b> {user.full_name}\n"
+                f"<b>📅 Время:</b> {datetime.now().strftime('%H:%M %d.%m.%Y')}\n"
+                f"<b>💬 Сообщение:</b>\n"
+                f"<code>{message_text[:300]}</code>\n"
+                f"<i>Чтобы ответить, нажмите «Ответить» на это сообщение.</i>"
+            )
+            
+            await context.bot.send_message(
+                chat_id=teacher_id,
+                text=notification,
+                parse_mode='HTML'
+            )
+            
+            keyboard = add_start_button()
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"✅ Учитель <b>{teacher_name}</b> получил(а) уведомление о вашем сообщении.",
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Ошибка отправки уведомления {teacher_name}: {error_msg}")
+            keyboard = add_start_button()
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            if "chat not found" in error_msg.lower():
+                await update.message.reply_text(
+                    f"⚠️ Учитель <b>{teacher_name}</b> не начал диалог с ботом.\n"
+                    "Попросите его отправить /start боту.",
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+            elif "blocked" in error_msg.lower():
+                await update.message.reply_text(
+                    f"⚠️ Учитель <b>{teacher_name}</b> заблокировал бота.",
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+            else:
+                await update.message.reply_text(
+                    f"⚠️ Не удалось отправить уведомление {teacher_name}: {error_msg[:100]}",
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+
 async def test_notification(update: Update, context: CallbackContext):
     """Тестовая команда для проверки уведомлений."""
     if update.effective_user.id not in ADMIN_IDS:
@@ -3037,7 +3113,10 @@ async def teachers_list(update: Update, context: CallbackContext):
     """Команда для отображения списка всех учителей."""
     all_teachers = get_all_teachers()
     if not all_teachers:
-        await update.message.reply_text("<b>❌ Список учителей пуст.</b>", parse_mode='HTML')
+        await update.message.reply_text(
+            "<b>❌ Список учителей пуст.</b>",
+            parse_mode='HTML'
+        )
         return
     
     teachers_text = "<b>👨‍🏫 СПИСОК УЧИТЕЛЕЙ:</b>\n"
