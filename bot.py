@@ -2569,7 +2569,7 @@ async def request_substitution_deletion(query):
         parse_mode='HTML'
     )
 
-   async def confirm_clear_substitutions(query):
+async def confirm_clear_substitutions(query):
     """Запрашивает подтверждение очистки замен."""
     if query.from_user.id not in ADMIN_IDS:
         return
