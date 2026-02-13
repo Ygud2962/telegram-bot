@@ -25,7 +25,7 @@ def init_db():
         )
     ''')
 
-    # Таблица пользователей (для рассылки и аналитики)
+    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -38,7 +38,7 @@ def init_db():
         )
     ''')
 
-    # Таблица активности пользователей (для аналитики)
+    # Таблица активности пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_activity (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,6 +61,19 @@ def init_db():
     ''')
     cursor.execute('INSERT OR IGNORE INTO bot_status (id, maintenance_mode) VALUES (1, 0)')
     
+    # Таблица избранного пользователей
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            fav_type TEXT NOT NULL,  -- 'class' or 'teacher'
+            value TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            UNIQUE(user_id, fav_type, value)
+        )
+    ''')
+    
     # Таблица школьных новостей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS news (
@@ -78,6 +91,8 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON user_activity(timestamp)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_user ON user_activity(user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_user ON user_favorites(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_type ON user_favorites(fav_type)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_published ON news(published_at)')
 
     conn.commit()
@@ -111,6 +126,24 @@ def update_database_structure():
         cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
         print("✅ Добавлен столбец last_active в таблицу users")
 
+    # Проверяем наличие таблицы избранного
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_favorites'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE user_favorites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                fav_type TEXT NOT NULL,
+                value TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                UNIQUE(user_id, fav_type, value)
+            )
+        ''')
+        print("✅ Добавлена таблица избранного пользователей")
+        cursor.execute('CREATE INDEX idx_favorites_user ON user_favorites(user_id)')
+        cursor.execute('CREATE INDEX idx_favorites_type ON user_favorites(fav_type)')
+
     # Проверяем наличие таблицы новостей
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='news'")
     if not cursor.fetchone():
@@ -124,7 +157,6 @@ def update_database_structure():
         ''')
         print("✅ Добавлена таблица школьных новостей")
         cursor.execute('CREATE INDEX idx_news_published ON news(published_at)')
-        print("✅ Добавлен индекс idx_news_published")
 
     # Проверяем наличие индексов
     cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_activity_timestamp'")
@@ -339,6 +371,73 @@ def get_maintenance_status():
         }
     return {'enabled': False, 'until': None, 'message': None}
 
+# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ИЗБРАННЫМ ====================
+def add_favorite(user_id, fav_type, value):
+    """Добавить элемент в избранное."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT OR IGNORE INTO user_favorites (user_id, fav_type, value)
+            VALUES (?, ?, ?)
+        ''', (user_id, fav_type, value))
+        conn.commit()
+        print(f"✅ Добавлено в избранное: {fav_type}={value} для пользователя {user_id}")
+    except Exception as e:
+        print(f"Ошибка добавления в избранное: {e}")
+    finally:
+        conn.close()
+
+def remove_favorite(user_id, fav_type, value):
+    """Удалить элемент из избранного."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            DELETE FROM user_favorites
+            WHERE user_id = ? AND fav_type = ? AND value = ?
+        ''', (user_id, fav_type, value))
+        conn.commit()
+        print(f"✅ Удалено из избранного: {fav_type}={value} для пользователя {user_id}")
+    except Exception as e:
+        print(f"Ошибка удаления из избранного: {e}")
+    finally:
+        conn.close()
+
+def get_user_favorites(user_id):
+    """Получить все избранные элементы пользователя."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT fav_type, value FROM user_favorites
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        ''', (user_id,))
+        results = cursor.fetchall()
+        return results  # Список кортежей (fav_type, value)
+    except Exception as e:
+        print(f"Ошибка получения избранного: {e}")
+        return []
+    finally:
+        conn.close()
+
+def is_favorite(user_id, fav_type, value):
+    """Проверить, находится ли элемент в избранном."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT 1 FROM user_favorites
+            WHERE user_id = ? AND fav_type = ? AND value = ?
+        ''', (user_id, fav_type, value))
+        return cursor.fetchone() is not None
+    except Exception as e:
+        print(f"Ошибка проверки избранного: {e}")
+        return False
+    finally:
+        conn.close()
+
 # ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ====================
 def add_news(title, content):
     """Добавляет новость в базу данных."""
@@ -376,3 +475,21 @@ def get_all_news():
     results = cursor.fetchall()
     conn.close()
     return results
+
+def get_news_by_id(news_id):
+    """Получает новость по ID."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, title, content, published_at FROM news WHERE id = ?', (news_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+def delete_news(news_id):
+    """Удаляет новость по ID."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM news WHERE id = ?', (news_id,))
+    conn.commit()
+    conn.close()
+    print(f"✅ Новость ID={news_id} удалена")
