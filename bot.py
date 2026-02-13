@@ -91,9 +91,8 @@ BELLS_SCHEDULE_HTML = """
 """
 
 # ================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
-# (SCHEDULE_STRUCTURED остается без изменений, как в предоставленном файле)
 SCHEDULE_STRUCTURED = {
-  '5а': {
+    '5а': {
         'Понедельник': [
             (1, 'Математика', 'Коротчикова Л.В.'),
             (2, 'Физкультура', 'Вергейчик В.Л.'),
@@ -1819,9 +1818,8 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data.startswith('my_class_'):
         class_name = query.data.replace('my_class_', '')
         context.user_data['selected_class'] = class_name
-        # Показываем расписание на неделю для этого класса
-        query.data = f'weekly_{class_name}'
-        await show_weekly_schedule(query, context)
+        # Показываем расписание на неделю для этого класса БЕЗ изменения query.data
+        await show_weekly_schedule(query, context, class_name=class_name)  # ИСПРАВЛЕНО: передаем класс напрямую
         return
     elif query.data.startswith('my_teacher_'):
         teacher_name = query.data.replace('my_teacher_', '').replace('_', ' ')
@@ -1850,9 +1848,8 @@ async def button_handler(update: Update, context: CallbackContext):
         else:
             db.add_favorite(user_id, 'class', class_name)
             await query.answer(f"Класс {class_name.upper()} добавлен в избранное", show_alert=True)
-        # Обновляем текущее сообщение (расписание) с новой кнопкой
-        query.data = f'weekly_{class_name}'
-        await show_weekly_schedule(query, context)
+        # Обновляем текущее сообщение (расписание) с новой кнопкой БЕЗ изменения query.data
+        await show_weekly_schedule(query, context, class_name=class_name)  # ИСПРАВЛЕНО: передаем класс напрямую
         return
     elif query.data.startswith('toggle_favorite_teacher_'):
         teacher_name = query.data.replace('toggle_favorite_teacher_', '').replace('_', ' ')
@@ -1920,7 +1917,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_daily_schedule(query, context)
         return
     elif query.data.startswith('weekly_'):
-        await show_weekly_schedule(query, context)
+        await show_weekly_schedule(query, context)  # Вызов без параметра - класс извлечется из query.data
         return
     elif query.data == 'menu_substitutions':
         await show_substitutions_menu(query)
@@ -2308,9 +2305,13 @@ async def show_daily_schedule(query, context):
         parse_mode='HTML'
     )
 
-async def show_weekly_schedule(query, context):
+# ИСПРАВЛЕНО: добавлен параметр class_name для прямой передачи имени класса
+async def show_weekly_schedule(query, context, class_name=None):
     """Показывает расписание на всю неделю."""
-    class_name = query.data.replace('weekly_', '')
+    # Если класс не передан, извлекаем из query.data
+    if class_name is None:
+        class_name = query.data.replace('weekly_', '')
+    
     schedule_text = format_weekly_schedule(class_name)
     
     # Проверяем избранное
