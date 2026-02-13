@@ -60,6 +60,19 @@ def init_db():
         )
     ''')
     cursor.execute('INSERT OR IGNORE INTO bot_status (id, maintenance_mode) VALUES (1, 0)')
+    
+    # Таблица избранного пользователей
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            fav_type TEXT NOT NULL,  -- 'class' or 'teacher'
+            value TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            UNIQUE(user_id, fav_type, value)
+        )
+    ''')
 
     # Индексы для оптимизации
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
@@ -68,6 +81,8 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON user_activity(timestamp)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_user ON user_activity(user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_user ON user_favorites(user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_type ON user_favorites(fav_type)')
 
     conn.commit()
     conn.close()
@@ -100,6 +115,24 @@ def update_database_structure():
         cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
         print("✅ Добавлен столбец last_active в таблицу users")
 
+    # Проверяем наличие таблицы избранного
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_favorites'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE user_favorites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                fav_type TEXT NOT NULL,
+                value TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                UNIQUE(user_id, fav_type, value)
+            )
+        ''')
+        print("✅ Добавлена таблица избранного пользователей")
+        cursor.execute('CREATE INDEX idx_favorites_user ON user_favorites(user_id)')
+        cursor.execute('CREATE INDEX idx_favorites_type ON user_favorites(fav_type)')
+
     # Проверяем наличие индексов
     cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_activity_timestamp'")
     if not cursor.fetchone():
@@ -123,13 +156,10 @@ def add_user(user_id, username=None, first_name=None, last_name=None, language_c
     """Добавляет или обновляет пользователя в базе данных."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
-    # Вставляем или обновляем пользователя
     cursor.execute('''
         INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, language_code, last_active)
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ''', (user_id, username, first_name, last_name, language_code))
-
     conn.commit()
     conn.close()
 
@@ -141,7 +171,6 @@ def log_user_activity(user_id, action, class_name=None):
         INSERT INTO user_activity (user_id, action, class_name)
         VALUES (?, ?, ?)
     ''', (user_id, action, class_name))
-
     conn.commit()
     conn.close()
 
@@ -152,7 +181,6 @@ def get_active_users_24h():
     yesterday = (datetime.now() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute('SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE timestamp > ?', (yesterday,))
     count = cursor.fetchone()[0]
-
     conn.close()
     return count or 0
 
@@ -162,17 +190,15 @@ def get_popular_classes():
     cursor = conn.cursor()
     week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute('''
-        SELECT class_name, COUNT(*) as cnt 
-        FROM user_activity 
+        SELECT class_name, COUNT(*) as cnt
+        FROM user_activity
         WHERE class_name IS NOT NULL AND timestamp > ?
-        GROUP BY class_name 
-        ORDER BY cnt DESC 
+        GROUP BY class_name
+        ORDER BY cnt DESC
         LIMIT 5
     ''', (week_ago,))
-
     results = cursor.fetchall()
     conn.close()
-
     return [row[0] for row in results if row[0]] if results else []
 
 def get_peak_hours():
@@ -181,17 +207,15 @@ def get_peak_hours():
     cursor = conn.cursor()
     week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute('''
-        SELECT strftime('%H', timestamp) as hour, COUNT(*) as cnt 
-        FROM user_activity 
+        SELECT strftime('%H', timestamp) as hour, COUNT(*) as cnt
+        FROM user_activity
         WHERE timestamp > ?
-        GROUP BY hour 
-        ORDER BY cnt DESC 
+        GROUP BY hour
+        ORDER BY cnt DESC
         LIMIT 3
     ''', (week_ago,))
-
     results = cursor.fetchall()
     conn.close()
-
     if results:
         hours = [f"{int(row[0]):02d}:00" for row in results]
         return ", ".join(hours)
@@ -203,7 +227,6 @@ def get_user_count():
     cursor = conn.cursor()
     cursor.execute('SELECT COUNT(*) FROM users')
     count = cursor.fetchone()[0]
-
     conn.close()
     return count
 
@@ -213,7 +236,6 @@ def get_all_users():
     cursor = conn.cursor()
     cursor.execute('SELECT user_id, username, first_name, last_name FROM users')
     users = cursor.fetchall()
-
     conn.close()
     return users
 
@@ -222,11 +244,10 @@ def add_substitution(date, day, lesson_number, old_subject, new_subject, old_tea
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO substitutions 
+        INSERT INTO substitutions
         (date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name))
-
     conn.commit()
     conn.close()
     print(f"✅ Замена добавлена: {date} {class_name} урок {lesson_number}")
@@ -238,7 +259,6 @@ def get_substitutions_for_date(date):
     cursor.execute('''
         SELECT * FROM substitutions WHERE date = ? ORDER BY class_name, lesson_number
     ''', (date,))
-
     results = cursor.fetchall()
     conn.close()
     return results
@@ -248,11 +268,10 @@ def get_substitutions_for_class_date(class_name, date):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT * FROM substitutions 
-        WHERE class_name = ? AND date = ? 
+        SELECT * FROM substitutions
+        WHERE class_name = ? AND date = ?
         ORDER BY lesson_number
     ''', (class_name, date))
-
     results = cursor.fetchall()
     conn.close()
     return results
@@ -262,11 +281,10 @@ def get_substitutions_by_teacher_and_date(teacher_name, date):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT * FROM substitutions 
-        WHERE (new_teacher = ? OR old_teacher = ?) AND date = ? 
+        SELECT * FROM substitutions
+        WHERE (new_teacher = ? OR old_teacher = ?) AND date = ?
         ORDER BY lesson_number
     ''', (teacher_name, teacher_name, date))
-
     results = cursor.fetchall()
     conn.close()
     return results
@@ -278,7 +296,6 @@ def get_all_substitutions():
     cursor.execute('''
         SELECT * FROM substitutions ORDER BY date DESC, class_name, lesson_number
     ''')
-
     results = cursor.fetchall()
     conn.close()
     return results
@@ -302,7 +319,6 @@ def clear_all_substitutions():
     print("✅ Все замены удалены")
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ТЕХРЕЖИМОМ ====================
-
 def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
     """Включить/выключить техрежим."""
     conn = sqlite3.connect(DB_PATH)
@@ -329,3 +345,70 @@ def get_maintenance_status():
             'message': row[2]
         }
     return {'enabled': False, 'until': None, 'message': None}
+
+# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ИЗБРАННЫМ ====================
+def add_favorite(user_id, fav_type, value):
+    """Добавить элемент в избранное."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT OR IGNORE INTO user_favorites (user_id, fav_type, value)
+            VALUES (?, ?, ?)
+        ''', (user_id, fav_type, value))
+        conn.commit()
+        print(f"✅ Добавлено в избранное: {fav_type}={value} для пользователя {user_id}")
+    except Exception as e:
+        print(f"Ошибка добавления в избранное: {e}")
+    finally:
+        conn.close()
+
+def remove_favorite(user_id, fav_type, value):
+    """Удалить элемент из избранного."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            DELETE FROM user_favorites
+            WHERE user_id = ? AND fav_type = ? AND value = ?
+        ''', (user_id, fav_type, value))
+        conn.commit()
+        print(f"✅ Удалено из избранного: {fav_type}={value} для пользователя {user_id}")
+    except Exception as e:
+        print(f"Ошибка удаления из избранного: {e}")
+    finally:
+        conn.close()
+
+def get_user_favorites(user_id):
+    """Получить все избранные элементы пользователя."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT fav_type, value FROM user_favorites
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        ''', (user_id,))
+        results = cursor.fetchall()
+        return results  # Список кортежей (fav_type, value)
+    except Exception as e:
+        print(f"Ошибка получения избранного: {e}")
+        return []
+    finally:
+        conn.close()
+
+def is_favorite(user_id, fav_type, value):
+    """Проверить, находится ли элемент в избранном."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT 1 FROM user_favorites
+            WHERE user_id = ? AND fav_type = ? AND value = ?
+        ''', (user_id, fav_type, value))
+        return cursor.fetchone() is not None
+    except Exception as e:
+        print(f"Ошибка проверки избранного: {e}")
+        return False
+    finally:
+        conn.close()
