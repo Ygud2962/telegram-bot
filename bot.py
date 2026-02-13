@@ -69,8 +69,7 @@ SUBJECTS = [
     "История ", "География ", "Физкультура ", "ОБЖ ", "Трудовое обучение ",
     "Искусство ", "Астрономия ", "ЧЗС ", "Черчение ", "ДП ", "МП ", "Человек и мир "
 ]
-# 🔑 УБРАНЫ СУББОТА И ВОСКРЕСЕНЬЕ ИЗ ВЫБОРА ЗАМЕН
-DAYS_OF_WEEK = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]  # Только будние дни!
+DAYS_OF_WEEK = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
 BELLS_SCHEDULE_HTML = """
 🕐 РАСПИСАНИЕ ЗВОНКОВ И ПИТАНИЯ
 ─────────────────────────────────
@@ -769,7 +768,6 @@ SCHEDULE_STRUCTURED = {
         ]
     }
 }
-
 # ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def get_lesson_time(lesson_number):
     """Возвращает время урока по его номеру."""
@@ -971,6 +969,22 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             except Exception as e2:
                 logger.error(f"Ошибка отправки уведомления админу об ошибке: {e2}")
 
+# ================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ВРЕМЕНИ ==================
+def convert_utc_to_minsk(utc_str):
+    """Конвертирует строку времени из UTC в минское время (Europe/Minsk)."""
+    try:
+        # Парсим строку в datetime без часового пояса
+        utc_dt = datetime.strptime(utc_str, '%Y-%m-%d %H:%M:%S')
+        # Делаем осознанным в UTC
+        utc_dt = pytz.utc.localize(utc_dt)
+        # Конвертируем в минское время
+        minsk_tz = pytz.timezone('Europe/Minsk')
+        minsk_dt = utc_dt.astimezone(minsk_tz)
+        return minsk_dt.strftime('%d.%m.%Y %H:%M')
+    except Exception as e:
+        logger.error(f"Ошибка конвертации времени: {e}")
+        return utc_str  # Возвращаем исходную строку в случае ошибки
+
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
     """Показывает меню 'МОё' с избранными классами и учителями."""
@@ -1047,18 +1061,20 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
 
 # ================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
 async def show_news_menu(query, context):
-    """Показывает последние 5 школьных новостей."""
+    """Показывает последние 5 школьных новостей (старые сверху, новые снизу)."""
     news_list = db.get_latest_news(5)
+    
+    # Переворачиваем список, чтобы старые новости были сверху, новые снизу
+    news_list = news_list[::-1]
     
     if not news_list:
         text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n📭 Новостей пока нет.\nАдминистрация добавит новости позже."
     else:
         text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n"
         for news in news_list:
-            try:
-                pub_date = datetime.strptime(news[3], '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y %H:%M')
-            except:
-                pub_date = news[3]
+            # news: (id, title, content, published_at)
+            # Конвертируем время из UTC в минское
+            pub_date = convert_utc_to_minsk(news[3])
             text += f"📌 <b>{news[1]}</b>\n"
             text += f"<i>📅 {pub_date}</i>\n"
             text += f"{news[2]}\n\n"
@@ -1137,12 +1153,15 @@ async def handle_news_input(update: Update, context: CallbackContext):
         
         context.user_data['news_content'] = text
         
-        # Предпросмотр
+        # Предпросмотр с минским временем
+        tz_minsk = pytz.timezone('Europe/Minsk')
+        current_time_minsk = datetime.now(tz_minsk).strftime('%d.%m.%Y %H:%M')
+        
         preview = (
             f"📣 <b>ПРЕДПРОСМОТР НОВОСТИ</b>\n\n"
             f"<b>{context.user_data['news_title']}</b>\n\n"
             f"{context.user_data['news_content']}\n\n"
-            f"<i>Опубликовано: {datetime.now().strftime('%d.%m.%Y %H:%M')}</i>"
+            f"<i>Опубликовано: {current_time_minsk}</i>"
         )
         
         keyboard = [
@@ -1172,15 +1191,19 @@ async def publish_news(query, context, send_to_all=False):
         context.user_data.clear()
         return
     
-    # Сохраняем в БД
+    # Сохраняем в БД (время сохраняется автоматически в UTC)
     news_id = db.add_news(title, content)
     logger.info(f"Новость опубликована (ID={news_id}) админом {query.from_user.id}")
+    
+    # Формируем сообщение с минским временем
+    tz_minsk = pytz.timezone('Europe/Minsk')
+    current_time_minsk = datetime.now(tz_minsk).strftime('%d.%m.%Y %H:%M')
     
     success_msg = "✅ <b>НОВОСТЬ ОПУБЛИКОВАНА!</b>\n\n"
     success_msg += f"<b>{title}</b>\n\n{content[:200]}{'...' if len(content) > 200 else ''}"
     
     if send_to_all:
-        # Рассылка всем пользователям
+        # Рассылка всем пользователям с минским временем
         users = db.get_all_users()
         total = len(users)
         sent = 0
@@ -1188,7 +1211,7 @@ async def publish_news(query, context, send_to_all=False):
         broadcast_msg = (
             f"📣 <b>СРОЧНАЯ НОВОСТЬ ШКОЛЫ</b>\n\n"
             f"<b>{title}</b>\n\n{content}\n\n"
-            f"<i>📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}</i>"
+            f"<i>📅 {current_time_minsk}</i>"
         )
         
         # Отправляем статус рассылки
@@ -1248,7 +1271,7 @@ async def publish_news(query, context, send_to_all=False):
 
 # ================== ФУНКЦИИ УДАЛЕНИЯ НОВОСТЕЙ ==================
 async def show_all_news_for_admin(query, context):
-    """Показывает все новости для админа с кнопками удаления."""
+    """Показывает все новости для админа с кнопками удаления (новые сверху)."""
     if query.from_user.id not in ADMIN_IDS:
         return
     
@@ -1261,12 +1284,10 @@ async def show_all_news_for_admin(query, context):
         text = "📰 <b>УПРАВЛЕНИЕ НОВОСТЯМИ</b>\n\n"
         text += f"Всего новостей: <b>{len(news_list)}</b>\n\n"
         
-        # Показываем последние 15 новостей
+        # Показываем последние 15 новостей (новые сверху)
         for news in news_list[:15]:
-            try:
-                pub_date = datetime.strptime(news[3], '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y %H:%M')
-            except:
-                pub_date = news[3]
+            # Конвертируем время из UTC в минское
+            pub_date = convert_utc_to_minsk(news[3])
             text += f"ID: <code>{news[0]}</code>\n📌 <b>{news[1]}</b>\n<i>📅 {pub_date}</i>\n{news[2][:100]}{'...' if len(news[2]) > 100 else ''}\n\n"
             text += "─" * 20 + "\n\n"
         
@@ -1308,6 +1329,9 @@ async def confirm_delete_news(query, context, news_id):
         )
         return
     
+    # Конвертируем время из UTC в минское
+    pub_date = convert_utc_to_minsk(news[3])
+    
     title = news[1]
     keyboard = [
         [
@@ -1320,7 +1344,8 @@ async def confirm_delete_news(query, context, news_id):
     await query.edit_message_text(
         f"⚠️ <b>ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ</b>\n\n"
         f"Вы действительно хотите удалить новость?\n\n"
-        f"📌 <b>{title}</b>\n\n"
+        f"📌 <b>{title}</b>\n"
+        f"<i>📅 {pub_date}</i>\n\n"
         f"<i>Это действие необратимо!</i>",
         reply_markup=reply_markup,
         parse_mode='HTML'
@@ -2195,6 +2220,7 @@ async def button_handler(update: Update, context: CallbackContext):
             await show_main_menu(query)
 
 async def show_main_menu(query):
+    """Показывает главное меню."""
     keyboard = [
         [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
         [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
@@ -3219,7 +3245,6 @@ async def teachers_list(update: Update, context: CallbackContext):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-
 # ================== ГЛАВНАЯ ФУНКЦИЯ ==================
 def main():
     try:
@@ -3257,7 +3282,7 @@ def main():
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
-    print(f"✅ Добавлены функции: 🌟 МОё (избранное) + 📰 Новости + 🗑 Удаление новостей")
+    print(f"✅ Добавлены функции: 🌟 МОё (избранное) + 📰 Новости (время в минском поясе)")
 
     try:
         application.run_polling(
