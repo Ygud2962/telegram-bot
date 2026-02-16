@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from telegram.error import TimedOut, NetworkError, BadRequest, Forbidden
 import database as db
 import os
-import pytz  # pip install pytz
+import pytz
 
 TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
@@ -15,12 +15,14 @@ if not TOKEN:
     exit(1)
 
 print("Бот запускается с токеном из переменных окружения")
+
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ================== НАСТРОЙКИ ==================
+================== НАСТРОЙКИ ==================
 ADMIN_IDS = [516406248]
 REQUEST_TIMEOUT = 30.0
+
 TEACHER_IDS = {
     'Коротчикова Л.В.': 1665763898,
     'Вергейчик В.Л.': 1970780275,
@@ -59,17 +61,21 @@ TEACHER_IDS = {
     'Артюх М.П.': 0,
     'Хорошко Т.А.': 0
 }
+
 ALL_CLASSES = ['5а', '5б', '5в', '6а', '6б', '6в', '7а', '7б', '7в', '8а', '8б', '9а', '9б', '10а', '10б', '11']
+
 SUBJECTS = [
-    "Математика ", "Математика(проф.) ", "Русский язык ", "Русский язык(проф.) ",
-    "Белорусский язык ", "Белорусский язык(проф.) ", "Русская литература ",
-    "Белорусская литература ", "Физика ", "Информатика ",
-    "Английский язык ", "Английский язык(проф.) ", "Химия ", "Химия(проф.) ",
-    "Биология ", "Биология(проф.) ", "Обществоведение ", "Обществоведение(проф.) ",
-    "История ", "География ", "Физкультура ", "ОБЖ ", "Трудовое обучение ",
-    "Искусство ", "Астрономия ", "ЧЗС ", "Черчение ", "ДП ", "МП ", "Человек и мир "
+    "Математика", "Математика(проф.)", "Русский язык", "Русский язык(проф.)",
+    "Белорусский язык", "Белорусский язык(проф.)", "Русская литература",
+    "Белорусская литература", "Физика", "Информатика",
+    "Английский язык", "Английский язык(проф.)", "Химия", "Химия(проф.)",
+    "Биология", "Биология(проф.)", "Обществоведение", "Обществоведение(проф.)",
+    "История", "География", "Физкультура", "ОБЖ", "Трудовое обучение",
+    "Искусство", "Астрономия", "ЧЗС", "Черчение", "ДП", "МП", "Человек и мир"
 ]
+
 DAYS_OF_WEEK = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+
 BELLS_SCHEDULE_HTML = """
 🕐 РАСПИСАНИЕ ЗВОНКОВ И ПИТАНИЯ
 ─────────────────────────────────
@@ -89,7 +95,7 @@ BELLS_SCHEDULE_HTML = """
 ─────────────────────────────────
 """
 
-# ================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
+================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
 # Полное расписание из базы знаний (сокращено для примера)
 SCHEDULE_STRUCTURED = {
     '5а': {
@@ -768,7 +774,9 @@ SCHEDULE_STRUCTURED = {
         ]
     }
 }
-# ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
+
+================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
+
 def get_lesson_time(lesson_number):
     """Возвращает время урока по его номеру."""
     lesson_times = {
@@ -789,6 +797,7 @@ def get_current_lesson_info():
     current_hour = now.hour
     current_minute = now.minute
     current_minutes = current_hour * 60 + current_minute
+    
     lesson_intervals = [
         (8, 0, 8, 45, 1),
         (9, 0, 9, 45, 2),
@@ -798,7 +807,7 @@ def get_current_lesson_info():
         (12, 55, 13, 40, 6),
         (14, 0, 14, 45, 7)
     ]
-
+    
     for start_h, start_m, end_h, end_m, num in lesson_intervals:
         start_total = start_h * 60 + start_m
         end_total = end_h * 60 + end_m
@@ -811,7 +820,7 @@ def get_current_lesson_info():
                 'start_time': f"{start_h:02d}:{start_m:02d}",
                 'end_time': f"{end_h:02d}:{end_m:02d}"
             }
-
+    
     for start_h, start_m, end_h, end_m, num in lesson_intervals:
         start_total = start_h * 60 + start_m
         if current_minutes < start_total:
@@ -823,19 +832,20 @@ def get_current_lesson_info():
                 'start_time': f"{start_h:02d}:{start_m:02d}",
                 'end_time': f"{end_h:02d}:{end_m:02d}"
             }
-
+    
     return {'status': 'finished'}
 
 def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     """Форматирует расписание на день в новом формате с заменами."""
     if not structured_lessons:
         return "На этот день расписания нет."
+    
     structured_lessons.sort(key=lambda x: x[0])
+    
     substitutions = []
-
     if target_date and target_date != 'None' and target_date != 'null' and target_date is not None:
         substitutions = db.get_substitutions_for_class_date(class_name, target_date)
-
+    
     sub_dict = {}
     for sub in substitutions:
         lesson_num = sub[3]
@@ -845,12 +855,12 @@ def format_schedule_day(class_name, day, structured_lessons, target_date=None):
             'old_teacher': sub[6],
             'new_teacher': sub[7]
         }
-
+    
     result_lines = []
     header = f"📅 <b>{day.upper()} - {class_name.upper()}</b>"
     result_lines.append(header)
     result_lines.append("─" * 18)
-
+    
     for lesson_num, subject, teacher in structured_lessons:
         lesson_time = get_lesson_time(lesson_num)
         if 1 <= lesson_num <= 7:
@@ -865,18 +875,20 @@ def format_schedule_day(class_name, day, structured_lessons, target_date=None):
         if lesson_num in sub_dict:
             sub = sub_dict[lesson_num]
             result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']} ✅ {sub['new_teacher']}")
-
+    
     return "\n".join(result_lines)
 
 def format_weekly_schedule(class_name):
     """Форматирует расписание на всю неделю в новом формате."""
     if class_name not in SCHEDULE_STRUCTURED:
         return f"Расписание для класса {class_name} не найдено."
+    
     result_lines = []
-    result_lines.append(f"📅 <b>РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}</b>")
+    result_lines.append(f"📅 РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}")
     result_lines.append("=" * 30)
-
+    
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+    
     for day in days_order:
         if day in SCHEDULE_STRUCTURED[class_name]:
             lessons = SCHEDULE_STRUCTURED[class_name][day]
@@ -892,15 +904,15 @@ def format_weekly_schedule(class_name):
                         lesson_str = f"{lesson_num}. "
                     line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
                     result_lines.append(line)
-
+    
     return "\n".join(result_lines)
 
 def format_substitution(sub):
     """Форматирует замену в красивом виде."""
     if len(sub) >= 9:
         return (f"↪️ {sub[8]} класс, {sub[3]} урок:\n"
-                f"      `{sub[4]}` ({sub[6]})\n"
-                f"   →   `{sub[5]}` ({sub[7]})")
+                f"       `{sub[4]}` ({sub[6]})\n"
+                f"   →    `{sub[5]}` ({sub[7]})")
     return str(sub)
 
 def get_all_teachers():
@@ -924,6 +936,7 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
     teacher_name_clean = teacher_name.replace('_', ' ').strip()
     teacher_id = TEACHER_IDS.get(teacher_name_clean)
     logger.info(f"📨 Попытка отправить уведомление учителю: '{teacher_name_clean}' (ID в словаре: {teacher_id})")
+    
     if not teacher_id or teacher_id == 0:
         logger.warning(f"❌ Учитель '{teacher_name_clean}' не найден в TEACHER_IDS или имеет некорректный ID=0")
         for admin_id in ADMIN_IDS:
@@ -936,7 +949,7 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             except Exception as e:
                 logger.error(f"Ошибка отправки уведомления админу: {e}")
         return
-
+    
     try:
         lesson_time = get_lesson_time(substitution_data['lesson'])
         notification_message = (
@@ -969,7 +982,8 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             except Exception as e2:
                 logger.error(f"Ошибка отправки уведомления админу об ошибке: {e2}")
 
-# ================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ВРЕМЕНИ ==================
+================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ВРЕМЕНИ ==================
+
 def convert_utc_to_minsk(utc_str):
     """Конвертирует строку времени из UTC в минское время (Europe/Minsk)."""
     try:
@@ -985,14 +999,15 @@ def convert_utc_to_minsk(utc_str):
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str  # Возвращаем исходную строку в случае ошибки
 
-# ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
+================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
+
 async def show_my_menu(query, context):
-    """Показывает меню 'Моё' с избранными классами и учителями."""
+    """Показывает меню 'МОё' с избранными классами и учителями."""
     user_id = query.from_user.id
     favorites = db.get_user_favorites(user_id)
     
     if not favorites:
-        text = "🌟 <b>Моё</b>\n\nУ вас нет избранных классов или учителей.\nДобавьте их из меню расписания."
+        text = "🌟 <b>МОё</b>\n\nУ вас нет избранных классов или учителей.\nДобавьте их из меню расписания."
         keyboard = [
             [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
             [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
@@ -1001,14 +1016,14 @@ async def show_my_menu(query, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
         return
-
+    
     # Разделяем на классы и учителей
     favorite_classes = [val for fav_type, val in favorites if fav_type == 'class']
     favorite_teachers = [val for fav_type, val in favorites if fav_type == 'teacher']
-
-    text = "🌟 <b>Моё</b>\n\n"
+    
+    text = "🌟 <b>МОё</b>\n\n"
     keyboard = []
-
+    
     if favorite_classes:
         text += "<b>📚 Избранные классы:</b>\n"
         for cls in favorite_classes:
@@ -1018,7 +1033,7 @@ async def show_my_menu(query, context):
                 InlineKeyboardButton("🗑 Удалить", callback_data=f'remove_favorite_class_{cls}')
             ])
         text += "\n"
-
+    
     if favorite_teachers:
         text += "<b>👨‍🏫 Избранные учителя:</b>\n"
         for teacher in favorite_teachers:
@@ -1028,42 +1043,42 @@ async def show_my_menu(query, context):
                 InlineKeyboardButton("🗑 Удалить", callback_data=f'remove_favorite_teacher_{teacher.replace(" ", "_")}')
             ])
         text += "\n"
-
+    
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
 async def show_teacher_schedule_by_name(query, context, teacher_name):
     """Показывает расписание учителя по имени."""
     teacher_schedule = get_teacher_schedule(teacher_name)
     schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
-
+    
     # Формируем кнопки
     user_id = query.from_user.id
     is_fav = db.is_favorite(user_id, 'teacher', teacher_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_teacher_{teacher_name.replace(' ', '_')}"
-
+    
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("👨‍🏫 Все учителя", callback_data='menu_teacher')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(
         schedule_text,
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
 
-# ================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
+================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
+
 async def show_news_menu(query, context):
     """Показывает последние 5 школьных новостей (старые сверху, новые снизу)."""
     news_list = db.get_latest_news(5)
-    
     # Переворачиваем список, чтобы старые новости были сверху, новые снизу
     news_list = news_list[::-1]
     
@@ -1269,7 +1284,8 @@ async def publish_news(query, context, send_to_all=False):
     
     context.user_data.clear()
 
-# ================== ФУНКЦИИ УДАЛЕНИЯ НОВОСТЕЙ ==================
+================== ФУНКЦИИ УДАЛЕНИЯ НОВОСТЕЙ ==================
+
 async def show_all_news_for_admin(query, context):
     """Показывает все новости для админа с кнопками удаления (новые сверху)."""
     if query.from_user.id not in ADMIN_IDS:
@@ -1370,16 +1386,18 @@ async def delete_news_handler(query, context, news_id):
     # Показываем обновленный список
     await show_all_news_for_admin(query, context)
 
-# ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
+================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
+
 async def check_maintenance_mode(update: Update, context: CallbackContext) -> bool:
     maintenance = db.get_maintenance_status()
     user_id = update.effective_user.id
+    
     if user_id in ADMIN_IDS:
         return False
-
+    
     if not maintenance['enabled']:
         return False
-
+    
     msg = "<b>⚠️ ТЕХНИЧЕСКИЕ РАБОТЫ</b>\n\n"
     msg += "Бот временно недоступен для пользователей.\n"
     if maintenance['until']:
@@ -1387,12 +1405,12 @@ async def check_maintenance_mode(update: Update, context: CallbackContext) -> bo
     if maintenance['message']:
         msg += f"\n💬 <i>{maintenance['message']}</i>\n"
     msg += "\nПриносим извинения за неудобства."
-
+    
     try:
         if update.callback_query:
             await update.callback_query.answer("⚠️ Технические работы", show_alert=True)
             await update.callback_query.edit_message_text(
-                msg, 
+                msg,
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔄 Обновить статус", callback_data='check_maintenance_status')
@@ -1412,7 +1430,7 @@ async def check_maintenance_mode(update: Update, context: CallbackContext) -> bo
             await update.callback_query.message.reply_text(msg, parse_mode='HTML')
         else:
             await update.message.reply_text(msg, parse_mode='HTML')
-
+    
     return True
 
 async def check_maintenance_status(query, context):
@@ -1425,18 +1443,20 @@ async def check_maintenance_status(query, context):
         if maintenance['until']:
             msg += f"\n🕗 Восстановление: {maintenance['until']}"
         keyboard = [[InlineKeyboardButton("🔄 Обновить", callback_data='check_maintenance_status')]]
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     try:
         await query.edit_message_text(msg, reply_markup=reply_markup, parse_mode='HTML')
     except:
         await query.answer("Статус не изменился", show_alert=False)
 
-# ================== УПРОЩЁННЫЙ ТЕХРЕЖИМ ==================
+================== УПРОЩЁННЫЙ ТЕХРЕЖИМ ==================
+
 async def enable_maintenance_mode(query, context):
     """Начинает процесс включения техрежима с упрощённым выбором времени."""
     if query.from_user.id not in ADMIN_IDS:
         return
+    
     keyboard = [
         [InlineKeyboardButton("🕐 На 1 час", callback_data='maintenance_1h')],
         [InlineKeyboardButton("🕐 На 3 часа", callback_data='maintenance_3h')],
@@ -1447,7 +1467,7 @@ async def enable_maintenance_mode(query, context):
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(
         "<b>🔧 ВКЛЮЧЕНИЕ ТЕХРЕЖИМА</b>\n\n"
         "Выберите длительность технических работ:\n"
@@ -1465,6 +1485,7 @@ async def set_maintenance_duration(query, context, duration_type):
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
     until_str = None
+    
     if duration_type == '1h':
         until_str = (now + timedelta(hours=1)).strftime('%d.%m %H:%M')
     elif duration_type == '3h':
@@ -1475,7 +1496,7 @@ async def set_maintenance_duration(query, context, duration_type):
         tomorrow = now + timedelta(days=1)
         until_str = tomorrow.replace(hour=8, minute=0).strftime('%d.%m %H:%M')
     # 'forever' — until_str остаётся None
-
+    
     db.set_maintenance_mode(True, until_str, None)
     db.log_user_activity(query.from_user.id, f'maintenance_enabled_{duration_type}')
     await confirm_maintenance_activated(query, until_str)
@@ -1488,12 +1509,13 @@ async def confirm_maintenance_activated(query, until_str=None):
         msg += f"🕗 Восстановление: {until_str}\n"
     else:
         msg += "♾️ Режим: бессрочный (до ручного отключения)\n"
+    
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(
         msg,
         reply_markup=reply_markup,
@@ -1504,15 +1526,16 @@ async def disable_maintenance_mode(query, context):
     """Выключает техрежим."""
     if query.from_user.id not in ADMIN_IDS:
         return
+    
     db.set_maintenance_mode(False)
     db.log_user_activity(query.from_user.id, 'maintenance_disabled')
-
+    
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(
         "✅ <b>ТЕХРЕЖИМ ОТКЛЮЧЕН</b>\n\n"
         "Бот снова доступен всем пользователям.",
@@ -1520,16 +1543,18 @@ async def disable_maintenance_mode(query, context):
         parse_mode='HTML'
     )
 
-# ================== УПРОЩЁННОЕ ДОБАВЛЕНИЕ ЗАМЕН ==================
+================== УПРОЩЁННОЕ ДОБАВЛЕНИЕ ЗАМЕН ==================
+
 async def show_date_selection(query, context):
     """Показывает выбор даты для добавления замены (ТОЛЬКО будние дни на ближайшую неделю)."""
     tz_minsk = pytz.timezone('Europe/Minsk')
     today = datetime.now(tz_minsk).date()
+    
     keyboard = []
     current_date = today
     days_shown = 0
     max_calendar_days = 7
-
+    
     while days_shown < max_calendar_days:
         weekday = current_date.weekday()
         if weekday < 5:
@@ -1539,17 +1564,17 @@ async def show_date_selection(query, context):
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f'date_{date_str}')])
         current_date += timedelta(days=1)
         days_shown += 1
-
+    
     if not keyboard:
         keyboard.append([InlineKeyboardButton("❌ Нет доступных дат", callback_data='admin_panel')])
-
+    
     keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     context.user_data['adding_substitution'] = True
     context.user_data['step'] = 'date'
-
+    
     await query.edit_message_text(
         "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 1/4)</b>\n"
         "<b>📅 Выберите дату замены:</b>\n"
@@ -1562,6 +1587,7 @@ async def show_class_selection_for_substitution(query, context):
     """Показывает выбор класса для замены."""
     keyboard = []
     row = []
+    
     for i, class_name in enumerate(ALL_CLASSES):
         button_text = class_name.upper()
         callback_data = f'sub_class_{class_name}'
@@ -1569,15 +1595,17 @@ async def show_class_selection_for_substitution(query, context):
         if len(row) == 3:
             keyboard.append(row)
             row = []
+    
     if row:
         keyboard.append(row)
+    
     keyboard.append([
         InlineKeyboardButton("◀️ Назад к дате", callback_data='back_to_date'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(
         "➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 2/4)\n"
         f"📅 Дата: {context.user_data.get('date', 'не выбран')}\n"
@@ -1591,13 +1619,15 @@ async def show_lesson_selection(query, context):
     """Показывает выбор урока с полной информацией."""
     class_name = context.user_data.get('class_name', '')
     day = context.user_data.get('day', '')
+    
     lessons = []
     if class_name in SCHEDULE_STRUCTURED and day in SCHEDULE_STRUCTURED[class_name]:
         lessons = SCHEDULE_STRUCTURED[class_name][day]
-        lessons.sort(key=lambda x: x[0])
-
+    
+    lessons.sort(key=lambda x: x[0])
+    
     keyboard = []
-    for lesson_num, subject, teacher in lessons: 
+    for lesson_num, subject, teacher in lessons:
         lesson_time = get_lesson_time(lesson_num)
         teacher_main = teacher.split('/')[0].split('(')[0].strip()
         button_text = f"{lesson_num} урок: {lesson_time} {subject} - {teacher_main}"
@@ -1605,17 +1635,18 @@ async def show_lesson_selection(query, context):
             button_text = button_text[:57] + "..."
         callback_data = f'lesson_{lesson_num}'
         keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
-
+    
     if not lessons:
         keyboard.append([InlineKeyboardButton("❌ В расписании нет уроков", callback_data='back_to_class')])
-
+    
     keyboard.append([
         InlineKeyboardButton("◀️ Назад к классу", callback_data='back_to_class'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
-
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     text = (
         f"<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 3/4)</b>\n"
         f"<b>📅 Дата:</b> {context.user_data.get('date', '—')}\n"
@@ -1624,7 +1655,7 @@ async def show_lesson_selection(query, context):
         f"<b>🔢 Выберите урок для замены:</b>\n"
         f"<i>Показаны уроки из расписания класса</i>"
     )
-
+    
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
 async def show_teacher_selection(query, context):
@@ -1633,7 +1664,7 @@ async def show_teacher_selection(query, context):
     keyboard = []
     row = []
     current_teacher = context.user_data.get('old_teacher', '').split()[0] if context.user_data.get('old_teacher') else ''
-
+    
     for i, teacher in enumerate(teachers):
         if current_teacher and current_teacher.lower() in teacher.lower():
             continue
@@ -1645,16 +1676,18 @@ async def show_teacher_selection(query, context):
             row = []
         if i >= 30:
             break
+    
     if row:
         keyboard.append(row)
-
+    
     keyboard.append([
         InlineKeyboardButton("◀️ Назад к уроку", callback_data='back_to_lesson'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
     ])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
-
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     text = (
         f"<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 4/4)</b>\n"
         f"<b>📅 Дата:</b> {context.user_data.get('date', '—')}\n"
@@ -1666,17 +1699,18 @@ async def show_teacher_selection(query, context):
         f"<b>👨‍🏫 Выберите НОВОГО учителя:</b>\n"
         f"<i>Предмет останется тем же</i>"
     )
-
+    
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
 async def handle_adding_substitution(query, context):
     """Обрабатывает 4 шага добавления замены."""
     step = context.user_data.get('step', 'date')
+    
     if query.data == 'cancel_adding':
         context.user_data.clear()
         await show_main_menu(query)
         return
-
+    
     if query.data == 'back_to_date':
         context.user_data['step'] = 'date'
         await show_date_selection(query, context)
@@ -1689,7 +1723,7 @@ async def handle_adding_substitution(query, context):
         context.user_data['step'] = 'lesson'
         await show_lesson_selection(query, context)
         return
-
+    
     if step == 'date' and query.data.startswith('date_'):
         date_str = query.data.split('_', 1)[1]
         context.user_data['date'] = date_str
@@ -1710,14 +1744,14 @@ async def handle_adding_substitution(query, context):
         context.user_data['step'] = 'class'
         await show_class_selection_for_substitution(query, context)
         return
-
+    
     if step == 'class' and query.data.startswith('sub_class_'):
         class_name = query.data.split('_', 2)[2]
         context.user_data['class_name'] = class_name
         context.user_data['step'] = 'lesson'
         await show_lesson_selection(query, context)
         return
-
+    
     if step == 'lesson' and query.data.startswith('lesson_'):
         lesson_num = int(query.data.split('_')[1])
         context.user_data['lesson'] = lesson_num
@@ -1734,13 +1768,13 @@ async def handle_adding_substitution(query, context):
         context.user_data['step'] = 'new_teacher'
         await show_teacher_selection(query, context)
         return
-
+    
     if step == 'new_teacher' and query.data.startswith('teacher_'):
         new_teacher = query.data[8:].replace('_', ' ').strip()
         context.user_data['new_teacher'] = new_teacher
         await save_substitution(query, context)
         return
-
+    
     await query.answer("⚠️ Неизвестное действие", show_alert=True)
 
 async def save_substitution(query, context):
@@ -1774,6 +1808,7 @@ async def save_substitution(query, context):
         await send_substitution_notification(context, new_teacher, substitution_data)
         
         context.user_data.clear()
+        
         keyboard = [
             [InlineKeyboardButton("➕ Добавить ещё замену", callback_data='admin_add_sub')],
             [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -1791,7 +1826,7 @@ async def save_substitution(query, context):
         )
         
         await query.edit_message_text(success_msg, reply_markup=reply_markup, parse_mode='HTML')
-
+    
     except Exception as e:
         logger.error(f"Ошибка сохранения замены: {e}")
         context.user_data.clear()
@@ -1801,32 +1836,34 @@ async def save_substitution(query, context):
             parse_mode='HTML'
         )
 
-# ================== АНАЛИТИКА ДЛЯ АДМИНА ==================
+================== АНАЛИТИКА ДЛЯ АДМИНА ==================
+
 async def show_analytics(query, context):
     """Показывает аналитику использования бота."""
     if query.from_user.id not in ADMIN_IDS:
         return
+    
     active_users_24h = db.get_active_users_24h()
     popular_classes = db.get_popular_classes()
     peak_hours = db.get_peak_hours()
     total_users = db.get_user_count()
-
+    
     text = "<b>📊 АНАЛИТИКА БОТА</b>\n\n"
     text += f"👥 <b>Активных за сутки:</b> {active_users_24h}\n"
     text += f"👥 <b>Всего пользователей:</b> {total_users}\n\n"
-
+    
     if popular_classes:
         popular_text = ", ".join(popular_classes[:3])
         text += f"🏆 <b>Популярные классы:</b> {popular_text}\n\n"
     else:
         text += "<b>🏆 Популярные классы:</b> Нет данных за последнюю неделю\n\n"
-
+    
     text += f"⏰ <b>Пиковые часы:</b> {peak_hours}\n\n"
-
+    
     subs = db.get_all_substitutions()
     subs_count = len(subs) if subs else 0
     text += f"🔄 <b>Всего замен:</b> {subs_count}\n"
-
+    
     keyboard = [
         [InlineKeyboardButton("🔄 Обновить аналитику", callback_data='admin_analytics')],
         [InlineKeyboardButton("👥 Статистика пользователей", callback_data='admin_users')],
@@ -1834,10 +1871,11 @@ async def show_analytics(query, context):
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
-# ================== КОМАНДА /start ==================
+================== КОМАНДА /start ==================
+
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     db.add_user(
@@ -1848,10 +1886,10 @@ async def start(update: Update, context: CallbackContext):
         language_code=user.language_code
     )
     db.log_user_activity(user.id, 'start')
-
+    
     if await check_maintenance_mode(update, context):
         return
-
+    
     keyboard = [
         [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
         [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
@@ -1859,13 +1897,13 @@ async def start(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
         [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')],
         [InlineKeyboardButton("📣 Новости", callback_data='menu_news')],
-        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
         [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')],
         [InlineKeyboardButton("👑 Админ-панель", callback_data='admin_panel')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     try:
         await update.message.reply_text(
             '🏫 <b>Школьный бот</b>\nВыберите раздел:',
@@ -1876,7 +1914,8 @@ async def start(update: Update, context: CallbackContext):
         logger.error(f"Ошибка в команде start: {e}")
         await update.message.reply_text("Произошла ошибка. Попробуйте позже.")
 
-# ================== ФУНКЦИИ ДЛЯ "СЕЙЧАС" ==================
+================== ФУНКЦИИ ДЛЯ "СЕЙЧАС" ==================
+
 async def show_now_class_selection(query, context):
     keyboard = [
         [InlineKeyboardButton("5А", callback_data='now_class_5а'), InlineKeyboardButton("5Б", callback_data='now_class_5б'), InlineKeyboardButton("5В", callback_data='now_class_5в')],
@@ -1889,8 +1928,9 @@ async def show_now_class_selection(query, context):
         [InlineKeyboardButton("↩️ Назад", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await query.edit_message_text(
-        "⏰ <b>ТЕКУЩИЙ УРОК</b>\nВыберите ваш класс:",
+        "⏰ ТЕКУЩИЙ УРОК \nВыберите ваш класс:",
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
@@ -1905,7 +1945,7 @@ async def show_current_lesson(query, context):
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
     weekday = now.weekday()
-
+    
     if weekday >= 5:
         day_name = "Суббота" if weekday == 5 else "Воскресенье"
         keyboard = [
@@ -1928,10 +1968,10 @@ async def show_current_lesson(query, context):
             else:
                 raise
         return
-
+    
     day_name = DAYS_OF_WEEK[weekday]
     current_info = get_current_lesson_info()
-
+    
     if current_info['status'] == 'finished':
         text = f"✅ <b>Уроки закончились!</b>\n"
         text += f"📅 Сегодня: <b>{day_name}</b>\n"
@@ -1979,14 +2019,14 @@ async def show_current_lesson(query, context):
                 if substitution:
                     text += f"⚠️ <b>ЗАМЕНА:</b> {substitution[5]} ({substitution[7]})\n"
         text += f"<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
-
+    
     keyboard = [
         [InlineKeyboardButton("🔄 Обновить", callback_data=f'now_class_{class_name}')],
         [InlineKeyboardButton("↩️ Назад к выбору класса", callback_data='menu_now')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     try:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
     except BadRequest as e:
@@ -1995,7 +2035,8 @@ async def show_current_lesson(query, context):
         else:
             raise
 
-# ================== ОБРАБОТЧИК КНОПОК ==================
+================== ОБРАБОТЧИК КНОПОК ==================
+
 async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     if not isinstance(context.user_data, dict):
@@ -2010,16 +2051,16 @@ async def button_handler(update: Update, context: CallbackContext):
         language_code=user.language_code
     )
     db.log_user_activity(user.id, f'button_{query.data[:50]}')
-
+    
     if await check_maintenance_mode(update, context):
         return
-
+    
     try:
         await query.answer()
     except (TimedOut, Exception) as e:
         logger.warning(f"Ошибка при ответе на callback: {e}")
         return
-
+    
     # Обработка добавления замен
     if context.user_data.get('adding_substitution'):
         try:
@@ -2028,13 +2069,13 @@ async def button_handler(update: Update, context: CallbackContext):
             logger.error(f"Ошибка при добавлении замены: {e}")
             await query.edit_message_text(f"❌ Произошла ошибка: {str(e)[:100]}", parse_mode='HTML')
         return
-
+    
     # Обработка техрежима
     if query.data.startswith('maintenance_'):
         duration_type = query.data.split('_', 1)[1]
         await set_maintenance_duration(query, context, duration_type)
         return
-
+    
     # 🔑 ОБРАБОТКА ИЗБРАННОГО
     if query.data == 'menu_my':
         await show_my_menu(query, context)
@@ -2091,7 +2132,7 @@ async def button_handler(update: Update, context: CallbackContext):
             await query.answer(f"Учитель {teacher_name} добавлен в избранное", show_alert=True)
         await show_teacher_schedule_by_name(query, context, teacher_name)
         return
-
+    
     # 🔑 ОБРАБОТКА НОВОСТЕЙ
     if query.data == 'menu_news':
         await show_news_menu(query, context)
@@ -2120,7 +2161,7 @@ async def button_handler(update: Update, context: CallbackContext):
         news_id = int(query.data.split('_')[3])
         await delete_news_handler(query, context, news_id)
         return
-
+    
     # Обработка остальных кнопок
     if query.data == 'back_to_main':
         await show_main_menu(query)
@@ -2212,7 +2253,7 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data.startswith('teacher_search_'):
         await show_searched_teacher_schedule(query, context)
         return
-
+    
     elif query.data in ['back_to_date', 'back_to_class', 'back_to_lesson', 'cancel_adding']:
         if 'adding_substitution' in context.user_data:
             await handle_adding_substitution(query, context)
@@ -2228,14 +2269,15 @@ async def show_main_menu(query):
         [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
         [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')],
         [InlineKeyboardButton("📣 Новости", callback_data='menu_news')],
-        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
         [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')],
         [InlineKeyboardButton("👑 Админ-панель", callback_data='admin_panel')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await query.edit_message_text(
-        '🏫 <b>Школьный бот</b>\nВыберите раздел:',
+        '🏫 Школьный бот \nВыберите раздел:',
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
@@ -2248,15 +2290,15 @@ async def show_weekly_schedule_for_class(query, context, class_name):
     is_fav = db.is_favorite(user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
-
+    
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ Назад к выбору дня", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(
         schedule_text,
         reply_markup=reply_markup,
@@ -2268,6 +2310,7 @@ async def show_teacher_menu(query, context):
     teachers_per_row = 2
     keyboard = []
     row = []
+    
     for i, teacher in enumerate(real_teachers):
         button_text = teacher
         if len(teacher) > 20:
@@ -2276,16 +2319,17 @@ async def show_teacher_menu(query, context):
         if len(row) >= teachers_per_row:
             keyboard.append(row)
             row = []
+    
     if row:
         keyboard.append(row)
-
+    
     context.user_data['teachers_list'] = real_teachers
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     await query.edit_message_text(
         "👨‍🏫 <b>РАСПИСАНИЕ УЧИТЕЛЕЙ</b>\n"
-        "Выберите учителя для просмотра его расписания на неделю:",
+        "Выберите учителя для просмотра его расписания
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
@@ -2327,7 +2371,7 @@ async def show_teacher_schedule(query, context):
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ К списку учителей", callback_data='menu_teacher')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -2560,7 +2604,7 @@ async def show_daily_schedule(query, context):
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
         [InlineKeyboardButton("📅 Расписание на всю неделю", callback_data=f'weekly_{class_name}')],
-        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ Назад к дням", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -2584,7 +2628,7 @@ async def show_weekly_schedule(query, context):
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ Назад к выбору дня", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -3282,7 +3326,7 @@ def main():
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
-    print(f"✅ Добавлены функции: 🌟 Моё (избранное) + 📰 Новости (время в минском поясе)")
+    print(f"✅ Добавлены функции: 🌟 МОё (избранное) + 📰 Новости (время в минском поясе)")
 
     try:
         application.run_polling(
