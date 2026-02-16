@@ -136,7 +136,8 @@ def init_db():
         # Индексы для оптимизации
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_teacher_date ON substitutions(new_teacher, date)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_new_teacher_date ON substitutions(new_teacher, date)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_old_teacher_date ON substitutions(old_teacher, date)')  # добавлен
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON user_activity(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_user ON user_activity(user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)')
@@ -156,6 +157,7 @@ def init_db():
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ====================
 def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
+    """Добавляет или обновляет пользователя."""
     conn = None
     try:
         conn = get_connection()
@@ -178,6 +180,7 @@ def add_user(user_id, username=None, first_name=None, last_name=None, language_c
         release_connection(conn)
 
 def log_user_activity(user_id, action, class_name=None):
+    """Логирует действие пользователя."""
     conn = None
     try:
         conn = get_connection()
@@ -194,6 +197,7 @@ def log_user_activity(user_id, action, class_name=None):
 
 # ==================== ФУНКЦИИ АНАЛИТИКИ ====================
 def get_active_users_24h():
+    """Количество уникальных пользователей за последние 24 часа."""
     conn = None
     try:
         conn = get_connection()
@@ -212,6 +216,7 @@ def get_active_users_24h():
         release_connection(conn)
 
 def get_popular_classes():
+    """Самые популярные классы за последние 7 дней."""
     conn = None
     try:
         conn = get_connection()
@@ -234,6 +239,7 @@ def get_popular_classes():
         release_connection(conn)
 
 def get_peak_hours():
+    """Часы с наибольшей активностью за последние 7 дней."""
     conn = None
     try:
         conn = get_connection()
@@ -259,6 +265,7 @@ def get_peak_hours():
         release_connection(conn)
 
 def get_user_count():
+    """Общее количество зарегистрированных пользователей."""
     conn = None
     try:
         conn = get_connection()
@@ -273,6 +280,7 @@ def get_user_count():
         release_connection(conn)
 
 def get_all_users():
+    """Возвращает список всех пользователей (id, username, first_name, last_name)."""
     conn = None
     try:
         conn = get_connection()
@@ -287,6 +295,7 @@ def get_all_users():
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ЗАМЕНАМИ ====================
 def add_substitution(date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name):
+    """Добавляет замену в базу."""
     conn = None
     try:
         conn = get_connection()
@@ -305,6 +314,7 @@ def add_substitution(date, day, lesson_number, old_subject, new_subject, old_tea
         release_connection(conn)
 
 def get_substitutions_for_date(date):
+    """Возвращает все замены на указанную дату."""
     conn = None
     try:
         conn = get_connection()
@@ -320,6 +330,7 @@ def get_substitutions_for_date(date):
         release_connection(conn)
 
 def get_substitutions_for_class_date(class_name, date):
+    """Возвращает замены для конкретного класса на указанную дату."""
     conn = None
     try:
         conn = get_connection()
@@ -337,6 +348,7 @@ def get_substitutions_for_class_date(class_name, date):
         release_connection(conn)
 
 def get_substitutions_by_teacher_and_date(teacher_name, date):
+    """Возвращает замены, где учитель фигурирует как старый или новый, на указанную дату."""
     conn = None
     try:
         conn = get_connection()
@@ -353,7 +365,33 @@ def get_substitutions_by_teacher_and_date(teacher_name, date):
     finally:
         release_connection(conn)
 
+def get_teacher_substitutions_period(teacher_name, start_date, end_date):
+    """
+    Возвращает все замены для учителя (как старого, так и нового)
+    за период с start_date по end_date включительно.
+    Результат отсортирован по дате и номеру урока.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT date, lesson_number, old_subject, new_subject,
+                   old_teacher, new_teacher, class_name
+            FROM substitutions
+            WHERE (new_teacher = %s OR old_teacher = %s)
+              AND date BETWEEN %s AND %s
+            ORDER BY date, lesson_number
+        ''', (teacher_name, teacher_name, start_date, end_date))
+        return cursor.fetchall()
+    except Exception as e:
+        logger.error(f"Ошибка получения замен для учителя {teacher_name} за период: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
 def get_all_substitutions():
+    """Возвращает все замены из базы (без фильтрации)."""
     conn = None
     try:
         conn = get_connection()
@@ -369,6 +407,7 @@ def get_all_substitutions():
         release_connection(conn)
 
 def delete_substitution(sub_id):
+    """Удаляет замену по ID."""
     conn = None
     try:
         conn = get_connection()
@@ -383,6 +422,7 @@ def delete_substitution(sub_id):
         release_connection(conn)
 
 def clear_all_substitutions():
+    """Удаляет все замены из таблицы."""
     conn = None
     try:
         conn = get_connection()
@@ -398,6 +438,7 @@ def clear_all_substitutions():
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ТЕХРЕЖИМОМ ====================
 def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
+    """Включает/выключает технический режим."""
     conn = None
     try:
         conn = get_connection()
@@ -417,6 +458,7 @@ def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
         release_connection(conn)
 
 def get_maintenance_status():
+    """Возвращает текущий статус техрежима."""
     conn = None
     try:
         conn = get_connection()
@@ -438,6 +480,7 @@ def get_maintenance_status():
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ИЗБРАННЫМ ====================
 def add_favorite(user_id, fav_type, value):
+    """Добавляет элемент в избранное пользователя."""
     conn = None
     try:
         conn = get_connection()
@@ -455,6 +498,7 @@ def add_favorite(user_id, fav_type, value):
         release_connection(conn)
 
 def remove_favorite(user_id, fav_type, value):
+    """Удаляет элемент из избранного пользователя."""
     conn = None
     try:
         conn = get_connection()
@@ -471,6 +515,7 @@ def remove_favorite(user_id, fav_type, value):
         release_connection(conn)
 
 def get_user_favorites(user_id):
+    """Возвращает список избранного пользователя."""
     conn = None
     try:
         conn = get_connection()
@@ -488,6 +533,7 @@ def get_user_favorites(user_id):
         release_connection(conn)
 
 def is_favorite(user_id, fav_type, value):
+    """Проверяет, является ли элемент избранным."""
     conn = None
     try:
         conn = get_connection()
@@ -505,6 +551,7 @@ def is_favorite(user_id, fav_type, value):
 
 # ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ====================
 def add_news(title, content):
+    """Добавляет новость."""
     conn = None
     try:
         conn = get_connection()
@@ -524,6 +571,7 @@ def add_news(title, content):
         release_connection(conn)
 
 def get_latest_news(limit=5):
+    """Возвращает последние `limit` новостей."""
     conn = None
     try:
         conn = get_connection()
@@ -542,6 +590,7 @@ def get_latest_news(limit=5):
         release_connection(conn)
 
 def get_all_news():
+    """Возвращает все новости (для админа)."""
     conn = None
     try:
         conn = get_connection()
@@ -559,6 +608,7 @@ def get_all_news():
         release_connection(conn)
 
 def get_news_by_id(news_id):
+    """Возвращает новость по ID."""
     conn = None
     try:
         conn = get_connection()
@@ -575,6 +625,7 @@ def get_news_by_id(news_id):
         release_connection(conn)
 
 def delete_news(news_id):
+    """Удаляет новость по ID."""
     conn = None
     try:
         conn = get_connection()
