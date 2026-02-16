@@ -4,6 +4,8 @@ import os
 from datetime import datetime, timedelta
 import pytz
 import logging
+import time
+import functools
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +47,19 @@ def release_connection(conn):
     """Возврат соединения в пул (НЕ закрываем физически!)."""
     if db_pool is not None and conn is not None:
         db_pool.putconn(conn)
+
+# Декоратор для замера времени выполнения синхронных функций БД
+def log_db_time(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        try:
+            result = func(*args, **kwargs)
+            return result
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.debug(f"⏱️ {func.__name__} занял {elapsed_ms:.2f} мс")
+    return wrapper
 
 def init_db():
     """Инициализация базы данных PostgreSQL (использует прямое соединение, НЕ пул)."""
@@ -156,6 +171,7 @@ def init_db():
             conn.close()
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ====================
+@log_db_time
 def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
     """Добавляет или обновляет пользователя."""
     conn = None
@@ -179,6 +195,7 @@ def add_user(user_id, username=None, first_name=None, last_name=None, language_c
     finally:
         release_connection(conn)
 
+@log_db_time
 def log_user_activity(user_id, action, class_name=None):
     """Логирует действие пользователя."""
     conn = None
@@ -196,6 +213,7 @@ def log_user_activity(user_id, action, class_name=None):
         release_connection(conn)
 
 # ==================== ФУНКЦИИ АНАЛИТИКИ ====================
+@log_db_time
 def get_active_users_24h():
     """Количество уникальных пользователей за последние 24 часа."""
     conn = None
@@ -215,6 +233,7 @@ def get_active_users_24h():
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_popular_classes():
     """Самые популярные классы за последние 7 дней."""
     conn = None
@@ -238,6 +257,7 @@ def get_popular_classes():
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_peak_hours():
     """Часы с наибольшей активностью за последние 7 дней."""
     conn = None
@@ -264,6 +284,7 @@ def get_peak_hours():
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_user_count():
     """Общее количество зарегистрированных пользователей."""
     conn = None
@@ -279,6 +300,7 @@ def get_user_count():
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_all_users():
     """Возвращает список всех пользователей (id, username, first_name, last_name)."""
     conn = None
@@ -294,6 +316,7 @@ def get_all_users():
         release_connection(conn)
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ЗАМЕНАМИ ====================
+@log_db_time
 def add_substitution(date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name):
     """Добавляет замену в базу."""
     conn = None
@@ -313,6 +336,7 @@ def add_substitution(date, day, lesson_number, old_subject, new_subject, old_tea
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_substitutions_for_date(date):
     """Возвращает все замены на указанную дату."""
     conn = None
@@ -329,6 +353,7 @@ def get_substitutions_for_date(date):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_substitutions_for_class_date(class_name, date):
     """Возвращает замены для конкретного класса на указанную дату."""
     conn = None
@@ -347,6 +372,7 @@ def get_substitutions_for_class_date(class_name, date):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_substitutions_by_teacher_and_date(teacher_name, date):
     """Возвращает замены, где учитель фигурирует как старый или новый, на указанную дату."""
     conn = None
@@ -365,6 +391,7 @@ def get_substitutions_by_teacher_and_date(teacher_name, date):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_teacher_substitutions_period(teacher_name, start_date, end_date):
     """
     Возвращает все замены для учителя (как старого, так и нового)
@@ -390,6 +417,7 @@ def get_teacher_substitutions_period(teacher_name, start_date, end_date):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_all_substitutions():
     """Возвращает все замены из базы (без фильтрации)."""
     conn = None
@@ -406,6 +434,7 @@ def get_all_substitutions():
     finally:
         release_connection(conn)
 
+@log_db_time
 def delete_substitution(sub_id):
     """Удаляет замену по ID."""
     conn = None
@@ -421,6 +450,7 @@ def delete_substitution(sub_id):
     finally:
         release_connection(conn)
 
+@log_db_time
 def clear_all_substitutions():
     """Удаляет все замены из таблицы."""
     conn = None
@@ -437,6 +467,7 @@ def clear_all_substitutions():
         release_connection(conn)
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ТЕХРЕЖИМОМ ====================
+@log_db_time
 def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
     """Включает/выключает технический режим."""
     conn = None
@@ -457,6 +488,7 @@ def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_maintenance_status():
     """Возвращает текущий статус техрежима."""
     conn = None
@@ -479,6 +511,7 @@ def get_maintenance_status():
         release_connection(conn)
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ИЗБРАННЫМ ====================
+@log_db_time
 def add_favorite(user_id, fav_type, value):
     """Добавляет элемент в избранное пользователя."""
     conn = None
@@ -497,6 +530,7 @@ def add_favorite(user_id, fav_type, value):
     finally:
         release_connection(conn)
 
+@log_db_time
 def remove_favorite(user_id, fav_type, value):
     """Удаляет элемент из избранного пользователя."""
     conn = None
@@ -514,6 +548,7 @@ def remove_favorite(user_id, fav_type, value):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_user_favorites(user_id):
     """Возвращает список избранного пользователя."""
     conn = None
@@ -532,6 +567,7 @@ def get_user_favorites(user_id):
     finally:
         release_connection(conn)
 
+@log_db_time
 def is_favorite(user_id, fav_type, value):
     """Проверяет, является ли элемент избранным."""
     conn = None
@@ -550,6 +586,7 @@ def is_favorite(user_id, fav_type, value):
         release_connection(conn)
 
 # ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ====================
+@log_db_time
 def add_news(title, content):
     """Добавляет новость."""
     conn = None
@@ -570,6 +607,7 @@ def add_news(title, content):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_latest_news(limit=5):
     """Возвращает последние `limit` новостей."""
     conn = None
@@ -589,6 +627,7 @@ def get_latest_news(limit=5):
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_all_news():
     """Возвращает все новости (для админа)."""
     conn = None
@@ -607,6 +646,7 @@ def get_all_news():
     finally:
         release_connection(conn)
 
+@log_db_time
 def get_news_by_id(news_id):
     """Возвращает новость по ID."""
     conn = None
@@ -624,6 +664,7 @@ def get_news_by_id(news_id):
     finally:
         release_connection(conn)
 
+@log_db_time
 def delete_news(news_id):
     """Удаляет новость по ID."""
     conn = None
