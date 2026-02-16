@@ -19,7 +19,7 @@ print("Бот запускается с токеном из переменных
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-================== НАСТРОЙКИ ==================
+#================== НАСТРОЙКИ ==================
 ADMIN_IDS = [516406248]
 REQUEST_TIMEOUT = 30.0
 
@@ -95,7 +95,7 @@ BELLS_SCHEDULE_HTML = """
 ─────────────────────────────────
 """
 
-================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
+#================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
 # Полное расписание из базы знаний (сокращено для примера)
 SCHEDULE_STRUCTURED = {
     '5а': {
@@ -775,7 +775,7 @@ SCHEDULE_STRUCTURED = {
     }
 }
 
-================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
+#================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 
 def get_lesson_time(lesson_number):
     """Возвращает время урока по его номеру."""
@@ -982,7 +982,7 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             except Exception as e2:
                 logger.error(f"Ошибка отправки уведомления админу об ошибке: {e2}")
 
-================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ВРЕМЕНИ ==================
+#================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ВРЕМЕНИ ==================
 
 def convert_utc_to_minsk(utc_str):
     """Конвертирует строку времени из UTC в минское время (Europe/Minsk)."""
@@ -999,7 +999,7 @@ def convert_utc_to_minsk(utc_str):
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str  # Возвращаем исходную строку в случае ошибки
 
-================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
+#================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 
 async def show_my_menu(query, context):
     """Показывает меню 'МОё' с избранными классами и учителями."""
@@ -1074,7 +1074,7 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
         parse_mode='HTML'
     )
 
-================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
+#================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
 
 async def show_news_menu(query, context):
     """Показывает последние 5 школьных новостей (старые сверху, новые снизу)."""
@@ -1284,7 +1284,7 @@ async def publish_news(query, context, send_to_all=False):
     
     context.user_data.clear()
 
-================== ФУНКЦИИ УДАЛЕНИЯ НОВОСТЕЙ ==================
+#================== ФУНКЦИИ УДАЛЕНИЯ НОВОСТЕЙ ==================
 
 async def show_all_news_for_admin(query, context):
     """Показывает все новости для админа с кнопками удаления (новые сверху)."""
@@ -1386,7 +1386,7 @@ async def delete_news_handler(query, context, news_id):
     # Показываем обновленный список
     await show_all_news_for_admin(query, context)
 
-================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
+#================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
 
 async def check_maintenance_mode(update: Update, context: CallbackContext) -> bool:
     maintenance = db.get_maintenance_status()
@@ -1450,7 +1450,7 @@ async def check_maintenance_status(query, context):
     except:
         await query.answer("Статус не изменился", show_alert=False)
 
-================== УПРОЩЁННЫЙ ТЕХРЕЖИМ ==================
+#================== УПРОЩЁННЫЙ ТЕХРЕЖИМ ==================
 
 async def enable_maintenance_mode(query, context):
     """Начинает процесс включения техрежима с упрощённым выбором времени."""
@@ -1543,7 +1543,7 @@ async def disable_maintenance_mode(query, context):
         parse_mode='HTML'
     )
 
-================== УПРОЩЁННОЕ ДОБАВЛЕНИЕ ЗАМЕН ==================
+#================== УПРОЩЁННОЕ ДОБАВЛЕНИЕ ЗАМЕН ==================
 
 async def show_date_selection(query, context):
     """Показывает выбор даты для добавления замены (ТОЛЬКО будние дни на ближайшую неделю)."""
@@ -1836,7 +1836,7 @@ async def save_substitution(query, context):
             parse_mode='HTML'
         )
 
-================== АНАЛИТИКА ДЛЯ АДМИНА ==================
+#================== АНАЛИТИКА ДЛЯ АДМИНА ==================
 
 async def show_analytics(query, context):
     """Показывает аналитику использования бота."""
@@ -1874,7 +1874,7 @@ async def show_analytics(query, context):
     
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
-================== КОМАНДА /start ==================
+#================== КОМАНДА /start ==================
 
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1914,7 +1914,7 @@ async def start(update: Update, context: CallbackContext):
         logger.error(f"Ошибка в команде start: {e}")
         await update.message.reply_text("Произошла ошибка. Попробуйте позже.")
 
-================== ФУНКЦИИ ДЛЯ "СЕЙЧАС" ==================
+#================== ФУНКЦИИ ДЛЯ "СЕЙЧАС" ==================
 
 async def show_now_class_selection(query, context):
     keyboard = [
@@ -2035,7 +2035,7 @@ async def show_current_lesson(query, context):
         else:
             raise
 
-================== ОБРАБОТЧИК КНОПОК ==================
+#================== ОБРАБОТЧИК КНОПОК ==================
 
 async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
