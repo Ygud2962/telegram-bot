@@ -1,6 +1,6 @@
 import psycopg2
+from psycopg2 import pool
 import os
-from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import pytz
 import logging
@@ -16,15 +16,42 @@ if not DATABASE_URL:
     raise ValueError("❌ Переменная окружения DATABASE_URL не установлена! "
                      "Убедитесь, что в Railway добавлена бесплатная PostgreSQL база данных.")
 
+# 🔑 ГЛОБАЛЬНЫЙ ПУЛ СОЕДИНЕНИЙ (создаётся ОДИН РАЗ при запуске)
+db_pool = None
+
+def init_pool():
+    """Инициализирует пул соединений после создания структуры БД."""
+    global db_pool
+    if db_pool is None:
+        try:
+            db_pool = pool.SimpleConnectionPool(
+                minconn=1,
+                maxconn=2,  # Railway Free Tier поддерживает только 1-2 соединения
+                dsn=DATABASE_URL,
+                sslmode='require'
+            )
+            logger.info("✅ Пул соединений PostgreSQL инициализирован")
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания пула соединений: {e}")
+            raise
+
 def get_connection():
-    """Создаёт подключение к PostgreSQL с необходимыми параметрами."""
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    """Быстрое получение соединения из пула (мгновенно после инициализации)."""
+    if db_pool is None:
+        raise RuntimeError("Пул соединений не инициализирован! Вызовите init_pool() после init_db()")
+    return db_pool.getconn()
+
+def release_connection(conn):
+    """Возврат соединения в пул (НЕ закрываем физически!)."""
+    if db_pool is not None and conn is not None:
+        db_pool.putconn(conn)
 
 def init_db():
-    """Инициализация базы данных PostgreSQL."""
+    """Инициализация базы данных PostgreSQL (использует прямое соединение, НЕ пул)."""
     conn = None
     try:
-        conn = get_connection()
+        # Прямое соединение для инициализации (пул ещё не создан)
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
         
         # Таблица замен
@@ -77,7 +104,6 @@ def init_db():
                 maintenance_message TEXT
             )
         ''')
-        # Вставка начального значения с игнорированием конфликта
         cursor.execute('''
             INSERT INTO bot_status (id, maintenance_mode) 
             VALUES (1, 0) 
@@ -89,7 +115,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS user_favorites (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT NOT NULL,
-                fav_type TEXT NOT NULL,  -- 'class' or 'teacher'
+                fav_type TEXT NOT NULL,
                 value TEXT NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
@@ -130,7 +156,6 @@ def init_db():
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ====================
 def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
-    """Добавляет или обновляет пользователя в базе данных."""
     conn = None
     try:
         conn = get_connection()
@@ -150,11 +175,9 @@ def add_user(user_id, username=None, first_name=None, last_name=None, language_c
         logger.error(f"Ошибка добавления пользователя {user_id}: {e}")
         raise
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def log_user_activity(user_id, action, class_name=None):
-    """Логирует активность пользователя для аналитики."""
     conn = None
     try:
         conn = get_connection()
@@ -167,12 +190,10 @@ def log_user_activity(user_id, action, class_name=None):
     except Exception as e:
         logger.error(f"Ошибка логирования активности пользователя {user_id}: {e}")
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 # ==================== ФУНКЦИИ АНАЛИТИКИ ====================
 def get_active_users_24h():
-    """Возвращает количество активных пользователей за последние 24 часа (UTC)."""
     conn = None
     try:
         conn = get_connection()
@@ -188,11 +209,9 @@ def get_active_users_24h():
         logger.error(f"Ошибка получения активных пользователей: {e}")
         return 0
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_popular_classes():
-    """Возвращает список популярных классов за последнюю неделю."""
     conn = None
     try:
         conn = get_connection()
@@ -212,17 +231,14 @@ def get_popular_classes():
         logger.error(f"Ошибка получения популярных классов: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_peak_hours():
-    """Возвращает пиковые часы использования бота за последнюю неделю (в UTC)."""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
         week_ago = datetime.now(pytz.utc) - timedelta(days=7)
-        # Используем EXTRACT для получения часа из временной метки
         cursor.execute('''
             SELECT EXTRACT(HOUR FROM timestamp) as hour, COUNT(*) as cnt
             FROM user_activity
@@ -233,7 +249,6 @@ def get_peak_hours():
         ''', (week_ago,))
         results = cursor.fetchall()
         if results:
-            # Форматируем часы как "10:00"
             hours = [f"{int(row[0]):02d}:00" for row in results]
             return ", ".join(hours)
         return "Нет данных"
@@ -241,11 +256,9 @@ def get_peak_hours():
         logger.error(f"Ошибка получения пиковых часов: {e}")
         return "Ошибка"
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_user_count():
-    """Возвращает количество пользователей."""
     conn = None
     try:
         conn = get_connection()
@@ -257,11 +270,9 @@ def get_user_count():
         logger.error(f"Ошибка получения количества пользователей: {e}")
         return 0
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_all_users():
-    """Возвращает список всех пользователей."""
     conn = None
     try:
         conn = get_connection()
@@ -272,12 +283,10 @@ def get_all_users():
         logger.error(f"Ошибка получения списка пользователей: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ЗАМЕНАМИ ====================
 def add_substitution(date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name):
-    """Добавление замены в базу данных."""
     conn = None
     try:
         conn = get_connection()
@@ -293,11 +302,9 @@ def add_substitution(date, day, lesson_number, old_subject, new_subject, old_tea
         logger.error(f"Ошибка добавления замены: {e}")
         raise
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_substitutions_for_date(date):
-    """Получение всех замен на конкретную дату."""
     conn = None
     try:
         conn = get_connection()
@@ -310,11 +317,9 @@ def get_substitutions_for_date(date):
         logger.error(f"Ошибка получения замен на дату {date}: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_substitutions_for_class_date(class_name, date):
-    """Получение замен для конкретного класса на дату."""
     conn = None
     try:
         conn = get_connection()
@@ -329,11 +334,9 @@ def get_substitutions_for_class_date(class_name, date):
         logger.error(f"Ошибка получения замен для класса {class_name} на {date}: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_substitutions_by_teacher_and_date(teacher_name, date):
-    """Получение замен для конкретного учителя на дату."""
     conn = None
     try:
         conn = get_connection()
@@ -348,11 +351,9 @@ def get_substitutions_by_teacher_and_date(teacher_name, date):
         logger.error(f"Ошибка получения замен для учителя {teacher_name} на {date}: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_all_substitutions():
-    """Получение всех замен из базы данных."""
     conn = None
     try:
         conn = get_connection()
@@ -365,11 +366,9 @@ def get_all_substitutions():
         logger.error(f"Ошибка получения всех замен: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def delete_substitution(sub_id):
-    """Удаление замены по ID."""
     conn = None
     try:
         conn = get_connection()
@@ -381,11 +380,9 @@ def delete_substitution(sub_id):
         logger.error(f"Ошибка удаления замены ID={sub_id}: {e}")
         raise
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def clear_all_substitutions():
-    """Очистка всей таблицы замен."""
     conn = None
     try:
         conn = get_connection()
@@ -397,12 +394,10 @@ def clear_all_substitutions():
         logger.error(f"Ошибка очистки замен: {e}")
         raise
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ТЕХРЕЖИМОМ ====================
 def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
-    """Включить/выключить техрежим."""
     conn = None
     try:
         conn = get_connection()
@@ -419,11 +414,9 @@ def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
         logger.error(f"Ошибка установки техрежима: {e}")
         raise
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_maintenance_status():
-    """Получить текущий статус техрежима."""
     conn = None
     try:
         conn = get_connection()
@@ -441,12 +434,10 @@ def get_maintenance_status():
         logger.error(f"Ошибка получения статуса техрежима: {e}")
         return {'enabled': False, 'until': None, 'message': None}
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 # ==================== ФУНКЦИИ УПРАВЛЕНИЯ ИЗБРАННЫМ ====================
 def add_favorite(user_id, fav_type, value):
-    """Добавить элемент в избранное."""
     conn = None
     try:
         conn = get_connection()
@@ -461,11 +452,9 @@ def add_favorite(user_id, fav_type, value):
     except Exception as e:
         logger.error(f"Ошибка добавления в избранное: {e}")
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def remove_favorite(user_id, fav_type, value):
-    """Удалить элемент из избранного."""
     conn = None
     try:
         conn = get_connection()
@@ -479,11 +468,9 @@ def remove_favorite(user_id, fav_type, value):
     except Exception as e:
         logger.error(f"Ошибка удаления из избранного: {e}")
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_user_favorites(user_id):
-    """Получить все избранные элементы пользователя."""
     conn = None
     try:
         conn = get_connection()
@@ -493,16 +480,14 @@ def get_user_favorites(user_id):
             WHERE user_id = %s
             ORDER BY created_at DESC
         ''', (user_id,))
-        return cursor.fetchall()  # Список кортежей (fav_type, value)
+        return cursor.fetchall()
     except Exception as e:
         logger.error(f"Ошибка получения избранного для пользователя {user_id}: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def is_favorite(user_id, fav_type, value):
-    """Проверить, находится ли элемент в избранном."""
     conn = None
     try:
         conn = get_connection()
@@ -516,12 +501,10 @@ def is_favorite(user_id, fav_type, value):
         logger.error(f"Ошибка проверки избранного: {e}")
         return False
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 # ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ====================
 def add_news(title, content):
-    """Добавляет новость в базу данных и возвращает её ID."""
     conn = None
     try:
         conn = get_connection()
@@ -538,11 +521,9 @@ def add_news(title, content):
         logger.error(f"Ошибка добавления новости: {e}")
         raise
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_latest_news(limit=5):
-    """Получает последние новости из базы данных."""
     conn = None
     try:
         conn = get_connection()
@@ -558,11 +539,9 @@ def get_latest_news(limit=5):
         logger.error(f"Ошибка получения последних новостей: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_all_news():
-    """Получает все новости из базы данных."""
     conn = None
     try:
         conn = get_connection()
@@ -577,11 +556,9 @@ def get_all_news():
         logger.error(f"Ошибка получения всех новостей: {e}")
         return []
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def get_news_by_id(news_id):
-    """Получает новость по ID."""
     conn = None
     try:
         conn = get_connection()
@@ -595,11 +572,9 @@ def get_news_by_id(news_id):
         logger.error(f"Ошибка получения новости ID={news_id}: {e}")
         return None
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 def delete_news(news_id):
-    """Удаляет новость по ID."""
     conn = None
     try:
         conn = get_connection()
@@ -611,8 +586,7 @@ def delete_news(news_id):
         logger.error(f"Ошибка удаления новости ID={news_id}: {e}")
         raise
     finally:
-        if conn:
-            conn.close()
+        release_connection(conn)
 
 # ==================== ИНИЦИАЛИЗАЦИЯ ПРИ ИМПОРТЕ ====================
 if __name__ == "__main__":
