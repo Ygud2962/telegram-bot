@@ -1,18 +1,27 @@
-import sqlite3
 import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
+import logging
 
-DB_PATH = 'school_bot.db'
+logger = logging.getLogger(__name__)
+
+# Получаем URL из переменных окружения
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+def get_connection():
+    """Создаёт подключение к базе данных."""
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 def init_db():
     """Инициализация базы данных."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     
     # Таблица замен
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS substitutions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             date TEXT NOT NULL,
             day TEXT NOT NULL,
             lesson_number INTEGER NOT NULL,
@@ -24,11 +33,11 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
+    
     # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
+            user_id BIGINT PRIMARY KEY,
             username TEXT,
             first_name TEXT,
             last_name TEXT,
@@ -37,20 +46,20 @@ def init_db():
             last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
+    
     # Таблица активности пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_activity (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             action TEXT NOT NULL,
             class_name TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
     ''')
-
-    # Таблица статуса бота (техрежим)
+    
+    # Таблица статуса бота
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS bot_status (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -59,14 +68,14 @@ def init_db():
             maintenance_message TEXT DEFAULT NULL
         )
     ''')
-    cursor.execute('INSERT OR IGNORE INTO bot_status (id, maintenance_mode) VALUES (1, 0)')
+    cursor.execute('INSERT INTO bot_status (id, maintenance_mode) VALUES (1, 0) ON CONFLICT DO NOTHING')
     
-    # Таблица избранного пользователей
+    # Таблица избранного
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_favorites (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            fav_type TEXT NOT NULL,  -- 'class' or 'teacher'
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            fav_type TEXT NOT NULL,
             value TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(user_id),
@@ -74,17 +83,17 @@ def init_db():
         )
     ''')
     
-    # Таблица школьных новостей
+    # Таблица новостей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             content TEXT NOT NULL,
             published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
-    # Индексы для оптимизации
+    
+    # Индексы
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_teacher_date ON substitutions(new_teacher, date)')
@@ -94,130 +103,106 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_user ON user_favorites(user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_type ON user_favorites(fav_type)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_published ON news(published_at)')
-
+    
     conn.commit()
     conn.close()
-    print("✅ База данных инициализирована")
+    print("✅ База данных PostgreSQL инициализирована")
 
 def update_database_structure():
-    """Обновление структуры базы данных при необходимости."""
-    conn = sqlite3.connect(DB_PATH)
+    """Обновление структуры базы данных."""
+    conn = get_connection()
     cursor = conn.cursor()
     
-    # Проверяем наличие таблицы активности
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_activity'")
-    if not cursor.fetchone():
-        cursor.execute('''
+    # Проверяем и создаём таблицы при необходимости
+    tables = {
+        'user_activity': '''
             CREATE TABLE user_activity (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
                 action TEXT NOT NULL,
                 class_name TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
-        ''')
-        print("✅ Добавлена таблица активности пользователей")
-
-    # Проверяем наличие столбца last_active в таблице users
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [col[1] for col in cursor.fetchall()]
-    if 'last_active' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
-        print("✅ Добавлен столбец last_active в таблицу users")
-
-    # Проверяем наличие таблицы избранного
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_favorites'")
-    if not cursor.fetchone():
-        cursor.execute('''
+        ''',
+        'user_favorites': '''
             CREATE TABLE user_favorites (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
                 fav_type TEXT NOT NULL,
                 value TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(user_id),
                 UNIQUE(user_id, fav_type, value)
             )
-        ''')
-        print("✅ Добавлена таблица избранного пользователей")
-        cursor.execute('CREATE INDEX idx_favorites_user ON user_favorites(user_id)')
-        cursor.execute('CREATE INDEX idx_favorites_type ON user_favorites(fav_type)')
-
-    # Проверяем наличие таблицы новостей
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='news'")
-    if not cursor.fetchone():
-        cursor.execute('''
+        ''',
+        'news': '''
             CREATE TABLE news (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
                 content TEXT NOT NULL,
                 published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-        print("✅ Добавлена таблица школьных новостей")
-        cursor.execute('CREATE INDEX idx_news_published ON news(published_at)')
-
-    # Проверяем наличие индексов
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_activity_timestamp'")
-    if not cursor.fetchone():
-        cursor.execute('CREATE INDEX idx_activity_timestamp ON user_activity(timestamp)')
-        print("✅ Добавлен индекс idx_activity_timestamp")
-
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_activity_user'")
-    if not cursor.fetchone():
-        cursor.execute('CREATE INDEX idx_activity_user ON user_activity(user_id)')
-        print("✅ Добавлен индекс idx_activity_user")
-
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_users_last_active'")
-    if not cursor.fetchone():
-        cursor.execute('CREATE INDEX idx_users_last_active ON users(last_active)')
-        print("✅ Добавлен индекс idx_users_last_active")
-
+        '''
+    }
+    
+    for table_name, create_sql in tables.items():
+        cursor.execute(f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table_name}')")
+        exists = cursor.fetchone()[0]
+        if not exists:
+            cursor.execute(create_sql)
+            print(f"✅ Добавлена таблица {table_name}")
+    
     conn.commit()
     conn.close()
 
 def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
-    """Добавляет или обновляет пользователя в базе данных."""
-    conn = sqlite3.connect(DB_PATH)
+    """Добавляет или обновляет пользователя."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, language_code, last_active)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO users (user_id, username, first_name, last_name, language_code, last_active)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id) DO UPDATE SET
+            username = EXCLUDED.username,
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            language_code = EXCLUDED.language_code,
+            last_active = CURRENT_TIMESTAMP
     ''', (user_id, username, first_name, last_name, language_code))
     conn.commit()
     conn.close()
 
 def log_user_activity(user_id, action, class_name=None):
-    """Логирует активность пользователя для аналитики."""
-    conn = sqlite3.connect(DB_PATH)
+    """Логирует активность пользователя."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO user_activity (user_id, action, class_name)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
     ''', (user_id, action, class_name))
     conn.commit()
     conn.close()
 
 def get_active_users_24h():
-    """Возвращает количество активных пользователей за последние 24 часа."""
-    conn = sqlite3.connect(DB_PATH)
+    """Возвращает количество активных пользователей за 24 часа."""
+    conn = get_connection()
     cursor = conn.cursor()
     yesterday = (datetime.now() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute('SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE timestamp > ?', (yesterday,))
+    cursor.execute('SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE timestamp > %s', (yesterday,))
     count = cursor.fetchone()[0]
     conn.close()
     return count or 0
 
 def get_popular_classes():
-    """Возвращает список популярных классов за последнюю неделю."""
-    conn = sqlite3.connect(DB_PATH)
+    """Возвращает популярные классы за неделю."""
+    conn = get_connection()
     cursor = conn.cursor()
     week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute('''
         SELECT class_name, COUNT(*) as cnt
         FROM user_activity
-        WHERE class_name IS NOT NULL AND timestamp > ?
+        WHERE class_name IS NOT NULL AND timestamp > %s
         GROUP BY class_name
         ORDER BY cnt DESC
         LIMIT 5
@@ -227,14 +212,14 @@ def get_popular_classes():
     return [row[0] for row in results if row[0]] if results else []
 
 def get_peak_hours():
-    """Возвращает пиковые часы использования бота за последнюю неделю."""
-    conn = sqlite3.connect(DB_PATH)
+    """Возвращает пиковые часы использования."""
+    conn = get_connection()
     cursor = conn.cursor()
     week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute('''
-        SELECT strftime('%H', timestamp) as hour, COUNT(*) as cnt
+        SELECT EXTRACT(HOUR FROM timestamp) as hour, COUNT(*) as cnt
         FROM user_activity
-        WHERE timestamp > ?
+        WHERE timestamp > %s
         GROUP BY hour
         ORDER BY cnt DESC
         LIMIT 3
@@ -248,7 +233,7 @@ def get_peak_hours():
 
 def get_user_count():
     """Возвращает количество пользователей."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT COUNT(*) FROM users')
     count = cursor.fetchone()[0]
@@ -256,8 +241,8 @@ def get_user_count():
     return count
 
 def get_all_users():
-    """Возвращает список всех пользователей."""
-    conn = sqlite3.connect(DB_PATH)
+    """Возвращает всех пользователей."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT user_id, username, first_name, last_name FROM users')
     users = cursor.fetchall()
@@ -265,36 +250,36 @@ def get_all_users():
     return users
 
 def add_substitution(date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name):
-    """Добавление замены в базу данных."""
-    conn = sqlite3.connect(DB_PATH)
+    """Добавляет замену."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO substitutions
         (date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     ''', (date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name))
     conn.commit()
     conn.close()
     print(f"✅ Замена добавлена: {date} {class_name} урок {lesson_number}")
 
 def get_substitutions_for_date(date):
-    """Получение всех замен на конкретную дату."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает замены на дату."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT * FROM substitutions WHERE date = ? ORDER BY class_name, lesson_number
+        SELECT * FROM substitutions WHERE date = %s ORDER BY class_name, lesson_number
     ''', (date,))
     results = cursor.fetchall()
     conn.close()
     return results
 
 def get_substitutions_for_class_date(class_name, date):
-    """Получение замен для конкретного класса на дату."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает замены для класса на дату."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM substitutions
-        WHERE class_name = ? AND date = ?
+        WHERE class_name = %s AND date = %s
         ORDER BY lesson_number
     ''', (class_name, date))
     results = cursor.fetchall()
@@ -302,12 +287,12 @@ def get_substitutions_for_class_date(class_name, date):
     return results
 
 def get_substitutions_by_teacher_and_date(teacher_name, date):
-    """Получение замен для конкретного учителя на дату."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает замены для учителя на дату."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM substitutions
-        WHERE (new_teacher = ? OR old_teacher = ?) AND date = ?
+        WHERE (new_teacher = %s OR old_teacher = %s) AND date = %s
         ORDER BY lesson_number
     ''', (teacher_name, teacher_name, date))
     results = cursor.fetchall()
@@ -315,8 +300,8 @@ def get_substitutions_by_teacher_and_date(teacher_name, date):
     return results
 
 def get_all_substitutions():
-    """Получение всех замен из базы данных."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает все замены."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM substitutions ORDER BY date DESC, class_name, lesson_number
@@ -326,39 +311,38 @@ def get_all_substitutions():
     return results
 
 def delete_substitution(sub_id):
-    """Удаление замены по ID."""
-    conn = sqlite3.connect(DB_PATH)
+    """Удаляет замену."""
+    conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM substitutions WHERE id = ?', (sub_id,))
+    cursor.execute('DELETE FROM substitutions WHERE id = %s', (sub_id,))
     conn.commit()
     conn.close()
     print(f"✅ Замена ID={sub_id} удалена")
 
 def clear_all_substitutions():
-    """Очистка всей таблицы замен."""
-    conn = sqlite3.connect(DB_PATH)
+    """Очищает все замены."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM substitutions')
     conn.commit()
     conn.close()
     print("✅ Все замены удалены")
 
-# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ТЕХРЕЖИМОМ ====================
 def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
-    """Включить/выключить техрежим."""
-    conn = sqlite3.connect(DB_PATH)
+    """Включает/выключает техрежим."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE bot_status
-        SET maintenance_mode = ?, maintenance_until = ?, maintenance_message = ?
+        SET maintenance_mode = %s, maintenance_until = %s, maintenance_message = %s
         WHERE id = 1
     ''', (1 if enabled else 0, until, message))
     conn.commit()
     conn.close()
 
 def get_maintenance_status():
-    """Получить текущий статус техрежима."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает статус техрежима."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT maintenance_mode, maintenance_until, maintenance_message FROM bot_status WHERE id = 1')
     row = cursor.fetchone()
@@ -371,15 +355,15 @@ def get_maintenance_status():
         }
     return {'enabled': False, 'until': None, 'message': None}
 
-# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ИЗБРАННЫМ ====================
 def add_favorite(user_id, fav_type, value):
-    """Добавить элемент в избранное."""
-    conn = sqlite3.connect(DB_PATH)
+    """Добавляет в избранное."""
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            INSERT OR IGNORE INTO user_favorites (user_id, fav_type, value)
-            VALUES (?, ?, ?)
+            INSERT INTO user_favorites (user_id, fav_type, value)
+            VALUES (%s, %s, %s)
+            ON CONFLICT DO NOTHING
         ''', (user_id, fav_type, value))
         conn.commit()
         print(f"✅ Добавлено в избранное: {fav_type}={value} для пользователя {user_id}")
@@ -389,13 +373,13 @@ def add_favorite(user_id, fav_type, value):
         conn.close()
 
 def remove_favorite(user_id, fav_type, value):
-    """Удалить элемент из избранного."""
-    conn = sqlite3.connect(DB_PATH)
+    """Удаляет из избранного."""
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute('''
             DELETE FROM user_favorites
-            WHERE user_id = ? AND fav_type = ? AND value = ?
+            WHERE user_id = %s AND fav_type = %s AND value = %s
         ''', (user_id, fav_type, value))
         conn.commit()
         print(f"✅ Удалено из избранного: {fav_type}={value} для пользователя {user_id}")
@@ -405,17 +389,17 @@ def remove_favorite(user_id, fav_type, value):
         conn.close()
 
 def get_user_favorites(user_id):
-    """Получить все избранные элементы пользователя."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает избранное пользователя."""
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute('''
             SELECT fav_type, value FROM user_favorites
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY created_at DESC
         ''', (user_id,))
         results = cursor.fetchall()
-        return results  # Список кортежей (fav_type, value)
+        return results
     except Exception as e:
         print(f"Ошибка получения избранного: {e}")
         return []
@@ -423,13 +407,13 @@ def get_user_favorites(user_id):
         conn.close()
 
 def is_favorite(user_id, fav_type, value):
-    """Проверить, находится ли элемент в избранном."""
-    conn = sqlite3.connect(DB_PATH)
+    """Проверяет, в избранном ли элемент."""
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute('''
             SELECT 1 FROM user_favorites
-            WHERE user_id = ? AND fav_type = ? AND value = ?
+            WHERE user_id = %s AND fav_type = %s AND value = %s
         ''', (user_id, fav_type, value))
         return cursor.fetchone() is not None
     except Exception as e:
@@ -438,38 +422,37 @@ def is_favorite(user_id, fav_type, value):
     finally:
         conn.close()
 
-# ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ====================
 def add_news(title, content):
-    """Добавляет новость в базу данных."""
-    conn = sqlite3.connect(DB_PATH)
+    """Добавляет новость."""
+    conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO news (title, content) VALUES (?, ?)', (title, content))
+    cursor.execute('INSERT INTO news (title, content) VALUES (%s, %s)', (title, content))
     conn.commit()
     news_id = cursor.lastrowid
     conn.close()
     return news_id
 
 def get_latest_news(limit=5):
-    """Получает последние новости из базы данных."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает последние новости."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT id, title, content, published_at 
-        FROM news 
-        ORDER BY published_at DESC 
-        LIMIT ?
+        SELECT id, title, content, published_at
+        FROM news
+        ORDER BY published_at DESC
+        LIMIT %s
     ''', (limit,))
     results = cursor.fetchall()
     conn.close()
     return results
 
 def get_all_news():
-    """Получает все новости из базы данных."""
-    conn = sqlite3.connect(DB_PATH)
+    """Получает все новости."""
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT id, title, content, published_at 
-        FROM news 
+        SELECT id, title, content, published_at
+        FROM news
         ORDER BY published_at DESC
     ''')
     results = cursor.fetchall()
@@ -478,18 +461,18 @@ def get_all_news():
 
 def get_news_by_id(news_id):
     """Получает новость по ID."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, title, content, published_at FROM news WHERE id = ?', (news_id,))
+    cursor.execute('SELECT id, title, content, published_at FROM news WHERE id = %s', (news_id,))
     result = cursor.fetchone()
     conn.close()
     return result
 
 def delete_news(news_id):
-    """Удаляет новость по ID."""
-    conn = sqlite3.connect(DB_PATH)
+    """Удаляет новость."""
+    conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM news WHERE id = ?', (news_id,))
+    cursor.execute('DELETE FROM news WHERE id = %s', (news_id,))
     conn.commit()
     conn.close()
     print(f"✅ Новость ID={news_id} удалена")
