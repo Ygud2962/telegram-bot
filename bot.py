@@ -3249,6 +3249,7 @@ async def teachers_list(update: Update, context: CallbackContext):
 def main():
     try:
         db.init_db()
+        db.init_pool()
     except Exception as e:
         logger.error(f"Ошибка инициализации БД: {e}")
         print(f"❌ Ошибка БД: {e}")
