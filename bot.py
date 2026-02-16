@@ -987,12 +987,12 @@ def convert_utc_to_minsk(utc_str):
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
-    """Показывает меню 'МОё' с избранными классами и учителями."""
+    """Показывает меню 'Моё' с избранными классами и учителями."""
     user_id = query.from_user.id
     favorites = db.get_user_favorites(user_id)
     
     if not favorites:
-        text = "🌟 <b>МОё</b>\n\nУ вас нет избранных классов или учителей.\nДобавьте их из меню расписания."
+        text = "🌟 <b>Моё</b>\n\nУ вас нет избранных классов или учителей.\nДобавьте их из меню расписания."
         keyboard = [
             [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
             [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
@@ -1006,7 +1006,7 @@ async def show_my_menu(query, context):
     favorite_classes = [val for fav_type, val in favorites if fav_type == 'class']
     favorite_teachers = [val for fav_type, val in favorites if fav_type == 'teacher']
 
-    text = "🌟 <b>МОё</b>\n\n"
+    text = "🌟 <b>Моё</b>\n\n"
     keyboard = []
 
     if favorite_classes:
@@ -1047,7 +1047,7 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
         [InlineKeyboardButton("👨‍🏫 Все учителя", callback_data='menu_teacher')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -1859,7 +1859,7 @@ async def start(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
         [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')],
         [InlineKeyboardButton("📣 Новости", callback_data='menu_news')],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
         [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
         [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')],
         [InlineKeyboardButton("👑 Админ-панель", callback_data='admin_panel')]
@@ -2228,7 +2228,7 @@ async def show_main_menu(query):
         [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
         [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')],
         [InlineKeyboardButton("📣 Новости", callback_data='menu_news')],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
         [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
         [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')],
         [InlineKeyboardButton("👑 Админ-панель", callback_data='admin_panel')]
@@ -2251,7 +2251,7 @@ async def show_weekly_schedule_for_class(query, context, class_name):
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ Назад к выбору дня", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -2327,7 +2327,7 @@ async def show_teacher_schedule(query, context):
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ К списку учителей", callback_data='menu_teacher')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -2560,7 +2560,7 @@ async def show_daily_schedule(query, context):
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
         [InlineKeyboardButton("📅 Расписание на всю неделю", callback_data=f'weekly_{class_name}')],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ Назад к дням", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -2584,7 +2584,7 @@ async def show_weekly_schedule(query, context):
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🌟 Моё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ Назад к выбору дня", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
@@ -3282,7 +3282,7 @@ def main():
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
-    print(f"✅ Добавлены функции: 🌟 МОё (избранное) + 📰 Новости (время в минском поясе)")
+    print(f"✅ Добавлены функции: 🌟 Моё (избранное) + 📰 Новости (время в минском поясе)")
 
     try:
         application.run_polling(
