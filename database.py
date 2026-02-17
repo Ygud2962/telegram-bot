@@ -26,7 +26,7 @@ def init_pool():
         try:
             db_pool = pool.SimpleConnectionPool(
                 minconn=1,
-                maxconn=7,  # Railway Free Tier поддерживает только 1-2 соединения
+                maxconn=5,  # Railway Free Tier поддерживает только 1-2 соединения
                 dsn=DATABASE_URL,
                 sslmode='require'
             )
