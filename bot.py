@@ -8,7 +8,6 @@ from telegram.error import TimedOut, NetworkError, BadRequest, Forbidden
 import database as db
 import os
 import pytz  # pip install pytz
-from functools import lru_cache
 
 TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
@@ -90,6 +89,7 @@ BELLS_SCHEDULE_HTML = """
 """
 
 # ================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
+# Полное расписание из базы знаний (сокращено для примера)
 SCHEDULE_STRUCTURED = {
     '5а': {
         'Понедельник': [
@@ -767,32 +767,10 @@ SCHEDULE_STRUCTURED = {
         ]
     }
 }
-# ================== КЭШИРОВАНИЕ СПИСКА УЧИТЕЛЕЙ ==================
-_ALL_TEACHERS_CACHE = None
-
-def get_all_teachers_cached():
-    """Возвращает отсортированный список всех учителей, используя кэш."""
-    global _ALL_TEACHERS_CACHE
-    if _ALL_TEACHERS_CACHE is None:
-        teachers = set()
-        for class_name, days in SCHEDULE_STRUCTURED.items():
-            for day, lessons in days.items():
-                for lesson in lessons:
-                    if len(lesson) >= 3:
-                        teacher_name = lesson[2]
-                        if teacher_name:
-                            teacher_list = [t.strip() for t in teacher_name.split('/')]
-                            for teacher in teacher_list:
-                                teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
-                                if teacher_clean and teacher_clean not in ['', ' ']:
-                                    teachers.add(teacher_clean)
-        _ALL_TEACHERS_CACHE = sorted(list(teachers))
-    return _ALL_TEACHERS_CACHE
 
 # ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
-@lru_cache(maxsize=7)
 def get_lesson_time(lesson_number):
-    """Возвращает время урока по его номеру (кэшируется)."""
+    """Возвращает время урока по его номеру."""
     lesson_times = {
         1: "08:00-08:45",
         2: "09:00-09:45",
@@ -847,14 +825,19 @@ def get_current_lesson_info():
 
     return {'status': 'finished'}
 
-def format_schedule_day(class_name, day, structured_lessons, target_date=None):
-    """Форматирует расписание на день в новом формате с заменами."""
+async def format_schedule_day(class_name, day, structured_lessons, target_date=None):
+    """Форматирует расписание на день в новом формате с заменами (асинхронная версия)."""
     if not structured_lessons:
         return "На этот день расписания нет."
     structured_lessons.sort(key=lambda x: x[0])
     substitutions = []
     if target_date and target_date != 'None' and target_date != 'null' and target_date is not None:
-        substitutions = db.get_substitutions_for_class_date(class_name, target_date)
+        # Асинхронный вызов БД
+        substitutions = await asyncio.to_thread(
+            db.get_substitutions_for_class_date,
+            class_name,
+            target_date
+        )
     
     sub_dict = {}
     for sub in substitutions:
@@ -889,7 +872,7 @@ def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     return "\n".join(result_lines)
 
 def format_weekly_schedule(class_name):
-    """Форматирует расписание на всю неделю в новом формате."""
+    """Форматирует расписание на всю неделю в новом формате (синхронно, без БД)."""
     if class_name not in SCHEDULE_STRUCTURED:
         return f"Расписание для класса {class_name} не найдено."
     result_lines = []
@@ -921,6 +904,22 @@ def format_substitution(sub):
                 f"       `{sub[4]}` ({sub[6]})\n"
                 f"   →    `{sub[5]}` ({sub[7]})")
     return str(sub)
+
+def get_all_teachers():
+    """Извлекает всех уникальных учителей из расписания."""
+    teachers = set()
+    for class_name, days in SCHEDULE_STRUCTURED.items():
+        for day, lessons in days.items():
+            for lesson in lessons:
+                if len(lesson) >= 3:
+                    teacher_name = lesson[2]
+                    if teacher_name:
+                        teacher_list = [t.strip() for t in teacher_name.split('/')]
+                        for teacher in teacher_list:
+                            teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
+                            if teacher_clean and teacher_clean not in ['', ' ']:
+                                teachers.add(teacher_clean)
+    return sorted(list(teachers))
 
 async def send_substitution_notification(context, teacher_name, substitution_data):
     """Отправляет уведомление учителю о новой замене."""
@@ -992,7 +991,8 @@ def convert_utc_to_minsk(utc_str):
 async def show_my_menu(query, context):
     """Показывает меню 'МОё' с избранными классами и учителями."""
     user_id = query.from_user.id
-    favorites = db.get_user_favorites(user_id)
+    # Асинхронный вызов БД
+    favorites = await asyncio.to_thread(db.get_user_favorites, user_id)
     if not favorites:
         text = "🌟 <b>МОё</b>\n\nУ вас нет избранных классов или учителей.\nДобавьте их из меню расписания."
         keyboard = [
@@ -1039,10 +1039,12 @@ async def show_my_menu(query, context):
 async def show_teacher_schedule_by_name(query, context, teacher_name):
     """Показывает расписание учителя по имени."""
     teacher_schedule = get_teacher_schedule(teacher_name)
-    schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
+    # format_teacher_schedule теперь асинхронная
+    schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
     # Формируем кнопки
     user_id = query.from_user.id
-    is_fav = db.is_favorite(user_id, 'teacher', teacher_name)
+    # Асинхронный вызов БД
+    is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_teacher_{teacher_name.replace(' ', '_')}"
 
@@ -1063,7 +1065,8 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
 # ================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
 async def show_news_menu(query, context):
     """Показывает последние 5 школьных новостей (старые сверху, новые снизу)."""
-    news_list = db.get_latest_news(5)
+    # Асинхронный вызов БД
+    news_list = await asyncio.to_thread(db.get_latest_news, 5)
     # Переворачиваем список, чтобы старые новости были сверху, новые снизу
     news_list = news_list[::-1]
     
@@ -1189,8 +1192,8 @@ async def publish_news(query, context, send_to_all=False):
         context.user_data.clear()
         return
 
-    # Сохраняем в БД (время сохраняется автоматически в UTC)
-    news_id = db.add_news(title, content)
+    # Сохраняем в БД (асинхронно)
+    news_id = await asyncio.to_thread(db.add_news, title, content)
     logger.info(f"Новость опубликована (ID={news_id}) админом {query.from_user.id}")
     
     # Формируем сообщение с минским временем
@@ -1201,8 +1204,8 @@ async def publish_news(query, context, send_to_all=False):
     success_msg += f"<b>{title}</b>\n\n{content[:200]}{'...' if len(content) > 200 else ''}"
     
     if send_to_all:
-        # Рассылка всем пользователям с минским временем
-        users = db.get_all_users()
+        # Рассылка всем пользователям (получаем список асинхронно)
+        users = await asyncio.to_thread(db.get_all_users)
         total = len(users)
         sent = 0
         failed = 0
@@ -1272,7 +1275,7 @@ async def show_all_news_for_admin(query, context):
     """Показывает все новости для админа с кнопками удаления (новые сверху)."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    news_list = db.get_all_news()
+    news_list = await asyncio.to_thread(db.get_all_news)
     
     if not news_list:
         text = "📭 <b>НОВОСТИ ОТСУТСТВУЮТ</b>\n\nВ базе данных нет новостей."
@@ -1313,7 +1316,7 @@ async def confirm_delete_news(query, context, news_id):
     """Запрашивает подтверждение удаления новости."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    news = db.get_news_by_id(news_id)
+    news = await asyncio.to_thread(db.get_news_by_id, news_id)
     if not news:
         await query.edit_message_text(
             "❌ <b>Ошибка:</b> Новость не найдена.",
@@ -1352,11 +1355,11 @@ async def delete_news_handler(query, context, news_id):
     if query.from_user.id not in ADMIN_IDS:
         return
     # Получаем название для уведомления
-    news = db.get_news_by_id(news_id)
+    news = await asyncio.to_thread(db.get_news_by_id, news_id)
     title = news[1] if news else f"ID {news_id}"
     
     # Удаляем новость
-    db.delete_news(news_id)
+    await asyncio.to_thread(db.delete_news, news_id)
     logger.info(f"Новость ID={news_id} удалена админом {query.from_user.id}")
     
     # Подтверждение
@@ -1367,7 +1370,8 @@ async def delete_news_handler(query, context, news_id):
 
 # ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
 async def check_maintenance_mode(update: Update, context: CallbackContext) -> bool:
-    maintenance = db.get_maintenance_status()
+    # Асинхронный вызов БД
+    maintenance = await asyncio.to_thread(db.get_maintenance_status)
     user_id = update.effective_user.id
     if user_id in ADMIN_IDS:
         return False
@@ -1410,7 +1414,7 @@ async def check_maintenance_mode(update: Update, context: CallbackContext) -> bo
     return True
 
 async def check_maintenance_status(query, context):
-    maintenance = db.get_maintenance_status()
+    maintenance = await asyncio.to_thread(db.get_maintenance_status)
     if not maintenance['enabled']:
         msg = "🟢 Бот работает штатно\n\nВсе функции доступны."
         keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]]
@@ -1467,8 +1471,8 @@ async def set_maintenance_duration(query, context, duration_type):
         tomorrow = now + timedelta(days=1)
         until_str = tomorrow.replace(hour=8, minute=0).strftime('%d.%m %H:%M')
     # 'forever' — until_str остаётся None
-    db.set_maintenance_mode(True, until_str, None)
-    db.log_user_activity(query.from_user.id, f'maintenance_enabled_{duration_type}')
+    await asyncio.to_thread(db.set_maintenance_mode, True, until_str, None)
+    await asyncio.to_thread(db.log_user_activity, query.from_user.id, f'maintenance_enabled_{duration_type}')
     await confirm_maintenance_activated(query, until_str)
 
 async def confirm_maintenance_activated(query, until_str=None):
@@ -1494,8 +1498,8 @@ async def disable_maintenance_mode(query, context):
     """Выключает техрежим."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    db.set_maintenance_mode(False)
-    db.log_user_activity(query.from_user.id, 'maintenance_disabled')
+    await asyncio.to_thread(db.set_maintenance_mode, False)
+    await asyncio.to_thread(db.log_user_activity, query.from_user.id, 'maintenance_disabled')
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -1733,7 +1737,9 @@ async def save_substitution(query, context):
         subject = context.user_data['subject']
         old_teacher = context.user_data['old_teacher']
         new_teacher = context.user_data['new_teacher']
-        db.add_substitution(
+        # Асинхронный вызов БД
+        await asyncio.to_thread(
+            db.add_substitution,
             date, day, lesson_num,
             subject, subject,
             old_teacher, new_teacher,
@@ -1784,10 +1790,14 @@ async def show_analytics(query, context):
     """Показывает аналитику использования бота."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    active_users_24h = db.get_active_users_24h()
-    popular_classes = db.get_popular_classes()
-    peak_hours = db.get_peak_hours()
-    total_users = db.get_user_count()
+    # Асинхронные вызовы БД
+    active_users_24h = await asyncio.to_thread(db.get_active_users_24h)
+    popular_classes = await asyncio.to_thread(db.get_popular_classes)
+    peak_hours = await asyncio.to_thread(db.get_peak_hours)
+    total_users = await asyncio.to_thread(db.get_user_count)
+    subs = await asyncio.to_thread(db.get_all_substitutions)
+    subs_count = len(subs) if subs else 0
+    
     text = "<b>📊 АНАЛИТИКА БОТА</b>\n\n"
     text += f"👥 <b>Активных за сутки:</b> {active_users_24h}\n"
     text += f"👥 <b>Всего пользователей:</b> {total_users}\n\n"
@@ -1799,9 +1809,6 @@ async def show_analytics(query, context):
         text += "<b>🏆 Популярные классы:</b> Нет данных за последнюю неделю\n\n"
     
     text += f"⏰ <b>Пиковые часы:</b> {peak_hours}\n\n"
-    
-    subs = db.get_all_substitutions()
-    subs_count = len(subs) if subs else 0
     text += f"🔄 <b>Всего замен:</b> {subs_count}\n"
     
     keyboard = [
@@ -1817,16 +1824,16 @@ async def show_analytics(query, context):
 # ================== КОМАНДА /start ==================
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    # Используем объединённую функцию обновления активности
-    db.update_user_activity(
-        user_id=user.id,
-        action='start',
-        class_name=None,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        language_code=user.language_code
+    # Асинхронные вызовы БД
+    await asyncio.to_thread(
+        db.add_user,
+        user.id,
+        user.username,
+        user.first_name,
+        user.last_name,
+        user.language_code
     )
+    await asyncio.to_thread(db.log_user_activity, user.id, 'start')
     
     if await check_maintenance_mode(update, context):
         return
@@ -1932,7 +1939,8 @@ async def show_current_lesson(query, context):
                 text += f"📚 <b>Предмет:</b> {subject}\n"
                 text += f"👨‍🏫 <b>Учитель:</b> {teacher}\n"
                 today_str = now.strftime('%Y-%m-%d')
-                subs = db.get_substitutions_for_class_date(class_name, today_str)
+                # Асинхронный вызов БД
+                subs = await asyncio.to_thread(db.get_substitutions_for_class_date, class_name, today_str)
                 substitution = next((s for s in subs if s[3] == next_num), None)
                 if substitution:
                     text += f"⚠️ <b>ЗАМЕНА:</b> {substitution[5]} ({substitution[7]})\n"
@@ -1953,7 +1961,7 @@ async def show_current_lesson(query, context):
                 text += f"📚 <b>Предмет:</b> {subject}\n"
                 text += f"👨‍🏫 <b>Учитель:</b> {teacher}\n"
                 today_str = now.strftime('%Y-%m-%d')
-                subs = db.get_substitutions_for_class_date(class_name, today_str)
+                subs = await asyncio.to_thread(db.get_substitutions_for_class_date, class_name, today_str)
                 substitution = next((s for s in subs if s[3] == lesson_num), None)
                 if substitution:
                     text += f"⚠️ <b>ЗАМЕНА:</b> {substitution[5]} ({substitution[7]})\n"
@@ -1981,28 +1989,28 @@ async def button_handler(update: Update, context: CallbackContext):
         context.user_data = {}
     user = query.from_user
     
-    # Сначала отвечаем, чтобы кнопка не висела
+    # Асинхронные вызовы БД
+    await asyncio.to_thread(
+        db.add_user,
+        user.id,
+        user.username,
+        user.first_name,
+        user.last_name,
+        user.language_code
+    )
+    await asyncio.to_thread(
+        db.log_user_activity,
+        user.id,
+        f'button_{query.data[:50]}'
+    )
+    
+    if await check_maintenance_mode(update, context):
+        return
+    
     try:
         await query.answer()
     except (TimedOut, Exception) as e:
         logger.warning(f"Ошибка при ответе на callback: {e}")
-
-    # Фоновое обновление активности пользователя (не ждём завершения)
-    asyncio.create_task(
-        asyncio.get_event_loop().run_in_executor(
-            None,
-            db.update_user_activity,
-            user.id,
-            f'button_{query.data[:50]}',
-            None,
-            user.username,
-            user.first_name,
-            user.last_name,
-            user.language_code
-        )
-    )
-    
-    if await check_maintenance_mode(update, context):
         return
 
     # Обработка добавления замен
@@ -2036,59 +2044,26 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data.startswith('remove_favorite_class_'):
         class_name = query.data.replace('remove_favorite_class_', '')
         user_id = query.from_user.id
-        # Используем асинхронный вызов для удаления избранного
-        await asyncio.get_event_loop().run_in_executor(
-            None,
-            db.remove_favorite,
-            user_id,
-            'class',
-            class_name
-        )
+        await asyncio.to_thread(db.remove_favorite, user_id, 'class', class_name)
         await query.answer(f"Класс {class_name.upper()} удален из избранного", show_alert=True)
         await show_my_menu(query, context)
         return
     elif query.data.startswith('remove_favorite_teacher_'):
         teacher_name = query.data.replace('remove_favorite_teacher_', '').replace('_', ' ')
         user_id = query.from_user.id
-        # Используем асинхронный вызов для удаления избранного
-        await asyncio.get_event_loop().run_in_executor(
-            None,
-            db.remove_favorite,
-            user_id,
-            'teacher',
-            teacher_name
-        )
+        await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
         await query.answer(f"Учитель {teacher_name} удален из избранного", show_alert=True)
         await show_my_menu(query, context)
         return
     elif query.data.startswith('toggle_favorite_class_'):
         class_name = query.data.replace('toggle_favorite_class_', '')
         user_id = query.from_user.id
-        # Используем асинхронный вызов для проверки избранного
-        is_fav = await asyncio.get_event_loop().run_in_executor(
-            None,
-            db.is_favorite,
-            user_id,
-            'class',
-            class_name
-        )
+        is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
         if is_fav:
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                db.remove_favorite,
-                user_id,
-                'class',
-                class_name
-            )
+            await asyncio.to_thread(db.remove_favorite, user_id, 'class', class_name)
             await query.answer(f"Класс {class_name.upper()} удален из избранного", show_alert=True)
         else:
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                db.add_favorite,
-                user_id,
-                'class',
-                class_name
-            )
+            await asyncio.to_thread(db.add_favorite, user_id, 'class', class_name)
             await query.answer(f"Класс {class_name.upper()} добавлен в избранное", show_alert=True)
         # Обновляем текущее сообщение
         if context.user_data.get('selected_class') == class_name:
@@ -2102,31 +2077,12 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data.startswith('toggle_favorite_teacher_'):
         teacher_name = query.data.replace('toggle_favorite_teacher_', '').replace('_', ' ')
         user_id = query.from_user.id
-        # Используем асинхронный вызов для проверки избранного
-        is_fav = await asyncio.get_event_loop().run_in_executor(
-            None,
-            db.is_favorite,
-            user_id,
-            'teacher',
-            teacher_name
-        )
+        is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
         if is_fav:
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                db.remove_favorite,
-                user_id,
-                'teacher',
-                teacher_name
-            )
+            await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
             await query.answer(f"Учитель {teacher_name} удален из избранного", show_alert=True)
         else:
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                db.add_favorite,
-                user_id,
-                'teacher',
-                teacher_name
-            )
+            await asyncio.to_thread(db.add_favorite, user_id, 'teacher', teacher_name)
             await query.answer(f"Учитель {teacher_name} добавлен в избранное", show_alert=True)
         await show_teacher_schedule_by_name(query, context, teacher_name)
         return
@@ -2283,14 +2239,7 @@ async def show_weekly_schedule_for_class(query, context, class_name):
     """Показывает расписание на всю неделю для указанного класса."""
     schedule_text = format_weekly_schedule(class_name)
     user_id = query.from_user.id
-    # Используем асинхронный вызов для проверки избранного
-    is_fav = await asyncio.get_event_loop().run_in_executor(
-        None,
-        db.is_favorite,
-        user_id,
-        'class',
-        class_name
-    )
+    is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
 
@@ -2309,7 +2258,7 @@ async def show_weekly_schedule_for_class(query, context, class_name):
     )
 
 async def show_teacher_menu(query, context):
-    real_teachers = get_all_teachers_cached()  # используем кэшированную версию
+    real_teachers = get_all_teachers()
     teachers_per_row = 2
     keyboard = []
     row = []
@@ -2361,17 +2310,10 @@ async def show_teacher_schedule(query, context):
 
     teacher_name = teachers_list[teacher_index]
     teacher_schedule = get_teacher_schedule(teacher_name)
-    schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
+    schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
 
     user_id = query.from_user.id
-    # Используем асинхронный вызов для проверки избранного
-    is_fav = await asyncio.get_event_loop().run_in_executor(
-        None,
-        db.is_favorite,
-        user_id,
-        'teacher',
-        teacher_name
-    )
+    is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_teacher_{teacher_name.replace(' ', '_')}"
 
@@ -2413,7 +2355,8 @@ def get_teacher_schedule(teacher_name):
         schedule[day].sort(key=lambda x: x['number'])
     return schedule
 
-def format_teacher_schedule(teacher_name, schedule):
+async def format_teacher_schedule(teacher_name, schedule):
+    """Форматирует расписание учителя с учётом замен (асинхронная версия, получает замены одним запросом)."""
     today = datetime.now().date()
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
@@ -2422,18 +2365,21 @@ def format_teacher_schedule(teacher_name, schedule):
     current_lesson_info = get_current_lesson_info()
     current_lesson_number = current_lesson_info['number'] if current_lesson_info['status'] == 'lesson' else None
 
-    # Получаем все замены на 30 дней одним запросом
+    # Получаем все замены за 30 дней одним запросом
     start_date = today.strftime('%Y-%m-%d')
     end_date = (today + timedelta(days=30)).strftime('%Y-%m-%d')
-    all_subs = db.get_teacher_substitutions_between(teacher_name, start_date, end_date)
-    
-    # Группируем по дате
-    teacher_substitutions = {}
+    all_subs = await asyncio.to_thread(
+        db.get_teacher_substitutions_period,
+        teacher_name,
+        start_date,
+        end_date
+    )
+
+    # Группируем замены по дате
+    subs_by_date = {}
     for sub in all_subs:
-        date = sub[1]  # поле date в кортеже
-        if date not in teacher_substitutions:
-            teacher_substitutions[date] = []
-        teacher_substitutions[date].append(sub)
+        date_str = sub[0]
+        subs_by_date.setdefault(date_str, []).append(sub)
 
     text = f"<b>👨‍🏫 {teacher_name}</b>\n"
     text += "=" * 30 + "\n"
@@ -2496,13 +2442,12 @@ def format_teacher_schedule(teacher_name, schedule):
     text += "=" * 30 + "\n"
     text += "<b>🔄 ЗАМЕНЫ (30 дней):</b>\n"
 
-    if teacher_substitutions:
-        current_date = today
+    if subs_by_date:
         shown_dates = 0
         for i in range(30):
             date_obj = today + timedelta(days=i)
             date_str = date_obj.strftime('%Y-%m-%d')
-            if date_str in teacher_substitutions:
+            if date_str in subs_by_date:
                 weekday = date_obj.weekday()
                 if weekday < 5:
                     day_name = DAYS_OF_WEEK[weekday]
@@ -2510,20 +2455,20 @@ def format_teacher_schedule(teacher_name, schedule):
                     continue
                 text += f"<b>{day_name}</b> <i>({date_obj.strftime('%d.%m')})</i>\n"
                 text += "─" * 18 + "\n"
-                for sub in teacher_substitutions[date_str]:
-                    lesson_num = sub[3]
+                for sub in subs_by_date[date_str]:
+                    lesson_num = sub[1]  # lesson_number
                     lesson_time = get_lesson_time(lesson_num)
                     if 1 <= lesson_num <= 7:
                         emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
                         lesson_marker = emoji
                     else:
                         lesson_marker = f"{lesson_num}. "
-                    if sub[7] == teacher_name:
-                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> ➡️ {sub[5]}\n"
-                        text += f"   🔄 вместо {sub[6]} ({sub[4]})\n"
-                    elif sub[6] == teacher_name:
-                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> ➡️ {sub[4]}\n"
-                        text += f"   🔄 заменён на {sub[7]} ({sub[5]})\n"
+                    if sub[5] == teacher_name:  # new_teacher
+                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[6]}</code> ➡️ {sub[3]}\n"
+                        text += f"   🔄 вместо {sub[4]} ({sub[2]})\n"
+                    elif sub[4] == teacher_name:  # old_teacher
+                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[6]}</code> ➡️ {sub[2]}\n"
+                        text += f"   🔄 заменён на {sub[5]} ({sub[3]})\n"
                 shown_dates += 1
                 if shown_dates >= 7:
                     break
@@ -2600,12 +2545,12 @@ async def show_daily_schedule(query, context):
     
     if class_name and class_name in SCHEDULE_STRUCTURED and day in SCHEDULE_STRUCTURED[class_name]:
         structured_lessons = SCHEDULE_STRUCTURED[class_name][day]
-        schedule_text = format_schedule_day(class_name, day, structured_lessons, target_date_str)
+        schedule_text = await format_schedule_day(class_name, day, structured_lessons, target_date_str)
     else:
         schedule_text = f"Расписание для класса {class_name} на {day} не найдено."
     
     user_id = query.from_user.id
-    is_fav = db.is_favorite(user_id, 'class', class_name)
+    is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
     
@@ -2629,7 +2574,7 @@ async def show_weekly_schedule(query, context):
     context.user_data['selected_class'] = class_name
     schedule_text = format_weekly_schedule(class_name)
     user_id = query.from_user.id
-    is_fav = db.is_favorite(user_id, 'class', class_name)
+    is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
     
@@ -2671,7 +2616,7 @@ async def show_substitutions_for_date(query):
     else:
         target_date = today + timedelta(days=1)
     
-    subs = db.get_substitutions_for_date(target_date.strftime('%Y-%m-%d'))
+    subs = await asyncio.to_thread(db.get_substitutions_for_date, target_date.strftime('%Y-%m-%d'))
     
     if subs:
         text = f"<b>🔄 Замены на {target_date.strftime('%d.%m.%Y')} ({DAYS_OF_WEEK[target_date.weekday()] if target_date.weekday() < 5 else 'Выходной'}):</b>\n"
@@ -2689,7 +2634,7 @@ async def show_substitutions_for_date(query):
     await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
 
 async def show_all_substitutions(query):
-    subs = db.get_all_substitutions()
+    subs = await asyncio.to_thread(db.get_all_substitutions)
     if subs:
         text = "<b>📋 ВСЕ ЗАМЕНЫ:</b>\n"
         current_date = None
@@ -2736,7 +2681,7 @@ async def show_admin_panel(query):
         await query.edit_message_text("⛔ Доступ запрещен!", parse_mode='HTML')
         return
     
-    maintenance = db.get_maintenance_status()
+    maintenance = await asyncio.to_thread(db.get_maintenance_status)
     keyboard = []
     
     if maintenance['enabled']:
@@ -2770,7 +2715,7 @@ async def show_admin_substitutions(query):
     if query.from_user.id not in ADMIN_IDS:
         return
     
-    subs = db.get_all_substitutions()
+    subs = await asyncio.to_thread(db.get_all_substitutions)
     if subs:
         text = "📋 <b>ВСЕ ЗАМЕНЫ В БАЗЕ:</b>\n"
         for sub in subs:
@@ -2804,7 +2749,7 @@ async def confirm_clear_substitutions(query):
     if query.from_user.id not in ADMIN_IDS:
         return
     
-    subs = db.get_all_substitutions()
+    subs = await asyncio.to_thread(db.get_all_substitutions)
     sub_count = len(subs) if subs else 0
     
     keyboard = [
@@ -2831,11 +2776,11 @@ async def clear_all_substitutions(query):
     if query.from_user.id not in ADMIN_IDS:
         return
     
-    subs_before = db.get_all_substitutions()
+    subs_before = await asyncio.to_thread(db.get_all_substitutions)
     sub_count = len(subs_before) if subs_before else 0
     
     try:
-        db.clear_all_substitutions()
+        await asyncio.to_thread(db.clear_all_substitutions)
         
         keyboard = [
             [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
@@ -2886,10 +2831,10 @@ async def show_searched_teacher_schedule(query, context):
         
         teacher_name = found_teachers[teacher_index]
         teacher_schedule = get_teacher_schedule(teacher_name)
-        schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
+        schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
         
         user_id = query.from_user.id
-        is_fav = db.is_favorite(user_id, 'teacher', teacher_name)
+        is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
         fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
         fav_callback = f"toggle_favorite_teacher_{teacher_name.replace(' ', '_')}"
         
@@ -2921,8 +2866,8 @@ async def show_users_stats(query, context):
     if query.from_user.id not in ADMIN_IDS:
         return
     
-    user_count = db.get_user_count()
-    users = db.get_all_users()
+    user_count = await asyncio.to_thread(db.get_user_count)
+    users = await asyncio.to_thread(db.get_all_users)
     
     text = f"👥 <b>СТАТИСТИКА ПОЛЬЗОВАТЕЛЕЙ</b>\n"
     text += f"• Всего пользователей: {user_count}\n\n"
@@ -3026,7 +2971,7 @@ async def confirm_broadcast(query, context):
         f"Бот возобновит работу сразу после окончания работ."
     )
     
-    users = db.get_all_users()
+    users = await asyncio.to_thread(db.get_all_users)
     total = len(users)
     sent = 0
     failed = 0
@@ -3124,20 +3069,16 @@ async def handle_message(update: Update, context: CallbackContext):
         return
     
     user = update.effective_user
-    # Фоновое обновление активности пользователя
-    asyncio.create_task(
-        asyncio.get_event_loop().run_in_executor(
-            None,
-            db.update_user_activity,
-            user.id,
-            'message',
-            None,
-            user.username,
-            user.first_name,
-            user.last_name,
-            user.language_code
-        )
+    # Асинхронные вызовы БД
+    await asyncio.to_thread(
+        db.add_user,
+        user.id,
+        user.username,
+        user.first_name,
+        user.last_name,
+        user.language_code
     )
+    await asyncio.to_thread(db.log_user_activity, user.id, 'message')
     
     if await check_maintenance_mode(update, context):
         return
@@ -3165,7 +3106,7 @@ async def handle_message(update: Update, context: CallbackContext):
             )
             return
         
-        all_teachers = get_all_teachers_cached()
+        all_teachers = get_all_teachers()
         found_teachers = []
         for teacher in all_teachers:
             if search_query.lower() in teacher.lower():
@@ -3344,7 +3285,7 @@ async def test_notification(update: Update, context: CallbackContext):
             )
 
 async def teachers_list(update: Update, context: CallbackContext):
-    all_teachers = get_all_teachers_cached()
+    all_teachers = get_all_teachers()
     if not all_teachers:
         await update.message.reply_text(
             "❌ Список учителей пуст.",
@@ -3403,7 +3344,7 @@ def main():
     )
     
     print("🤖 Бот запущен...")
-    print(f"📊 Всего учителей в расписании: {len(get_all_teachers_cached())}")
+    print(f"📊 Всего учителей в расписании: {len(get_all_teachers())}")
     print(f"👑 Администраторы: {ADMIN_IDS}")
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
