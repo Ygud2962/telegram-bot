@@ -137,7 +137,6 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_teacher_date ON substitutions(new_teacher, date)')
-        # Добавляем индекс для старого учителя (ускорит запросы с OR)
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_old_teacher_date ON substitutions(old_teacher, date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON user_activity(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_user ON user_activity(user_id)')
@@ -156,11 +155,11 @@ def init_db():
         if conn:
             conn.close()
 
-# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ (ОПТИМИЗИРОВАННЫЕ) ====================
-def update_user_activity(user_id, action, class_name=None, username=None, first_name=None, last_name=None, language_code=None):
+# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ====================
+def update_user_and_log(user_id, action, class_name=None, username=None, first_name=None, last_name=None, language_code=None):
     """
-    Обновляет информацию о пользователе и логирует действие одним вызовом.
-    Выполняется в одной транзакции.
+    Атомарно обновляет информацию о пользователе и логирует действие.
+    Использует COALESCE для сохранения старых значений, если новые не переданы.
     """
     conn = None
     try:
@@ -171,10 +170,10 @@ def update_user_activity(user_id, action, class_name=None, username=None, first_
             INSERT INTO users (user_id, username, first_name, last_name, language_code, last_active)
             VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (user_id) DO UPDATE SET
-                username = EXCLUDED.username,
-                first_name = EXCLUDED.first_name,
-                last_name = EXCLUDED.last_name,
-                language_code = EXCLUDED.language_code,
+                username = COALESCE(EXCLUDED.username, users.username),
+                first_name = COALESCE(EXCLUDED.first_name, users.first_name),
+                last_name = COALESCE(EXCLUDED.last_name, users.last_name),
+                language_code = COALESCE(EXCLUDED.language_code, users.language_code),
                 last_active = CURRENT_TIMESTAMP
         ''', (user_id, username, first_name, last_name, language_code))
         
@@ -186,8 +185,7 @@ def update_user_activity(user_id, action, class_name=None, username=None, first_
         
         conn.commit()
     except Exception as e:
-        logger.error(f"Ошибка при обновлении активности пользователя {user_id}: {e}")
-        # Если произошла ошибка, пробуем откатить (хотя commit не был выполнен)
+        logger.error(f"Ошибка при обновлении пользователя {user_id}: {e}")
         if conn:
             conn.rollback()
         # Не пробрасываем исключение дальше, чтобы не ломать бота
@@ -196,10 +194,13 @@ def update_user_activity(user_id, action, class_name=None, username=None, first_
 
 # Для обратной совместимости оставляем старые функции, но они будут вызывать новую
 def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
-    # Просто вызываем update_user_activity без action
-    update_user_activity(user_id, 'registered', None, username, first_name, last_name, language_code)
+    update_user_and_log(user_id, 'registered', None, username, first_name, last_name, language_code)
 
 def log_user_activity(user_id, action, class_name=None):
+    """
+    Логирует действие пользователя, обновляя только last_active.
+    Не изменяет остальные данные пользователя.
+    """
     conn = None
     try:
         conn = get_connection()
@@ -216,35 +217,6 @@ def log_user_activity(user_id, action, class_name=None):
         conn.commit()
     except Exception as e:
         logger.error(f"Ошибка логирования активности пользователя {user_id}: {e}")
-        if conn:
-            conn.rollback()
-    finally:
-        release_connection(conn)
-
-def update_user_and_log(user_id, action, class_name=None, username=None, first_name=None, last_name=None, language_code=None):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        # Вставляем или обновляем пользователя (COALESCE сохраняет старые значения, если новые None)
-        cursor.execute('''
-            INSERT INTO users (user_id, username, first_name, last_name, language_code, last_active)
-            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (user_id) DO UPDATE SET
-                username = COALESCE(EXCLUDED.username, users.username),
-                first_name = COALESCE(EXCLUDED.first_name, users.first_name),
-                last_name = COALESCE(EXCLUDED.last_name, users.last_name),
-                language_code = COALESCE(EXCLUDED.language_code, users.language_code),
-                last_active = CURRENT_TIMESTAMP
-        ''', (user_id, username, first_name, last_name, language_code))
-        # Логируем действие
-        cursor.execute('''
-            INSERT INTO user_activity (user_id, action, class_name)
-            VALUES (%s, %s, %s)
-        ''', (user_id, action, class_name))
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении пользователя {user_id}: {e}")
         if conn:
             conn.rollback()
     finally:
