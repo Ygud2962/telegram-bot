@@ -1046,14 +1046,18 @@ async def show_my_menu(query, context):
         text += "\n"
 
     if favorite_teachers:
-        text += "<b>👨‍🏫 Избранные учителя:</b>\n"
-        for teacher in favorite_teachers:
-            text += f"• {teacher}\n"
-            keyboard.append([
-                InlineKeyboardButton(f"👨‍🏫 {teacher}", callback_data=f'my_teacher_{teacher.replace(" ", "_")}'),
-                InlineKeyboardButton("🗑 Удалить", callback_data=f'remove_favorite_teacher_{teacher.replace(" ", "_")}')
-            ])
-        text += "\n"
+    text += "<b>👨‍🏫 Избранные учителя:</b>\n"
+    for teacher in favorite_teachers:
+        try:
+            index = ALL_TEACHERS.index(teacher)
+        except ValueError:
+            continue  # учитель больше не существует
+        text += f"• {teacher}\n"
+        keyboard.append([
+            InlineKeyboardButton(f"👨‍🏫 {teacher}", callback_data=f'my_teacher_{index}'),
+            InlineKeyboardButton("🗑 Удалить", callback_data=f'remove_favorite_teacher_{index}')
+        ])
+    text += "\n"
 
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1393,10 +1397,8 @@ async def delete_news_handler(query, context, news_id):
     await show_all_news_for_admin(query, context)
     
 async def ensure_user_and_log(user_id, username, first_name, last_name, language_code, action):
-    """Добавляет пользователя (если нужно) и логирует действие в фоне."""
     try:
-        await asyncio.to_thread(db.add_user, user_id, username, first_name, last_name, language_code)
-        await asyncio.to_thread(db.log_user_activity, user_id, action)
+        await asyncio.to_thread(db.update_user_and_log, user_id, action, None, username, first_name, last_name, language_code)
     except Exception as e:
         logger.error(f"Ошибка фонового логирования: {e}")
         
@@ -1864,14 +1866,16 @@ async def show_analytics(query, context):
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     # Асинхронные вызовы БД
-    await asyncio.to_thread(
-        db.add_user,
-        user.id,
-        user.username,
-        user.first_name,
-        user.last_name,
-        user.language_code
-    )
+   await asyncio.to_thread(
+    db.update_user_and_log,
+    user.id,
+    'start',
+    None,
+    user.username,
+    user.first_name,
+    user.last_name,
+    user.language_code
+)
     await asyncio.to_thread(db.log_user_activity, user.id, 'start')
     
     if await check_maintenance_mode(update, context):
@@ -2079,11 +2083,10 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_my_menu(query, context)
         return
     elif query.data.startswith('remove_favorite_teacher_'):
-        teacher_name = query.data.replace('remove_favorite_teacher_', '').replace('_', ' ')
+        index = int(query.data.replace('remove_favorite_teacher_', ''))
+        teacher_name = ALL_TEACHERS[index]
         user_id = query.from_user.id
-        await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
-        await query.answer(f"Учитель {teacher_name} удален из избранного", show_alert=True)
-        await show_my_menu(query, context)
+    await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
         return
     elif query.data.startswith('toggle_favorite_class_'):
         class_name = query.data.replace('toggle_favorite_class_', '')
@@ -2105,8 +2108,9 @@ async def button_handler(update: Update, context: CallbackContext):
             await show_my_menu(query, context)
         return
     elif query.data.startswith('toggle_favorite_teacher_'):
-        teacher_name = query.data.replace('toggle_favorite_teacher_', '').replace('_', ' ')
-        user_id = query.from_user.id
+    index = int(query.data.replace('toggle_favorite_teacher_', ''))
+    teacher_name = ALL_TEACHERS[index]
+    user_id = query.from_user.id
         is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
         if is_fav:
             await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
@@ -2345,7 +2349,7 @@ async def show_teacher_schedule(query, context):
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
-    fav_callback = f"toggle_favorite_teacher_{teacher_name.replace(' ', '_')}"
+    fav_callback = f"toggle_favorite_teacher_{ALL_TEACHERS.index(teacher_name)}"
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
@@ -2355,6 +2359,8 @@ async def show_teacher_schedule(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    context.user_data['searching_teacher'] = False
+
     await query.edit_message_text(
         schedule_text,
         reply_markup=reply_markup,
@@ -3101,13 +3107,15 @@ async def handle_message(update: Update, context: CallbackContext):
     user = update.effective_user
     # Асинхронные вызовы БД
     await asyncio.to_thread(
-        db.add_user,
-        user.id,
-        user.username,
-        user.first_name,
-        user.last_name,
-        user.language_code
-    )
+    db.update_user_and_log,
+    user.id,
+    'message',
+    None,
+    user.username,
+    user.first_name,
+    user.last_name,
+    user.language_code
+)
     await asyncio.to_thread(db.log_user_activity, user.id, 'message')
     
     if await check_maintenance_mode(update, context):
