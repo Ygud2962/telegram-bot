@@ -9,9 +9,12 @@ import database as db
 import os
 import pytz  # pip install pytz
 
-# Кэш расписания учителей
-_teacher_schedule_cache = {}
-_teacher_schedule_cache_lock = asyncio.Lock()
+# Кэш техрежима
+_maintenance_cache = {'enabled': False, 'until': None, 'message': None, 'last_check': datetime.min}
+MAINTENANCE_CACHE_TTL = 60  # секунд
+
+# Кэш списка учителей
+ALL_TEACHERS = get_all_teachers()
 
 def get_cached_teacher_schedule(teacher_name):
     """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
@@ -996,6 +999,17 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str  # Возвращаем исходную строку в случае ошибки
+        
+async def safe_edit_message(query, text, reply_markup=None, parse_mode='HTML', max_len=4096):
+    if len(text) > max_len:
+        text = text[:max_len-100] + "\n\n... (сообщение обрезано)"
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            await query.answer()
+        else:
+            raise
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
@@ -1388,8 +1402,15 @@ async def ensure_user_and_log(user_id, username, first_name, last_name, language
         
 # ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
 async def check_maintenance_mode(update: Update, context: CallbackContext) -> bool:
-    # Асинхронный вызов БД
-    maintenance = await asyncio.to_thread(db.get_maintenance_status)
+    global _maintenance_cache
+    now = datetime.now()
+    if (now - _maintenance_cache['last_check']).total_seconds() < MAINTENANCE_CACHE_TTL:
+        maintenance = _maintenance_cache
+    else:
+        maintenance = await asyncio.to_thread(db.get_maintenance_status)
+        maintenance['last_check'] = now
+        _maintenance_cache = maintenance
+
     user_id = update.effective_user.id
     if user_id in ADMIN_IDS:
         return False
