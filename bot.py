@@ -2369,7 +2369,7 @@ async def format_teacher_schedule(teacher_name, schedule):
     start_date = today.strftime('%Y-%m-%d')
     end_date = (today + timedelta(days=30)).strftime('%Y-%m-%d')
     all_subs = await asyncio.to_thread(
-        all_subs = db.get_teacher_substitutions_between(teacher_name, start_date, end_date)
+        all_subs = db.get_teacher_substitutions_between(teacher_name, start_date, end_date),
         teacher_name,
         start_date,
         end_date
