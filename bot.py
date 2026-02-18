@@ -802,6 +802,36 @@ SCHEDULE_STRUCTURED = {
     }
 }
 
+# ================== КЭШИРОВАНИЕ ==================
+# Кэш списка учителей (вычисляем один раз после определения SCHEDULE_STRUCTURED)
+def get_all_teachers():
+    """Извлекает всех уникальных учителей из расписания."""
+    teachers = set()
+    for class_name, days in SCHEDULE_STRUCTURED.items():
+        for day, lessons in days.items():
+            for lesson in lessons:
+                if len(lesson) >= 3:
+                    teacher_name = lesson[2]
+                    if teacher_name:
+                        teacher_list = [t.strip() for t in teacher_name.split('/')]
+                        for teacher in teacher_list:
+                            teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
+                            if teacher_clean and teacher_clean not in ['', ' ']:
+                                teachers.add(teacher_clean)
+    return sorted(list(teachers))
+
+ALL_TEACHERS = get_all_teachers()
+
+# Кэш расписания учителей
+_teacher_schedule_cache = {}
+_teacher_schedule_cache_lock = asyncio.Lock()
+
+def get_cached_teacher_schedule(teacher_name):
+    """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
+    if teacher_name not in _teacher_schedule_cache:
+        _teacher_schedule_cache[teacher_name] = get_teacher_schedule(teacher_name)
+    return _teacher_schedule_cache[teacher_name]
+    
 # ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def get_lesson_time(lesson_number):
     """Возвращает время урока по его номеру."""
