@@ -1377,7 +1377,15 @@ async def delete_news_handler(query, context, news_id):
     
     # Показываем обновленный список
     await show_all_news_for_admin(query, context)
-
+    
+async def ensure_user_and_log(user_id, username, first_name, last_name, language_code, action):
+    """Добавляет пользователя (если нужно) и логирует действие в фоне."""
+    try:
+        await asyncio.to_thread(db.add_user, user_id, username, first_name, last_name, language_code)
+        await asyncio.to_thread(db.log_user_activity, user_id, action)
+    except Exception as e:
+        logger.error(f"Ошибка фонового логирования: {e}")
+        
 # ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
 async def check_maintenance_mode(update: Update, context: CallbackContext) -> bool:
     # Асинхронный вызов БД
