@@ -1,4 +1,3 @@
-```markdown
 <div align="center">
 
 # 🏫 SchoolBot — Умный помощник для школы
@@ -65,68 +64,12 @@ python database.py
 
 # 5️⃣ Запускаем бота
 python bot.py
-```
-</details>
 
----
+🗄 Архитектура базы данных
+file:///C:/Users/%D0%AE%D0%BB%D0%B8%D1%8F/OneDrive/Desktop/%D0%91%D0%BE%D1%82/deepseek_mermaid_20260218_32bfa4.svg
 
-## 🗄 Архитектура базы данных
-
-```mermaid
-erDiagram
-    users ||--o{ user_activity : "логирует"
-    users ||--o{ user_favorites : "сохраняет"
-    substitutions ||--o{ user_activity : "просматривают"
-    news ||--o{ users : "получают"
-
-    users {
-        bigint user_id PK
-        string username
-        string first_name
-        string last_name
-        timestamp last_active
-        timestamp last_news_check
-    }
-    substitutions {
-        serial id PK
-        string date
-        string day
-        int lesson_number
-        string old_subject
-        string new_subject
-        string old_teacher
-        string new_teacher
-        string class_name
-    }
-    news {
-        serial id PK
-        string title
-        text content
-        timestamp published_at
-    }
-```
-
----
-
-## 📦 Деплой
-
-<div align="center">
-  <a href="https://railway.app/new/template?template=https://github.com/Ygud2962/telegram-bot">
-    <img src="https://railway.app/button.svg" alt="Deploy on Railway" height="40">
-  </a>
-</div>
-
-**Или вручную на своём сервере:**
-
-```bash
 # Используем systemd для автозапуска
 sudo nano /etc/systemd/system/schoolbot.service
-```
-
-<details>
-<summary><b>⚙️ Пример конфигурации systemd</b></summary>
-
-```ini
 [Unit]
 Description=SchoolBot Telegram Bot
 After=network.target
@@ -141,81 +84,3 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-```
-</details>
-
----
-
-## 📱 Команды бота
-
-### 👤 Пользовательские
-| Команда | Описание |
-|---------|----------|
-| `/start` | 🏠 Главное меню |
-| `/teachers` | 👥 Список учителей |
-| ⭐ **МОё** | Избранное (кнопка в меню) |
-
-### 🔐 Административные (только для `ADMIN_ID`)
-| Команда | Описание |
-|---------|----------|
-| `/test` | 🧪 Тестовое уведомление |
-| `/add_sub` | ➕ Добавить замену (интерактивно) |
-| `/add_news` | 📰 Опубликовать новость |
-| `/maintenance on/off` | 🔧 Вкл/выкл техрежим |
-| `/stats` | 📊 Статистика бота |
-
----
-
-## 🛠 Технологический стек
-
-<div align="center">
-  
-[![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![python-telegram-bot](https://img.shields.io/badge/python--telegram--bot-20.7-2CA5E0?style=flat-square&logo=telegram&logoColor=white)](https://github.com/python-telegram-bot/python-telegram-bot)
-[![psycopg2](https://img.shields.io/badge/psycopg2-2.9.9-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.psycopg.org/)
-[![pytz](https://img.shields.io/badge/pytz-2024.1-orange?style=flat-square)](https://pythonhosted.org/pytz/)
-[![aiohttp](https://img.shields.io/badge/aiohttp-3.9.1-blueviolet?style=flat-square)](https://docs.aiohttp.org/)
-
-</div>
-
----
-
-## 🗺 Дорожная карта
-
-```mermaid
-gantt
-    title Планы развития SchoolBot
-    dateFormat  YYYY-MM
-    section Ядро
-    Оптимизация БД           :done,    2026-01, 30d
-    Кэширование Redis        :active,  2026-02, 30d
-    section Функции
-    Экспорт расписания PDF   :         2026-03, 30d
-    Голосовые уведомления    :         2026-04, 30d
-    section Интеграции
-    Google Calendar sync     :         2026-05, 30d
-    Школьный портал API      :         2026-06, 30d
-```
-
----
-
-## 🤝 Как помочь проекту
-
-- ⭐ **Поставьте звезду** — это лучшая поддержка!
-- 🐛 **Сообщите об ошибке** в [Issues](https://github.com/Ygud2962/telegram-bot/issues)
-- 💡 **Предложите идею** в [Discussions](https://github.com/Ygud2962/telegram-bot/discussions)
-
----
-
-## 📄 Лицензия
-
-<div align="center">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/MIT_logo.svg/128px-MIT_logo.svg.png" width="64" alt="MIT License">
-  <br>
-  <strong>MIT License</strong> © 2026 Ygud2962
-  <br>
-  <sub>Сделано с ❤️ для школьного сообщества</sub>
-  <br>
-  <sub>🇧🇾 Europe/Minsk (UTC+3) • Февраль 2026</sub>
-</div>
-```
