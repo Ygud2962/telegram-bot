@@ -9,6 +9,16 @@ import database as db
 import os
 import pytz  # pip install pytz
 
+# Кэш расписания учителей
+_teacher_schedule_cache = {}
+_teacher_schedule_cache_lock = asyncio.Lock()
+
+def get_cached_teacher_schedule(teacher_name):
+    """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
+    if teacher_name not in _teacher_schedule_cache:
+        _teacher_schedule_cache[teacher_name] = get_teacher_schedule(teacher_name)
+    return _teacher_schedule_cache[teacher_name]
+
 TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
@@ -1038,7 +1048,7 @@ async def show_my_menu(query, context):
 
 async def show_teacher_schedule_by_name(query, context, teacher_name):
     """Показывает расписание учителя по имени."""
-    teacher_schedule = get_teacher_schedule(teacher_name)
+    teacher_schedule = get_cached_teacher_schedule(teacher_name)
     # format_teacher_schedule теперь асинхронная
     schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
     # Формируем кнопки
@@ -1990,19 +2000,10 @@ async def button_handler(update: Update, context: CallbackContext):
     user = query.from_user
     
     # Асинхронные вызовы БД
-    await asyncio.to_thread(
-        db.add_user,
-        user.id,
-        user.username,
-        user.first_name,
-        user.last_name,
-        user.language_code
-    )
-    await asyncio.to_thread(
-        db.log_user_activity,
-        user.id,
-        f'button_{query.data[:50]}'
-    )
+    asyncio.create_task(ensure_user_and_log(
+    user.id, user.username, user.first_name, user.last_name, user.language_code,
+    f'button_{query.data[:50]}'
+))
     
     if await check_maintenance_mode(update, context):
         return
@@ -2309,7 +2310,7 @@ async def show_teacher_schedule(query, context):
         return
 
     teacher_name = teachers_list[teacher_index]
-    teacher_schedule = get_teacher_schedule(teacher_name)
+    teacher_schedule = get_cached_teacher_schedule(teacher_name)
     schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
 
     user_id = query.from_user.id
@@ -2830,7 +2831,7 @@ async def show_searched_teacher_schedule(query, context):
             return
         
         teacher_name = found_teachers[teacher_index]
-        teacher_schedule = get_teacher_schedule(teacher_name)
+        teacher_schedule = get_cached_teacher_schedule(teacher_name)
         schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
         
         user_id = query.from_user.id
