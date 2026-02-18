@@ -9,39 +9,9 @@ import database as db
 import os
 import pytz  # pip install pytz
 
-# ================== КЭШИРОВАНИЕ ==================
-# Кэш техрежима
+# ================== КЭШИРОВАНИЕ ТЕХРЕЖИМА ==================
 _maintenance_cache = {'enabled': False, 'until': None, 'message': None, 'last_check': datetime.min}
 MAINTENANCE_CACHE_TTL = 60  # секунд
-
-# Кэш списка учителей (вычисляем один раз)
-def get_all_teachers():
-    """Извлекает всех уникальных учителей из расписания."""
-    teachers = set()
-    for class_name, days in SCHEDULE_STRUCTURED.items():
-        for day, lessons in days.items():
-            for lesson in lessons:
-                if len(lesson) >= 3:
-                    teacher_name = lesson[2]
-                    if teacher_name:
-                        teacher_list = [t.strip() for t in teacher_name.split('/')]
-                        for teacher in teacher_list:
-                            teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
-                            if teacher_clean and teacher_clean not in ['', ' ']:
-                                teachers.add(teacher_clean)
-    return sorted(list(teachers))
-
-ALL_TEACHERS = get_all_teachers()
-
-# Кэш расписания учителей
-_teacher_schedule_cache = {}
-_teacher_schedule_cache_lock = asyncio.Lock()
-
-def get_cached_teacher_schedule(teacher_name):
-    """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
-    if teacher_name not in _teacher_schedule_cache:
-        _teacher_schedule_cache[teacher_name] = get_teacher_schedule(teacher_name)
-    return _teacher_schedule_cache[teacher_name]
 
 TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
@@ -123,7 +93,6 @@ BELLS_SCHEDULE_HTML = """
 """
 
 # ================== СТРУКТУРИРОВАННОЕ РАСПИСАНИЕ ==================
-# Полное расписание из базы знаний (сокращено для примера)
 SCHEDULE_STRUCTURED = {
     '5а': {
         'Понедельник': [
@@ -802,36 +771,6 @@ SCHEDULE_STRUCTURED = {
     }
 }
 
-# ================== КЭШИРОВАНИЕ ==================
-# Кэш списка учителей (вычисляем один раз после определения SCHEDULE_STRUCTURED)
-def get_all_teachers():
-    """Извлекает всех уникальных учителей из расписания."""
-    teachers = set()
-    for class_name, days in SCHEDULE_STRUCTURED.items():
-        for day, lessons in days.items():
-            for lesson in lessons:
-                if len(lesson) >= 3:
-                    teacher_name = lesson[2]
-                    if teacher_name:
-                        teacher_list = [t.strip() for t in teacher_name.split('/')]
-                        for teacher in teacher_list:
-                            teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
-                            if teacher_clean and teacher_clean not in ['', ' ']:
-                                teachers.add(teacher_clean)
-    return sorted(list(teachers))
-
-ALL_TEACHERS = get_all_teachers()
-
-# Кэш расписания учителей
-_teacher_schedule_cache = {}
-_teacher_schedule_cache_lock = asyncio.Lock()
-
-def get_cached_teacher_schedule(teacher_name):
-    """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
-    if teacher_name not in _teacher_schedule_cache:
-        _teacher_schedule_cache[teacher_name] = get_teacher_schedule(teacher_name)
-    return _teacher_schedule_cache[teacher_name]
-    
 # ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def get_lesson_time(lesson_number):
     """Возвращает время урока по его номеру."""
@@ -901,6 +840,60 @@ async def safe_edit_message(query, text, reply_markup=None, parse_mode='HTML', m
         else:
             raise
 
+# ================== ФУНКЦИИ ДЛЯ РАСПИСАНИЯ УЧИТЕЛЕЙ ==================
+def get_teacher_schedule(teacher_name):
+    """Возвращает расписание учителя (синхронно)."""
+    schedule = {}
+    for class_name, days in SCHEDULE_STRUCTURED.items():
+        for day, lessons in days.items():
+            for lesson in lessons:
+                if len(lesson) >= 3:
+                    current_teacher = lesson[2]
+                    teacher_list = [t.strip() for t in current_teacher.split('/')]
+                    teacher_list_clean = [re.sub(r'\s*\([^)]*\)\s*', '', t).strip() for t in teacher_list]
+                    if teacher_name in teacher_list_clean:
+                        if day not in schedule:
+                            schedule[day] = []
+                        lesson_info = {
+                            'class': class_name,
+                            'number': lesson[0],
+                            'subject': lesson[1],
+                            'time': get_lesson_time(lesson[0]),
+                            'full_teacher': current_teacher
+                        }
+                        schedule[day].append(lesson_info)
+    for day in schedule:
+        schedule[day].sort(key=lambda x: x['number'])
+    return schedule
+
+def get_all_teachers():
+    """Извлекает всех уникальных учителей из расписания."""
+    teachers = set()
+    for class_name, days in SCHEDULE_STRUCTURED.items():
+        for day, lessons in days.items():
+            for lesson in lessons:
+                if len(lesson) >= 3:
+                    teacher_name = lesson[2]
+                    if teacher_name:
+                        teacher_list = [t.strip() for t in teacher_name.split('/')]
+                        for teacher in teacher_list:
+                            teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
+                            if teacher_clean and teacher_clean not in ['', ' ']:
+                                teachers.add(teacher_clean)
+    return sorted(list(teachers))
+
+ALL_TEACHERS = get_all_teachers()
+
+_teacher_schedule_cache = {}
+_teacher_schedule_cache_lock = asyncio.Lock()
+
+def get_cached_teacher_schedule(teacher_name):
+    """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
+    if teacher_name not in _teacher_schedule_cache:
+        _teacher_schedule_cache[teacher_name] = get_teacher_schedule(teacher_name)
+    return _teacher_schedule_cache[teacher_name]
+
+# ================== ОСТАЛЬНЫЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 async def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     """Форматирует расписание на день в новом формате с заменами (асинхронная версия)."""
     if not structured_lessons:
@@ -908,7 +901,6 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
     structured_lessons.sort(key=lambda x: x[0])
     substitutions = []
     if target_date and target_date != 'None' and target_date != 'null' and target_date is not None:
-        # Асинхронный вызов БД
         substitutions = await asyncio.to_thread(
             db.get_substitutions_for_class_date,
             class_name,
@@ -1035,17 +1027,14 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
 def convert_utc_to_minsk(utc_str):
     """Конвертирует строку времени из UTC в минское время (Europe/Minsk)."""
     try:
-        # Парсим строку в datetime без часового пояса
         utc_dt = datetime.strptime(utc_str, '%Y-%m-%d %H:%M:%S')
-        # Делаем осознанным в UTC
         utc_dt = pytz.utc.localize(utc_dt)
-        # Конвертируем в минское время
         minsk_tz = pytz.timezone('Europe/Minsk')
         minsk_dt = utc_dt.astimezone(minsk_tz)
         return minsk_dt.strftime('%d.%m.%Y %H:%M')
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
-        return utc_str  # Возвращаем исходную строку в случае ошибки
+        return utc_str
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
