@@ -83,6 +83,11 @@ def init_db():
             )
         ''')
 
+        # Добавляем колонку last_news_check, если её нет
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS last_news_check TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        ''')
+
         # Таблица активности пользователей
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_activity (
@@ -192,7 +197,7 @@ def update_user_and_log(user_id, action, class_name=None, username=None, first_n
     finally:
         release_connection(conn)
 
-# Для обратной совместимости оставляем старые функции, но они будут вызывать новую
+# Для обратной совместимости оставляем старые функции
 def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
     update_user_and_log(user_id, 'registered', None, username, first_name, last_name, language_code)
 
@@ -219,6 +224,57 @@ def log_user_activity(user_id, action, class_name=None):
         logger.error(f"Ошибка логирования активности пользователя {user_id}: {e}")
         if conn:
             conn.rollback()
+    finally:
+        release_connection(conn)
+
+# ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С НОВОСТЯМИ (last_news_check) ====================
+def get_user_last_news_check(user_id):
+    """Возвращает время последней проверки новостей пользователем (aware UTC)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT last_news_check FROM users WHERE user_id = %s', (user_id,))
+        row = cursor.fetchone()
+        if row and row[0]:
+            return row[0]
+        return datetime(2000, 1, 1, tzinfo=pytz.utc)
+    except Exception as e:
+        logger.error(f"Ошибка получения last_news_check для {user_id}: {e}")
+        return datetime(2000, 1, 1, tzinfo=pytz.utc)
+    finally:
+        release_connection(conn)
+
+def update_user_last_news_check(user_id):
+    """Обновляет время последней проверки новостей на текущее (UTC)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users SET last_news_check = CURRENT_TIMESTAMP WHERE user_id = %s
+        ''', (user_id,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Ошибка обновления last_news_check для {user_id}: {e}")
+    finally:
+        release_connection(conn)
+
+def count_new_news_since(user_id):
+    """Возвращает количество новостей, опубликованных после last_news_check пользователя."""
+    last_check = get_user_last_news_check(user_id)
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM news WHERE published_at > %s
+        ''', (last_check,))
+        count = cursor.fetchone()[0]
+        return count
+    except Exception as e:
+        logger.error(f"Ошибка подсчёта новых новостей для {user_id}: {e}")
+        return 0
     finally:
         release_connection(conn)
 
