@@ -2310,7 +2310,7 @@ async def show_teacher_schedule(query, context):
 
     teacher_name = teachers_list[teacher_index]
     teacher_schedule = get_teacher_schedule(teacher_name)
-    schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
+    schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
 
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
@@ -2369,7 +2369,7 @@ async def format_teacher_schedule(teacher_name, schedule):
     start_date = today.strftime('%Y-%m-%d')
     end_date = (today + timedelta(days=30)).strftime('%Y-%m-%d')
     all_subs = await asyncio.to_thread(
-        db.get_teacher_substitutions_period,
+        all_subs = db.get_teacher_substitutions_between(teacher_name, start_date, end_date)
         teacher_name,
         start_date,
         end_date
