@@ -9,12 +9,33 @@ import database as db
 import os
 import pytz  # pip install pytz
 
+# ================== КЭШИРОВАНИЕ ==================
 # Кэш техрежима
 _maintenance_cache = {'enabled': False, 'until': None, 'message': None, 'last_check': datetime.min}
 MAINTENANCE_CACHE_TTL = 60  # секунд
 
-# Кэш списка учителей
+# Кэш списка учителей (вычисляем один раз)
+def get_all_teachers():
+    """Извлекает всех уникальных учителей из расписания."""
+    teachers = set()
+    for class_name, days in SCHEDULE_STRUCTURED.items():
+        for day, lessons in days.items():
+            for lesson in lessons:
+                if len(lesson) >= 3:
+                    teacher_name = lesson[2]
+                    if teacher_name:
+                        teacher_list = [t.strip() for t in teacher_name.split('/')]
+                        for teacher in teacher_list:
+                            teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
+                            if teacher_clean and teacher_clean not in ['', ' ']:
+                                teachers.add(teacher_clean)
+    return sorted(list(teachers))
+
 ALL_TEACHERS = get_all_teachers()
+
+# Кэш расписания учителей
+_teacher_schedule_cache = {}
+_teacher_schedule_cache_lock = asyncio.Lock()
 
 def get_cached_teacher_schedule(teacher_name):
     """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
@@ -838,6 +859,18 @@ def get_current_lesson_info():
 
     return {'status': 'finished'}
 
+async def safe_edit_message(query, text, reply_markup=None, parse_mode='HTML', max_len=4096):
+    """Безопасно редактирует сообщение, обрезая при необходимости и игнорируя ошибку 'not modified'."""
+    if len(text) > max_len:
+        text = text[:max_len-100] + "\n\n... (сообщение обрезано)"
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            await query.answer()
+        else:
+            raise
+
 async def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     """Форматирует расписание на день в новом формате с заменами (асинхронная версия)."""
     if not structured_lessons:
@@ -918,22 +951,6 @@ def format_substitution(sub):
                 f"   →    `{sub[5]}` ({sub[7]})")
     return str(sub)
 
-def get_all_teachers():
-    """Извлекает всех уникальных учителей из расписания."""
-    teachers = set()
-    for class_name, days in SCHEDULE_STRUCTURED.items():
-        for day, lessons in days.items():
-            for lesson in lessons:
-                if len(lesson) >= 3:
-                    teacher_name = lesson[2]
-                    if teacher_name:
-                        teacher_list = [t.strip() for t in teacher_name.split('/')]
-                        for teacher in teacher_list:
-                            teacher_clean = re.sub(r'\s*\([^)]*\)\s*', '', teacher).strip()
-                            if teacher_clean and teacher_clean not in ['', ' ']:
-                                teachers.add(teacher_clean)
-    return sorted(list(teachers))
-
 async def send_substitution_notification(context, teacher_name, substitution_data):
     """Отправляет уведомление учителю о новой замене."""
     teacher_name_clean = teacher_name.replace('_', ' ').strip()
@@ -999,17 +1016,6 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str  # Возвращаем исходную строку в случае ошибки
-        
-async def safe_edit_message(query, text, reply_markup=None, parse_mode='HTML', max_len=4096):
-    if len(text) > max_len:
-        text = text[:max_len-100] + "\n\n... (сообщение обрезано)"
-    try:
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
-    except BadRequest as e:
-        if "Message is not modified" in str(e):
-            await query.answer()
-        else:
-            raise
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
@@ -1025,7 +1031,7 @@ async def show_my_menu(query, context):
             [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+        await safe_edit_message(query, text, reply_markup=reply_markup)
         return
 
     # Разделяем на классы и учителей
@@ -1046,35 +1052,32 @@ async def show_my_menu(query, context):
         text += "\n"
 
     if favorite_teachers:
-    text += "<b>👨‍🏫 Избранные учителя:</b>\n"
-    for teacher in favorite_teachers:
-        try:
-            index = ALL_TEACHERS.index(teacher)
-        except ValueError:
-            continue  # учитель больше не существует
-        text += f"• {teacher}\n"
-        keyboard.append([
-            InlineKeyboardButton(f"👨‍🏫 {teacher}", callback_data=f'my_teacher_{index}'),
-            InlineKeyboardButton("🗑 Удалить", callback_data=f'remove_favorite_teacher_{index}')
-        ])
-    text += "\n"
+        text += "<b>👨‍🏫 Избранные учителя:</b>\n"
+        for teacher in favorite_teachers:
+            try:
+                index = ALL_TEACHERS.index(teacher)
+            except ValueError:
+                continue  # учитель больше не существует в расписании
+            text += f"• {teacher}\n"
+            keyboard.append([
+                InlineKeyboardButton(f"👨‍🏫 {teacher}", callback_data=f'my_teacher_{index}'),
+                InlineKeyboardButton("🗑 Удалить", callback_data=f'remove_favorite_teacher_{index}')
+            ])
+        text += "\n"
 
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def show_teacher_schedule_by_name(query, context, teacher_name):
     """Показывает расписание учителя по имени."""
     teacher_schedule = get_cached_teacher_schedule(teacher_name)
-    # format_teacher_schedule теперь асинхронная
     schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
-    # Формируем кнопки
     user_id = query.from_user.id
-    # Асинхронный вызов БД
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
-    fav_callback = f"toggle_favorite_teacher_{teacher_name.replace(' ', '_')}"
+    fav_callback = f"toggle_favorite_teacher_{ALL_TEACHERS.index(teacher_name)}"
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
@@ -1084,27 +1087,19 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        schedule_text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
 # ================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
 async def show_news_menu(query, context):
     """Показывает последние 5 школьных новостей (старые сверху, новые снизу)."""
-    # Асинхронный вызов БД
     news_list = await asyncio.to_thread(db.get_latest_news, 5)
-    # Переворачиваем список, чтобы старые новости были сверху, новые снизу
-    news_list = news_list[::-1]
+    news_list = news_list[::-1]  # старые сверху
     
     if not news_list:
         text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n📭 Новостей пока нет.\nАдминистрация добавит новости позже."
     else:
         text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n"
         for news in news_list:
-            # news: (id, title, content, published_at)
-            # Конвертируем время из UTC в минское
             pub_date = convert_utc_to_minsk(news[3])
             text += f"📌 <b>{news[1]}</b>\n"
             text += f"<i>📅 {pub_date}</i>\n"
@@ -1114,11 +1109,7 @@ async def show_news_menu(query, context):
     keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def start_publish_news(query, context):
     """Начинает процесс публикации новости (только для админа)."""
@@ -1130,11 +1121,11 @@ async def start_publish_news(query, context):
     keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "📣 <b>ПУБЛИКАЦИЯ НОВОСТИ</b>\n\n"
         "✏️ Введите <b>заголовок</b> новости (до 100 символов):",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def handle_news_input(update: Update, context: CallbackContext):
@@ -1212,19 +1203,17 @@ async def publish_news(query, context, send_to_all=False):
     title = context.user_data.get('news_title', '').strip()
     content = context.user_data.get('news_content', '').strip()
     if not title or not content:
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "❌ Ошибка: не хватает данных для публикации.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')]]),
-            parse_mode='HTML'
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')]])
         )
         context.user_data.clear()
         return
 
-    # Сохраняем в БД (асинхронно)
     news_id = await asyncio.to_thread(db.add_news, title, content)
     logger.info(f"Новость опубликована (ID={news_id}) админом {query.from_user.id}")
     
-    # Формируем сообщение с минским временем
     tz_minsk = pytz.timezone('Europe/Minsk')
     current_time_minsk = datetime.now(tz_minsk).strftime('%d.%m.%Y %H:%M')
     
@@ -1232,7 +1221,6 @@ async def publish_news(query, context, send_to_all=False):
     success_msg += f"<b>{title}</b>\n\n{content[:200]}{'...' if len(content) > 200 else ''}"
     
     if send_to_all:
-        # Рассылка всем пользователям (получаем список асинхронно)
         users = await asyncio.to_thread(db.get_all_users)
         total = len(users)
         sent = 0
@@ -1243,7 +1231,6 @@ async def publish_news(query, context, send_to_all=False):
             f"<i>📅 {current_time_minsk}</i>"
         )
         
-        # Отправляем статус рассылки
         status_msg = await query.edit_message_text(
             f"📤 <b>РАССЫЛКА НОВОСТИ</b>\n\n"
             f"Всего пользователей: {total}\n"
@@ -1268,7 +1255,6 @@ async def publish_news(query, context, send_to_all=False):
                 failed += 1
                 logger.error(f"Ошибка отправки новости {user_id}: {e}")
             
-            # Обновляем статус каждые 5 пользователей
             if i % 5 == 0 or i == total - 1:
                 try:
                     await status_msg.edit_text(
@@ -1290,11 +1276,7 @@ async def publish_news(query, context, send_to_all=False):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        success_msg,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, success_msg, reply_markup=reply_markup)
     
     context.user_data.clear()
 
@@ -1312,9 +1294,7 @@ async def show_all_news_for_admin(query, context):
         text = "📰 <b>УПРАВЛЕНИЕ НОВОСТЯМИ</b>\n\n"
         text += f"Всего новостей: <b>{len(news_list)}</b>\n\n"
         
-        # Показываем последние 15 новостей (новые сверху)
         for news in news_list[:15]:
-            # Конвертируем время из UTC в минское
             pub_date = convert_utc_to_minsk(news[3])
             text += f"ID: <code>{news[0]}</code>\n📌 <b>{news[1]}</b>\n<i>📅 {pub_date}</i>\n{news[2][:100]}{'...' if len(news[2]) > 100 else ''}\n\n"
             text += "─" * 20 + "\n\n"
@@ -1334,11 +1314,7 @@ async def show_all_news_for_admin(query, context):
         keyboard.append([InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def confirm_delete_news(query, context, news_id):
     """Запрашивает подтверждение удаления новости."""
@@ -1346,19 +1322,17 @@ async def confirm_delete_news(query, context, news_id):
         return
     news = await asyncio.to_thread(db.get_news_by_id, news_id)
     if not news:
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "❌ <b>Ошибка:</b> Новость не найдена.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("↩️ В управление новостями", callback_data='admin_manage_news')],
                 [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-            ]),
-            parse_mode='HTML'
+            ])
         )
         return
 
-    # Конвертируем время из UTC в минское
     pub_date = convert_utc_to_minsk(news[3])
-
     title = news[1]
     keyboard = [
         [
@@ -1368,41 +1342,38 @@ async def confirm_delete_news(query, context, news_id):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         f"⚠️ <b>ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ</b>\n\n"
         f"Вы действительно хотите удалить новость?\n\n"
         f"📌 <b>{title}</b>\n"
         f"<i>📅 {pub_date}</i>\n\n"
         f"<i>Это действие необратимо!</i>",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def delete_news_handler(query, context, news_id):
     """Удаляет новость по ID."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    # Получаем название для уведомления
     news = await asyncio.to_thread(db.get_news_by_id, news_id)
     title = news[1] if news else f"ID {news_id}"
     
-    # Удаляем новость
     await asyncio.to_thread(db.delete_news, news_id)
     logger.info(f"Новость ID={news_id} удалена админом {query.from_user.id}")
     
-    # Подтверждение
     await query.answer(f"✅ Новость '{title}' удалена!", show_alert=True)
     
-    # Показываем обновленный список
     await show_all_news_for_admin(query, context)
-    
+
 async def ensure_user_and_log(user_id, username, first_name, last_name, language_code, action):
+    """Добавляет пользователя (если нужно) и логирует действие в фоне."""
     try:
         await asyncio.to_thread(db.update_user_and_log, user_id, action, None, username, first_name, last_name, language_code)
     except Exception as e:
         logger.error(f"Ошибка фонового логирования: {e}")
-        
-# ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
+
+# ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА (КЭШИРОВАННАЯ) ==================
 async def check_maintenance_mode(update: Update, context: CallbackContext) -> bool:
     global _maintenance_cache
     now = datetime.now()
@@ -1430,9 +1401,9 @@ async def check_maintenance_mode(update: Update, context: CallbackContext) -> bo
     try:
         if update.callback_query:
             await update.callback_query.answer("⚠️ Технические работы", show_alert=True)
-            await update.callback_query.edit_message_text(
-                msg, 
-                parse_mode='HTML',
+            await safe_edit_message(
+                update.callback_query,
+                msg,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔄 Обновить статус", callback_data='check_maintenance_status')
                 ]])
@@ -1466,7 +1437,7 @@ async def check_maintenance_status(query, context):
         keyboard = [[InlineKeyboardButton("🔄 Обновить", callback_data='check_maintenance_status')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     try:
-        await query.edit_message_text(msg, reply_markup=reply_markup, parse_mode='HTML')
+        await safe_edit_message(query, msg, reply_markup=reply_markup)
     except:
         await query.answer("Статус не изменился", show_alert=False)
 
@@ -1485,7 +1456,8 @@ async def enable_maintenance_mode(query, context):
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "<b>🔧 ВКЛЮЧЕНИЕ ТЕХРЕЖИМА</b>\n\n"
         "Выберите длительность технических работ:\n"
         "• <b>1 час</b> — до окончания текущего часа\n"
@@ -1493,8 +1465,7 @@ async def enable_maintenance_mode(query, context):
         "• <b>5 часов</b> — полный рабочий день\n"
         "• <b>До завтра</b> — до 08:00 следующего дня\n"
         "• <b>Бессрочно</b> — до ручного отключения",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def set_maintenance_duration(query, context, duration_type):
@@ -1511,7 +1482,6 @@ async def set_maintenance_duration(query, context, duration_type):
     elif duration_type == 'tomorrow':
         tomorrow = now + timedelta(days=1)
         until_str = tomorrow.replace(hour=8, minute=0).strftime('%d.%m %H:%M')
-    # 'forever' — until_str остаётся None
     await asyncio.to_thread(db.set_maintenance_mode, True, until_str, None)
     await asyncio.to_thread(db.log_user_activity, query.from_user.id, f'maintenance_enabled_{duration_type}')
     await confirm_maintenance_activated(query, until_str)
@@ -1529,11 +1499,7 @@ async def confirm_maintenance_activated(query, until_str=None):
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        msg,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, msg, reply_markup=reply_markup)
 
 async def disable_maintenance_mode(query, context):
     """Выключает техрежим."""
@@ -1546,11 +1512,11 @@ async def disable_maintenance_mode(query, context):
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "✅ <b>ТЕХРЕЖИМ ОТКЛЮЧЕН</b>\n\n"
         "Бот снова доступен всем пользователям.",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 # ================== УПРОЩЁННОЕ ДОБАВЛЕНИЕ ЗАМЕН ==================
@@ -1582,12 +1548,12 @@ async def show_date_selection(query, context):
     context.user_data['adding_substitution'] = True
     context.user_data['step'] = 'date'
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 1/4)</b>\n"
         "<b>📅 Выберите дату замены:</b>\n"
         "<i>Показаны только будние дни (Пн-Пт) на ближайшую неделю</i>",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_class_selection_for_substitution(query, context):
@@ -1610,13 +1576,13 @@ async def show_class_selection_for_substitution(query, context):
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "➕ ДОБАВЛЕНИЕ ЗАМЕНЫ (ШАГ 2/4)\n"
         f"📅 Дата: {context.user_data.get('date', 'не выбран')}\n"
         f"📅 День недели: {context.user_data.get('day', 'не выбран')}\n"
         "🏫 Выберите класс:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_lesson_selection(query, context):
@@ -1654,7 +1620,7 @@ async def show_lesson_selection(query, context):
         f"<b>🔢 Выберите урок для замены:</b>\n"
         f"<i>Показаны уроки из расписания класса</i>"
     )
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def show_teacher_selection(query, context):
     """Показывает выбор НОВОГО учителя (шаг 4)."""
@@ -1693,7 +1659,7 @@ async def show_teacher_selection(query, context):
         f"<b>👨‍🏫 Выберите НОВОГО учителя:</b>\n"
         f"<i>Предмет останется тем же</i>"
     )
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def handle_adding_substitution(query, context):
     """Обрабатывает 4 шага добавления замены."""
@@ -1778,7 +1744,6 @@ async def save_substitution(query, context):
         subject = context.user_data['subject']
         old_teacher = context.user_data['old_teacher']
         new_teacher = context.user_data['new_teacher']
-        # Асинхронный вызов БД
         await asyncio.to_thread(
             db.add_substitution,
             date, day, lesson_num,
@@ -1815,15 +1780,15 @@ async def save_substitution(query, context):
             f"<i>Уведомление отправлено новому учителю</i>"
         )
         
-        await query.edit_message_text(success_msg, reply_markup=reply_markup, parse_mode='HTML')
+        await safe_edit_message(query, success_msg, reply_markup=reply_markup)
 
     except Exception as e:
         logger.error(f"Ошибка сохранения замены: {e}")
         context.user_data.clear()
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             f"❌ <b>Ошибка:</b> {str(e)[:200]}",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Старт", callback_data='back_to_main')]]),
-            parse_mode='HTML'
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Старт", callback_data='back_to_main')]])
         )
 
 # ================== АНАЛИТИКА ДЛЯ АДМИНА ==================
@@ -1831,7 +1796,6 @@ async def show_analytics(query, context):
     """Показывает аналитику использования бота."""
     if query.from_user.id not in ADMIN_IDS:
         return
-    # Асинхронные вызовы БД
     active_users_24h = await asyncio.to_thread(db.get_active_users_24h)
     popular_classes = await asyncio.to_thread(db.get_popular_classes)
     peak_hours = await asyncio.to_thread(db.get_peak_hours)
@@ -1860,23 +1824,21 @@ async def show_analytics(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 # ================== КОМАНДА /start ==================
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    # Асинхронные вызовы БД
-   await asyncio.to_thread(
-    db.update_user_and_log,
-    user.id,
-    'start',
-    None,
-    user.username,
-    user.first_name,
-    user.last_name,
-    user.language_code
-)
-    await asyncio.to_thread(db.log_user_activity, user.id, 'start')
+    await asyncio.to_thread(
+        db.update_user_and_log,
+        user.id,
+        'start',
+        None,
+        user.username,
+        user.first_name,
+        user.last_name,
+        user.language_code
+    )
     
     if await check_maintenance_mode(update, context):
         return
@@ -1918,10 +1880,10 @@ async def show_now_class_selection(query, context):
         [InlineKeyboardButton("↩️ Назад", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "⏰ <b>ТЕКУЩИЙ УРОК</b>\nВыберите ваш класс:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_current_lesson(query, context):
@@ -1950,7 +1912,7 @@ async def show_current_lesson(query, context):
             f"<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
         )
         try:
-            await query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='HTML')
+            await safe_edit_message(query, message_text, reply_markup=reply_markup)
         except BadRequest as e:
             if "message is not modified" in str(e).lower():
                 await query.answer("ℹ️ Информация уже актуальна", show_alert=False)
@@ -1982,7 +1944,6 @@ async def show_current_lesson(query, context):
                 text += f"📚 <b>Предмет:</b> {subject}\n"
                 text += f"👨‍🏫 <b>Учитель:</b> {teacher}\n"
                 today_str = now.strftime('%Y-%m-%d')
-                # Асинхронный вызов БД
                 subs = await asyncio.to_thread(db.get_substitutions_for_class_date, class_name, today_str)
                 substitution = next((s for s in subs if s[3] == next_num), None)
                 if substitution:
@@ -2018,7 +1979,7 @@ async def show_current_lesson(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     try:
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+        await safe_edit_message(query, text, reply_markup=reply_markup)
     except BadRequest as e:
         if "message is not modified" in str(e).lower():
             await query.answer("✅ Информация актуальна", show_alert=False)
@@ -2032,11 +1993,10 @@ async def button_handler(update: Update, context: CallbackContext):
         context.user_data = {}
     user = query.from_user
     
-    # Асинхронные вызовы БД
     asyncio.create_task(ensure_user_and_log(
-    user.id, user.username, user.first_name, user.last_name, user.language_code,
-    f'button_{query.data[:50]}'
-))
+        user.id, user.username, user.first_name, user.last_name, user.language_code,
+        f'button_{query.data[:50]}'
+    ))
     
     if await check_maintenance_mode(update, context):
         return
@@ -2053,7 +2013,7 @@ async def button_handler(update: Update, context: CallbackContext):
             await handle_adding_substitution(query, context)
         except Exception as e:
             logger.error(f"Ошибка при добавлении замены: {e}")
-            await query.edit_message_text(f"❌ Произошла ошибка: {str(e)[:100]}", parse_mode='HTML')
+            await safe_edit_message(query, f"❌ Произошла ошибка: {str(e)[:100]}")
         return
 
     # Обработка техрежима
@@ -2072,7 +2032,8 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_weekly_schedule_for_class(query, context, class_name)
         return
     elif query.data.startswith('my_teacher_'):
-        teacher_name = query.data.replace('my_teacher_', '').replace('_', ' ')
+        index = int(query.data.replace('my_teacher_', ''))
+        teacher_name = ALL_TEACHERS[index]
         await show_teacher_schedule_by_name(query, context, teacher_name)
         return
     elif query.data.startswith('remove_favorite_class_'):
@@ -2086,7 +2047,9 @@ async def button_handler(update: Update, context: CallbackContext):
         index = int(query.data.replace('remove_favorite_teacher_', ''))
         teacher_name = ALL_TEACHERS[index]
         user_id = query.from_user.id
-    await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
+        await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
+        await query.answer(f"Учитель {teacher_name} удален из избранного", show_alert=True)
+        await show_my_menu(query, context)
         return
     elif query.data.startswith('toggle_favorite_class_'):
         class_name = query.data.replace('toggle_favorite_class_', '')
@@ -2098,7 +2061,6 @@ async def button_handler(update: Update, context: CallbackContext):
         else:
             await asyncio.to_thread(db.add_favorite, user_id, 'class', class_name)
             await query.answer(f"Класс {class_name.upper()} добавлен в избранное", show_alert=True)
-        # Обновляем текущее сообщение
         if context.user_data.get('selected_class') == class_name:
             if query.data.startswith('weekly_'):
                 await show_weekly_schedule_for_class(query, context, class_name)
@@ -2108,9 +2070,9 @@ async def button_handler(update: Update, context: CallbackContext):
             await show_my_menu(query, context)
         return
     elif query.data.startswith('toggle_favorite_teacher_'):
-    index = int(query.data.replace('toggle_favorite_teacher_', ''))
-    teacher_name = ALL_TEACHERS[index]
-    user_id = query.from_user.id
+        index = int(query.data.replace('toggle_favorite_teacher_', ''))
+        teacher_name = ALL_TEACHERS[index]
+        user_id = query.from_user.id
         is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
         if is_fav:
             await asyncio.to_thread(db.remove_favorite, user_id, 'teacher', teacher_name)
@@ -2182,11 +2144,11 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_teacher_schedule(query, context)
         return
     elif query.data == 'menu_search_teacher':
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "<b>🔍 ПОИСК УЧИТЕЛЯ</b>\n"
             "Введите фамилию или часть фамилии учителя для поиска:\n"
-            "<i>Пример: 'Коротчикова' или 'Гуд'</i>",
-            parse_mode='HTML'
+            "<i>Пример: 'Коротчикова' или 'Гуд'</i>"
         )
         context.user_data['searching_teacher'] = True
         return
@@ -2263,10 +2225,10 @@ async def show_main_menu(query):
         [InlineKeyboardButton("👑 Админ-панель", callback_data='admin_panel')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         '🏫 <b>Школьный бот</b>\nВыберите раздел:',
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_weekly_schedule_for_class(query, context, class_name):
@@ -2285,14 +2247,10 @@ async def show_weekly_schedule_for_class(query, context, class_name):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        schedule_text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
 async def show_teacher_menu(query, context):
-    real_teachers = get_all_teachers()
+    real_teachers = ALL_TEACHERS
     teachers_per_row = 2
     keyboard = []
     row = []
@@ -2310,35 +2268,35 @@ async def show_teacher_menu(query, context):
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "👨‍🏫 <b>РАСПИСАНИЕ УЧИТЕЛЕЙ</b>\n"
         "Выберите учителя для просмотра его расписания на неделю:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_teacher_schedule(query, context):
     try:
         parts = query.data.split('_')
         teacher_index = int(parts[1])
-        teachers_list = context.user_data.get('teachers_list', [])
+        teachers_list = context.user_data.get('teachers_list', ALL_TEACHERS)
     except (ValueError, IndexError, KeyError) as e:
         logger.error(f"Ошибка обработки callback {query.data}, ошибка: {e}")
         keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "❌ Ошибка обработки запроса.\nПожалуйста, воспользуйтесь меню.",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
+            reply_markup=reply_markup
         )
         return
     if not teachers_list or teacher_index >= len(teachers_list):
         keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "<b>❌ Ошибка: список учителей не найден.</b>",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
+            reply_markup=reply_markup
         )
         return
 
@@ -2359,13 +2317,7 @@ async def show_teacher_schedule(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    context.user_data['searching_teacher'] = False
-
-    await query.edit_message_text(
-        schedule_text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
 def get_teacher_schedule(teacher_name):
     schedule = {}
@@ -2401,7 +2353,6 @@ async def format_teacher_schedule(teacher_name, schedule):
     current_lesson_info = get_current_lesson_info()
     current_lesson_number = current_lesson_info['number'] if current_lesson_info['status'] == 'lesson' else None
 
-    # Получаем все замены за 30 дней одним запросом
     start_date = today.strftime('%Y-%m-%d')
     end_date = (today + timedelta(days=30)).strftime('%Y-%m-%d')
     all_subs = await asyncio.to_thread(
@@ -2411,7 +2362,6 @@ async def format_teacher_schedule(teacher_name, schedule):
         end_date
     )
 
-    # Группируем замены по дате
     subs_by_date = {}
     for sub in all_subs:
         date_str = sub[1]
@@ -2521,7 +2471,7 @@ async def format_teacher_schedule(teacher_name, schedule):
 async def show_bells_schedule(query):
     keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(BELLS_SCHEDULE_HTML, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, BELLS_SCHEDULE_HTML, reply_markup=reply_markup)
 
 async def show_class_selection(query):
     keyboard = [
@@ -2535,10 +2485,10 @@ async def show_class_selection(query):
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "📚 <b>РАСПИСАНИЕ УРОКОВ</b>\nВыберите класс:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_day_selection_for_class(query, context):
@@ -2552,10 +2502,10 @@ async def show_day_selection_for_class(query, context):
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         f"📚 Расписание для {class_name.upper()}\nВыберите день недели или просмотрите расписание на всю неделю:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_daily_schedule(query, context):
@@ -2599,11 +2549,7 @@ async def show_daily_schedule(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        schedule_text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
 async def show_weekly_schedule(query, context):
     class_name = query.data.replace('weekly_', '')
@@ -2622,11 +2568,7 @@ async def show_weekly_schedule(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        schedule_text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
+    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
 async def show_substitutions_menu(query):
     keyboard = [
@@ -2637,10 +2579,10 @@ async def show_substitutions_menu(query):
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "🔄 <b>ЗАМЕНЫ УРОКОВ</b>\nВыберите день:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_substitutions_for_date(query):
@@ -2667,7 +2609,7 @@ async def show_substitutions_for_date(query):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def show_all_substitutions(query):
     subs = await asyncio.to_thread(db.get_all_substitutions)
@@ -2682,16 +2624,13 @@ async def show_all_substitutions(query):
     else:
         text = "Замены отсутствуют."
     
-    if len(text) > 4000:
-        text = text[:3900] + "\n... (сообщение обрезано)"
-    
     keyboard = [
         [InlineKeyboardButton("↩️ Назад к заменам", callback_data='menu_substitutions')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def show_help(query):
     help_text = (
@@ -2710,11 +2649,11 @@ async def show_help(query):
     )
     keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(help_text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, help_text, reply_markup=reply_markup)
 
 async def show_admin_panel(query):
     if query.from_user.id not in ADMIN_IDS:
-        await query.edit_message_text("⛔ Доступ запрещен!", parse_mode='HTML')
+        await safe_edit_message(query, "⛔ Доступ запрещен!")
         return
     
     maintenance = await asyncio.to_thread(db.get_maintenance_status)
@@ -2741,10 +2680,10 @@ async def show_admin_panel(query):
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "<b>👑 АДМИН-ПАНЕЛЬ</b>\nВыберите действие:",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def show_admin_substitutions(query):
@@ -2760,25 +2699,22 @@ async def show_admin_substitutions(query):
     else:
         text = "В базе данных замен нет."
     
-    if len(text) > 4000:
-        text = text[:3900] + "\n... (сообщение обрезано)"
-    
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def request_substitution_deletion(query):
     if query.from_user.id not in ADMIN_IDS:
         return
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "🗑️ <b>УДАЛЕНИЕ ЗАМЕНЫ</b>\n"
-        "Введите ID замены для удаления (посмотрите ID в списке всех замен):",
-        parse_mode='HTML'
+        "Введите ID замены для удаления (посмотрите ID в списке всех замен):"
     )
 
 async def confirm_clear_substitutions(query):
@@ -2797,15 +2733,15 @@ async def confirm_clear_substitutions(query):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         f"⚠️ <b>ПОДТВЕРЖДЕНИЕ ОЧИСТКИ ЗАМЕН</b>\n\n"
         f"Вы действительно хотите удалить ВСЕ замены из базы данных?\n\n"
         f"📊 <b>Статистика:</b>\n"
         f"• Всего замен в базе: {sub_count}\n\n"
         f"⚠️ Это действие необратимо!\n"
         f"Все данные о заменах будут удалены без возможности восстановления.",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def clear_all_substitutions(query):
@@ -2824,12 +2760,12 @@ async def clear_all_substitutions(query):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             f"✅ <b>ОЧИСТКА ЗАМЕН ВЫПОЛНЕНА</b>\n\n"
             f"Удалено замен: {sub_count}\n"
             f"База данных замен теперь пуста.",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
+            reply_markup=reply_markup
         )
         
         logger.info(f"Админ {query.from_user.id} очистил все замены. Удалено: {sub_count}")
@@ -2842,12 +2778,12 @@ async def clear_all_substitutions(query):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             f"❌ <b>ОШИБКА ПРИ ОЧИСТКЕ</b>\n\n"
             f"Не удалось очистить базу данных замен.\n"
             f"Ошибка: {str(e)[:100]}",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
+            reply_markup=reply_markup
         )
 
 async def show_searched_teacher_schedule(query, context):
@@ -2858,10 +2794,10 @@ async def show_searched_teacher_schedule(query, context):
         if not found_teachers or teacher_index >= len(found_teachers):
             keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(
+            await safe_edit_message(
+                query,
                 "❌ Ошибка: список найденных учителей не найден.",
-                reply_markup=reply_markup,
-                parse_mode='HTML'
+                reply_markup=reply_markup
             )
             return
         
@@ -2872,7 +2808,7 @@ async def show_searched_teacher_schedule(query, context):
         user_id = query.from_user.id
         is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
         fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
-        fav_callback = f"toggle_favorite_teacher_{teacher_name.replace(' ', '_')}"
+        fav_callback = f"toggle_favorite_teacher_{ALL_TEACHERS.index(teacher_name)}"
         
         keyboard = [
             [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
@@ -2882,19 +2818,16 @@ async def show_searched_teacher_schedule(query, context):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            schedule_text,
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
+        await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
+        context.user_data['searching_teacher'] = False
     except Exception as e:
         logger.error(f"Ошибка в show_searched_teacher_schedule: {e}")
         keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             f"❌ Ошибка: {str(e)[:100]}",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
+            reply_markup=reply_markup
         )
 
 # ================== ФУНКЦИИ РАССЫЛКИ ТЕХНИЧЕСКИХ УВЕДОМЛЕНИЙ ==================
@@ -2925,7 +2858,7 @@ async def show_users_stats(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='HTML')
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def start_technical_broadcast(query, context):
     if query.from_user.id not in ADMIN_IDS:
@@ -2940,14 +2873,14 @@ async def start_technical_broadcast(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "📢 <b>РАССЫЛКА ТЕХНИЧЕСКОГО УВЕДОМЛЕНИЯ</b>\n\n"
         "Введите время окончания технических работ в формате:\n"
         "`ДД.ММ ЧЧ:ММ`\n"
         "Пример: `05.02 18:30`\n\n"
         "Это время будет указано в уведомлении всем пользователям.",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def handle_broadcast_time(update: Update, context: CallbackContext):
@@ -2995,7 +2928,7 @@ async def confirm_broadcast(query, context):
     
     broadcast_time = context.user_data.get('broadcast_time')
     if not broadcast_time:
-        await query.edit_message_text("❌ Ошибка: время не указано.")
+        await safe_edit_message(query, "❌ Ошибка: время не указано.")
         context.user_data.clear()
         return
     
@@ -3032,7 +2965,6 @@ async def confirm_broadcast(query, context):
             failed += 1
             logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
         
-        # Обновляем статус каждые 5 пользователей
         if i % 5 == 0 or i == total - 1:
             try:
                 await status_message.edit_text(
@@ -3074,13 +3006,13 @@ async def edit_broadcast_time(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "✏️ <b>ИЗМЕНЕНИЕ ВРЕМЕНИ</b>\n\n"
         "Введите новое время окончания технических работ в формате:\n"
         "`ДД.ММ ЧЧ:ММ`\n"
         "Пример: `05.02 18:30`",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 async def cancel_broadcast(query, context):
@@ -3092,11 +3024,11 @@ async def cancel_broadcast(query, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "❌ <b>РАССЫЛКА ОТМЕНЕНА</b>\n\n"
         "Уведомление не было отправлено никому.",
-        reply_markup=reply_markup,
-        parse_mode='HTML'
+        reply_markup=reply_markup
     )
 
 # ================== ОБРАБОТКА СООБЩЕНИЙ ==================
@@ -3105,18 +3037,16 @@ async def handle_message(update: Update, context: CallbackContext):
         return
     
     user = update.effective_user
-    # Асинхронные вызовы БД
     await asyncio.to_thread(
-    db.update_user_and_log,
-    user.id,
-    'message',
-    None,
-    user.username,
-    user.first_name,
-    user.last_name,
-    user.language_code
-)
-    await asyncio.to_thread(db.log_user_activity, user.id, 'message')
+        db.update_user_and_log,
+        user.id,
+        'message',
+        None,
+        user.username,
+        user.first_name,
+        user.last_name,
+        user.language_code
+    )
     
     if await check_maintenance_mode(update, context):
         return
@@ -3124,17 +3054,14 @@ async def handle_message(update: Update, context: CallbackContext):
     if not isinstance(context.user_data, dict):
         context.user_data = {}
     
-    # 🔑 ОБРАБОТКА ВВОДА НОВОСТИ (ТОЛЬКО ДЛЯ АДМИНА)
     if context.user_data.get('publishing_news') and update.effective_user.id in ADMIN_IDS:
         await handle_news_input(update, context)
         return
     
-    # Обработка ввода времени для рассылки технических уведомлений
     if context.user_data.get('broadcasting') and context.user_data.get('broadcast_step') == 'time':
         await handle_broadcast_time(update, context)
         return
     
-    # Обработка поиска учителя
     if context.user_data.get('searching_teacher'):
         search_query = update.message.text.strip()
         if not search_query:
@@ -3144,7 +3071,7 @@ async def handle_message(update: Update, context: CallbackContext):
             )
             return
         
-        all_teachers = get_all_teachers()
+        all_teachers = ALL_TEACHERS
         found_teachers = []
         for teacher in all_teachers:
             if search_query.lower() in teacher.lower():
@@ -3323,7 +3250,7 @@ async def test_notification(update: Update, context: CallbackContext):
             )
 
 async def teachers_list(update: Update, context: CallbackContext):
-    all_teachers = get_all_teachers()
+    all_teachers = ALL_TEACHERS
     if not all_teachers:
         await update.message.reply_text(
             "❌ Список учителей пуст.",
@@ -3382,7 +3309,7 @@ def main():
     )
     
     print("🤖 Бот запущен...")
-    print(f"📊 Всего учителей в расписании: {len(get_all_teachers())}")
+    print(f"📊 Всего учителей в расписании: {len(ALL_TEACHERS)}")
     print(f"👑 Администраторы: {ADMIN_IDS}")
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
