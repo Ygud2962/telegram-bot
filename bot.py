@@ -2310,7 +2310,7 @@ async def show_teacher_schedule(query, context):
 
     teacher_name = teachers_list[teacher_index]
     teacher_schedule = get_teacher_schedule(teacher_name)
-    schedule_text = format_teacher_schedule(teacher_name, teacher_schedule)
+    schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
 
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
