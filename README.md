@@ -232,7 +232,7 @@
 ╚════════════════════════════════════════════╝
 ```
 
-[![Начать](https://img.shields.io/badge/🚀_НАЧАТЬ_ИСПОЛЬЗОВАНИЕ-0088cc?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/YOUR_BOT_NAME)
+[![Начать](https://img.shields.io/badge/🚀_НАЧАТЬ_ИСПОЛЬЗОВАНИЕ-0088cc?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
 
 ```
    💬 Нажмите на бота → Начните общение → Получите пользу!
