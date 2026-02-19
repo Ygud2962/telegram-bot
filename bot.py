@@ -1206,6 +1206,7 @@ async def publish_news(query, context, send_to_all=False):
     """Публикует новость в БД и при необходимости рассылает всем."""
     title = context.user_data.get('news_title', '').strip()
     content = context.user_data.get('news_content', '').strip()
+    
     if not title or not content:
         await safe_edit_message(
             query,
@@ -1221,22 +1222,35 @@ async def publish_news(query, context, send_to_all=False):
     tz_minsk = pytz.timezone('Europe/Minsk')
     current_time_minsk = datetime.now(tz_minsk).strftime('%d.%m.%Y %H:%M')
     
-    success_msg = "✅ <b>НОВОСТЬ ОПУБЛИКОВАНА!</b>\n\n"
-    success_msg += f"<b>{title}</b>\n\n{content[:200]}{'...' if len(content) > 200 else ''}"
+    success_msg = "✅ <b>НОВОСТЬ ОПУБЛИКОВАНА!</b>\n"
+    success_msg += f"<b>{title}</b>\n{content[:200]}{'...' if len(content) > 200 else ''}"
     
+    # ✅ ИСПРАВЛЕНИЕ: Создаем клавиатуру главного меню для прикрепления к новости
+    main_menu_keyboard = [
+        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
+         InlineKeyboardButton("📚 Расписание", callback_data='menu_schedule')],
+        [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions'),
+         InlineKeyboardButton("📣 Новости", callback_data='menu_news')],
+        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my'),
+         InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]
+    ]
+    main_menu_markup = InlineKeyboardMarkup(main_menu_keyboard)
+
     if send_to_all:
         users = await asyncio.to_thread(db.get_all_users)
         total = len(users)
         sent = 0
         failed = 0
+        
         broadcast_msg = (
-            f"📣 <b>СРОЧНАЯ НОВОСТЬ ШКОЛЫ</b>\n\n"
-            f"<b>{title}</b>\n\n{content}\n\n"
+            f"📣 <b>СРОЧНАЯ НОВОСТЬ ШКОЛЫ</b>\n"
+            f"<b>{title}</b>\n"
+            f"{content}\n"
             f"<i>📅 {current_time_minsk}</i>"
         )
         
         status_msg = await query.edit_message_text(
-            f"📤 <b>РАССЫЛКА НОВОСТИ</b>\n\n"
+            f"📤 <b>РАССЫЛКА НОВОСТИ</b>\n"
             f"Всего пользователей: {total}\n"
             f"Отправлено: 0\n"
             f"Ошибок: 0\n"
@@ -1246,7 +1260,13 @@ async def publish_news(query, context, send_to_all=False):
         
         for i, (user_id, _, _, _) in enumerate(users):
             try:
-                await context.bot.send_message(chat_id=user_id, text=broadcast_msg, parse_mode='HTML')
+                # ✅ ИСПРАВЛЕНИЕ: Добавляем reply_markup=main_menu_markup
+                await context.bot.send_message(
+                    chat_id=user_id, 
+                    text=broadcast_msg, 
+                    parse_mode='HTML',
+                    reply_markup=main_menu_markup
+                )
                 sent += 1
             except (Forbidden, BadRequest) as e:
                 failed += 1
@@ -1258,7 +1278,7 @@ async def publish_news(query, context, send_to_all=False):
             if i % 5 == 0 or i == total - 1:
                 try:
                     await status_msg.edit_text(
-                        f"📤 <b>РАССЫЛКА НОВОСТИ</b>\n\n"
+                        f"📤 <b>РАССЫЛКА НОВОСТИ</b>\n"
                         f"Всего пользователей: {total}\n"
                         f"Отправлено: {sent}\n"
                         f"Ошибок: {failed}\n"
@@ -1268,13 +1288,14 @@ async def publish_news(query, context, send_to_all=False):
                 except Exception as e:
                     logger.warning(f"Не удалось обновить статус рассылки: {e}")
         
-        success_msg += f"\n\n📤 Рассылка завершена:\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}"
-
+        success_msg += f"\n📤 Рассылка завершена:\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}"
+    
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await safe_edit_message(query, success_msg, reply_markup=reply_markup)
     context.user_data.clear()
 
