@@ -9,6 +9,10 @@ import database as db
 import os
 import pytz
 
+# ================== НАСТРОЙКИ НОВОСТЕЙ ==================
+NEWS_PER_PAGE = 5
+NEWS_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥']
+
 # ================== КЭШИРОВАНИЕ ТЕХРЕЖИМА ==================
 _maintenance_cache = {'enabled': False, 'until': None, 'message': None, 'last_check': datetime.min}
 MAINTENANCE_CACHE_TTL = 60  # секунд
@@ -779,7 +783,6 @@ SCHEDULE_STRUCTURED = {
 
 # ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def get_lesson_time(lesson_number):
-    """Возвращает время урока по его номеру."""
     lesson_times = {
         1: "08:00-08:45", 2: "09:00-09:45", 3: "10:00-10:45",
         4: "11:00-11:45", 5: "12:00-12:45", 6: "12:55-13:40", 7: "14:00-14:45"
@@ -787,7 +790,6 @@ def get_lesson_time(lesson_number):
     return lesson_times.get(lesson_number, "??:??-??:??")
 
 def get_current_lesson_info():
-    """Определяет текущий/следующий урок по времени в часовом поясе Минска (UTC+3)."""
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
     current_minutes = now.hour * 60 + now.minute
@@ -987,18 +989,106 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
                 [InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]]
     await safe_edit_message(query, schedule_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ==================
-async def show_news_menu(query, context):
-    news_list = (await asyncio.to_thread(db.get_latest_news, 5))[::-1]
+# ================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ (ОБНОВЛЁННЫЕ) ==================
+async def show_news_menu(query, context, page=0):
+    """Показывает новости с пагинацией, счётчиком просмотров и реакциями."""
+    user_id = query.from_user.id
+    
+    await asyncio.to_thread(db.update_user_last_news_check, user_id)
+    context.user_data.pop('news_notification_shown', None)
+    
+    news_list = await asyncio.to_thread(db.get_news_page, NEWS_PER_PAGE, page * NEWS_PER_PAGE)
+    total_news = await asyncio.to_thread(db.get_news_count)
+    total_pages = (total_news + NEWS_PER_PAGE - 1) // NEWS_PER_PAGE if total_news > 0 else 1
+    
     if not news_list:
         text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n📭 Новостей пока нет.\nАдминистрация добавит новости позже."
     else:
-        text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n"
+        text = f"📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b> <i>(стр. {page + 1}/{total_pages})</i>\n"
         for news in news_list:
-            pub_date = convert_utc_to_minsk(news[3])
-            text += f"📌 <b>{news[1]}</b>\n<i>📅 {pub_date}</i>\n{news[2]}\n" + "─" * 20 + "\n"
-    keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]]
+            news_id, title, content, created_at, views = news
+            pub_date = convert_utc_to_minsk(created_at)
+            preview = content[:150] + "..." if len(content) > 150 else content
+            text += f"📌 <b>{title}</b>\n"
+            text += f"<i>📅 {pub_date} | 👁️ {views} просмотров</i>\n"
+            text += f"{preview}\n"
+            text += "─" * 20 + "\n"
+    
+    keyboard = []
+    
+    if news_list and len(news_list) == 1:
+        news_id = news_list[0][0]
+        reactions = await asyncio.to_thread(db.get_news_reactions, news_id)
+        user_reaction = await asyncio.to_thread(db.get_user_reaction, news_id, user_id)
+        reaction_row = []
+        for emoji in NEWS_REACTIONS:
+            count = next((r[1] for r in reactions if r[0] == emoji), 0)
+            is_active = user_reaction == emoji
+            btn_text = f"{emoji} {count}" if count > 0 else emoji
+            if is_active:
+                btn_text = f"✅ {btn_text}"
+            reaction_row.append(InlineKeyboardButton(btn_text, callback_data=f'react_{news_id}_{emoji}'))
+        keyboard.append(reaction_row)
+    
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("◀️ Назад", callback_data=f'news_page_{page - 1}'))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("Вперёд ▶️", callback_data=f'news_page_{page + 1}'))
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    if news_list and len(news_list) == 1:
+        keyboard.append([InlineKeyboardButton("📖 Читать полностью", callback_data=f'news_full_{news_list[0][0]}')])
+    
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
+    
     await safe_edit_message(query, text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def show_full_news(query, context, news_id):
+    """Показывает полную новость с реакциями."""
+    user_id = query.from_user.id
+    await asyncio.to_thread(db.increment_news_views, news_id)
+    news = await asyncio.to_thread(db.get_news_by_id, news_id)
+    if not news:
+        await safe_edit_message(query, "❌ Новость не найдена.")
+        return
+    _, title, content, created_at, views = news
+    pub_date = convert_utc_to_minsk(created_at)
+    text = f"📰 <b>{title}</b>\n"
+    text += f"<i>📅 {pub_date} | 👁️ {views} просмотров</i>\n\n"
+    text += f"{content}"
+    reactions = await asyncio.to_thread(db.get_news_reactions, news_id)
+    user_reaction = await asyncio.to_thread(db.get_user_reaction, news_id, user_id)
+    keyboard = []
+    reaction_row = []
+    for emoji in NEWS_REACTIONS:
+        count = next((r[1] for r in reactions if r[0] == emoji), 0)
+        is_active = user_reaction == emoji
+        btn_text = f"{emoji} {count}" if count > 0 else emoji
+        if is_active:
+            btn_text = f"✅ {btn_text}"
+        reaction_row.append(InlineKeyboardButton(btn_text, callback_data=f'react_{news_id}_{emoji}'))
+    keyboard.append(reaction_row)
+    keyboard.append([InlineKeyboardButton("◀️ К списку новостей", callback_data='menu_news')])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
+    await safe_edit_message(query, text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def handle_news_reaction(query, context, news_id, emoji):
+    """Обрабатывает реакцию пользователя на новость."""
+    user_id = query.from_user.id
+    current_reaction = await asyncio.to_thread(db.get_user_reaction, news_id, user_id)
+    if current_reaction == emoji:
+        await asyncio.to_thread(db.add_news_reaction, news_id, user_id, None)
+        await query.answer(f"❌ Реакция {emoji} убрана", show_alert=False)
+    else:
+        await asyncio.to_thread(db.add_news_reaction, news_id, user_id, emoji)
+        await query.answer(f"✅ Реакция {emoji} добавлена", show_alert=False)
+    if query.message and query.message.text and "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>" in query.message.text:
+        page = context.user_data.get('news_page', 0)
+        await show_news_menu(query, context, page)
+    else:
+        await show_full_news(query, context, news_id)
 
 async def start_publish_news(query, context):
     if query.from_user.id not in ADMIN_IDS:
@@ -1006,52 +1096,84 @@ async def start_publish_news(query, context):
     context.user_data['publishing_news'] = True
     context.user_data['news_step'] = 'title'
     keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]]
-    await safe_edit_message(query, "📣 <b>ПУБЛИКАЦИЯ НОВОСТИ</b>\n✏️ Введите <b>заголовок</b> новости (до 100 символов):",
-                            reply_markup=InlineKeyboardMarkup(keyboard))
+    await safe_edit_message(
+        query,
+        "📣 <b>ПУБЛИКАЦИЯ НОВОСТИ</b>\n✏️ Введите <b>заголовок</b> новости (до 100 символов):\n<i>0/100</i>",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def handle_news_input(update: Update, context: CallbackContext):
-    if not context.user_data.get('publishing_news') or update.effective_user.id not in ADMIN_IDS:
+    if not context.user_data.get('publishing_news'):
+        return
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
         context.user_data.clear()
         return
     text = update.message.text.strip()
     if context.user_data.get('news_step') == 'title':
         if len(text) > 100:
-            await update.message.reply_text("❌ Заголовок слишком длинный! Максимум 100 символов.", parse_mode='HTML')
+            await update.message.reply_text(
+                f"❌ Заголовок слишком длинный! ({len(text)}/100)\nПопробуйте снова:",
+                parse_mode='HTML'
+            )
             return
         context.user_data['news_title'] = text
         context.user_data['news_step'] = 'content'
         keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]]
-        await update.message.reply_text(f"✅ Заголовок сохранён:\n<b>{text}</b>\n✏️ Теперь введите <b>текст новости</b> (до 1000 символов):",
-                                        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    elif context.user_data.get('news_step') == 'content':
+        await update.message.reply_text(
+            f"✅ Заголовок сохранён:\n<b>{text}</b>\n✏️ Теперь введите <b>текст новости</b> (до 1000 символов):\n<i>0/1000</i>",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        return
+    if context.user_data.get('news_step') == 'content':
+        counter = f"{len(text)}/1000"
         if len(text) > 1000:
-            await update.message.reply_text("❌ Текст слишком длинный! Максимум 1000 символов.", parse_mode='HTML')
+            await update.message.reply_text(
+                f"❌ Текст слишком длинный! ({counter})\nПопробуйте снова:",
+                parse_mode='HTML'
+            )
             return
         context.user_data['news_content'] = text
-        current_time_minsk = datetime.now(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M')
-        preview = f"📣 <b>ПРЕДПРОСМОТР НОВОСТИ</b>\n<b>{context.user_data['news_title']}</b>\n{context.user_data['news_content']}\n<i>Опубликовано: {current_time_minsk}</i>"
-        keyboard = [[InlineKeyboardButton("✅ Опубликовать + РАЗОСЛАТЬ ВСЕМ", callback_data='publish_news_send_all')],
-                    [InlineKeyboardButton("📤 Только опубликовать (в ленту)", callback_data='publish_news_only')],
-                    [InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]]
+        tz_minsk = pytz.timezone('Europe/Minsk')
+        current_time_minsk = datetime.now(tz_minsk).strftime('%d.%m.%Y %H:%M')
+        preview = (
+            f"📣 <b>ПРЕДПРОСМОТР НОВОСТИ</b>\n"
+            f"<b>{context.user_data['news_title']}</b>\n"
+            f"{context.user_data['news_content']}\n"
+            f"<i>📅 {current_time_minsk} | Символов: {counter}</i>"
+        )
+        keyboard = [
+            [InlineKeyboardButton("✅ Опубликовать + РАЗОСЛАТЬ ВСЕМ", callback_data='publish_news_send_all')],
+            [InlineKeyboardButton("📤 Только опубликовать (в ленту)", callback_data='publish_news_only')],
+            [InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]
+        ]
         await update.message.reply_text(preview, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def publish_news(query, context, send_to_all=False):
     title = context.user_data.get('news_title', '').strip()
     content = context.user_data.get('news_content', '').strip()
     if not title or not content:
-        await safe_edit_message(query, "❌ Ошибка: не хватает данных для публикации.",
-                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')]]))
+        await safe_edit_message(
+            query,
+            "❌ Ошибка: не хватает данных для публикации.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')]])
+        )
         context.user_data.clear()
         return
     news_id = await asyncio.to_thread(db.add_news, title, content)
     logger.info(f"Новость опубликована (ID={news_id}) админом {query.from_user.id}")
-    current_time_minsk = datetime.now(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M')
+    tz_minsk = pytz.timezone('Europe/Minsk')
+    current_time_minsk = datetime.now(tz_minsk).strftime('%d.%m.%Y %H:%M')
     success_msg = f"✅ <b>НОВОСТЬ ОПУБЛИКОВАНА!</b>\n<b>{title}</b>\n{content[:200]}{'...' if len(content) > 200 else ''}"
     if send_to_all:
         users = await asyncio.to_thread(db.get_all_users)
         total, sent, failed = len(users), 0, 0
         broadcast_msg = f"📣 <b>СРОЧНАЯ НОВОСТЬ ШКОЛЫ</b>\n<b>{title}</b>\n{content}\n<i>📅 {current_time_minsk}</i>"
-        status_msg = await query.edit_message_text(f"📤 <b>РАССЫЛКА НОВОСТИ</b>\nВсего пользователей: {total}\nОтправлено: 0\nОшибок: 0\nСтатус: ⏳ Начинаем...", parse_mode='HTML')
+        status_msg = await query.edit_message_text(
+            f"📤 <b>РАССЫЛКА НОВОСТИ</b>\nВсего пользователей: {total}\nОтправлено: 0\nОшибок: 0\nСтатус: ⏳ Начинаем...",
+            parse_mode='HTML'
+        )
         for i, (user_id, _, _, _) in enumerate(users):
             try:
                 await context.bot.send_message(chat_id=user_id, text=broadcast_msg, parse_mode='HTML')
@@ -1064,12 +1186,17 @@ async def publish_news(query, context, send_to_all=False):
                 logger.error(f"Ошибка отправки новости {user_id}: {e}")
             if i % 5 == 0 or i == total - 1:
                 try:
-                    await status_msg.edit_text(f"📤 <b>РАССЫЛКА НОВОСТИ</b>\nВсего пользователей: {total}\nОтправлено: {sent}\nОшибок: {failed}\nСтатус: {'✅ Завершено' if i == total-1 else '⏳ В процессе...'}", parse_mode='HTML')
+                    await status_msg.edit_text(
+                        f"📤 <b>РАССЫЛКА НОВОСТИ</b>\nВсего пользователей: {total}\nОтправлено: {sent}\nОшибок: {failed}\nСтатус: {'✅ Завершено' if i == total-1 else '⏳ В процессе...'}",
+                        parse_mode='HTML'
+                    )
                 except Exception as e:
                     logger.warning(f"Не удалось обновить статус рассылки: {e}")
         success_msg += f"\n📤 Рассылка завершена:\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}"
-    keyboard = [[InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
-                [InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]]
+    keyboard = [
+        [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]
+    ]
     await safe_edit_message(query, success_msg, reply_markup=InlineKeyboardMarkup(keyboard))
     context.user_data.clear()
 
@@ -1398,22 +1525,11 @@ async def start(update: Update, context: CallbackContext):
         return
     if await check_new_news_notification(update, context):
         return
-    # 🔑 ГРУППИРОВАННОЕ МЕНЮ
     keyboard = [
-        # Группа: ВРЕМЯ
-        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
-         InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells')],
-        # Группа: РАСПИСАНИЕ
-        [InlineKeyboardButton("📚 Уроки", callback_data='menu_schedule'),
-         InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
-         InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')],
-        # Группа: ИНФОРМАЦИЯ
-        [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions'),
-         InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
-         InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        # Группа: МЕНЮ
-        [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'),
-         InlineKeyboardButton("👑 Админ", callback_data='admin_panel')]
+        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'), InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells')],
+        [InlineKeyboardButton("📚 Уроки", callback_data='menu_schedule'), InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'), InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')],
+        [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions'), InlineKeyboardButton("📣 Новости", callback_data='menu_news'), InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'), InlineKeyboardButton("👑 Админ", callback_data='admin_panel')]
     ]
     try:
         await update.message.reply_text('🏫 <b>Школьный бот</b>\nВыберите раздел:', reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
@@ -1570,11 +1686,24 @@ async def button_handler(update: Update, context: CallbackContext):
             await asyncio.to_thread(db.add_favorite, user_id, 'teacher', teacher_name)
             await query.answer(f"Учитель {teacher_name} добавлен в избранное", show_alert=True)
         await show_teacher_schedule_by_name(query, context, teacher_name)
-    # 🔑 ОБРАБОТКА НОВОСТЕЙ
+    # 🔑 ОБРАБОТКА НОВОСТЕЙ (ОБНОВЛЁННАЯ)
     elif query.data == 'menu_news':
+        context.user_data['news_page'] = 0
         await asyncio.to_thread(db.update_user_last_news_check, user.id)
         context.user_data.pop('news_notification_shown', None)
-        await show_news_menu(query, context)
+        await show_news_menu(query, context, page=0)
+    elif query.data.startswith('news_page_'):
+        page = int(query.data.split('_')[2])
+        context.user_data['news_page'] = page
+        await show_news_menu(query, context, page=page)
+    elif query.data.startswith('news_full_'):
+        news_id = int(query.data.split('_')[2])
+        await show_full_news(query, context, news_id)
+    elif query.data.startswith('react_'):
+        parts = query.data.split('_')
+        news_id = int(parts[1])
+        emoji = '_'.join(parts[2:])
+        await handle_news_reaction(query, context, news_id, emoji)
     elif query.data == 'admin_publish_news':
         await start_publish_news(query, context)
     elif query.data == 'cancel_publish_news':
@@ -1651,22 +1780,11 @@ async def button_handler(update: Update, context: CallbackContext):
             await show_main_menu(query)
 
 async def show_main_menu(query):
-    """Показывает главное меню с ГРУППИРОВАННЫМИ кнопками."""
     keyboard = [
-        # Группа: ВРЕМЯ
-        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
-         InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells')],
-        # Группа: РАСПИСАНИЕ
-        [InlineKeyboardButton("📚 Уроки", callback_data='menu_schedule'),
-         InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
-         InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')],
-        # Группа: ИНФОРМАЦИЯ
-        [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions'),
-         InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
-         InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        # Группа: МЕНЮ
-        [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'),
-         InlineKeyboardButton("👑 Админ", callback_data='admin_panel')]
+        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'), InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells')],
+        [InlineKeyboardButton("📚 Уроки", callback_data='menu_schedule'), InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'), InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')],
+        [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions'), InlineKeyboardButton("📣 Новости", callback_data='menu_news'), InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
+        [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'), InlineKeyboardButton("👑 Админ", callback_data='admin_panel')]
     ]
     await safe_edit_message(query, '🏫 <b>Школьный бот</b>\nВыберите раздел:', reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -2244,7 +2362,7 @@ def main():
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
-    print(f"✅ Добавлены функции: 🌟 МОё (избранное) + 📰 Новости (время в минском поясе) + 🔔 Уведомления о новых новостях")
+    print(f"✅ Добавлены функции: 📰 Новости с пагинацией + 👁️ Счётчик просмотров + 👍 Реакции + 🔢 Счётчик символов")
     try:
         application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
     except KeyboardInterrupt:
