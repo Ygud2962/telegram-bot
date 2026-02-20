@@ -1,706 +1,483 @@
-import psycopg2
-from psycopg2 import pool
-import os
-from datetime import datetime, timedelta
-import pytz
+import sqlite3
 import logging
+from datetime import datetime, timedelta
+import threading
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Получаем URL базы данных из переменной окружения Railway
-DATABASE_URL = os.environ.get('DATABASE_URL')
-
-if not DATABASE_URL:
-    raise ValueError("❌ Переменная окружения DATABASE_URL не установлена! "
-                     "Убедитесь, что в Railway добавлена бесплатная PostgreSQL база данных.")
-
-# 🔑 ГЛОБАЛЬНЫЙ ПУЛ СОЕДИНЕНИЙ (создаётся ОДИН РАЗ при запуске)
-db_pool = None
-
-def init_pool():
-    """Инициализирует пул соединений после создания структуры БД."""
-    global db_pool
-    if db_pool is None:
-        try:
-            db_pool = pool.SimpleConnectionPool(
-                minconn=1,
-                maxconn=2,  # Railway Free Tier поддерживает только 1-2 соединения
-                dsn=DATABASE_URL,
-                sslmode='require'
-            )
-            logger.info("✅ Пул соединений PostgreSQL инициализирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка создания пула соединений: {e}")
-            raise
+DB_NAME = 'school_bot.db'
+conn = None
+lock = threading.Lock()
 
 def get_connection():
-    """Быстрое получение соединения из пула (мгновенно после инициализации)."""
-    if db_pool is None:
-        raise RuntimeError("Пул соединений не инициализирован! Вызовите init_pool() после init_db()")
-    return db_pool.getconn()
-
-def release_connection(conn):
-    """Возврат соединения в пул (НЕ закрываем физически!)."""
-    if db_pool is not None and conn is not None:
-        db_pool.putconn(conn)
+    """Получает соединение с базой данных."""
+    global conn
+    if conn is None:
+        conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
-    """Инициализация базы данных PostgreSQL (использует прямое соединение, НЕ пул)."""
-    conn = None
-    try:
-        # Прямое соединение для инициализации (пул ещё не создан)
-        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-        cursor = conn.cursor()
-        
-        # Таблица замен
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS substitutions (
-                id SERIAL PRIMARY KEY,
-                date TEXT NOT NULL,
-                day TEXT NOT NULL,
-                lesson_number INTEGER NOT NULL,
-                old_subject TEXT NOT NULL,
-                new_subject TEXT NOT NULL,
-                old_teacher TEXT NOT NULL,
-                new_teacher TEXT NOT NULL,
-                class_name TEXT NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Таблица пользователей (BIGINT для Telegram ID)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                language_code TEXT,
-                joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                last_active TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Добавляем колонку last_news_check, если её нет
-        cursor.execute('''
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS last_news_check TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        ''')
-
-        # Таблица активности пользователей
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_activity (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                action TEXT NOT NULL,
-                class_name TEXT,
-                timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-            )
-        ''')
-
-        # Таблица статуса бота (техрежим)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bot_status (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                maintenance_mode INTEGER DEFAULT 0,
-                maintenance_until TEXT,
-                maintenance_message TEXT
-            )
-        ''')
-        cursor.execute('''
-            INSERT INTO bot_status (id, maintenance_mode) 
-            VALUES (1, 0) 
-            ON CONFLICT (id) DO NOTHING
-        ''')
-
-        # Таблица избранного пользователей
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_favorites (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL,
-                fav_type TEXT NOT NULL,
-                value TEXT NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-                UNIQUE(user_id, fav_type, value)
-            )
-        ''')
-
-        # Таблица школьных новостей
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS news (
-                id SERIAL PRIMARY KEY,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                published_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Индексы для оптимизации
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_teacher_date ON substitutions(new_teacher, date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_old_teacher_date ON substitutions(old_teacher, date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON user_activity(timestamp)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_activity_user ON user_activity(user_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_user ON user_favorites(user_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_type ON user_favorites(fav_type)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_published ON news(published_at)')
-
-        conn.commit()
-        logger.info("✅ PostgreSQL база данных инициализирована")
-        print("✅ PostgreSQL база данных инициализирована")
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации БД: {e}")
-        raise
-    finally:
-        if conn:
-            conn.close()
-
-# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ПОЛЬЗОВАТЕЛЯМИ ====================
-def update_user_and_log(user_id, action, class_name=None, username=None, first_name=None, last_name=None, language_code=None):
-    """
-    Атомарно обновляет информацию о пользователе и логирует действие.
-    Использует COALESCE для сохранения старых значений, если новые не переданы.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        # Вставляем или обновляем пользователя
-        cursor.execute('''
-            INSERT INTO users (user_id, username, first_name, last_name, language_code, last_active)
-            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (user_id) DO UPDATE SET
-                username = COALESCE(EXCLUDED.username, users.username),
-                first_name = COALESCE(EXCLUDED.first_name, users.first_name),
-                last_name = COALESCE(EXCLUDED.last_name, users.last_name),
-                language_code = COALESCE(EXCLUDED.language_code, users.language_code),
-                last_active = CURRENT_TIMESTAMP
-        ''', (user_id, username, first_name, last_name, language_code))
-        
-        # Логируем действие
-        cursor.execute('''
-            INSERT INTO user_activity (user_id, action, class_name)
-            VALUES (%s, %s, %s)
-        ''', (user_id, action, class_name))
-        
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении пользователя {user_id}: {e}")
-        if conn:
-            conn.rollback()
-        # Не пробрасываем исключение дальше, чтобы не ломать бота
-    finally:
-        release_connection(conn)
-
-# Для обратной совместимости оставляем старые функции
-def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
-    update_user_and_log(user_id, 'registered', None, username, first_name, last_name, language_code)
-
-def log_user_activity(user_id, action, class_name=None):
-    """
-    Логирует действие пользователя, обновляя только last_active.
-    Не изменяет остальные данные пользователя.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        # Обновляем только last_active
-        cursor.execute('''
-            UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE user_id = %s
-        ''', (user_id,))
-        # Вставляем активность
-        cursor.execute('''
-            INSERT INTO user_activity (user_id, action, class_name)
-            VALUES (%s, %s, %s)
-        ''', (user_id, action, class_name))
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Ошибка логирования активности пользователя {user_id}: {e}")
-        if conn:
-            conn.rollback()
-    finally:
-        release_connection(conn)
-
-# ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С НОВОСТЯМИ (last_news_check) ====================
-def get_user_last_news_check(user_id):
-    """Возвращает время последней проверки новостей пользователем (aware UTC)."""
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT last_news_check FROM users WHERE user_id = %s', (user_id,))
-        row = cursor.fetchone()
-        if row and row[0]:
-            return row[0]
-        return datetime(2000, 1, 1, tzinfo=pytz.utc)
-    except Exception as e:
-        logger.error(f"Ошибка получения last_news_check для {user_id}: {e}")
-        return datetime(2000, 1, 1, tzinfo=pytz.utc)
-    finally:
-        release_connection(conn)
-
-def update_user_last_news_check(user_id):
-    """Обновляет время последней проверки новостей на текущее (UTC)."""
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE users SET last_news_check = CURRENT_TIMESTAMP WHERE user_id = %s
-        ''', (user_id,))
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Ошибка обновления last_news_check для {user_id}: {e}")
-    finally:
-        release_connection(conn)
-
-def count_new_news_since(user_id):
-    """Возвращает количество новостей, опубликованных после last_news_check пользователя."""
-    last_check = get_user_last_news_check(user_id)
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT COUNT(*) FROM news WHERE published_at > %s
-        ''', (last_check,))
-        count = cursor.fetchone()[0]
-        return count
-    except Exception as e:
-        logger.error(f"Ошибка подсчёта новых новостей для {user_id}: {e}")
-        return 0
-    finally:
-        release_connection(conn)
-
-# ==================== ФУНКЦИИ АНАЛИТИКИ ====================
-def get_active_users_24h():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        yesterday = datetime.now(pytz.utc) - timedelta(hours=24)
-        cursor.execute(
-            'SELECT COUNT(DISTINCT user_id) FROM user_activity WHERE timestamp > %s', 
-            (yesterday,)
+    """Инициализирует базу данных и создаёт все необходимые таблицы."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Таблица пользователей
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            language_code TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_active TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_news_check TEXT
         )
-        count = cursor.fetchone()[0]
-        return count or 0
-    except Exception as e:
-        logger.error(f"Ошибка получения активных пользователей: {e}")
-        return 0
-    finally:
-        release_connection(conn)
-
-def get_popular_classes():
-    conn = None
+    ''')
+    
+    # Таблица замен
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS substitutions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            day TEXT NOT NULL,
+            lesson_num INTEGER NOT NULL,
+            old_subject TEXT NOT NULL,
+            new_subject TEXT NOT NULL,
+            old_teacher TEXT NOT NULL,
+            new_teacher TEXT NOT NULL,
+            class_name TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Таблица новостей (с колонкой views)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS news (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            views INTEGER DEFAULT 0
+        )
+    ''')
+    
+    # Таблица реакций на новости
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS news_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            news_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            emoji TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(news_id, user_id),
+            FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE
+        )
+    ''')
+    
+    # Таблица избранного
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            fav_type TEXT NOT NULL,
+            value TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, fav_type, value)
+        )
+    ''')
+    
+    # Таблица активности пользователей
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            target TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Таблица техрежима
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS maintenance (
+            id INTEGER PRIMARY KEY,
+            enabled INTEGER DEFAULT 0,
+            until TEXT,
+            message TEXT
+        )
+    ''')
+    
+    # Инициализация техрежима
+    cursor.execute('SELECT COUNT(*) FROM maintenance')
+    if cursor.fetchone()[0] == 0:
+        cursor.execute('INSERT INTO maintenance (id, enabled) VALUES (1, 0)')
+    
+    # Добавляем колонку views в news, если её нет
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        week_ago = datetime.now(pytz.utc) - timedelta(days=7)
-        cursor.execute('''
-            SELECT class_name, COUNT(*) as cnt
-            FROM user_activity
-            WHERE class_name IS NOT NULL AND timestamp > %s
-            GROUP BY class_name
-            ORDER BY cnt DESC
-            LIMIT 5
-        ''', (week_ago,))
-        results = cursor.fetchall()
-        return [row[0] for row in results if row[0]] if results else []
-    except Exception as e:
-        logger.error(f"Ошибка получения популярных классов: {e}")
-        return []
-    finally:
-        release_connection(conn)
-
-def get_peak_hours():
-    conn = None
+        cursor.execute('ALTER TABLE news ADD COLUMN views INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass  # Колонка уже существует
+    
+    # Добавляем колонку last_news_check в users, если её нет
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        week_ago = datetime.now(pytz.utc) - timedelta(days=7)
+        cursor.execute('ALTER TABLE users ADD COLUMN last_news_check TEXT')
+    except sqlite3.OperationalError:
+        pass  # Колонка уже существует
+    
+    conn.commit()
+    logger.info("✅ База данных инициализирована")
+
+def init_pool():
+    """Инициализирует пул соединений (для совместимости)."""
+    logger.info("✅ Пул соединений инициализирован")
+
+# ================== ПОЛЬЗОВАТЕЛИ ==================
+def update_user_and_log(user_id, action, target, username, first_name, last_name, language_code):
+    """Добавляет или обновляет пользователя и логирует действие."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
         cursor.execute('''
-            SELECT EXTRACT(HOUR FROM timestamp) as hour, COUNT(*) as cnt
-            FROM user_activity
-            WHERE timestamp > %s
-            GROUP BY hour
-            ORDER BY cnt DESC
-            LIMIT 3
-        ''', (week_ago,))
-        results = cursor.fetchall()
-        if results:
-            hours = [f"{int(row[0]):02d}:00" for row in results]
-            return ", ".join(hours)
-        return "Нет данных"
-    except Exception as e:
-        logger.error(f"Ошибка получения пиковых часов: {e}")
-        return "Ошибка"
-    finally:
-        release_connection(conn)
+            INSERT OR REPLACE INTO users (id, username, first_name, last_name, language_code, last_active)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, username, first_name, last_name, language_code))
+        cursor.execute('''
+            INSERT INTO user_activity (user_id, action, target) VALUES (?, ?, ?)
+        ''', (user_id, action, target))
+        conn.commit()
 
 def get_user_count():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM users')
-        count = cursor.fetchone()[0]
-        return count or 0
-    except Exception as e:
-        logger.error(f"Ошибка получения количества пользователей: {e}")
-        return 0
-    finally:
-        release_connection(conn)
+    """Возвращает общее количество пользователей."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM users')
+    return cursor.fetchone()[0]
 
 def get_all_users():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT user_id, username, first_name, last_name FROM users')
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения списка пользователей: {e}")
-        return []
-    finally:
-        release_connection(conn)
+    """Возвращает всех пользователей."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, username, first_name, last_name FROM users')
+    return cursor.fetchall()
 
-# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ЗАМЕНАМИ ====================
-def add_substitution(date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
+def get_active_users_24h():
+    """Возвращает количество активных пользователей за 24 часа."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT COUNT(DISTINCT user_id) FROM user_activity 
+        WHERE created_at >= datetime('now', '-1 day')
+    ''')
+    return cursor.fetchone()[0]
+
+def get_popular_classes():
+    """Возвращает самые популярные классы за неделю."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT target, COUNT(*) as cnt FROM user_activity 
+        WHERE action LIKE '%class%' AND created_at >= datetime('now', '-7 days')
+        GROUP BY target ORDER BY cnt DESC LIMIT 3
+    ''')
+    return [row[0] for row in cursor.fetchall()]
+
+def get_peak_hours():
+    """Возвращает пиковые часы активности."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT strftime('%H', created_at) as hour, COUNT(*) as cnt 
+        FROM user_activity 
+        WHERE created_at >= datetime('now', '-7 days')
+        GROUP BY hour ORDER BY cnt DESC LIMIT 3
+    ''')
+    result = cursor.fetchall()
+    return ', '.join([f"{row[0]}:00" for row in result]) if result else "Нет данных"
+
+def log_user_activity(user_id, action, target=None):
+    """Логирует действие пользователя."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
         cursor.execute('''
-            INSERT INTO substitutions 
-            (date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (date, day, lesson_number, old_subject, new_subject, old_teacher, new_teacher, class_name))
+            INSERT INTO user_activity (user_id, action, target) VALUES (?, ?, ?)
+        ''', (user_id, action, target))
         conn.commit()
-        logger.info(f"✅ Замена добавлена: {date} {class_name} урок {lesson_number}")
-    except Exception as e:
-        logger.error(f"Ошибка добавления замены: {e}")
-        raise
-    finally:
-        release_connection(conn)
 
-def get_substitutions_for_date(date):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
+def update_user_last_news_check(user_id):
+    """Обновляет время последней проверки новостей пользователем."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
         cursor.execute('''
-            SELECT * FROM substitutions WHERE date = %s ORDER BY class_name, lesson_number
-        ''', (date,))
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения замен на дату {date}: {e}")
-        return []
-    finally:
-        release_connection(conn)
+            UPDATE users SET last_news_check = CURRENT_TIMESTAMP WHERE id = ?
+        ''', (user_id,))
+        conn.commit()
 
-def get_substitutions_for_class_date(class_name, date):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM substitutions
-            WHERE class_name = %s AND date = %s
-            ORDER BY lesson_number
-        ''', (class_name, date))
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения замен для класса {class_name} на {date}: {e}")
-        return []
-    finally:
-        release_connection(conn)
+def count_new_news_since(user_id):
+    """Считает новые новости с последней проверки пользователем."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT last_news_check FROM users WHERE id = ?
+    ''', (user_id,))
+    result = cursor.fetchone()
+    if not result or not result[0]:
+        cursor.execute('SELECT COUNT(*) FROM news')
+        return cursor.fetchone()[0]
+    cursor.execute('''
+        SELECT COUNT(*) FROM news 
+        WHERE created_at > ?
+    ''', (result[0],))
+    return cursor.fetchone()[0]
 
-def get_substitutions_by_teacher_and_date(teacher_name, date):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
+# ================== ЗАМЕНЫ ==================
+def add_substitution(date, day, lesson_num, old_subject, new_subject, old_teacher, new_teacher, class_name):
+    """Добавляет замену в базу данных."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
         cursor.execute('''
-            SELECT * FROM substitutions
-            WHERE (new_teacher = %s OR old_teacher = %s) AND date = %s
-            ORDER BY lesson_number
-        ''', (teacher_name, teacher_name, date))
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения замен для учителя {teacher_name} на {date}: {e}")
-        return []
-    finally:
-        release_connection(conn)
+            INSERT INTO substitutions (date, day, lesson_num, old_subject, new_subject, old_teacher, new_teacher, class_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (date, day, lesson_num, old_subject, new_subject, old_teacher, new_teacher, class_name))
+        conn.commit()
+        return cursor.lastrowid
+
+def get_substitutions_for_date(date_str):
+    """Возвращает все замены на указанную дату."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM substitutions WHERE date = ? ORDER BY lesson_num
+    ''', (date_str,))
+    return cursor.fetchall()
+
+def get_substitutions_for_class_date(class_name, date_str):
+    """Возвращает замены для конкретного класса на дату."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM substitutions WHERE class_name = ? AND date = ? ORDER BY lesson_num
+    ''', (class_name, date_str))
+    return cursor.fetchall()
 
 def get_teacher_substitutions_between(teacher_name, start_date, end_date):
-    """
-    Возвращает все замены, где учитель выступает как новый или старый,
-    за период дат от start_date до end_date включительно.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM substitutions
-            WHERE date >= %s AND date <= %s
-              AND (new_teacher = %s OR old_teacher = %s)
-            ORDER BY date, lesson_number
-        ''', (start_date, end_date, teacher_name, teacher_name))
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения замен для учителя {teacher_name} за период {start_date} - {end_date}: {e}")
-        return []
-    finally:
-        release_connection(conn)
+    """Возвращает замены для учителя за период."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM substitutions 
+        WHERE (old_teacher LIKE ? OR new_teacher LIKE ?) 
+        AND date BETWEEN ? AND ?
+        ORDER BY date, lesson_num
+    ''', (f'%{teacher_name}%', f'%{teacher_name}%', start_date, end_date))
+    return cursor.fetchall()
 
 def get_all_substitutions():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM substitutions ORDER BY date DESC, class_name, lesson_number
-        ''')
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения всех замен: {e}")
-        return []
-    finally:
-        release_connection(conn)
-
-def delete_substitution(sub_id):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM substitutions WHERE id = %s', (sub_id,))
-        conn.commit()
-        logger.info(f"✅ Замена ID={sub_id} удалена")
-    except Exception as e:
-        logger.error(f"Ошибка удаления замены ID={sub_id}: {e}")
-        raise
-    finally:
-        release_connection(conn)
+    """Возвращает все замены."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM substitutions ORDER BY date DESC, lesson_num')
+    return cursor.fetchall()
 
 def clear_all_substitutions():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
+    """Очищает все замены."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
         cursor.execute('DELETE FROM substitutions')
         conn.commit()
-        logger.info("✅ Все замены удалены")
-    except Exception as e:
-        logger.error(f"Ошибка очистки замен: {e}")
-        raise
-    finally:
-        release_connection(conn)
 
-# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ТЕХРЕЖИМОМ ====================
-def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE bot_status
-            SET maintenance_mode = %s, maintenance_until = %s, maintenance_message = %s
-            WHERE id = 1
-        ''', (1 if enabled else 0, until, message))
+def delete_substitution(sub_id):
+    """Удаляет замену по ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        cursor.execute('DELETE FROM substitutions WHERE id = ?', (sub_id,))
         conn.commit()
-        status = "включен" if enabled else "выключен"
-        logger.info(f"🔧 Техрежим {status}. До: {until}")
-    except Exception as e:
-        logger.error(f"Ошибка установки техрежима: {e}")
-        raise
-    finally:
-        release_connection(conn)
 
-def get_maintenance_status():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT maintenance_mode, maintenance_until, maintenance_message FROM bot_status WHERE id = 1')
-        row = cursor.fetchone()
-        if row:
-            return {
-                'enabled': bool(row[0]),
-                'until': row[1],
-                'message': row[2]
-            }
-        return {'enabled': False, 'until': None, 'message': None}
-    except Exception as e:
-        logger.error(f"Ошибка получения статуса техрежима: {e}")
-        return {'enabled': False, 'until': None, 'message': None}
-    finally:
-        release_connection(conn)
-
-# ==================== ФУНКЦИИ УПРАВЛЕНИЯ ИЗБРАННЫМ ====================
-def add_favorite(user_id, fav_type, value):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO user_favorites (user_id, fav_type, value)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id, fav_type, value) DO NOTHING
-        ''', (user_id, fav_type, value))
-        conn.commit()
-        logger.info(f"✅ Добавлено в избранное: {fav_type}={value} для пользователя {user_id}")
-    except Exception as e:
-        logger.error(f"Ошибка добавления в избранное: {e}")
-    finally:
-        release_connection(conn)
-
-def remove_favorite(user_id, fav_type, value):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            DELETE FROM user_favorites
-            WHERE user_id = %s AND fav_type = %s AND value = %s
-        ''', (user_id, fav_type, value))
-        conn.commit()
-        logger.info(f"✅ Удалено из избранного: {fav_type}={value} для пользователя {user_id}")
-    except Exception as e:
-        logger.error(f"Ошибка удаления из избранного: {e}")
-    finally:
-        release_connection(conn)
-
-def get_user_favorites(user_id):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT fav_type, value FROM user_favorites
-            WHERE user_id = %s
-            ORDER BY created_at DESC
-        ''', (user_id,))
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения избранного для пользователя {user_id}: {e}")
-        return []
-    finally:
-        release_connection(conn)
-
-def is_favorite(user_id, fav_type, value):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT 1 FROM user_favorites
-            WHERE user_id = %s AND fav_type = %s AND value = %s
-        ''', (user_id, fav_type, value))
-        return cursor.fetchone() is not None
-    except Exception as e:
-        logger.error(f"Ошибка проверки избранного: {e}")
-        return False
-    finally:
-        release_connection(conn)
-
-# ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ====================
+# ================== НОВОСТИ ==================
 def add_news(title, content):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            'INSERT INTO news (title, content) VALUES (%s, %s) RETURNING id',
-            (title, content)
-        )
-        news_id = cursor.fetchone()[0]
+    """Добавляет новость в базу данных."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        cursor.execute('''
+            INSERT INTO news (title, content, created_at, views)
+            VALUES (?, ?, CURRENT_TIMESTAMP, 0)
+        ''', (title, content))
         conn.commit()
-        logger.info(f"✅ Новость добавлена (ID={news_id})")
-        return news_id
-    except Exception as e:
-        logger.error(f"Ошибка добавления новости: {e}")
-        raise
-    finally:
-        release_connection(conn)
+        return cursor.lastrowid
 
 def get_latest_news(limit=5):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, title, content, published_at
-            FROM news
-            ORDER BY published_at DESC
-            LIMIT %s
-        ''', (limit,))
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения последних новостей: {e}")
-        return []
-    finally:
-        release_connection(conn)
+    """Возвращает последние новости."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, title, content, created_at, views FROM news 
+        ORDER BY created_at DESC LIMIT ?
+    ''', (limit,))
+    return cursor.fetchall()
 
 def get_all_news():
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, title, content, published_at
-            FROM news
-            ORDER BY published_at DESC
-        ''')
-        return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Ошибка получения всех новостей: {e}")
-        return []
-    finally:
-        release_connection(conn)
+    """Возвращает все новости."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, title, content, created_at, views FROM news ORDER BY created_at DESC')
+    return cursor.fetchall()
 
 def get_news_by_id(news_id):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            'SELECT id, title, content, published_at FROM news WHERE id = %s',
-            (news_id,)
-        )
-        return cursor.fetchone()
-    except Exception as e:
-        logger.error(f"Ошибка получения новости ID={news_id}: {e}")
-        return None
-    finally:
-        release_connection(conn)
+    """Возвращает новость по ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, title, content, created_at, views FROM news WHERE id = ?', (news_id,))
+    return cursor.fetchone()
 
 def delete_news(news_id):
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM news WHERE id = %s', (news_id,))
+    """Удаляет новость по ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        cursor.execute('DELETE FROM news WHERE id = ?', (news_id,))
         conn.commit()
-        logger.info(f"✅ Новость ID={news_id} удалена")
-    except Exception as e:
-        logger.error(f"Ошибка удаления новости ID={news_id}: {e}")
-        raise
-    finally:
-        release_connection(conn)
 
-# ==================== ИНИЦИАЛИЗАЦИЯ ПРИ ИМПОРТЕ ====================
-if __name__ == "__main__":
-    try:
-        init_db()
-        print("✅ База данных успешно инициализирована")
-    except Exception as e:
-        print(f"❌ Критическая ошибка инициализации БД: {e}")
-        exit(1)
+# === ПАГИНАЦИЯ НОВОСТЕЙ ===
+def get_news_page(limit=5, offset=0):
+    """Возвращает страницу новостей с пагинацией."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, title, content, created_at, views 
+        FROM news 
+        ORDER BY created_at DESC 
+        LIMIT ? OFFSET ?
+    ''', (limit, offset))
+    return cursor.fetchall()
+
+def get_news_count():
+    """Возвращает общее количество новостей."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM news')
+    return cursor.fetchone()[0]
+
+def increment_news_views(news_id):
+    """Увеличивает счётчик просмотров новости."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        cursor.execute('UPDATE news SET views = views + 1 WHERE id = ?', (news_id,))
+        conn.commit()
+
+# === РЕАКЦИИ НА НОВОСТИ ===
+def add_news_reaction(news_id, user_id, emoji):
+    """Добавляет или обновляет реакцию пользователя на новость."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        if emoji is None:
+            cursor.execute('DELETE FROM news_reactions WHERE news_id = ? AND user_id = ?', (news_id, user_id))
+        else:
+            cursor.execute('''
+                INSERT OR REPLACE INTO news_reactions (news_id, user_id, emoji, created_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (news_id, user_id, emoji))
+        conn.commit()
+
+def get_news_reactions(news_id):
+    """Возвращает все реакции на новость с группировкой по эмодзи."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT emoji, COUNT(*) as count 
+        FROM news_reactions 
+        WHERE news_id = ? 
+        GROUP BY emoji
+        ORDER BY count DESC
+    ''', (news_id,))
+    return cursor.fetchall()
+
+def get_user_reaction(news_id, user_id):
+    """Возвращает реакцию конкретного пользователя на новость."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT emoji FROM news_reactions 
+        WHERE news_id = ? AND user_id = ?
+    ''', (news_id, user_id))
+    result = cursor.fetchone()
+    return result[0] if result else None
+
+# ================== ИЗБРАННОЕ ==================
+def add_favorite(user_id, fav_type, value):
+    """Добавляет в избранное."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        cursor.execute('''
+            INSERT OR IGNORE INTO favorites (user_id, fav_type, value)
+            VALUES (?, ?, ?)
+        ''', (user_id, fav_type, value))
+        conn.commit()
+
+def remove_favorite(user_id, fav_type, value):
+    """Удаляет из избранного."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        cursor.execute('''
+            DELETE FROM favorites WHERE user_id = ? AND fav_type = ? AND value = ?
+        ''', (user_id, fav_type, value))
+        conn.commit()
+
+def get_user_favorites(user_id):
+    """Возвращает все избранное пользователя."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT fav_type, value FROM favorites WHERE user_id = ?
+    ''', (user_id,))
+    return cursor.fetchall()
+
+def is_favorite(user_id, fav_type, value):
+    """Проверяет, есть ли в избранном."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT COUNT(*) FROM favorites WHERE user_id = ? AND fav_type = ? AND value = ?
+    ''', (user_id, fav_type, value))
+    return cursor.fetchone()[0] > 0
+
+# ================== ТЕХРЕЖИМ ==================
+def get_maintenance_status():
+    """Возвращает статус техрежима."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT enabled, until, message FROM maintenance WHERE id = 1')
+    result = cursor.fetchone()
+    return {
+        'enabled': bool(result[0]) if result else False,
+        'until': result[1] if result else None,
+        'message': result[2] if result else None
+    }
+
+def set_maintenance_mode(enabled, until=None, message=None):
+    """Устанавливает статус техрежима."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    with lock:
+        cursor.execute('''
+            UPDATE maintenance SET enabled = ?, until = ?, message = ? WHERE id = 1
+        ''', (1 if enabled else 0, until, message))
+        conn.commit()
+
+# ================== УТИЛИТЫ ==================
+def close_connection():
+    """Закрывает соединение с базой данных."""
+    global conn
+    if conn:
+        conn.close()
+        conn = None
