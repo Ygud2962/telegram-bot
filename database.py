@@ -1,6 +1,6 @@
 import sqlite3
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 import threading
 
 logger = logging.getLogger(__name__)
