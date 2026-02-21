@@ -11,6 +11,10 @@ import pytz
 import openai
 import time
 
+# ================== НАСТРОЙКА ЛОГИРОВАНИЯ ==================
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # ================== КЭШИРОВАНИЕ ТЕХРЕЖИМА ==================
 _maintenance_cache = {'enabled': False, 'until': None, 'message': None, 'last_check': datetime.min}
 MAINTENANCE_CACHE_TTL = 60  # секунд
