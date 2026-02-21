@@ -128,13 +128,37 @@ def init_db():
             )
         ''')
 
-        # Таблица школьных новостей
+        # Таблица школьных новостей (добавлено поле views_count)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS news (
                 id SERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
                 content TEXT NOT NULL,
-                published_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                published_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                views_count INTEGER DEFAULT 0
+            )
+        ''')
+
+        # Таблица просмотров новостей (уникальный просмотр на пользователя)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS news_views (
+                id SERIAL PRIMARY KEY,
+                news_id INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                viewed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(news_id, user_id)
+            )
+        ''')
+
+        # Таблица реакций на новости (один пользователь – одна реакция)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS news_reactions (
+                id SERIAL PRIMARY KEY,
+                news_id INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                reaction TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(news_id, user_id)
             )
         ''')
 
@@ -149,6 +173,8 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_user ON user_favorites(user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_type ON user_favorites(fav_type)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_published ON news(published_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_views_user ON news_views(user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_reactions_user ON news_reactions(user_id)')
 
         conn.commit()
         logger.info("✅ PostgreSQL база данных инициализирована")
@@ -196,10 +222,6 @@ def update_user_and_log(user_id, action, class_name=None, username=None, first_n
         # Не пробрасываем исключение дальше, чтобы не ломать бота
     finally:
         release_connection(conn)
-
-# Для обратной совместимости оставляем старые функции
-def add_user(user_id, username=None, first_name=None, last_name=None, language_code=None):
-    update_user_and_log(user_id, 'registered', None, username, first_name, last_name, language_code)
 
 def log_user_activity(user_id, action, class_name=None):
     """
@@ -275,6 +297,214 @@ def count_new_news_since(user_id):
     except Exception as e:
         logger.error(f"Ошибка подсчёта новых новостей для {user_id}: {e}")
         return 0
+    finally:
+        release_connection(conn)
+
+# ==================== ФУНКЦИИ ДЛЯ НОВОСТЕЙ (ПАГИНАЦИЯ, РЕАКЦИИ, ПРОСМОТРЫ) ====================
+def get_news_page(offset=0, limit=5):
+    """Возвращает страницу новостей с количеством реакций для каждой."""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Получаем новости с пагинацией и подсчитываем реакции
+        cursor.execute('''
+            SELECT 
+                n.id, n.title, n.content, n.published_at, n.views_count,
+                COALESCE(r.reactions_json, '{}'::jsonb) AS reactions
+            FROM news n
+            LEFT JOIN LATERAL (
+                SELECT jsonb_object_agg(reaction, cnt) AS reactions_json
+                FROM (
+                    SELECT reaction, COUNT(*) as cnt
+                    FROM news_reactions
+                    WHERE news_id = n.id
+                    GROUP BY reaction
+                ) sub
+            ) r ON true
+            ORDER BY n.published_at DESC
+            OFFSET %s LIMIT %s
+        ''', (offset, limit))
+        rows = cursor.fetchall()
+        # Преобразуем реакции из JSONB в словарь Python
+        result = []
+        for row in rows:
+            news = list(row)
+            news[5] = dict(news[5]) if news[5] else {}
+            result.append(news)
+        return result
+    except Exception as e:
+        logger.error(f"Ошибка получения страницы новостей: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+def get_total_news_count():
+    """Возвращает общее количество новостей."""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM news')
+        return cursor.fetchone()[0]
+    except Exception as e:
+        logger.error(f"Ошибка получения количества новостей: {e}")
+        return 0
+    finally:
+        release_connection(conn)
+
+def get_news_detail(news_id, user_id=None):
+    """
+    Возвращает детальную информацию о новости.
+    Если передан user_id, проверяет, ставил ли пользователь реакцию.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Получаем новость
+        cursor.execute('''
+            SELECT id, title, content, published_at, views_count
+            FROM news
+            WHERE id = %s
+        ''', (news_id,))
+        news = cursor.fetchone()
+        if not news:
+            return None
+        
+        # Получаем все реакции для этой новости
+        cursor.execute('''
+            SELECT reaction, COUNT(*) as cnt
+            FROM news_reactions
+            WHERE news_id = %s
+            GROUP BY reaction
+        ''', (news_id,))
+        reactions_rows = cursor.fetchall()
+        reactions = {row[0]: row[1] for row in reactions_rows}
+        
+        # Проверяем реакцию пользователя
+        user_reaction = None
+        if user_id:
+            cursor.execute('''
+                SELECT reaction FROM news_reactions
+                WHERE news_id = %s AND user_id = %s
+            ''', (news_id, user_id))
+            ur = cursor.fetchone()
+            if ur:
+                user_reaction = ur[0]
+        
+        return {
+            'id': news[0],
+            'title': news[1],
+            'content': news[2],
+            'published_at': news[3],
+            'views_count': news[4],
+            'reactions': reactions,
+            'user_reaction': user_reaction
+        }
+    except Exception as e:
+        logger.error(f"Ошибка получения деталей новости {news_id}: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+def increment_news_views(news_id, user_id):
+    """
+    Увеличивает счётчик просмотров новости, если пользователь ещё не просматривал.
+    Возвращает True, если просмотр засчитан (первый раз).
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        # Проверяем, есть ли уже запись о просмотре
+        cursor.execute('''
+            SELECT 1 FROM news_views WHERE news_id = %s AND user_id = %s
+        ''', (news_id, user_id))
+        if cursor.fetchone():
+            return False  # уже просматривал
+        
+        # Добавляем запись о просмотре
+        cursor.execute('''
+            INSERT INTO news_views (news_id, user_id) VALUES (%s, %s)
+        ''', (news_id, user_id))
+        
+        # Увеличиваем счётчик просмотров в новости
+        cursor.execute('''
+            UPDATE news SET views_count = views_count + 1 WHERE id = %s
+        ''', (news_id,))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка увеличения просмотров новости {news_id}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        release_connection(conn)
+
+def add_or_update_reaction(news_id, user_id, reaction):
+    """
+    Добавляет или изменяет реакцию пользователя на новость.
+    Если reaction None, удаляет реакцию.
+    Возвращает обновлённый словарь реакций.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if reaction is None:
+            # Удаляем реакцию
+            cursor.execute('''
+                DELETE FROM news_reactions
+                WHERE news_id = %s AND user_id = %s
+            ''', (news_id, user_id))
+        else:
+            # Вставляем или обновляем (ON CONFLICT DO UPDATE)
+            cursor.execute('''
+                INSERT INTO news_reactions (news_id, user_id, reaction)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (news_id, user_id) DO UPDATE SET
+                    reaction = EXCLUDED.reaction,
+                    created_at = CURRENT_TIMESTAMP
+            ''', (news_id, user_id, reaction))
+        
+        conn.commit()
+        
+        # Возвращаем обновлённые реакции
+        cursor.execute('''
+            SELECT reaction, COUNT(*) as cnt
+            FROM news_reactions
+            WHERE news_id = %s
+            GROUP BY reaction
+        ''', (news_id,))
+        rows = cursor.fetchall()
+        return {row[0]: row[1] for row in rows}
+    except Exception as e:
+        logger.error(f"Ошибка обновления реакции: {e}")
+        if conn:
+            conn.rollback()
+        return {}
+    finally:
+        release_connection(conn)
+
+def update_news(news_id, title, content):
+    """Обновляет заголовок и текст новости."""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE news SET title = %s, content = %s WHERE id = %s
+        ''', (title, content, news_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка обновления новости {news_id}: {e}")
+        if conn:
+            conn.rollback()
+        return False
     finally:
         release_connection(conn)
 
@@ -611,7 +841,7 @@ def is_favorite(user_id, fav_type, value):
     finally:
         release_connection(conn)
 
-# ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ ====================
+# ==================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ (БАЗОВЫЕ) ====================
 def add_news(title, content):
     conn = None
     try:
