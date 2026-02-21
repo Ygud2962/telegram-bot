@@ -2040,16 +2040,26 @@ async def start(update: Update, context: CallbackContext):
         return
     
     keyboard = [
-        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
-        [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
-        [InlineKeyboardButton("🕐 Расписание звонков", callback_data='menu_bells')],
-        [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
-        [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')],
-        [InlineKeyboardButton("📣 Новости", callback_data='menu_news')],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
-        [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')],
-        [InlineKeyboardButton("👑 Админ-панель", callback_data='admin_panel')]
+        [
+            InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
+            InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
+        ],
+        [
+            InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
+            InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
+        ],
+        [
+            InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
+            InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
+        ],
+        [
+            InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
+            InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
+        ],
+        [
+            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'),
+            InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
+        ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -2426,18 +2436,28 @@ async def button_handler(update: Update, context: CallbackContext):
             await show_main_menu(query)
 
 async def show_main_menu(query):
-    """Показывает главное меню."""
+    """Показывает главное меню (компактное)."""
     keyboard = [
-        [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now')],
-        [InlineKeyboardButton("👨‍🏫 Расписание учителей", callback_data='menu_teacher')],
-        [InlineKeyboardButton("🕐 Расписание звонков", callback_data='menu_bells')],
-        [InlineKeyboardButton("📚 Расписание уроков", callback_data='menu_schedule')],
-        [InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')],
-        [InlineKeyboardButton("📣 Новости", callback_data='menu_news')],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
-        [InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')],
-        [InlineKeyboardButton("👑 Админ-панель", callback_data='admin_panel')]
+        [
+            InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
+            InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
+        ],
+        [
+            InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
+            InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
+        ],
+        [
+            InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
+            InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
+        ],
+        [
+            InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
+            InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
+        ],
+        [
+            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'),
+            InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
+        ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(
