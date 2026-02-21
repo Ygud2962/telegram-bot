@@ -128,15 +128,19 @@ def init_db():
             )
         ''')
 
-        # Таблица школьных новостей (добавлено поле views_count)
+        # Таблица школьных новостей (базовая)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS news (
                 id SERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
                 content TEXT NOT NULL,
-                published_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                views_count INTEGER DEFAULT 0
+                published_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
+        ''')
+
+        # Добавляем колонку views_count, если её нет (миграция)
+        cursor.execute('''
+            ALTER TABLE news ADD COLUMN IF NOT EXISTS views_count INTEGER DEFAULT 0
         ''')
 
         # Таблица просмотров новостей (уникальный просмотр на пользователя)
