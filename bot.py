@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, CallbackContext
-from telegram.error import TimedOut, NetworkError, BadRequest, Forbidden
+from telegram.error import TimedOut, BadRequest, Forbidden
 import database as db
 import os
 import pytz
@@ -840,6 +840,14 @@ async def safe_edit_message(query, text, reply_markup=None, parse_mode='HTML', m
         else:
             raise
 
+async def safe_send_message(context, chat_id, text, reply_markup=None, parse_mode='HTML'):
+    """Безопасная отправка сообщения с обработкой ошибок."""
+    try:
+        return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception as e:
+        logger.error(f"Ошибка отправки сообщения: {e}")
+        return None
+
 # ================== ФУНКЦИИ ДЛЯ РАСПИСАНИЯ УЧИТЕЛЕЙ ==================
 def get_teacher_schedule(teacher_name):
     """Возвращает расписание учителя (синхронно)."""
@@ -1104,86 +1112,93 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
-# ================== НОВЫЕ КОНСТАНТЫ ДЛЯ НОВОСТЕЙ ==================
-AVAILABLE_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👎']
+# ================== ФУНКЦИИ ДЛЯ НОВОСТЕЙ (ПАГИНАЦИЯ, ПРОСМОТРЫ) ==================
 NEWS_PER_PAGE = 5
 
-# ================== ОБНОВЛЁННЫЕ ФУНКЦИИ НОВОСТЕЙ ==================
+async def delete_news_messages(context, chat_id, message_ids):
+    """Удаляет предыдущие сообщения новостной ленты."""
+    for msg_id in message_ids:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение {msg_id}: {e}")
+
 async def show_news_menu(query, context, page=0):
-    """Показывает страницу новостей с пагинацией и реакциями."""
+    """Показывает страницу новостей (каждая новость отдельным сообщением, старые сверху)."""
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
     offset = page * NEWS_PER_PAGE
-    news_list = await asyncio.to_thread(db.get_news_page, offset, NEWS_PER_PAGE)
+    news_list = await asyncio.to_thread(db.get_news_page_asc, offset, NEWS_PER_PAGE)
     total_news = await asyncio.to_thread(db.get_total_news_count)
     total_pages = (total_news + NEWS_PER_PAGE - 1) // NEWS_PER_PAGE
 
+    # Удаляем предыдущие сообщения ленты, если они есть
+    if 'news_message_ids' in context.user_data:
+        await delete_news_messages(context, chat_id, context.user_data['news_message_ids'])
+    
+    message_ids = []
     if not news_list:
         text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n📭 Новостей пока нет."
+        msg = await safe_send_message(context, chat_id, text)
+        if msg:
+            message_ids.append(msg.message_id)
     else:
-        text = f"📰 <b>ШКОЛЬНЫЕ НОВОСТИ (страница {page+1}/{total_pages})</b>\n\n"
         for news in news_list:
-            news_id, title, content, pub_date, views, reactions = news
+            news_id, title, content, pub_date, views = news
             pub_date_str = convert_utc_to_minsk(pub_date.strftime('%Y-%m-%d %H:%M:%S') if hasattr(pub_date, 'strftime') else pub_date)
-            short_content = (content[:100] + '...') if len(content) > 100 else content
-            text += f"📌 <b>{title}</b>\n"
-            text += f"<i>📅 {pub_date_str}</i>  👁 {views}\n"
-            text += f"{short_content}\n\n"
-            text += "─" * 20 + "\n"
-
-    # Формируем клавиатуру
-    keyboard = []
-    for news in news_list:
-        news_id = news[0]
-        reactions_dict = news[5]
-        # Строка с кнопкой подробнее и реакциями
-        row = [InlineKeyboardButton(f"📖 Подробнее", callback_data=f'news_detail_{news_id}')]
-        for react in AVAILABLE_REACTIONS:
-            count = reactions_dict.get(react, 0)
-            btn_text = f"{react} {count}" if count > 0 else react
-            row.append(InlineKeyboardButton(btn_text, callback_data=f'news_react_{news_id}_{react}'))
-        keyboard.append(row)
-
-    # Пагинация
+            text = f"📌 <b>{title}</b>\n"
+            text += f"<i>📅 {pub_date_str}</i>  👁 {views}\n\n"
+            text += f"{content}\n\n"
+            text += "─" * 20
+            # Клавиатура для каждой новости (подробнее, админские кнопки)
+            keyboard = []
+            # Админские кнопки (если админ)
+            if query.from_user.id in ADMIN_IDS:
+                admin_row = [
+                    InlineKeyboardButton("✏️ Редактировать", callback_data=f'admin_edit_news_{news_id}'),
+                    InlineKeyboardButton("🗑 Удалить", callback_data=f'delete_news_{news_id}')
+                ]
+                keyboard.append(admin_row)
+            # Кнопка подробнее
+            keyboard.append([InlineKeyboardButton("📖 Читать полностью", callback_data=f'news_detail_{news_id}')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            msg = await safe_send_message(context, chat_id, text, reply_markup)
+            if msg:
+                message_ids.append(msg.message_id)
+    
+    # Кнопки пагинации
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton("◀️ Предыдущая", callback_data=f'news_page_{page-1}'))
     nav_row.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data='noop'))
     if page < total_pages - 1:
         nav_row.append(InlineKeyboardButton("Следующая ▶️", callback_data=f'news_page_{page+1}'))
-    keyboard.append(nav_row)
+    nav_keyboard = [nav_row, [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
+    nav_markup = InlineKeyboardMarkup(nav_keyboard)
+    nav_msg = await safe_send_message(context, chat_id, "📰 <b>Управление страницами</b>", nav_markup)
+    if nav_msg:
+        message_ids.append(nav_msg.message_id)
 
-    keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, text, reply_markup=reply_markup)
+    context.user_data['news_message_ids'] = message_ids
     context.user_data['news_page'] = page
 
 async def show_news_detail(query, context, news_id):
-    """Показывает полную новость с реакциями и просмотрами."""
+    """Показывает полную новость (отдельное сообщение)."""
     user_id = query.from_user.id
+    chat_id = query.message.chat_id
     await asyncio.to_thread(db.increment_news_views, news_id, user_id)
-    news = await asyncio.to_thread(db.get_news_detail, news_id, user_id)
+    news = await asyncio.to_thread(db.get_news_detail, news_id)
     if not news:
         await query.answer("❌ Новость не найдена", show_alert=True)
-        await show_news_menu(query, context, page=context.user_data.get('news_page', 0))
         return
 
     pub_date_str = convert_utc_to_minsk(news['published_at'].strftime('%Y-%m-%d %H:%M:%S') if hasattr(news['published_at'], 'strftime') else news['published_at'])
     text = f"📌 <b>{news['title']}</b>\n"
     text += f"<i>📅 {pub_date_str}</i>  👁 {news['views_count']}\n\n"
     text += f"{news['content']}\n\n"
-    text += "─" * 20 + "\n"
+    text += "─" * 20
 
     keyboard = []
-    # Строка реакций
-    row = []
-    for react in AVAILABLE_REACTIONS:
-        count = news['reactions'].get(react, 0)
-        if news['user_reaction'] == react:
-            btn_text = f"{react} {count} ✅"
-        else:
-            btn_text = f"{react} {count}" if count > 0 else react
-        row.append(InlineKeyboardButton(btn_text, callback_data=f'news_react_{news_id}_{react}'))
-    keyboard.append(row)
-
     # Админские кнопки
     if query.from_user.id in ADMIN_IDS:
         admin_row = [
@@ -1191,32 +1206,15 @@ async def show_news_detail(query, context, news_id):
             InlineKeyboardButton("🗑 Удалить", callback_data=f'delete_news_{news_id}')
         ]
         keyboard.append(admin_row)
-
     keyboard.append([InlineKeyboardButton("◀️ К списку новостей", callback_data=f'news_page_{context.user_data.get("news_page", 0)}')])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, text, reply_markup=reply_markup)
-    context.user_data['current_news_id'] = news_id
-
-async def handle_news_reaction(query, context, news_id, reaction):
-    user_id = query.from_user.id
-    news = await asyncio.to_thread(db.get_news_detail, news_id, user_id)
-    current_reaction = news['user_reaction'] if news else None
-
-    if current_reaction == reaction:
-        new_reaction = None  # убрать
-    else:
-        new_reaction = reaction
-
-    await asyncio.to_thread(db.add_or_update_reaction, news_id, user_id, new_reaction)
-
-    # Обновляем текущее отображение
-    if context.user_data.get('current_news_id') == news_id:
-        await show_news_detail(query, context, news_id)
-    else:
-        page = context.user_data.get('news_page', 0)
-        await show_news_menu(query, context, page)
+    # Отправляем новое сообщение с деталями
+    msg = await safe_send_message(context, chat_id, text, reply_markup)
+    if msg:
+        # Запоминаем ID этого сообщения для возможного последующего удаления
+        context.user_data['current_detail_message_id'] = msg.message_id
 
 # ================== РЕДАКТИРОВАНИЕ НОВОСТЕЙ (АДМИН) ==================
 async def start_edit_news(query, context, news_id):
@@ -1241,7 +1239,6 @@ async def start_edit_news(query, context, news_id):
     )
 
 async def handle_edit_news_input(update: Update, context: CallbackContext):
-    """Обрабатывает ввод при редактировании новости."""
     if not context.user_data.get('editing_news'):
         return
     user_id = update.effective_user.id
@@ -1278,7 +1275,6 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
         title = context.user_data['news_title']
         content = text
 
-        # Обновляем в БД
         success = await asyncio.to_thread(db.update_news, news_id, title, content)
         if success:
             await update.message.reply_text(
@@ -1286,9 +1282,11 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
                 f"<b>{title}</b>\n{content[:200]}{'...' if len(content) > 200 else ''}",
                 parse_mode='HTML'
             )
-            # Показываем обновлённую новость
-            fake_query = type('Query', (), {'from_user': update.effective_user, 'message': update.message, 'data': ''})()
-            await show_news_detail(fake_query, context, news_id)
+            # Возвращаемся к списку новостей
+            page = context.user_data.get('news_page', 0)
+            keyboard = [[InlineKeyboardButton("📰 К новостям", callback_data=f'news_page_{page}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Вернуться к новостям:", reply_markup=reply_markup)
         else:
             await update.message.reply_text("❌ Ошибка при обновлении новости.")
         context.user_data.clear()
@@ -1297,9 +1295,23 @@ async def cancel_edit_news(query, context):
     context.user_data.clear()
     await show_news_menu(query, context, page=context.user_data.get('news_page', 0))
 
-# ================== ИЗМЕНЕНИЯ В ФУНКЦИИ handle_news_input (добавлен счётчик) ==================
+# ================== ПУБЛИКАЦИЯ НОВОСТЕЙ (АДМИН) ==================
+async def start_publish_news(query, context):
+    if query.from_user.id not in ADMIN_IDS:
+        return
+    context.user_data['publishing_news'] = True
+    context.user_data['news_step'] = 'title'
+    
+    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await safe_edit_message(
+        query,
+        "📣 <b>ПУБЛИКАЦИЯ НОВОСТИ</b>\n\n"
+        "✏️ Введите <b>заголовок</b> новости (до 100 символов):",
+        reply_markup=reply_markup
+    )
+
 async def handle_news_input(update: Update, context: CallbackContext):
-    """Обрабатывает ввод заголовка и текста новости (счётчик символов)."""
     if not context.user_data.get('publishing_news'):
         return
     user_id = update.effective_user.id
@@ -1359,45 +1371,7 @@ async def handle_news_input(update: Update, context: CallbackContext):
         await update.message.reply_text(preview, reply_markup=reply_markup, parse_mode='HTML')
         return
 
-# ================== ФУНКЦИИ ДЛЯ ШКОЛЬНЫХ НОВОСТЕЙ (старые, теперь не используются, но оставлены для совместимости) ==================
-async def old_show_news_menu(query, context):
-    """Старая версия (без пагинации). Больше не вызывается."""
-    news_list = await asyncio.to_thread(db.get_latest_news, 5)
-    news_list = news_list[::-1]
-    
-    if not news_list:
-        text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n📭 Новостей пока нет.\nАдминистрация добавит новости позже."
-    else:
-        text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n"
-        for news in news_list:
-            pub_date = convert_utc_to_minsk(news[3])
-            text += f"📌 <b>{news[1]}</b>\n"
-            text += f"<i>📅 {pub_date}</i>\n"
-            text += f"{news[2]}\n\n"
-            text += "─" * 20 + "\n\n"
-    
-    keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, text, reply_markup=reply_markup)
-
-async def start_publish_news(query, context):
-    """Начинает процесс публикации новости (только для админа)."""
-    if query.from_user.id not in ADMIN_IDS:
-        return
-    context.user_data['publishing_news'] = True
-    context.user_data['news_step'] = 'title'
-    
-    keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(
-        query,
-        "📣 <b>ПУБЛИКАЦИЯ НОВОСТИ</b>\n\n"
-        "✏️ Введите <b>заголовок</b> новости (до 100 символов):",
-        reply_markup=reply_markup
-    )
-
 async def publish_news(query, context, send_to_all=False):
-    """Публикует новость в БД и при необходимости рассылает всем."""
     title = context.user_data.get('news_title', '').strip()
     content = context.user_data.get('news_content', '').strip()
     
@@ -1419,7 +1393,6 @@ async def publish_news(query, context, send_to_all=False):
     success_msg = "✅ <b>НОВОСТЬ ОПУБЛИКОВАНА!</b>\n"
     success_msg += f"<b>{title}</b>\n{content[:200]}{'...' if len(content) > 200 else ''}"
     
-    # Создаем клавиатуру главного меню для прикрепления к новости
     main_menu_keyboard = [
         [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
          InlineKeyboardButton("📚 Расписание", callback_data='menu_schedule')],
@@ -1494,7 +1467,6 @@ async def publish_news(query, context, send_to_all=False):
 
 # ================== ФУНКЦИИ УДАЛЕНИЯ НОВОСТЕЙ ==================
 async def show_all_news_for_admin(query, context):
-    """Показывает все новости для админа с кнопками удаления и редактирования."""
     if query.from_user.id not in ADMIN_IDS:
         return
     news_list = await asyncio.to_thread(db.get_all_news)
@@ -1523,7 +1495,6 @@ async def show_all_news_for_admin(query, context):
     await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def confirm_delete_news(query, context, news_id):
-    """Запрашивает подтверждение удаления новости."""
     if query.from_user.id not in ADMIN_IDS:
         return
     news = await asyncio.to_thread(db.get_news_by_id, news_id)
@@ -1558,7 +1529,6 @@ async def confirm_delete_news(query, context, news_id):
     )
 
 async def delete_news_handler(query, context, news_id):
-    """Удаляет новость по ID."""
     if query.from_user.id not in ADMIN_IDS:
         return
     news = await asyncio.to_thread(db.get_news_by_id, news_id)
@@ -1572,13 +1542,12 @@ async def delete_news_handler(query, context, news_id):
 
 # ================== ФУНКЦИЯ ФОНОВОГО ЛОГИРОВАНИЯ ==================
 async def ensure_user_and_log(user_id, username, first_name, last_name, language_code, action):
-    """Добавляет пользователя (если нужно) и логирует действие в фоне."""
     try:
         await asyncio.to_thread(db.update_user_and_log, user_id, action, None, username, first_name, last_name, language_code)
     except Exception as e:
         logger.error(f"Ошибка фонового логирования: {e}")
 
-# ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА (КЭШИРОВАННАЯ) ==================
+# ================== ФУНКЦИЯ ПРОВЕРКИ ТЕХРЕЖИМА ==================
 async def check_maintenance_mode(update: Update, context: CallbackContext) -> bool:
     global _maintenance_cache
     now = datetime.now()
@@ -1648,7 +1617,6 @@ async def check_maintenance_status(query, context):
 
 # ================== УПРОЩЁННЫЙ ТЕХРЕЖИМ ==================
 async def enable_maintenance_mode(query, context):
-    """Начинает процесс включения техрежима с упрощённым выбором времени."""
     if query.from_user.id not in ADMIN_IDS:
         return
     keyboard = [
@@ -1674,7 +1642,6 @@ async def enable_maintenance_mode(query, context):
     )
 
 async def set_maintenance_duration(query, context, duration_type):
-    """Устанавливает техрежим на выбранную длительность."""
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
     until_str = None
@@ -1692,7 +1659,6 @@ async def set_maintenance_duration(query, context, duration_type):
     await confirm_maintenance_activated(query, until_str)
 
 async def confirm_maintenance_activated(query, until_str=None):
-    """Подтверждение включения техрежима."""
     msg = "✅ ТЕХРЕЖИМ ВКЛЮЧЕН\n\n"
     msg += "⚠️ Бот теперь доступен ТОЛЬКО администраторам.\n"
     if until_str:
@@ -1707,7 +1673,6 @@ async def confirm_maintenance_activated(query, until_str=None):
     await safe_edit_message(query, msg, reply_markup=reply_markup)
 
 async def disable_maintenance_mode(query, context):
-    """Выключает техрежим."""
     if query.from_user.id not in ADMIN_IDS:
         return
     await asyncio.to_thread(db.set_maintenance_mode, False)
@@ -1726,7 +1691,6 @@ async def disable_maintenance_mode(query, context):
 
 # ================== УПРОЩЁННОЕ ДОБАВЛЕНИЕ ЗАМЕН ==================
 async def show_date_selection(query, context):
-    """Показывает выбор даты для добавления замены (ТОЛЬКО будние дни на ближайшую неделю)."""
     tz_minsk = pytz.timezone('Europe/Minsk')
     today = datetime.now(tz_minsk).date()
     keyboard = []
@@ -1761,7 +1725,6 @@ async def show_date_selection(query, context):
     )
 
 async def show_class_selection_for_substitution(query, context):
-    """Показывает выбор класса для замены."""
     keyboard = []
     row = []
     for i, class_name in enumerate(ALL_CLASSES):
@@ -1789,7 +1752,6 @@ async def show_class_selection_for_substitution(query, context):
     )
 
 async def show_lesson_selection(query, context):
-    """Показывает выбор урока с полной информацией."""
     class_name = context.user_data.get('class_name', '')
     day = context.user_data.get('day', '')
     lessons = []
@@ -1826,7 +1788,6 @@ async def show_lesson_selection(query, context):
     await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def show_teacher_selection(query, context):
-    """Показывает выбор НОВОГО учителя (шаг 4)."""
     teachers = list(TEACHER_IDS.keys())
     keyboard = []
     row = []
@@ -1865,7 +1826,6 @@ async def show_teacher_selection(query, context):
     await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def handle_adding_substitution(query, context):
-    """Обрабатывает 4 шага добавления замены."""
     step = context.user_data.get('step', 'date')
     if query.data == 'cancel_adding':
         context.user_data.clear()
@@ -1938,7 +1898,6 @@ async def handle_adding_substitution(query, context):
     await query.answer("⚠️ Неизвестное действие", show_alert=True)
 
 async def save_substitution(query, context):
-    """Сохраняет замену."""
     try:
         date = context.user_data['date']
         day = context.user_data['day']
@@ -1995,7 +1954,6 @@ async def save_substitution(query, context):
 
 # ================== АНАЛИТИКА ДЛЯ АДМИНА ==================
 async def show_analytics(query, context):
-    """Показывает аналитику использования бота."""
     if query.from_user.id not in ADMIN_IDS:
         return
     active_users_24h = await asyncio.to_thread(db.get_active_users_24h)
@@ -2029,7 +1987,6 @@ async def show_analytics(query, context):
 
 # ================== ФУНКЦИЯ УВЕДОМЛЕНИЯ О НОВЫХ НОВОСТЯХ ==================
 async def check_new_news_notification(update: Update, context: CallbackContext) -> bool:
-    """Проверяет, есть ли новые новости для пользователя. Если есть – отправляет уведомление и возвращает True."""
     user = update.effective_user
     if not user:
         return False
@@ -2079,7 +2036,6 @@ async def start(update: Update, context: CallbackContext):
     if await check_maintenance_mode(update, context):
         return
     
-    # Проверка новых новостей
     if await check_new_news_notification(update, context):
         return
     
@@ -2327,7 +2283,7 @@ async def button_handler(update: Update, context: CallbackContext):
     if query.data == 'menu_news':
         await asyncio.to_thread(db.update_user_last_news_check, user.id)
         context.user_data.pop('news_notification_shown', None)
-        await show_news_menu(query, context, page=0)  # начинаем с первой страницы
+        await show_news_menu(query, context, page=0)
         return
     elif query.data.startswith('news_page_'):
         page = int(query.data.split('_')[2])
@@ -2336,12 +2292,6 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data.startswith('news_detail_'):
         news_id = int(query.data.split('_')[2])
         await show_news_detail(query, context, news_id)
-        return
-    elif query.data.startswith('news_react_'):
-        parts = query.data.split('_')
-        news_id = int(parts[2])
-        reaction = parts[3]
-        await handle_news_reaction(query, context, news_id, reaction)
         return
     elif query.data.startswith('admin_edit_news_'):
         news_id = int(query.data.split('_')[3])
@@ -3521,7 +3471,7 @@ def main():
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
-    print(f"✅ Добавлены функции: 🌟 МОё (избранное) + 📰 Новости (время в минском поясе) + 🔔 Уведомления о новых новостях + пагинация, реакции, редактирование, просмотры")
+    print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания")
     
     try:
         application.run_polling(
