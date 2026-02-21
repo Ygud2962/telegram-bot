@@ -154,18 +154,6 @@ def init_db():
             )
         ''')
 
-        # Таблица реакций на новости (один пользователь – одна реакция)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS news_reactions (
-                id SERIAL PRIMARY KEY,
-                news_id INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
-                user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-                reaction TEXT NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(news_id, user_id)
-            )
-        ''')
-
         # Индексы для оптимизации
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)')
@@ -178,7 +166,6 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_favorites_type ON user_favorites(fav_type)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_published ON news(published_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_views_user ON news_views(user_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_reactions_user ON news_reactions(user_id)')
 
         conn.commit()
         logger.info("✅ PostgreSQL база данных инициализирована")
@@ -304,39 +291,20 @@ def count_new_news_since(user_id):
     finally:
         release_connection(conn)
 
-# ==================== ФУНКЦИИ ДЛЯ НОВОСТЕЙ (ПАГИНАЦИЯ, РЕАКЦИИ, ПРОСМОТРЫ) ====================
-def get_news_page(offset=0, limit=5):
-    """Возвращает страницу новостей с количеством реакций для каждой."""
+# ==================== ФУНКЦИИ ДЛЯ НОВОСТЕЙ (ПАГИНАЦИЯ, ПРОСМОТРЫ) ====================
+def get_news_page_asc(offset=0, limit=5):
+    """Возвращает страницу новостей в порядке возрастания (старые сверху)."""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        # Получаем новости с пагинацией и подсчитываем реакции
         cursor.execute('''
-            SELECT 
-                n.id, n.title, n.content, n.published_at, n.views_count,
-                COALESCE(r.reactions_json, '{}'::jsonb) AS reactions
-            FROM news n
-            LEFT JOIN LATERAL (
-                SELECT jsonb_object_agg(reaction, cnt) AS reactions_json
-                FROM (
-                    SELECT reaction, COUNT(*) as cnt
-                    FROM news_reactions
-                    WHERE news_id = n.id
-                    GROUP BY reaction
-                ) sub
-            ) r ON true
-            ORDER BY n.published_at DESC
+            SELECT id, title, content, published_at, views_count
+            FROM news
+            ORDER BY published_at ASC
             OFFSET %s LIMIT %s
         ''', (offset, limit))
-        rows = cursor.fetchall()
-        # Преобразуем реакции из JSONB в словарь Python
-        result = []
-        for row in rows:
-            news = list(row)
-            news[5] = dict(news[5]) if news[5] else {}
-            result.append(news)
-        return result
+        return cursor.fetchall()
     except Exception as e:
         logger.error(f"Ошибка получения страницы новостей: {e}")
         return []
@@ -357,16 +325,14 @@ def get_total_news_count():
     finally:
         release_connection(conn)
 
-def get_news_detail(news_id, user_id=None):
+def get_news_detail(news_id):
     """
     Возвращает детальную информацию о новости.
-    Если передан user_id, проверяет, ставил ли пользователь реакцию.
     """
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        # Получаем новость
         cursor.execute('''
             SELECT id, title, content, published_at, views_count
             FROM news
@@ -376,35 +342,12 @@ def get_news_detail(news_id, user_id=None):
         if not news:
             return None
         
-        # Получаем все реакции для этой новости
-        cursor.execute('''
-            SELECT reaction, COUNT(*) as cnt
-            FROM news_reactions
-            WHERE news_id = %s
-            GROUP BY reaction
-        ''', (news_id,))
-        reactions_rows = cursor.fetchall()
-        reactions = {row[0]: row[1] for row in reactions_rows}
-        
-        # Проверяем реакцию пользователя
-        user_reaction = None
-        if user_id:
-            cursor.execute('''
-                SELECT reaction FROM news_reactions
-                WHERE news_id = %s AND user_id = %s
-            ''', (news_id, user_id))
-            ur = cursor.fetchone()
-            if ur:
-                user_reaction = ur[0]
-        
         return {
             'id': news[0],
             'title': news[1],
             'content': news[2],
             'published_at': news[3],
-            'views_count': news[4],
-            'reactions': reactions,
-            'user_reaction': user_reaction
+            'views_count': news[4]
         }
     except Exception as e:
         logger.error(f"Ошибка получения деталей новости {news_id}: {e}")
@@ -445,51 +388,6 @@ def increment_news_views(news_id, user_id):
         if conn:
             conn.rollback()
         return False
-    finally:
-        release_connection(conn)
-
-def add_or_update_reaction(news_id, user_id, reaction):
-    """
-    Добавляет или изменяет реакцию пользователя на новость.
-    Если reaction None, удаляет реакцию.
-    Возвращает обновлённый словарь реакций.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        if reaction is None:
-            # Удаляем реакцию
-            cursor.execute('''
-                DELETE FROM news_reactions
-                WHERE news_id = %s AND user_id = %s
-            ''', (news_id, user_id))
-        else:
-            # Вставляем или обновляем (ON CONFLICT DO UPDATE)
-            cursor.execute('''
-                INSERT INTO news_reactions (news_id, user_id, reaction)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (news_id, user_id) DO UPDATE SET
-                    reaction = EXCLUDED.reaction,
-                    created_at = CURRENT_TIMESTAMP
-            ''', (news_id, user_id, reaction))
-        
-        conn.commit()
-        
-        # Возвращаем обновлённые реакции
-        cursor.execute('''
-            SELECT reaction, COUNT(*) as cnt
-            FROM news_reactions
-            WHERE news_id = %s
-            GROUP BY reaction
-        ''', (news_id,))
-        rows = cursor.fetchall()
-        return {row[0]: row[1] for row in rows}
-    except Exception as e:
-        logger.error(f"Ошибка обновления реакции: {e}")
-        if conn:
-            conn.rollback()
-        return {}
     finally:
         release_connection(conn)
 
