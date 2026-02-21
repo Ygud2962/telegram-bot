@@ -8,6 +8,8 @@ from telegram.error import TimedOut, BadRequest, Forbidden
 import database as db
 import os
 import pytz
+import openai
+import time
 
 # ================== КЭШИРОВАНИЕ ТЕХРЕЖИМА ==================
 _maintenance_cache = {'enabled': False, 'until': None, 'message': None, 'last_check': datetime.min}
@@ -17,6 +19,17 @@ TOKEN = os.environ.get('BOT_TOKEN')
 if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
+
+# ================== НАСТРОЙКА GPT ==================
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
+    GPT_AVAILABLE = True
+    logger.info("✅ GPT-помощник активирован (OpenAI)")
+else:
+    GPT_AVAILABLE = False
+    logger.warning("⚠️ OPENAI_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
+
 print("Бот запускается с токеном из переменных окружения")
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -773,7 +786,6 @@ SCHEDULE_STRUCTURED = {
 
 # ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def get_lesson_time(lesson_number):
-    """Возвращает время урока по его номеру."""
     lesson_times = {
         1: "08:00-08:45",
         2: "09:00-09:45",
@@ -786,12 +798,9 @@ def get_lesson_time(lesson_number):
     return lesson_times.get(lesson_number, "??:??-??:??")
 
 def get_current_lesson_info():
-    """Определяет текущий/следующий урок по времени в часовом поясе Минска (UTC+3)."""
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
-    current_hour = now.hour
-    current_minute = now.minute
-    current_minutes = current_hour * 60 + current_minute
+    current_minutes = now.hour * 60 + now.minute
     lesson_intervals = [
         (8, 0, 8, 45, 1),
         (9, 0, 9, 45, 2),
@@ -805,31 +814,26 @@ def get_current_lesson_info():
         start_total = start_h * 60 + start_m
         end_total = end_h * 60 + end_m
         if start_total <= current_minutes <= end_total:
-            time_left = end_total - current_minutes
             return {
                 'status': 'lesson',
                 'number': num,
-                'time_left': time_left,
+                'time_left': end_total - current_minutes,
                 'start_time': f"{start_h:02d}:{start_m:02d}",
                 'end_time': f"{end_h:02d}:{end_m:02d}"
             }
-
     for start_h, start_m, end_h, end_m, num in lesson_intervals:
         start_total = start_h * 60 + start_m
         if current_minutes < start_total:
-            minutes_until = start_total - current_minutes
             return {
                 'status': 'break',
                 'next_number': num,
-                'minutes_until': minutes_until,
+                'minutes_until': start_total - current_minutes,
                 'start_time': f"{start_h:02d}:{start_m:02d}",
                 'end_time': f"{end_h:02d}:{end_m:02d}"
             }
-
     return {'status': 'finished'}
 
 async def safe_edit_message(query, text, reply_markup=None, parse_mode='HTML', max_len=4096):
-    """Безопасно редактирует сообщение, обрезая при необходимости и игнорируя ошибку 'not modified'."""
     if len(text) > max_len:
         text = text[:max_len-100] + "\n\n... (сообщение обрезано)"
     try:
@@ -841,7 +845,6 @@ async def safe_edit_message(query, text, reply_markup=None, parse_mode='HTML', m
             raise
 
 async def safe_send_message(context, chat_id, text, reply_markup=None, parse_mode='HTML'):
-    """Безопасная отправка сообщения с обработкой ошибок."""
     try:
         return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception as e:
@@ -850,7 +853,6 @@ async def safe_send_message(context, chat_id, text, reply_markup=None, parse_mod
 
 # ================== ФУНКЦИИ ДЛЯ РАСПИСАНИЯ УЧИТЕЛЕЙ ==================
 def get_teacher_schedule(teacher_name):
-    """Возвращает расписание учителя (синхронно)."""
     schedule = {}
     for class_name, days in SCHEDULE_STRUCTURED.items():
         for day, lessons in days.items():
@@ -875,7 +877,6 @@ def get_teacher_schedule(teacher_name):
     return schedule
 
 def get_all_teachers():
-    """Извлекает всех уникальных учителей из расписания."""
     teachers = set()
     for class_name, days in SCHEDULE_STRUCTURED.items():
         for day, lessons in days.items():
@@ -896,14 +897,12 @@ _teacher_schedule_cache = {}
 _teacher_schedule_cache_lock = asyncio.Lock()
 
 def get_cached_teacher_schedule(teacher_name):
-    """Возвращает расписание учителя из кэша, при необходимости вычисляя его."""
     if teacher_name not in _teacher_schedule_cache:
         _teacher_schedule_cache[teacher_name] = get_teacher_schedule(teacher_name)
     return _teacher_schedule_cache[teacher_name]
 
 # ================== ОСТАЛЬНЫЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 async def format_schedule_day(class_name, day, structured_lessons, target_date=None):
-    """Форматирует расписание на день в новом формате с заменами (асинхронная версия)."""
     if not structured_lessons:
         return "На этот день расписания нет."
     structured_lessons.sort(key=lambda x: x[0])
@@ -914,7 +913,6 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             class_name,
             target_date
         )
-    
     sub_dict = {}
     for sub in substitutions:
         lesson_num = sub[3]
@@ -924,12 +922,10 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             'old_teacher': sub[6],
             'new_teacher': sub[7]
         }
-    
     result_lines = []
     header = f"📅 <b>{day.upper()} - {class_name.upper()}</b>"
     result_lines.append(header)
     result_lines.append("─" * 18)
-    
     for lesson_num, subject, teacher in structured_lessons:
         lesson_time = get_lesson_time(lesson_num)
         if 1 <= lesson_num <= 7:
@@ -937,18 +933,14 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             lesson_str = f"{emoji} "
         else:
             lesson_str = f"{lesson_num}. "
-        
         main_line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
         result_lines.append(main_line)
-        
         if lesson_num in sub_dict:
             sub = sub_dict[lesson_num]
             result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']} ✅ {sub['new_teacher']}")
-
     return "\n".join(result_lines)
 
 def format_weekly_schedule(class_name):
-    """Форматирует расписание на всю неделю в новом формате (синхронно, без БД)."""
     if class_name not in SCHEDULE_STRUCTURED:
         return f"Расписание для класса {class_name} не найдено."
     result_lines = []
@@ -970,11 +962,9 @@ def format_weekly_schedule(class_name):
                         lesson_str = f"{lesson_num}. "
                     line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
                     result_lines.append(line)
-
     return "\n".join(result_lines)
 
 def format_substitution(sub):
-    """Форматирует замену в красивом виде."""
     if len(sub) >= 9:
         return (f"↪️ {sub[8]} класс, {sub[3]} урок:\n"
                 f"       `{sub[4]}` ({sub[6]})\n"
@@ -982,7 +972,6 @@ def format_substitution(sub):
     return str(sub)
 
 async def send_substitution_notification(context, teacher_name, substitution_data):
-    """Отправляет уведомление учителю о новой замене."""
     teacher_name_clean = teacher_name.replace('_', ' ').strip()
     teacher_id = TEACHER_IDS.get(teacher_name_clean)
     logger.info(f"📨 Попытка отправить уведомление учителю: '{teacher_name_clean}' (ID в словаре: {teacher_id})")
@@ -998,7 +987,6 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
             except Exception as e:
                 logger.error(f"Ошибка отправки уведомления админу: {e}")
         return
-    
     try:
         lesson_time = get_lesson_time(substitution_data['lesson'])
         notification_message = (
@@ -1033,7 +1021,6 @@ async def send_substitution_notification(context, teacher_name, substitution_dat
 
 # ================== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ КОНВЕРТАЦИИ ВРЕМЕНИ ==================
 def convert_utc_to_minsk(utc_str):
-    """Конвертирует строку времени из UTC в минское время (Europe/Minsk)."""
     try:
         utc_dt = datetime.strptime(utc_str, '%Y-%m-%d %H:%M:%S')
         utc_dt = pytz.utc.localize(utc_dt)
@@ -1044,9 +1031,40 @@ def convert_utc_to_minsk(utc_str):
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
 
+# ================== GPT-ПОМОЩНИК ==================
+async def ask_gpt(question: str, user_id: int = None) -> str:
+    """Отправляет вопрос в OpenAI и возвращает ответ."""
+    if not OPENAI_API_KEY:
+        return "❌ GPT-помощник не настроен. Администратору нужно установить переменную OPENAI_API_KEY."
+    try:
+        # Используем asyncio.to_thread для синхронного вызова OpenAI
+        response = await asyncio.to_thread(
+            openai.ChatCompletion.create,
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Ты — полезный помощник для школьников. Отвечай кратко, понятно, с примерами если нужно."},
+                {"role": "user", "content": question}
+            ],
+            max_tokens=500,
+            temperature=0.7,
+            timeout=30
+        )
+        answer = response.choices[0].message.content.strip()
+        if len(answer) > 4000:
+            answer = answer[:4000] + "...\n\n<em>Ответ обрезан из-за длины</em>"
+        return answer
+    except openai.error.RateLimitError:
+        logger.error("Превышен лимит запросов OpenAI")
+        return "⏳ Слишком много запросов. Попробуйте позже."
+    except openai.error.AuthenticationError:
+        logger.error("Ошибка аутентификации OpenAI")
+        return "🔑 Ошибка API ключа. Проверьте настройки."
+    except Exception as e:
+        logger.error(f"Ошибка GPT: {e}")
+        return f"❌ Произошла ошибка при обращении к GPT: {str(e)[:100]}"
+
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
-    """Показывает меню 'МОё' с избранными классами и учителями."""
     user_id = query.from_user.id
     favorites = await asyncio.to_thread(db.get_user_favorites, user_id)
     if not favorites:
@@ -1095,7 +1113,6 @@ async def show_my_menu(query, context):
     await safe_edit_message(query, text, reply_markup=reply_markup)
 
 async def show_teacher_schedule_by_name(query, context, teacher_name):
-    """Показывает расписание учителя по имени."""
     teacher_schedule = get_cached_teacher_schedule(teacher_name)
     schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
     user_id = query.from_user.id
@@ -1116,7 +1133,6 @@ async def show_teacher_schedule_by_name(query, context, teacher_name):
 NEWS_PER_PAGE = 5
 
 async def delete_news_messages(context, chat_id, message_ids):
-    """Удаляет предыдущие сообщения новостной ленты."""
     for msg_id in message_ids:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
@@ -1124,7 +1140,6 @@ async def delete_news_messages(context, chat_id, message_ids):
             logger.warning(f"Не удалось удалить сообщение {msg_id}: {e}")
 
 async def show_news_menu(query, context, page=0):
-    """Показывает страницу новостей (каждая новость отдельным сообщением, старые сверху)."""
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     offset = page * NEWS_PER_PAGE
@@ -1132,7 +1147,6 @@ async def show_news_menu(query, context, page=0):
     total_news = await asyncio.to_thread(db.get_total_news_count)
     total_pages = (total_news + NEWS_PER_PAGE - 1) // NEWS_PER_PAGE
 
-    # Удаляем предыдущие сообщения ленты, если они есть
     if 'news_message_ids' in context.user_data:
         await delete_news_messages(context, chat_id, context.user_data['news_message_ids'])
     
@@ -1150,23 +1164,19 @@ async def show_news_menu(query, context, page=0):
             text += f"<i>📅 {pub_date_str}</i>  👁 {views}\n\n"
             text += f"{content}\n\n"
             text += "─" * 20
-            # Клавиатура для каждой новости (подробнее, админские кнопки)
             keyboard = []
-            # Админские кнопки (если админ)
             if query.from_user.id in ADMIN_IDS:
                 admin_row = [
                     InlineKeyboardButton("✏️ Редактировать", callback_data=f'admin_edit_news_{news_id}'),
                     InlineKeyboardButton("🗑 Удалить", callback_data=f'delete_news_{news_id}')
                 ]
                 keyboard.append(admin_row)
-            # Кнопка подробнее
             keyboard.append([InlineKeyboardButton("📖 Читать полностью", callback_data=f'news_detail_{news_id}')])
             reply_markup = InlineKeyboardMarkup(keyboard)
             msg = await safe_send_message(context, chat_id, text, reply_markup)
             if msg:
                 message_ids.append(msg.message_id)
     
-    # Кнопки пагинации
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton("◀️ Предыдущая", callback_data=f'news_page_{page-1}'))
@@ -1183,7 +1193,6 @@ async def show_news_menu(query, context, page=0):
     context.user_data['news_page'] = page
 
 async def show_news_detail(query, context, news_id):
-    """Показывает полную новость (отдельное сообщение)."""
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     await asyncio.to_thread(db.increment_news_views, news_id, user_id)
@@ -1199,7 +1208,6 @@ async def show_news_detail(query, context, news_id):
     text += "─" * 20
 
     keyboard = []
-    # Админские кнопки
     if query.from_user.id in ADMIN_IDS:
         admin_row = [
             InlineKeyboardButton("✏️ Редактировать", callback_data=f'admin_edit_news_{news_id}'),
@@ -1210,10 +1218,8 @@ async def show_news_detail(query, context, news_id):
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    # Отправляем новое сообщение с деталями
     msg = await safe_send_message(context, chat_id, text, reply_markup)
     if msg:
-        # Запоминаем ID этого сообщения для возможного последующего удаления
         context.user_data['current_detail_message_id'] = msg.message_id
 
 # ================== РЕДАКТИРОВАНИЕ НОВОСТЕЙ (АДМИН) ==================
@@ -1282,7 +1288,6 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
                 f"<b>{title}</b>\n{content[:200]}{'...' if len(content) > 200 else ''}",
                 parse_mode='HTML'
             )
-            # Возвращаемся к списку новостей
             page = context.user_data.get('news_page', 0)
             keyboard = [[InlineKeyboardButton("📰 К новостям", callback_data=f'news_page_{page}')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1301,7 +1306,6 @@ async def start_publish_news(query, context):
         return
     context.user_data['publishing_news'] = True
     context.user_data['news_step'] = 'title'
-    
     keyboard = [[InlineKeyboardButton("❌ Отмена", callback_data='cancel_publish_news')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(
@@ -2057,7 +2061,10 @@ async def start(update: Update, context: CallbackContext):
             InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
         ],
         [
-            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'),
+            InlineKeyboardButton("🤖 ИИ-помощник", callback_data='menu_ai'),
+            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
+        ],
+        [
             InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
         ]
     ]
@@ -2338,6 +2345,29 @@ async def button_handler(update: Update, context: CallbackContext):
         await delete_news_handler(query, context, news_id)
         return
 
+    # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
+    elif query.data == 'menu_ai':
+        if not OPENAI_API_KEY:
+            await safe_edit_message(
+                query,
+                "❌ ИИ-помощник не настроен. Обратитесь к администратору.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
+                ]])
+            )
+            return
+        context.user_data['awaiting_ai'] = True
+        await safe_edit_message(
+            query,
+            "🤖 <b>ИИ-помощник</b>\n\n"
+            "Напишите ваш вопрос по любым школьным предметам, и я постараюсь на него ответить.\n\n"
+            "<i>Для отмены отправьте /cancel</i>",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Отмена", callback_data='back_to_main')
+            ]])
+        )
+        return
+
     # Обработка остальных кнопок
     if query.data == 'back_to_main':
         await show_main_menu(query)
@@ -2455,7 +2485,10 @@ async def show_main_menu(query):
             InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
         ],
         [
-            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help'),
+            InlineKeyboardButton("🤖 ИИ-помощник", callback_data='menu_ai'),
+            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
+        ],
+        [
             InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
         ]
     ]
@@ -2467,7 +2500,6 @@ async def show_main_menu(query):
     )
 
 async def show_weekly_schedule_for_class(query, context, class_name):
-    """Показывает расписание на всю неделю для указанного класса."""
     schedule_text = format_weekly_schedule(class_name)
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
@@ -2552,7 +2584,6 @@ async def show_teacher_schedule(query, context):
     await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
 async def format_teacher_schedule(teacher_name, schedule):
-    """Форматирует расписание учителя с учётом замен (асинхронная версия, получает замены одним запросом)."""
     today = datetime.now().date()
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
@@ -3237,6 +3268,24 @@ async def handle_message(update: Update, context: CallbackContext):
     if not isinstance(context.user_data, dict):
         context.user_data = {}
     
+    # Обработка ИИ-помощника
+    if context.user_data.get('awaiting_ai'):
+        question = update.message.text
+        thinking = await update.message.reply_text("🤔 Думаю...")
+        answer = await ask_gpt(question, update.effective_user.id)
+        await thinking.edit_text(answer, parse_mode='HTML')
+        # Сбрасываем флаг и предлагаем задать ещё вопрос
+        keyboard = [
+            [InlineKeyboardButton("❓ Задать ещё вопрос", callback_data='menu_ai')],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]
+        ]
+        await update.message.reply_text(
+            "Что дальше?",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        context.user_data['awaiting_ai'] = False
+        return
+    
     if context.user_data.get('publishing_news') and update.effective_user.id in ADMIN_IDS:
         await handle_news_input(update, context)
         return
@@ -3491,7 +3540,9 @@ def main():
     print(f"⏱️ Таймауты установлены на: {REQUEST_TIMEOUT} сек")
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
-    print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания")
+    print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания, ИИ-помощник")
+    if not OPENAI_API_KEY:
+        print("⚠️ ИИ-помощник отключён (не задан OPENAI_API_KEY)")
     
     try:
         application.run_polling(
