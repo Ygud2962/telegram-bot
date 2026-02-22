@@ -2354,7 +2354,7 @@ async def button_handler(update: Update, context: CallbackContext):
         if not OPENAI_API_KEY:
             await safe_edit_message(
                 query,
-                "❌ ИИ-помощник не настроен. Обратитесь к администратору.",
+                "❌ ИИ-помощник находится в разработке. Ждите следующих обновлений.",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
                 ]])
