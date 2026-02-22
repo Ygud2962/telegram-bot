@@ -2065,7 +2065,7 @@ async def start(update: Update, context: CallbackContext):
             InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
         ],
         [
-            InlineKeyboardButton("🤖 ИИ-помощник", callback_data='menu_ai'),
+            InlineKeyboardButton("🤖 ИИ-помощник(бета)", callback_data='menu_ai'),
             InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
         ],
         [
@@ -2489,7 +2489,7 @@ async def show_main_menu(query):
             InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
         ],
         [
-            InlineKeyboardButton("🤖 ИИ-помощник", callback_data='menu_ai'),
+            InlineKeyboardButton("🤖 ИИ-помощник(бета)", callback_data='menu_ai'),
             InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
         ],
         [
