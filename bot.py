@@ -8,8 +8,7 @@ from telegram.error import TimedOut, BadRequest, Forbidden
 import database as db
 import os
 import pytz
-import openai
-import time
+import httpx  # для OpenRouter
 
 # ================== НАСТРОЙКА ЛОГИРОВАНИЯ ==================
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -24,7 +23,7 @@ if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
 
-# ================== НАСТРОЙКА GPT ==================
+# ================== НАСТРОЙКА ИИ (OpenRouter) ==================
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 if OPENROUTER_API_KEY:
     GPT_AVAILABLE = True
@@ -34,8 +33,6 @@ else:
     logger.warning("⚠️ OPENROUTER_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
 
 print("Бот запускается с токеном из переменных окружения")
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # ================== НАСТРОЙКИ ==================
 ADMIN_IDS = [516406248]
@@ -1033,39 +1030,42 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
-
-# ================== GPT-ПОМОЩНИК ==================
+        # ================== ИИ-ПОМОЩНИК (OpenRouter) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
-    """Отправляет вопрос в OpenAI и возвращает ответ."""
-    if not OPENAI_API_KEY:
-        return "❌ GPT-помощник не настроен. Администратору нужно установить переменную OPENAI_API_KEY."
-    try:
-        # Используем asyncio.to_thread для синхронного вызова OpenAI
-        response = await asyncio.to_thread(
-            openai.ChatCompletion.create,
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Ты — полезный помощник для школьников. Отвечай кратко, понятно, с примерами если нужно."},
-                {"role": "user", "content": question}
-            ],
-            max_tokens=500,
-            temperature=0.7,
-            timeout=30
-        )
-        answer = response.choices[0].message.content.strip()
-        if len(answer) > 4000:
-            answer = answer[:4000] + "...\n\n<em>Ответ обрезан из-за длины</em>"
-        return answer
-    except openai.error.RateLimitError:
-        logger.error("Превышен лимит запросов OpenAI")
-        return "⏳ Слишком много запросов. Попробуйте позже."
-    except openai.error.AuthenticationError:
-        logger.error("Ошибка аутентификации OpenAI")
-        return "🔑 Ошибка API ключа. Проверьте настройки."
-    except Exception as e:
-        logger.error(f"Ошибка GPT: {e}")
-        return f"❌ Произошла ошибка при обращении к GPT: {str(e)[:100]}"
-        # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
+    """Отправляет вопрос в OpenRouter (бесплатные модели) и возвращает ответ."""
+    if not OPENROUTER_API_KEY:
+        return "❌ ИИ-помощник не настроен. Администратору нужно установить переменную OPENROUTER_API_KEY."
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://t.me/your_bot",  # замените на ссылку вашего бота
+        "X-Title": "School Bot"
+    }
+    data = {
+        "model": "deepseek/deepseek-r1:free",  # бесплатная модель
+        "messages": [
+            {"role": "system", "content": "Ты — полезный помощник для школьников. Отвечай кратко, понятно, с примерами если нужно."},
+            {"role": "user", "content": question}
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.post(url, json=data, headers=headers)
+            resp.raise_for_status()
+            result = resp.json()
+            answer = result['choices'][0]['message']['content'].strip()
+            if len(answer) > 4000:
+                answer = answer[:4000] + "...\n\n<em>Ответ обрезан из-за длины</em>"
+            return answer
+        except Exception as e:
+            logger.error(f"Ошибка OpenRouter: {e}")
+            return f"❌ Ошибка при обращении к ИИ: {str(e)[:100]}"
+
+# ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
     user_id = query.from_user.id
     favorites = await asyncio.to_thread(db.get_user_favorites, user_id)
@@ -2348,7 +2348,7 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
     elif query.data == 'menu_ai':
-        if not OPENAI_API_KEY:
+        if not GPT_AVAILABLE:
             await safe_edit_message(
                 query,
                 "❌ ИИ-помощник не настроен. Обратитесь к администратору.",
@@ -3542,8 +3542,8 @@ def main():
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
     print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания, ИИ-помощник")
-    if not OPENAI_API_KEY:
-        print("⚠️ ИИ-помощник отключён (не задан OPENAI_API_KEY)")
+    if not OPENROUTER_API_KEY:
+        print("⚠️ ИИ-помощник отключён (не задан OPENROUTER_API_KEY)")
 
     try:
         application.run_polling(
