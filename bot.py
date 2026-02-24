@@ -2071,29 +2071,7 @@ async def start(update: Update, context: CallbackContext):
         [
             InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
         ]
-    [
-        InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
-        InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
-    ],
-    [
-        InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
-        InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
-    ],
-    [
-        InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
-        InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
-    ],
-    [
-        InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
-        InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
-    ],
-    [
-        InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
-    ],
-    [
-        InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
-    ]
-]
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     try:
@@ -2517,28 +2495,6 @@ async def show_main_menu(query):
         [
             InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
         ]
-    [
-        InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
-        InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
-    ],
-    [
-        InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
-        InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
-    ],
-    [
-        InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
-        InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
-    ],
-    [
-        InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
-        InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
-    ],
-    [
-        InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
-    ],
-    [
-        InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
-    ]
 ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(
