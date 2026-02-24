@@ -2048,30 +2048,29 @@ async def start(update: Update, context: CallbackContext):
         return
     
     keyboard = [
-        [
-            InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
-            InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
-        ],
-        [
-            InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
-            InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
-        ],
-        [
-            InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
-            InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
-        ],
-        [
-            InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
-            InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
-        ],
-        [
-            InlineKeyboardButton("🤖 ИИ-помощник(тест)", callback_data='menu_ai'),
-            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
-        ],
-        [
-            InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
-        ]
+    [
+        InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
+        InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
+    ],
+    [
+        InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
+        InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
+    ],
+    [
+        InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
+        InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
+    ],
+    [
+        InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
+        InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
+    ],
+    [
+        InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
+    ],
+    [
+        InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
     ]
+]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
@@ -2349,29 +2348,6 @@ async def button_handler(update: Update, context: CallbackContext):
         await delete_news_handler(query, context, news_id)
         return
 
-    # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
-    elif query.data == 'menu_ai':
-        if not OPENAI_API_KEY:
-            await safe_edit_message(
-                query,
-                "❌ ИИ-помощник находится в разработке. Ждите следующих обновлений.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
-                ]])
-            )
-            return
-        context.user_data['awaiting_ai'] = True
-        await safe_edit_message(
-            query,
-            "🤖 <b>ИИ-помощник</b>\n\n"
-            "Напишите ваш вопрос по любым школьным предметам, и я постараюсь на него ответить.\n\n"
-            "<i>Для отмены отправьте /cancel</i>",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Отмена", callback_data='back_to_main')
-            ]])
-        )
-        return
-
     # Обработка остальных кнопок
     if query.data == 'back_to_main':
         await show_main_menu(query)
@@ -2472,30 +2448,29 @@ async def button_handler(update: Update, context: CallbackContext):
 async def show_main_menu(query):
     """Показывает главное меню (компактное)."""
     keyboard = [
-        [
-            InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
-            InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
-        ],
-        [
-            InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
-            InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
-        ],
-        [
-            InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
-            InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
-        ],
-        [
-            InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
-            InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
-        ],
-        [
-            InlineKeyboardButton("🤖 ИИ-помощник(тест)", callback_data='menu_ai'),
-            InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
-        ],
-        [
-            InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
-        ]
+    [
+        InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
+        InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
+    ],
+    [
+        InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
+        InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
+    ],
+    [
+        InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
+        InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
+    ],
+    [
+        InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
+        InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
+    ],
+    [
+        InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
+    ],
+    [
+        InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
     ]
+]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(
         query,
@@ -3271,25 +3246,7 @@ async def handle_message(update: Update, context: CallbackContext):
     
     if not isinstance(context.user_data, dict):
         context.user_data = {}
-    
-    # Обработка ИИ-помощника
-    if context.user_data.get('awaiting_ai'):
-        question = update.message.text
-        thinking = await update.message.reply_text("🤔 Думаю...")
-        answer = await ask_gpt(question, update.effective_user.id)
-        await thinking.edit_text(answer, parse_mode='HTML')
-        # Сбрасываем флаг и предлагаем задать ещё вопрос
-        keyboard = [
-            [InlineKeyboardButton("❓ Задать ещё вопрос", callback_data='menu_ai')],
-            [InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')]
-        ]
-        await update.message.reply_text(
-            "Что дальше?",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        context.user_data['awaiting_ai'] = False
-        return
-    
+      
     if context.user_data.get('publishing_news') and update.effective_user.id in ADMIN_IDS:
         await handle_news_input(update, context)
         return
