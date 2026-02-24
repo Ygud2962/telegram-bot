@@ -1032,7 +1032,6 @@ def convert_utc_to_minsk(utc_str):
         return utc_str
         # ================== ИИ-ПОМОЩНИК (OpenRouter) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
-    """Отправляет вопрос в OpenRouter (бесплатные модели) и возвращает ответ."""
     if not OPENROUTER_API_KEY:
         return "❌ ИИ-помощник не настроен. Администратору нужно установить переменную OPENROUTER_API_KEY."
 
@@ -1040,11 +1039,11 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://t.me/your_bot",  # замените на ссылку вашего бота
+        "HTTP-Referer": "https://t.me/school_hoiniki_sch3_bot",
         "X-Title": "School Bot"
     }
     data = {
-        "model": "deepseek/deepseek-r1:free",  # бесплатная модель
+        "model": "google/gemini-2.0-flash-exp:free",  # заменили модель
         "messages": [
             {"role": "system", "content": "Ты — полезный помощник для школьников. Отвечай кратко, понятно, с примерами если нужно."},
             {"role": "user", "content": question}
