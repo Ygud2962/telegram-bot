@@ -1153,7 +1153,7 @@ async def show_news_menu(query, context, page=0):
 
     if 'news_message_ids' in context.user_data:
         await delete_news_messages(context, chat_id, context.user_data['news_message_ids'])
-    
+
     message_ids = []
     if not news_list:
         text = "📰 <b>ШКОЛЬНЫЕ НОВОСТИ</b>\n\n📭 Новостей пока нет."
@@ -1180,7 +1180,7 @@ async def show_news_menu(query, context, page=0):
             msg = await safe_send_message(context, chat_id, text, reply_markup)
             if msg:
                 message_ids.append(msg.message_id)
-    
+
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton("◀️ Предыдущая", callback_data=f'news_page_{page-1}'))
@@ -1382,7 +1382,7 @@ async def handle_news_input(update: Update, context: CallbackContext):
 async def publish_news(query, context, send_to_all=False):
     title = context.user_data.get('news_title', '').strip()
     content = context.user_data.get('news_content', '').strip()
-    
+
     if not title or not content:
         await safe_edit_message(
             query,
@@ -1394,13 +1394,13 @@ async def publish_news(query, context, send_to_all=False):
 
     news_id = await asyncio.to_thread(db.add_news, title, content)
     logger.info(f"Новость опубликована (ID={news_id}) админом {query.from_user.id}")
-    
+
     tz_minsk = pytz.timezone('Europe/Minsk')
     current_time_minsk = datetime.now(tz_minsk).strftime('%d.%m.%Y %H:%M')
-    
+
     success_msg = "✅ <b>НОВОСТЬ ОПУБЛИКОВАНА!</b>\n"
     success_msg += f"<b>{title}</b>\n{content[:200]}{'...' if len(content) > 200 else ''}"
-    
+
     main_menu_keyboard = [
         [InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
          InlineKeyboardButton("📚 Расписание", callback_data='menu_schedule')],
@@ -1416,14 +1416,14 @@ async def publish_news(query, context, send_to_all=False):
         total = len(users)
         sent = 0
         failed = 0
-        
+
         broadcast_msg = (
             f"📣 <b>СРОЧНАЯ НОВОСТЬ ШКОЛЫ</b>\n"
             f"<b>{title}</b>\n"
             f"{content}\n"
             f"<i>📅 {current_time_minsk}</i>"
         )
-        
+
         status_msg = await query.edit_message_text(
             f"📤 <b>РАССЫЛКА НОВОСТИ</b>\n"
             f"Всего пользователей: {total}\n"
@@ -1432,7 +1432,7 @@ async def publish_news(query, context, send_to_all=False):
             f"Статус: ⏳ Начинаем...",
             parse_mode='HTML'
         )
-        
+
         for i, (user_id, _, _, _) in enumerate(users):
             try:
                 await context.bot.send_message(
@@ -1448,7 +1448,7 @@ async def publish_news(query, context, send_to_all=False):
             except Exception as e:
                 failed += 1
                 logger.error(f"Ошибка отправки новости {user_id}: {e}")
-            
+
             if i % 5 == 0 or i == total - 1:
                 try:
                     await status_msg.edit_text(
@@ -1461,15 +1461,15 @@ async def publish_news(query, context, send_to_all=False):
                     )
                 except Exception as e:
                     logger.warning(f"Не удалось обновить статус рассылки: {e}")
-        
+
         success_msg += f"\n📤 Рассылка завершена:\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}"
-    
+
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await safe_edit_message(query, success_msg, reply_markup=reply_markup)
     context.user_data.clear()
 
@@ -1478,7 +1478,7 @@ async def show_all_news_for_admin(query, context):
     if query.from_user.id not in ADMIN_IDS:
         return
     news_list = await asyncio.to_thread(db.get_all_news)
-    
+
     if not news_list:
         text = "📭 <b>НОВОСТИ ОТСУТСТВУЮТ</b>\n\nВ базе данных нет новостей."
         keyboard = [[InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')]]
@@ -1491,7 +1491,7 @@ async def show_all_news_for_admin(query, context):
             text += "─" * 20 + "\n\n"
         if len(news_list) > 15:
             text += f"\n<i>Показаны последние 15 новостей из {len(news_list)}.</i>"
-        
+
         keyboard = []
         for news in news_list[:15]:
             keyboard.append([
@@ -1541,10 +1541,10 @@ async def delete_news_handler(query, context, news_id):
         return
     news = await asyncio.to_thread(db.get_news_by_id, news_id)
     title = news[1] if news else f"ID {news_id}"
-    
+
     await asyncio.to_thread(db.delete_news, news_id)
     logger.info(f"Новость ID={news_id} удалена админом {query.from_user.id}")
-    
+
     await query.answer(f"✅ Новость '{title}' удалена!", show_alert=True)
     await show_all_news_for_admin(query, context)
 
@@ -1721,7 +1721,7 @@ async def show_date_selection(query, context):
     keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')])
     keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     context.user_data['adding_substitution'] = True
     context.user_data['step'] = 'date'
     await safe_edit_message(
@@ -1775,10 +1775,10 @@ async def show_lesson_selection(query, context):
             button_text = button_text[:57] + "..."
         callback_data = f'lesson_{lesson_num}'
         keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
-    
+
     if not lessons:
         keyboard.append([InlineKeyboardButton("❌ В расписании нет уроков", callback_data='back_to_class')])
-    
+
     keyboard.append([
         InlineKeyboardButton("◀️ Назад к классу", callback_data='back_to_class'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
@@ -1813,7 +1813,7 @@ async def show_teacher_selection(query, context):
             break
     if row:
         keyboard.append(row)
-    
+
     keyboard.append([
         InlineKeyboardButton("◀️ Назад к уроку", callback_data='back_to_lesson'),
         InlineKeyboardButton("❌ Отмена", callback_data='cancel_adding')
@@ -1932,14 +1932,14 @@ async def save_substitution(query, context):
             'new_teacher': new_teacher
         }
         await send_substitution_notification(context, new_teacher, substitution_data)
-        
+
         context.user_data.clear()
         keyboard = [
             [InlineKeyboardButton("➕ Добавить ещё замену", callback_data='admin_add_sub')],
             [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         success_msg = (
             f"✅ <b>Замена добавлена!</b>\n\n"
             f"📅 <b>Дата:</b> {date} ({day})\n"
@@ -1970,20 +1970,20 @@ async def show_analytics(query, context):
     total_users = await asyncio.to_thread(db.get_user_count)
     subs = await asyncio.to_thread(db.get_all_substitutions)
     subs_count = len(subs) if subs else 0
-    
+
     text = "<b>📊 АНАЛИТИКА БОТА</b>\n\n"
     text += f"👥 <b>Активных за сутки:</b> {active_users_24h}\n"
     text += f"👥 <b>Всего пользователей:</b> {total_users}\n\n"
-    
+
     if popular_classes:
         popular_text = ", ".join(popular_classes[:3])
         text += f"🏆 <b>Популярные классы:</b> {popular_text}\n\n"
     else:
         text += "<b>🏆 Популярные классы:</b> Нет данных за последнюю неделю\n\n"
-    
+
     text += f"⏰ <b>Пиковые часы:</b> {peak_hours}\n\n"
     text += f"🔄 <b>Всего замен:</b> {subs_count}\n"
-    
+
     keyboard = [
         [InlineKeyboardButton("🔄 Обновить аналитику", callback_data='admin_analytics')],
         [InlineKeyboardButton("👥 Статистика пользователей", callback_data='admin_users')],
@@ -2040,13 +2040,13 @@ async def start(update: Update, context: CallbackContext):
         user.last_name,
         user.language_code
     )
-    
+
     if await check_maintenance_mode(update, context):
         return
-    
+
     if await check_new_news_notification(update, context):
         return
-    
+
     keyboard = [
         [
             InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
@@ -2071,8 +2071,31 @@ async def start(update: Update, context: CallbackContext):
         [
             InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
         ]
+    [
+        InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
+        InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
+    ],
+    [
+        InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
+        InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
+    ],
+    [
+        InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
+        InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
+    ],
+    [
+        InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
+        InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
+    ],
+    [
+        InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
+    ],
+    [
+        InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
+    ]
+]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     try:
         await update.message.reply_text(
             '🏫 <b>Школьный бот</b>\nВыберите раздел:',
@@ -2108,11 +2131,11 @@ async def show_current_lesson(query, context):
         context.user_data['current_class'] = class_name
     else:
         class_name = context.user_data.get('current_class', '8а')
-    
+
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
     weekday = now.weekday()
-    
+
     if weekday >= 5:
         day_name = "Суббота" if weekday == 5 else "Воскресенье"
         keyboard = [
@@ -2151,7 +2174,7 @@ async def show_current_lesson(query, context):
         text += f"📅 Сегодня: <b>{day_name}</b>\n"
         text += f"⏰ Следующий урок (<b>{next_num}</b>) начнётся через <b>{minutes} мин</b>\n"
         text += f"🕐 Время урока: {current_info['start_time']}–{current_info['end_time']}\n"
-        
+
         if class_name in SCHEDULE_STRUCTURED and day_name in SCHEDULE_STRUCTURED[class_name]:
             lessons = SCHEDULE_STRUCTURED[class_name][day_name]
             next_lesson = next((l for l in lessons if l[0] == next_num), None)
@@ -2172,7 +2195,7 @@ async def show_current_lesson(query, context):
         text += f"📅 Сегодня: <b>{day_name}</b>\n"
         text += f"⏰ Урок закончится через <b>{time_left} мин</b>\n"
         text += f"🕐 Время урока: {current_info['start_time']}–{current_info['end_time']}\n"
-        
+
         if class_name in SCHEDULE_STRUCTURED and day_name in SCHEDULE_STRUCTURED[class_name]:
             lessons = SCHEDULE_STRUCTURED[class_name][day_name]
             current_lesson = next((l for l in lessons if l[0] == lesson_num), None)
@@ -2208,15 +2231,15 @@ async def button_handler(update: Update, context: CallbackContext):
     if not isinstance(context.user_data, dict):
         context.user_data = {}
     user = query.from_user
-    
+
     asyncio.create_task(ensure_user_and_log(
         user.id, user.username, user.first_name, user.last_name, user.language_code,
         f'button_{query.data[:50]}'
     ))
-    
+
     if await check_maintenance_mode(update, context):
         return
-    
+
     try:
         await query.answer()
     except (TimedOut, Exception) as e:
@@ -2471,7 +2494,7 @@ async def button_handler(update: Update, context: CallbackContext):
 async def show_main_menu(query):
     """Показывает главное меню (компактное)."""
     keyboard = [
-     [
+        [
             InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
             InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
         ],
@@ -2494,6 +2517,29 @@ async def show_main_menu(query):
         [
             InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
         ]
+    [
+        InlineKeyboardButton("⏰ Сейчас", callback_data='menu_now'),
+        InlineKeyboardButton("📚 Классы", callback_data='menu_schedule')
+    ],
+    [
+        InlineKeyboardButton("👨‍🏫 Учителя", callback_data='menu_teacher'),
+        InlineKeyboardButton("🔍 Поиск", callback_data='menu_search_teacher')
+    ],
+    [
+        InlineKeyboardButton("🕐 Звонки", callback_data='menu_bells'),
+        InlineKeyboardButton("🔄 Замены", callback_data='menu_substitutions')
+    ],
+    [
+        InlineKeyboardButton("📣 Новости", callback_data='menu_news'),
+        InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
+    ],
+    [
+        InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
+    ],
+    [
+        InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
+    ]
+]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(
         query,
@@ -2610,7 +2656,7 @@ async def format_teacher_schedule(teacher_name, schedule):
 
     text = f"<b>👨‍🏫 {teacher_name}</b>\n"
     text += "=" * 30 + "\n"
-    
+
     if schedule:
         total_lessons = sum(len(lessons) for lessons in schedule.values())
         classes = set()
@@ -2625,37 +2671,37 @@ async def format_teacher_schedule(teacher_name, schedule):
         text += f"• Предметы: <b>{', '.join(sorted(subjects))}</b>\n"
     else:
         text += "<i>❌ Нет уроков в расписании</i>\n"
-    
+
     total_subs = len(all_subs)
     if total_subs > 0:
         text += f"• <b>⚠️ Замен: {total_subs}</b>\n"
-    
+
     text += "\n" + "=" * 30 + "\n"
     text += "<b>📅 ОСНОВНОЕ РАСПИСАНИЕ:</b>\n"
-    
+
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
     has_main_schedule = False
-    
+
     for day in days_order:
         if day in schedule and schedule[day]:
             has_main_schedule = True
             text += f"<b>{day.upper()}</b>\n"
             text += "─" * 18 + "\n"
             sorted_lessons = sorted(schedule[day], key=lambda x: x['number'])
-            
+
             for lesson in sorted_lessons:
                 if 1 <= lesson['number'] <= 7:
                     emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson['number'] - 1]
                     lesson_marker = emoji
                 else:
                     lesson_marker = f"{lesson['number']}. "
-                
+
                 col1 = f"{lesson_marker} <b>{lesson['time']}</b> "
                 col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']} "
                 teachers = lesson['full_teacher'].split('/')
                 if len(teachers) > 1:
                     col2 += " <i>(с совм.)</i> "
-                
+
                 if day == current_day_name and lesson['number'] == current_lesson_number:
                     text += f"🟢 {col1}   {col2}\n"
                 else:
@@ -2766,18 +2812,18 @@ async def show_daily_schedule(query, context):
             days_ahead += 7
         target_date = today + timedelta(days=days_ahead)
         target_date_str = target_date.strftime('%Y-%m-%d')
-    
+
     if class_name and class_name in SCHEDULE_STRUCTURED and day in SCHEDULE_STRUCTURED[class_name]:
         structured_lessons = SCHEDULE_STRUCTURED[class_name][day]
         schedule_text = await format_schedule_day(class_name, day, structured_lessons, target_date_str)
     else:
         schedule_text = f"Расписание для класса {class_name} на {day} не найдено."
-    
+
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
-    
+
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
         [InlineKeyboardButton("📅 Расписание на всю неделю", callback_data=f'weekly_{class_name}')],
@@ -2796,7 +2842,7 @@ async def show_weekly_schedule(query, context):
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
-    
+
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
         [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
@@ -2829,16 +2875,16 @@ async def show_substitutions_for_date(query):
         target_date = today
     else:
         target_date = today + timedelta(days=1)
-    
+
     subs = await asyncio.to_thread(db.get_substitutions_for_date, target_date.strftime('%Y-%m-%d'))
-    
+
     if subs:
         text = f"<b>🔄 Замены на {target_date.strftime('%d.%m.%Y')} ({DAYS_OF_WEEK[target_date.weekday()] if target_date.weekday() < 5 else 'Выходной'}):</b>\n"
         for sub in subs:
             text += format_substitution(sub) + "\n"
     else:
         text = f"<b>На {target_date.strftime('%d.%m.%Y')} ({DAYS_OF_WEEK[target_date.weekday()] if target_date.weekday() < 5 else 'Выходной'}) замен нет.</b>"
-    
+
     keyboard = [
         [InlineKeyboardButton("↩️ Назад к заменам", callback_data='menu_substitutions')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -2858,7 +2904,7 @@ async def show_all_substitutions(query):
             text += format_substitution(sub) + "\n"
     else:
         text = "Замены отсутствуют."
-    
+
     keyboard = [
         [InlineKeyboardButton("↩️ Назад к заменам", callback_data='menu_substitutions')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -2889,10 +2935,10 @@ async def show_admin_panel(query):
     if query.from_user.id not in ADMIN_IDS:
         await safe_edit_message(query, "⛔ Доступ запрещен!")
         return
-    
+
     maintenance = await asyncio.to_thread(db.get_maintenance_status)
     keyboard = []
-    
+
     if maintenance['enabled']:
         status_text = f"✅ Техрежим ВКЛЮЧЕН"
         if maintenance['until']:
@@ -2900,7 +2946,7 @@ async def show_admin_panel(query):
         keyboard.append([InlineKeyboardButton(f"🛑 {status_text}", callback_data='admin_disable_maintenance')])
     else:
         keyboard.append([InlineKeyboardButton("🔧 Включить техрежим", callback_data='admin_enable_maintenance')])
-    
+
     keyboard += [
         [InlineKeyboardButton("📣 Опубликовать новость", callback_data='admin_publish_news')],
         [InlineKeyboardButton("🗑 Управление новостями", callback_data='admin_manage_news')],
@@ -2912,7 +2958,7 @@ async def show_admin_panel(query):
         [InlineKeyboardButton("🧹 Очистка замен", callback_data='admin_clear_subs')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
-    
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(
         query,
@@ -2923,7 +2969,7 @@ async def show_admin_panel(query):
 async def show_admin_substitutions(query):
     if query.from_user.id not in ADMIN_IDS:
         return
-    
+
     subs = await asyncio.to_thread(db.get_all_substitutions)
     if subs:
         text = "📋 <b>ВСЕ ЗАМЕНЫ В БАЗЕ:</b>\n"
@@ -2932,7 +2978,7 @@ async def show_admin_substitutions(query):
             text += format_substitution(sub) + "\n"
     else:
         text = "В базе данных замен нет."
-    
+
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -2952,10 +2998,10 @@ async def request_substitution_deletion(query):
 async def confirm_clear_substitutions(query):
     if query.from_user.id not in ADMIN_IDS:
         return
-    
+
     subs = await asyncio.to_thread(db.get_all_substitutions)
     sub_count = len(subs) if subs else 0
-    
+
     keyboard = [
         [
             InlineKeyboardButton("✅ Да, удалить все", callback_data='admin_clear_confirm'),
@@ -2978,10 +3024,10 @@ async def confirm_clear_substitutions(query):
 async def clear_all_substitutions(query):
     if query.from_user.id not in ADMIN_IDS:
         return
-    
+
     subs_before = await asyncio.to_thread(db.get_all_substitutions)
     sub_count = len(subs_before) if subs_before else 0
-    
+
     try:
         await asyncio.to_thread(db.clear_all_substitutions)
         keyboard = [
@@ -3016,7 +3062,7 @@ async def show_searched_teacher_schedule(query, context):
     try:
         teacher_index = int(query.data.split('_')[2])
         found_teachers = context.user_data.get('found_teachers', [])
-        
+
         if not found_teachers or teacher_index >= len(found_teachers):
             keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -3026,16 +3072,16 @@ async def show_searched_teacher_schedule(query, context):
                 reply_markup=reply_markup
             )
             return
-        
+
         teacher_name = found_teachers[teacher_index]
         teacher_schedule = get_cached_teacher_schedule(teacher_name)
         schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
-        
+
         user_id = query.from_user.id
         is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
         fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
         fav_callback = f"toggle_favorite_teacher_{ALL_TEACHERS.index(teacher_name)}"
-        
+
         keyboard = [
             [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
             [InlineKeyboardButton("🔍 Новый поиск", callback_data='menu_search_teacher')],
@@ -3059,13 +3105,13 @@ async def show_searched_teacher_schedule(query, context):
 async def show_users_stats(query, context):
     if query.from_user.id not in ADMIN_IDS:
         return
-    
+
     user_count = await asyncio.to_thread(db.get_user_count)
     users = await asyncio.to_thread(db.get_all_users)
-    
+
     text = f"👥 <b>СТАТИСТИКА ПОЛЬЗОВАТЕЛЕЙ</b>\n"
     text += f"• Всего пользователей: {user_count}\n\n"
-    
+
     if users:
         text += "Последние 10 пользователей:\n"
         for user in users[-10:]:
@@ -3076,7 +3122,7 @@ async def show_users_stats(query, context):
             text += f"• ID: `{user_id}` — {name}\n"
     else:
         text += "Нет зарегистрированных пользователей"
-    
+
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -3087,10 +3133,10 @@ async def show_users_stats(query, context):
 async def start_technical_broadcast(query, context):
     if query.from_user.id not in ADMIN_IDS:
         return
-    
+
     context.user_data['broadcasting'] = True
     context.user_data['broadcast_step'] = 'time'
-    
+
     keyboard = [
         [InlineKeyboardButton("❌ Отмена", callback_data='cancel_broadcast')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -3109,7 +3155,7 @@ async def start_technical_broadcast(query, context):
 async def handle_broadcast_time(update: Update, context: CallbackContext):
     if not context.user_data.get('broadcasting') or context.user_data.get('broadcast_step') != 'time':
         return
-    
+
     time_input = update.message.text.strip()
     if not re.match(r'^\d{2}\.\d{2} \d{2}:\d{2}$', time_input):
         await update.message.reply_text(
@@ -3119,10 +3165,10 @@ async def handle_broadcast_time(update: Update, context: CallbackContext):
             parse_mode='HTML'
         )
         return
-    
+
     context.user_data['broadcast_time'] = time_input
     context.user_data['broadcast_step'] = 'confirm'
-    
+
     broadcast_message = (
         f"⚠️ ВНИМАНИЕ! ТЕХНИЧЕСКИЕ РАБОТЫ ⚠️\n"
         f"Сервис временно недоступен в связи с техническими работами.\n"
@@ -3130,7 +3176,7 @@ async def handle_broadcast_time(update: Update, context: CallbackContext):
         f"Приносим извинения за временные неудобства.\n"
         f"Бот возобновит работу сразу после окончания работ."
     )
-    
+
     keyboard = [
         [InlineKeyboardButton("✅ Отправить всем", callback_data='confirm_broadcast')],
         [InlineKeyboardButton("✏️ Изменить время", callback_data='edit_broadcast_time')],
@@ -3147,13 +3193,13 @@ async def handle_broadcast_time(update: Update, context: CallbackContext):
 async def confirm_broadcast(query, context):
     if query.from_user.id not in ADMIN_IDS:
         return
-    
+
     broadcast_time = context.user_data.get('broadcast_time')
     if not broadcast_time:
         await safe_edit_message(query, "❌ Ошибка: время не указано.")
         context.user_data.clear()
         return
-    
+
     broadcast_message = (
         f"⚠️ ВНИМАНИЕ! ТЕХНИЧЕСКИЕ РАБОТЫ ⚠️\n"
         f"Сервис временно недоступен в связи с техническими работами.\n"
@@ -3161,12 +3207,12 @@ async def confirm_broadcast(query, context):
         f"Приносим извинения за временные неудобства.\n"
         f"Бот возобновит работу сразу после окончания работ."
     )
-    
+
     users = await asyncio.to_thread(db.get_all_users)
     total = len(users)
     sent = 0
     failed = 0
-    
+
     status_message = await query.edit_message_text(
         f"📤 <b>НАЧАТА РАССЫЛКА</b>\n\n"
         f"Всего пользователей: {total}\n"
@@ -3175,7 +3221,7 @@ async def confirm_broadcast(query, context):
         f"Статус: ⏳ Начинаем...",
         parse_mode='HTML'
     )
-    
+
     for i, (user_id, username, first_name, last_name) in enumerate(users):
         try:
             await context.bot.send_message(chat_id=user_id, text=broadcast_message, parse_mode='HTML')
@@ -3186,7 +3232,7 @@ async def confirm_broadcast(query, context):
         except Exception as e:
             failed += 1
             logger.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
-        
+
         if i % 5 == 0 or i == total - 1:
             try:
                 await status_message.edit_text(
@@ -3199,7 +3245,7 @@ async def confirm_broadcast(query, context):
                 )
             except Exception as e:
                 logger.warning(f"Не удалось обновить статус рассылки: {e}")
-    
+
     keyboard = [
         [InlineKeyboardButton("↩️ В админ-панель", callback_data='admin_panel')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
@@ -3251,7 +3297,7 @@ async def cancel_broadcast(query, context):
 async def handle_message(update: Update, context: CallbackContext):
     if not update.message or not update.message.text:
         return
-    
+
     user = update.effective_user
     await asyncio.to_thread(
         db.update_user_and_log,
@@ -3263,6 +3309,12 @@ async def handle_message(update: Update, context: CallbackContext):
         user.last_name,
         user.language_code
     )
+
+    if await check_maintenance_mode(update, context):
+        return
+
+    if not isinstance(context.user_data, dict):
+        context.user_data = {}
     
     # Обработка ИИ-помощника
     if context.user_data.get('awaiting_ai'):
@@ -3282,25 +3334,19 @@ async def handle_message(update: Update, context: CallbackContext):
         context.user_data['awaiting_ai'] = False
         return
     
-    
-    if await check_maintenance_mode(update, context):
-        return
-    
-    if not isinstance(context.user_data, dict):
-        context.user_data = {}
       
     if context.user_data.get('publishing_news') and update.effective_user.id in ADMIN_IDS:
         await handle_news_input(update, context)
         return
-    
-    if context.user_data.get('editing_news') and update.effective_user.id in ADMIN_IDS:
+
+   if context.user_data.get('editing_news') and update.effective_user.id in ADMIN_IDS:
         await handle_edit_news_input(update, context)
         return
-    
+
     if context.user_data.get('broadcasting') and context.user_data.get('broadcast_step') == 'time':
         await handle_broadcast_time(update, context)
         return
-    
+
     if context.user_data.get('searching_teacher'):
         search_query = update.message.text.strip()
         if not search_query:
@@ -3309,13 +3355,13 @@ async def handle_message(update: Update, context: CallbackContext):
                 parse_mode='HTML'
             )
             return
-        
+
         all_teachers = ALL_TEACHERS
         found_teachers = []
         for teacher in all_teachers:
             if search_query.lower() in teacher.lower():
                 found_teachers.append(teacher)
-        
+
         if found_teachers:
             text = f"<b>🔍 Результаты поиска по запросу '{search_query}':</b>\n"
             keyboard = []
@@ -3324,7 +3370,7 @@ async def handle_message(update: Update, context: CallbackContext):
                 if len(teacher) > 20:
                     button_text = teacher[:18] + "..."
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=f'teacher_search_{i}')])
-            
+
             context.user_data['found_teachers'] = found_teachers
             keyboard.append([InlineKeyboardButton("🔍 Новый поиск", callback_data='menu_search_teacher')])
             keyboard.append([InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')])
@@ -3354,11 +3400,11 @@ async def handle_message(update: Update, context: CallbackContext):
 async def handle_teacher_mentions(update: Update, context: CallbackContext):
     if not update.message or not update.message.text:
         return
-    
+
     message_text = update.message.text
     user = update.message.from_user
     found_mentions = []
-    
+
     for teacher_name, teacher_id in TEACHER_IDS.items():
         if not teacher_id or teacher_id == 0:
             continue
@@ -3366,10 +3412,10 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
         pattern = r'\b' + re.escape(surname) + r'\b'
         if re.search(pattern, message_text, re.IGNORECASE):
             found_mentions.append((teacher_name, teacher_id))
-    
+
     if not found_mentions:
         return
-    
+
     for teacher_name, teacher_id in found_mentions:
         try:
             notification = (
@@ -3381,7 +3427,7 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
                 f"Чтобы ответить, нажмите «Ответить» на это сообщение."
             )
             await context.bot.send_message(chat_id=teacher_id, text=notification, parse_mode='HTML')
-            
+
             keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(
@@ -3418,7 +3464,7 @@ async def test_notification(update: Update, context: CallbackContext):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("❌ Только администраторы могут тестировать уведомления.", parse_mode='HTML')
         return
-    
+
     if not context.args:
         teachers_list = "\n".join([f"• {teacher}" for teacher in TEACHER_IDS.keys()])
         await update.message.reply_text(
@@ -3427,23 +3473,23 @@ async def test_notification(update: Update, context: CallbackContext):
             parse_mode='HTML'
         )
         return
-    
+
     teacher_name = context.args[0]
     found_teacher = None
     for teacher in TEACHER_IDS.keys():
         if teacher_name.lower() in teacher.lower():
             found_teacher = teacher
             break
-    
+
     if not found_teacher:
         await update.message.reply_text(f"❌ Учитель '{teacher_name}' не найден в списке.", parse_mode='HTML')
         return
-    
+
     teacher_id = TEACHER_IDS[found_teacher]
     if not teacher_id or teacher_id == 0:
         await update.message.reply_text(f"❌ Для учителя '{found_teacher}' не установлен ID.", parse_mode='HTML')
         return
-    
+
     try:
         test_message = (
             f"🔔 ТЕСТОВОЕ УВЕДОМЛЕНИЕ\n"
@@ -3487,13 +3533,13 @@ async def teachers_list(update: Update, context: CallbackContext):
             parse_mode='HTML'
         )
         return
-    
+
     teachers_text = "👨‍🏫 <b>СПИСОК УЧИТЕЛЕЙ:</b>\n"
     for i, teacher in enumerate(all_teachers, 1):
         teachers_text += f"{i}. {teacher}\n"
         if i % 10 == 0:
             teachers_text += "\n"
-    
+
     keyboard = [
         [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
         [InlineKeyboardButton("📋 Расписание учителей", callback_data='menu_teacher')],
@@ -3515,7 +3561,7 @@ def main():
         logger.error(f"Ошибка инициализации БД: {e}")
         print(f"❌ Ошибка БД: {e}")
         exit(1)
-    
+
     application = (
         Application.builder()
         .token(TOKEN)
@@ -3525,7 +3571,7 @@ def main():
         .pool_timeout(REQUEST_TIMEOUT)
         .build()
     )
-    
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("test", test_notification))
     application.add_handler(CommandHandler("teachers", teachers_list))
@@ -3536,7 +3582,7 @@ def main():
             handle_message
         )
     )
-    
+
     print("🤖 Бот запущен...")
     print(f"📊 Всего учителей в расписании: {len(ALL_TEACHERS)}")
     print(f"👑 Администраторы: {ADMIN_IDS}")
@@ -3546,7 +3592,7 @@ def main():
     print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания, ИИ-помощник")
     if not OPENAI_API_KEY:
         print("⚠️ ИИ-помощник отключён (не задан OPENAI_API_KEY)")
-    
+
     try:
         application.run_polling(
             allowed_updates=Update.ALL_TYPES,
