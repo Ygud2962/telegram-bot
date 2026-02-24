@@ -1066,8 +1066,7 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
     except Exception as e:
         logger.error(f"Ошибка GPT: {e}")
         return f"❌ Произошла ошибка при обращении к GPT: {str(e)[:100]}"
-
-# ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
+        # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
     user_id = query.from_user.id
     favorites = await asyncio.to_thread(db.get_user_favorites, user_id)
@@ -2026,8 +2025,7 @@ async def check_new_news_notification(update: Update, context: CallbackContext) 
 
     context.user_data['news_notification_shown'] = True
     return True
-
-# ================== КОМАНДА /start ==================
+    # ================== КОМАНДА /start ==================
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     await asyncio.to_thread(
@@ -2355,7 +2353,6 @@ async def button_handler(update: Update, context: CallbackContext):
             await safe_edit_message(
                 query,
                 "❌ ИИ-помощник не настроен. Обратитесь к администратору.",
-                "❌ ИИ-помощник находится в разработке. Ждите следующих обновлений.",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
                 ]])
