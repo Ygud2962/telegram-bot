@@ -3339,7 +3339,7 @@ async def handle_message(update: Update, context: CallbackContext):
         await handle_news_input(update, context)
         return
 
-   if context.user_data.get('editing_news') and update.effective_user.id in ADMIN_IDS:
+    if context.user_data.get('editing_news') and update.effective_user.id in ADMIN_IDS:
         await handle_edit_news_input(update, context)
         return
 
