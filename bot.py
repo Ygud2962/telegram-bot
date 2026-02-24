@@ -23,14 +23,14 @@ if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
 
-# ================== НАСТРОЙКА ИИ (DeepSeek) ==================
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
-if DEEPSEEK_API_KEY:
+# ================== НАСТРОЙКА ИИ (OPENROUTER) ==================
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+if OPENROUTER_API_KEY:
     GPT_AVAILABLE = True
-    logger.info("✅ ИИ-помощник активирован (DeepSeek)")
+    logger.info("✅ ИИ-помощник активирован (OPENROUTER)")
 else:
     GPT_AVAILABLE = False
-    logger.warning("⚠️ DEEPSEEK_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
+    logger.warning("⚠️ OPENROUTER_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
 
 print("Бот запускается с токеном из переменных окружения")
 
@@ -1033,17 +1033,19 @@ def convert_utc_to_minsk(utc_str):
         # ================== ИИ-ПОМОЩНИК (OpenRouter) ==================
 # ================== ИИ-ПОМОЩНИК (DeepSeek) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
-    """Отправляет вопрос в DeepSeek API и возвращает ответ."""
-    if not DEEPSEEK_API_KEY:
-        return "❌ ИИ-помощник не настроен. Администратору нужно установить переменную DEEPSEEK_API_KEY."
+    """Отправляет вопрос в OpenRouter (бесплатные модели) и возвращает ответ."""
+    if not OPENROUTER_API_KEY:
+        return "❌ ИИ-помощник не настроен. Администратору нужно установить переменную OPENROUTER_API_KEY."
 
-    url = "https://api.deepseek.com/v1/chat/completions"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://t.me/school_hoiniki_sch3_bot",  # замените на ссылку вашего бота (можно оставить так)
+        "X-Title": "School Bot"
     }
     data = {
-        "model": "deepseek-chat",  # базовая бесплатная модель DeepSeek
+        "model": "google/gemini-2.0-flash-exp:free",  # бесплатная модель
         "messages": [
             {"role": "system", "content": "Ты — полезный помощник для школьников. Отвечай кратко, понятно, с примерами если нужно."},
             {"role": "user", "content": question}
@@ -1061,7 +1063,7 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
                 answer = answer[:4000] + "...\n\n<em>Ответ обрезан из-за длины</em>"
             return answer
         except Exception as e:
-            logger.error(f"Ошибка DeepSeek: {e}")
+            logger.error(f"Ошибка OpenRouter: {e}")
             return f"❌ Ошибка при обращении к ИИ: {str(e)[:100]}"
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
@@ -3541,8 +3543,8 @@ def main():
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
     print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания, ИИ-помощник")
-    if not DEEPSEEK_API_KEY:
-        print("⚠️ ИИ-помощник отключён (не задан DEEPSEEK_API_KEY)")
+    if not OPENROUTER_API_KEY:
+        print("⚠️ ИИ-помощник отключён (не задан OPENROUTER_API_KEY)")
 
     try:
         application.run_polling(
