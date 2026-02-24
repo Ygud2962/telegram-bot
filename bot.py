@@ -23,14 +23,14 @@ if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
 
-# ================== НАСТРОЙКА ИИ (OpenRouter) ==================
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
-if OPENROUTER_API_KEY:
+# ================== НАСТРОЙКА ИИ (DeepSeek) ==================
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
+if DEEPSEEK_API_KEY:
     GPT_AVAILABLE = True
-    logger.info("✅ ИИ-помощник активирован (OpenRouter)")
+    logger.info("✅ ИИ-помощник активирован (DeepSeek)")
 else:
     GPT_AVAILABLE = False
-    logger.warning("⚠️ OPENROUTER_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
+    logger.warning("⚠️ DEEPSEEK_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
 
 print("Бот запускается с токеном из переменных окружения")
 
