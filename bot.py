@@ -25,14 +25,13 @@ if not TOKEN:
     exit(1)
 
 # ================== НАСТРОЙКА GPT ==================
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-if OPENAI_API_KEY:
-    openai.api_key = OPENAI_API_KEY
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+if OPENROUTER_API_KEY:
     GPT_AVAILABLE = True
-    logger.info("✅ GPT-помощник активирован (OpenAI)")
+    logger.info("✅ ИИ-помощник активирован (OpenRouter)")
 else:
     GPT_AVAILABLE = False
-    logger.warning("⚠️ OPENAI_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
+    logger.warning("⚠️ OPENROUTER_API_KEY не установлен. Кнопка ИИ будет показывать сообщение о недоступности.")
 
 print("Бот запускается с токеном из переменных окружения")
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
