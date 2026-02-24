@@ -1031,19 +1031,19 @@ def convert_utc_to_minsk(utc_str):
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
         # ================== ИИ-ПОМОЩНИК (OpenRouter) ==================
+# ================== ИИ-ПОМОЩНИК (DeepSeek) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
-    if not OPENROUTER_API_KEY:
-        return "❌ ИИ-помощник не настроен. Администратору нужно установить переменную OPENROUTER_API_KEY."
+    """Отправляет вопрос в DeepSeek API и возвращает ответ."""
+    if not DEEPSEEK_API_KEY:
+        return "❌ ИИ-помощник не настроен. Администратору нужно установить переменную DEEPSEEK_API_KEY."
 
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://t.me/school_hoiniki_sch3_bot",
-        "X-Title": "School Bot"
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
     }
     data = {
-        "model": "google/gemini-2.0-flash-exp:free",  # заменили модель
+        "model": "deepseek-chat",  # базовая бесплатная модель DeepSeek
         "messages": [
             {"role": "system", "content": "Ты — полезный помощник для школьников. Отвечай кратко, понятно, с примерами если нужно."},
             {"role": "user", "content": question}
@@ -1061,7 +1061,7 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
                 answer = answer[:4000] + "...\n\n<em>Ответ обрезан из-за длины</em>"
             return answer
         except Exception as e:
-            logger.error(f"Ошибка OpenRouter: {e}")
+            logger.error(f"Ошибка DeepSeek: {e}")
             return f"❌ Ошибка при обращении к ИИ: {str(e)[:100]}"
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
