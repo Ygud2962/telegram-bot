@@ -932,7 +932,7 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             lesson_str = f"{emoji} "
         else:
             lesson_str = f"{lesson_num}. "
-        main_line = f"{lesson_str} {lesson_time} {subject} | {teacher}"
+        main_line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
         result_lines.append(main_line)
         if lesson_num in sub_dict:
             sub = sub_dict[lesson_num]
@@ -1168,9 +1168,7 @@ async def show_news_menu(query, context, page=0):
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     offset = page * NEWS_PER_PAGE
-    
     news_list = await asyncio.to_thread(db.get_news_page_asc, offset, NEWS_PER_PAGE)
-    
     total_news = await asyncio.to_thread(db.get_total_news_count)
     total_pages = (total_news + NEWS_PER_PAGE - 1) // NEWS_PER_PAGE
 
@@ -2680,7 +2678,8 @@ async def format_teacher_schedule(teacher_name, schedule):
                 else:
                     lesson_marker = f"{lesson['number']}. "
 
-                line = f"{lesson_marker} {lesson['time']} {lesson['class'].upper()} {lesson['subject']}"
+                col1 = f"{lesson_marker} <b>{lesson['time']}</b> "
+                col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']} "
                 teachers = lesson['full_teacher'].split('/')
                 if len(teachers) > 1:
                     col2 += " <i>(с совм.)</i> "
