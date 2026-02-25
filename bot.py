@@ -23,16 +23,15 @@ if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
 
-# ================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
-HF_TOKEN = os.environ.get('HF_TOKEN')
-HF_MODEL = "meta-llama/Llama-3.2-1B-Instruct"  # ✅ Лёгкая и быстрая версия
-# Или для лучшего качества: "meta-llama/Llama-3.2-3B-Instruct"
-if HF_TOKEN:
+# ================== НАСТРОЙКА ИИ (Groq Free) ==================
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
+GROQ_MODEL = "llama-3.1-8b-instant"  # Быстрая и качественная модель
+if GROQ_API_KEY:
     GPT_AVAILABLE = True
-    logger.info(f"✅ ИИ-помощник активирован (Hugging Face: {HF_MODEL})")
+    logger.info(f"✅ ИИ-помощник активирован (Groq: {GROQ_MODEL})")
 else:
     GPT_AVAILABLE = False
-    logger.warning("⚠️ HF_TOKEN не установлен. ИИ будет недоступен.")
+    logger.warning("⚠️ GROQ_API_KEY не установлен. ИИ будет недоступен.")
 
 # ================== НАСТРОЙКИ ==================
 ADMIN_IDS = [516406248]
@@ -1030,79 +1029,63 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
-     # ================== ИИ-ПОМОЩНИК (Hugging Face + Llama 3.2) ==================
+     # ================== ИИ-ПОМОЩНИК (Groq Free) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
-    """Отправляет вопрос в Hugging Face Inference API с моделью Llama 3.2."""
-    if not HF_TOKEN:
-        return "❌ ИИ-помощник не настроен. Администратору нужно установить HF_TOKEN."
+    """Отправляет вопрос в Groq API (бесплатно, быстро)."""
+    if not GROQ_API_KEY:
+        return "❌ ИИ-помощник не настроен. Администратору нужно установить GROQ_API_KEY."
     
-    url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    
-    # Промпт в формате Llama 3 (Chat Template)
-    prompt = f"""<|start_header_id|>system<|end_header_id|>
-Ты — полезный помощник для школьников белорусской школы.
-Отвечай кратко, понятно, дружелюбно.
-Используй примеры, если это помогает понять тему.
-Не давай готовых ответов на контрольные — объясняй, как решать.
-Если вопрос не по учёбе — вежливо направь к учебным темам.<|eot_id|>
-<|start_header_id|>user<|end_header_id|>
-{question}<|eot_id|>
-<|start_header_id|>assistant<|end_header_id|>"""
-    
-    data = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 500,
-            "temperature": 0.7,
-            "top_p": 0.95,
-            "return_full_text": False,
-            "stop": ["<|eot_id|>", "<|end_header_id|>"]
-        }
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
     }
     
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    data = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Ты — полезный помощник для школьников белорусской школы. Отвечай кратко, понятно, дружелюбно. Используй примеры, если это помогает понять тему. Не давай готовых ответов на контрольные — объясняй, как решать. Если вопрос не по учёбе — вежливо направь к учебным темам."
+            },
+            {
+                "role": "user",
+                "content": question
+            }
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             resp = await client.post(url, json=data, headers=headers)
             
-            # Обработка ошибок HF API
-            if resp.status_code == 503:
-                return "⏳ ИИ загружается. Попробуйте через 20-30 секунд."
-            elif resp.status_code == 429:
+            if resp.status_code == 429:
                 return "⏳ Превышен лимит запросов. Попробуйте через минуту."
             elif resp.status_code == 401:
-                return "❌ Ошибка токена. Проверьте HF_TOKEN."
-            elif resp.status_code == 410:
-                return "❌ Модель временно недоступна. Попробуйте позже."
+                return "❌ Ошибка API-ключа. Проверьте GROQ_API_KEY."
             elif resp.status_code >= 400:
                 return f"❌ Ошибка API: {resp.status_code}. Попробуйте позже."
             
             resp.raise_for_status()
             result = resp.json()
             
-            # Извлекаем ответ
-            if isinstance(result, list) and len(result) > 0:
-                answer = result[0].get('generated_text', '').strip()
-                
-                # Очищаем от служебных токенов Llama 3
-                for token in ["<|eot_id|>", "<|end_header_id|>", "<|start_header_id|>"]:
-                    answer = answer.replace(token, "")
-                answer = answer.replace("assistant", "").strip()
-                
-                if not answer:
-                    return "❌ ИИ вернул пустой ответ. Попробуйте перефразировать вопрос."
-                
-                if len(answer) > 4000:
-                    answer = answer[:4000] + "\n\n<em>Ответ обрезан</em>"
-                return answer
-            else:
-                return "❌ Не удалось распознать ответ ИИ."
-                
+            answer = result['choices'][0]['message']['content'].strip()
+            
+            if not answer:
+                return "❌ ИИ вернул пустой ответ. Попробуйте перефразировать вопрос."
+            
+            if len(answer) > 4000:
+                answer = answer[:4000] + "\n\n<em>Ответ обрезан</em>"
+            
+            return answer
+            
         except httpx.TimeoutException:
-            logger.error("HF API: таймаут")
+            logger.error("Groq API: таймаут")
             return "⏳ Превышено время ожидания. Попробуйте позже."
         except Exception as e:
-            logger.error(f"Ошибка HF: {e}")
+            logger.error(f"Ошибка Groq: {e}")
             return f"❌ Ошибка ИИ: {str(e)[:100]}"
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
@@ -3586,10 +3569,10 @@ def main():
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
     print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания, ИИ-помощник")
-    if not HF_TOKEN:
-        print("⚠️ ИИ-помощник отключён (не задан HF_TOKEN)")
-    else:
-        print("✅ ИИ-помощник активирован (Hugging Face)")
+    if not GROQ_API_KEY:
+    print("⚠️ ИИ-помощник отключён (не задан GROQ_API_KEY)")
+else:
+    print(f"✅ ИИ-помощник активирован (Groq: {GROQ_MODEL})")
 
     try:
         application.run_polling(
