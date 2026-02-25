@@ -903,8 +903,10 @@ def get_cached_teacher_schedule(teacher_name):
 # ================== ОСТАЛЬНЫЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 async def format_schedule_day(class_name, day, structured_lessons, target_date=None):
     if not structured_lessons:
-        return "На этот день расписания нет."
+        return "На этот день расписания нет.", None
+        
     structured_lessons.sort(key=lambda x: x[0])
+    
     substitutions = []
     if target_date and target_date != 'None' and target_date != 'null' and target_date is not None:
         substitutions = await asyncio.to_thread(
@@ -912,6 +914,7 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             class_name,
             target_date
         )
+    
     sub_dict = {}
     for sub in substitutions:
         lesson_num = sub[3]
@@ -921,47 +924,88 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             'old_teacher': sub[6],
             'new_teacher': sub[7]
         }
+    
     result_lines = []
+    keyboard = []
+    
     header = f"📅 <b>{day.upper()} - {class_name.upper()}</b>"
     result_lines.append(header)
     result_lines.append("─" * 18)
+    
     for lesson_num, subject, teacher in structured_lessons:
         lesson_time = get_lesson_time(lesson_num)
+        
         if 1 <= lesson_num <= 7:
             emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
             lesson_str = f"{emoji} "
         else:
             lesson_str = f"{lesson_num}. "
-        main_line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
-        result_lines.append(main_line)
+        
+        # Создаём неактивные кнопки для предмета и учителя
+        subject_button = InlineKeyboardButton(
+            text=subject,
+            callback_data='noop_lesson'
+        )
+        teacher_button = InlineKeyboardButton(
+            text=teacher,
+            callback_data='noop_teacher'
+        )
+        
+        # Добавляем время как текст
+        result_lines.append(f"{lesson_str} <b>{lesson_time}</b>")
+        
+        # Добавляем кнопки в одну строку
+        keyboard.append([subject_button, teacher_button])
+        
         if lesson_num in sub_dict:
             sub = sub_dict[lesson_num]
             result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']} ✅ {sub['new_teacher']}")
-    return "\n".join(result_lines)
+    
+    result_lines.append("")
+    text = "\n".join(result_lines)
+    
+    return text, InlineKeyboardMarkup(keyboard)
 
 def format_weekly_schedule(class_name):
     if class_name not in SCHEDULE_STRUCTURED:
-        return f"Расписание для класса {class_name} не найдено."
+        return f"Расписание для класса {class_name} не найдено.", None
+        
     result_lines = []
+    keyboard = []
+    
     result_lines.append(f"📅 <b>РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}</b>")
     result_lines.append("=" * 30)
+    
     days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+    
     for day in days_order:
         if day in SCHEDULE_STRUCTURED[class_name]:
             lessons = SCHEDULE_STRUCTURED[class_name][day]
             if lessons:
                 result_lines.append(f"\n<b>📌 {day.upper()}</b>")
                 result_lines.append("─" * 18)
+                
                 for lesson_num, subject, teacher in lessons:
                     lesson_time = get_lesson_time(lesson_num)
+                    
                     if 1 <= lesson_num <= 7:
                         emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
                         lesson_str = f"{emoji} "
                     else:
                         lesson_str = f"{lesson_num}. "
-                    line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
-                    result_lines.append(line)
-    return "\n".join(result_lines)
+                    
+                    result_lines.append(f"{lesson_str} <b>{lesson_time}</b>")
+                    
+                    # Кнопки для предмета и учителя
+                    keyboard.append([
+                        InlineKeyboardButton(text=subject, callback_data='noop_lesson'),
+                        InlineKeyboardButton(text=teacher, callback_data='noop_teacher')
+                    ])
+    
+    result_lines.append("")
+    text = "\n".join(result_lines)
+    
+    return text, InlineKeyboardMarkup(keyboard)
 
 def format_substitution(sub):
     if len(sub) >= 9:
@@ -2341,9 +2385,9 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data == 'cancel_edit_news':
         await cancel_edit_news(query, context)
         return
-    elif query.data == 'noop':
-        await query.answer()
-        return
+    elif query.data == 'noop_lesson' or query.data == 'noop_teacher':
+    await query.answer()
+    return
     elif query.data == 'admin_publish_news':
         await start_publish_news(query, context)
         return
@@ -2777,14 +2821,6 @@ async def show_day_selection_for_class(query, context):
 async def show_daily_schedule(query, context):
     day = query.data.replace('schedule_', '').capitalize()
     class_name = context.user_data.get('selected_class', '')
-    today = datetime.now().date()
-    day_mapping = {
-        'Понедельник': 0,
-        'Вторник': 1,
-        'Среда': 2,
-        'Четверг': 3,
-        'Пятница': 4
-    }
     target_date_str = None
     if day in day_mapping:
         current_weekday = today.weekday()
@@ -2795,31 +2831,43 @@ async def show_daily_schedule(query, context):
         target_date = today + timedelta(days=days_ahead)
         target_date_str = target_date.strftime('%Y-%m-%d')
 
-    if class_name and class_name in SCHEDULE_STRUCTURED and day in SCHEDULE_STRUCTURED[class_name]:
+     if class_name and class_name in SCHEDULE_STRUCTURED and day in SCHEDULE_STRUCTURED[class_name]:
         structured_lessons = SCHEDULE_STRUCTURED[class_name][day]
-        schedule_text = await format_schedule_day(class_name, day, structured_lessons, target_date_str)
+        schedule_text, schedule_keyboard = await format_schedule_day(
+            class_name, 
+            day, 
+            structured_lessons, 
+            target_date_str
+        )
     else:
         schedule_text = f"Расписание для класса {class_name} на {day} не найдено."
+        schedule_keyboard = None
 
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
 
-    keyboard = [
+     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
         [InlineKeyboardButton("📅 Расписание на всю неделю", callback_data=f'weekly_{class_name}')],
         [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
         [InlineKeyboardButton("↩️ Назад к дням", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
+    
+    # Если есть кнопки расписания, добавляем их
+    if schedule_keyboard:
+        keyboard = schedule_keyboard.inline_keyboard + keyboard
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
 async def show_weekly_schedule(query, context):
     class_name = query.data.replace('weekly_', '')
     context.user_data['selected_class'] = class_name
-    schedule_text = format_weekly_schedule(class_name)
+    
+    schedule_text, schedule_keyboard = format_weekly_schedule(class_name)
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
@@ -2831,6 +2879,11 @@ async def show_weekly_schedule(query, context):
         [InlineKeyboardButton("↩️ Назад к выбору дня", callback_data=f'class_{class_name}')],
         [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
     ]
+    
+    # Если есть кнопки расписания, добавляем их
+    if schedule_keyboard:
+        keyboard = schedule_keyboard.inline_keyboard + keyboard
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
