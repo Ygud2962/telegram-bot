@@ -25,7 +25,7 @@ if not TOKEN:
 
 # ================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
 HF_TOKEN = os.environ.get('HF_TOKEN')
-HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"  # качественная бесплатная модель
+HF_MODEL = "microsoft/Phi-3-mini-4k-instruct"
 if HF_TOKEN:
     GPT_AVAILABLE = True
     logger.info(f"✅ ИИ-помощник активирован (Hugging Face: {HF_MODEL})")
@@ -1029,7 +1029,7 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
-      # ================== ИИ-ПОМОЩНИК (Hugging Face Free) ==================
+     # ================== ИИ-ПОМОЩНИК (Hugging Face Free) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
     """Отправляет вопрос в Hugging Face Inference API (бесплатно)."""
     if not HF_TOKEN:
@@ -1038,23 +1038,25 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
     url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     
-    # Формируем промпт в стиле инструкции для Mistral
-    prompt = f"""<s>[INST] Ты — полезный помощник для школьников белорусской школы.
+    # Промпт адаптирован под Phi-3 / Zephyr формат
+    prompt = f"""<|user|>
+Ты — полезный помощник для школьников белорусской школы.
 Отвечай кратко, понятно, дружелюбно.
 Используй примеры, если это помогает понять тему.
 Не давай готовых ответов на контрольные — объясняй, как решать.
 Если вопрос не по учёбе — вежливо направь к учебным темам.
 
-Вопрос ученика: {question} [/INST]"""
+Вопрос ученика: {question}<|end|>
+<|assistant|>"""
     
     data = {
         "inputs": prompt,
         "parameters": {
-            "max_new_tokens": 500,      # ограничиваем длину ответа
-            "temperature": 0.7,          # баланс креативности/точности
+            "max_new_tokens": 500,
+            "temperature": 0.7,
             "top_p": 0.95,
-            "return_full_text": False,   # возвращать только ответ, не весь промпт
-            "stop": ["</s>", "[/INST]"]  # стоп-токены
+            "return_full_text": False,
+            "stop": ["<|end|>", "<|assistant|>"]
         }
     }
     
@@ -1062,9 +1064,10 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
         try:
             resp = await client.post(url, json=data, headers=headers)
             
-            # Обработка специфичных ошибок HF
-            if resp.status_code == 503:
-                # Модель ещё загружается (cold start)
+            # Обработка ошибок
+            if resp.status_code == 410:
+                return "❌ Модель ИИ временно недоступна. Попробуйте позже."
+            elif resp.status_code == 503:
                 return "⏳ ИИ загружается. Попробуйте через 20-30 секунд."
             elif resp.status_code == 429:
                 return "⏳ Превышен лимит запросов. Попробуйте через минуту."
@@ -1076,19 +1079,19 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
             resp.raise_for_status()
             result = resp.json()
             
-            # Извлекаем ответ (HF возвращает список с одним элементом)
+            # Извлекаем ответ
             if isinstance(result, list) and len(result) > 0:
                 answer = result[0].get('generated_text', '').strip()
-                # Очищаем от возможных артефактов промпта
-                answer = answer.replace('[/INST]', '').replace('</s>', '').strip()
+                # Очищаем от артефактов
+                for token in ["<|end|>", "<|assistant|>", "<|user|>"]:
+                    answer = answer.replace(token, "")
+                answer = answer.strip()
                 
                 if not answer:
                     return "❌ ИИ вернул пустой ответ. Попробуйте перефразировать вопрос."
                 
-                # Обрезаем слишком длинные ответы
                 if len(answer) > 4000:
                     answer = answer[:4000] + "\n\n<em>Ответ обрезан из-за длины</em>"
-                
                 return answer
             else:
                 return "❌ Не удалось распознать ответ ИИ. Попробуйте ещё раз."
