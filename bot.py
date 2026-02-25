@@ -25,7 +25,7 @@ if not TOKEN:
 
 # ================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
 HF_TOKEN = os.environ.get('HF_TOKEN')
-HF_MODEL = "microsoft/Phi-3-mini-4k-instruct"
+HF_MODEL = "microsoft/Phi-3-mini-4k-instruct"  # ✅ Рабочая бесплатная модель
 if HF_TOKEN:
     GPT_AVAILABLE = True
     logger.info(f"✅ ИИ-помощник активирован (Hugging Face: {HF_MODEL})")
@@ -1038,7 +1038,7 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
     url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     
-    # Промпт адаптирован под Phi-3 / Zephyr формат
+    # Промпт для Phi-3 / Zephyr формата
     prompt = f"""<|user|>
 Ты — полезный помощник для школьников белорусской школы.
 Отвечай кратко, понятно, дружелюбно.
@@ -1060,19 +1060,19 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
         }
     }
     
-    async with httpx.AsyncClient(timeout=45.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             resp = await client.post(url, json=data, headers=headers)
             
             # Обработка ошибок
             if resp.status_code == 410:
-                return "❌ Модель ИИ временно недоступна. Попробуйте позже."
+                return "❌ Модель ИИ больше не доступна. Сообщите администратору."
             elif resp.status_code == 503:
                 return "⏳ ИИ загружается. Попробуйте через 20-30 секунд."
             elif resp.status_code == 429:
                 return "⏳ Превышен лимит запросов. Попробуйте через минуту."
             elif resp.status_code == 401:
-                return "❌ Ошибка токена. Администратору нужно проверить HF_TOKEN."
+                return "❌ Ошибка токена. Проверьте HF_TOKEN."
             elif resp.status_code >= 400:
                 return f"❌ Ошибка API: {resp.status_code}. Попробуйте позже."
             
@@ -1091,20 +1091,17 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
                     return "❌ ИИ вернул пустой ответ. Попробуйте перефразировать вопрос."
                 
                 if len(answer) > 4000:
-                    answer = answer[:4000] + "\n\n<em>Ответ обрезан из-за длины</em>"
+                    answer = answer[:4000] + "\n\n<em>Ответ обрезан</em>"
                 return answer
             else:
-                return "❌ Не удалось распознать ответ ИИ. Попробуйте ещё раз."
+                return "❌ Не удалось распознать ответ ИИ."
                 
         except httpx.TimeoutException:
-            logger.error("HF API: таймаут запроса")
+            logger.error("HF API: таймаут")
             return "⏳ Превышено время ожидания. Попробуйте позже."
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HF API error: {e}")
-            return f"❌ Ошибка соединения: {str(e)[:100]}"
         except Exception as e:
-            logger.error(f"Ошибка Hugging Face: {e}")
-            return f"❌ Ошибка при обращении к ИИ: {str(e)[:100]}"
+            logger.error(f"Ошибка HF: {e}")
+            return f"❌ Ошибка ИИ: {str(e)[:100]}"
 
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
