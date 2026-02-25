@@ -23,7 +23,7 @@ if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
 
-================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
+#================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
 HF_TOKEN = os.environ.get('HF_TOKEN')
 HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"  # качественная бесплатная модель
 if HF_TOKEN:
