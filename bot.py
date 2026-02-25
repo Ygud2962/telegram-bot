@@ -1168,7 +1168,7 @@ async def show_news_menu(query, context, page=0):
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     offset = page * NEWS_PER_PAGE
-    news_list = await asyncio.to_thread(db.get_news_page_asc, offset, NEWS_PER_PAGE)
+    news_list = await asyncio.to_thread(db.get_news_page_desc, offset, NEWS_PER_PAGE)
     total_news = await asyncio.to_thread(db.get_total_news_count)
     total_pages = (total_news + NEWS_PER_PAGE - 1) // NEWS_PER_PAGE
 
