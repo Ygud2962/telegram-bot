@@ -2389,6 +2389,7 @@ async def button_handler(update: Update, context: CallbackContext):
             "• Математика, физика, химия\n"
             "• История, литература, языки\n"
             "• Объяснение тем, решение задач\n\n"
+            "❌ <b>Я работаю только с текстовыми сообщениями (фото, видео, голосовые сообщения я не обрабатываю) </b>\n\n"
             "<i>Просто отправьте сообщение в чат — я отвечу!</i>",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
