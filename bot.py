@@ -25,7 +25,8 @@ if not TOKEN:
 
 # ================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
 HF_TOKEN = os.environ.get('HF_TOKEN')
-HF_MODEL = "microsoft/Phi-3-mini-4k-instruct"  # ✅ Рабочая бесплатная модель
+HF_MODEL = "meta-llama/Llama-3.2-1B-Instruct"  # ✅ Лёгкая и быстрая версия
+# Или для лучшего качества: "meta-llama/Llama-3.2-3B-Instruct"
 if HF_TOKEN:
     GPT_AVAILABLE = True
     logger.info(f"✅ ИИ-помощник активирован (Hugging Face: {HF_MODEL})")
@@ -1029,25 +1030,25 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
-     # ================== ИИ-ПОМОЩНИК (Hugging Face Free) ==================
+     # ================== ИИ-ПОМОЩНИК (Hugging Face + Llama 3.2) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
-    """Отправляет вопрос в Hugging Face Inference API (бесплатно)."""
+    """Отправляет вопрос в Hugging Face Inference API с моделью Llama 3.2."""
     if not HF_TOKEN:
         return "❌ ИИ-помощник не настроен. Администратору нужно установить HF_TOKEN."
     
     url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     
-    # Промпт для Phi-3 / Zephyr формата
-    prompt = f"""<|user|>
+    # Промпт в формате Llama 3 (Chat Template)
+    prompt = f"""<|start_header_id|>system<|end_header_id|>
 Ты — полезный помощник для школьников белорусской школы.
 Отвечай кратко, понятно, дружелюбно.
 Используй примеры, если это помогает понять тему.
 Не давай готовых ответов на контрольные — объясняй, как решать.
-Если вопрос не по учёбе — вежливо направь к учебным темам.
-
-Вопрос ученика: {question}<|end|>
-<|assistant|>"""
+Если вопрос не по учёбе — вежливо направь к учебным темам.<|eot_id|>
+<|start_header_id|>user<|end_header_id|>
+{question}<|eot_id|>
+<|start_header_id|>assistant<|end_header_id|>"""
     
     data = {
         "inputs": prompt,
@@ -1056,7 +1057,7 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
             "temperature": 0.7,
             "top_p": 0.95,
             "return_full_text": False,
-            "stop": ["<|end|>", "<|assistant|>"]
+            "stop": ["<|eot_id|>", "<|end_header_id|>"]
         }
     }
     
@@ -1064,15 +1065,15 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
         try:
             resp = await client.post(url, json=data, headers=headers)
             
-            # Обработка ошибок
-            if resp.status_code == 410:
-                return "❌ Модель ИИ больше не доступна. Сообщите администратору."
-            elif resp.status_code == 503:
+            # Обработка ошибок HF API
+            if resp.status_code == 503:
                 return "⏳ ИИ загружается. Попробуйте через 20-30 секунд."
             elif resp.status_code == 429:
                 return "⏳ Превышен лимит запросов. Попробуйте через минуту."
             elif resp.status_code == 401:
                 return "❌ Ошибка токена. Проверьте HF_TOKEN."
+            elif resp.status_code == 410:
+                return "❌ Модель временно недоступна. Попробуйте позже."
             elif resp.status_code >= 400:
                 return f"❌ Ошибка API: {resp.status_code}. Попробуйте позже."
             
@@ -1082,10 +1083,11 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
             # Извлекаем ответ
             if isinstance(result, list) and len(result) > 0:
                 answer = result[0].get('generated_text', '').strip()
-                # Очищаем от артефактов
-                for token in ["<|end|>", "<|assistant|>", "<|user|>"]:
+                
+                # Очищаем от служебных токенов Llama 3
+                for token in ["<|eot_id|>", "<|end_header_id|>", "<|start_header_id|>"]:
                     answer = answer.replace(token, "")
-                answer = answer.strip()
+                answer = answer.replace("assistant", "").strip()
                 
                 if not answer:
                     return "❌ ИИ вернул пустой ответ. Попробуйте перефразировать вопрос."
