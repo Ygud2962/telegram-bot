@@ -932,7 +932,7 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             lesson_str = f"{emoji} "
         else:
             lesson_str = f"{lesson_num}. "
-        main_line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
+        main_line = f"{lesson_str} {lesson_time} {subject} | {teacher}"
         result_lines.append(main_line)
         if lesson_num in sub_dict:
             sub = sub_dict[lesson_num]
@@ -2680,8 +2680,7 @@ async def format_teacher_schedule(teacher_name, schedule):
                 else:
                     lesson_marker = f"{lesson['number']}. "
 
-                col1 = f"{lesson_marker} <b>{lesson['time']}</b> "
-                col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']} "
+                line = f"{lesson_marker} {lesson['time']} {lesson['class'].upper()} {lesson['subject']}"
                 teachers = lesson['full_teacher'].split('/')
                 if len(teachers) > 1:
                     col2 += " <i>(с совм.)</i> "
