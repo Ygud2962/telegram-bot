@@ -2085,11 +2085,11 @@ async def start(update: Update, context: CallbackContext):
             InlineKeyboardButton("🌟 Моё", callback_data='menu_my')
         ],
         [
-            InlineKeyboardButton("🤖 ИИ-помощник(тест)", callback_data='menu_ai'),
+            InlineKeyboardButton("👑 Админка", callback_data='admin_panel'),
             InlineKeyboardButton("🆘 Помощь", callback_data='menu_help')
         ],
         [
-            InlineKeyboardButton("👑 Админка", callback_data='admin_panel')
+            InlineKeyboardButton("🤖 ИИ-помощник(тест)", callback_data='menu_ai')
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
