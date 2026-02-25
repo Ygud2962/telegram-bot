@@ -2386,7 +2386,7 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
     elif query.data == 'menu_ai':
-    if not GPT_AVAILABLE:
+        if not GPT_AVAILABLE:
         await safe_edit_message(
             query,
             "🤖 <b>ИИ-помощник</b>\n\n❌ ИИ временно недоступен.\n"
@@ -2394,8 +2394,8 @@ async def button_handler(update: Update, context: CallbackContext):
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
             ]])
-        )
-        return
+    )
+    return
     
     await safe_edit_message(
         query,
