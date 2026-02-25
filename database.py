@@ -292,17 +292,17 @@ def count_new_news_since(user_id):
         release_connection(conn)
 
 # ==================== ФУНКЦИИ ДЛЯ НОВОСТЕЙ (ПАГИНАЦИЯ, ПРОСМОТРЫ) ====================
-def get_news_page_asc(offset=0, limit=5):
-    """Возвращает страницу новостей в порядке возрастания (старые сверху)."""
+def get_news_page_desc(offset=0, limit=5):
+    """Возвращает страницу новостей в порядке убывания (новые сверху)."""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, title, content, published_at, views_count
-            FROM news
-            ORDER BY published_at ASC
-            OFFSET %s LIMIT %s
+        SELECT id, title, content, published_at, views_count
+        FROM news
+        ORDER BY published_at DESC
+        OFFSET %s LIMIT %s
         ''', (offset, limit))
         return cursor.fetchall()
     except Exception as e:
