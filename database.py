@@ -290,7 +290,7 @@ def count_new_news_since(user_id):
 
 # ================== ФУНКЦИИ ДЛЯ НОВОСТЕЙ (ПАГИНАЦИЯ, ПРОСМОТРЫ) ==================
 def get_news_page_asc(offset=0, limit=5):
-    """Возвращает страницу новостей в порядке возрастания (старые сверху, новые снизу)."""
+    """Возвращает страницу новостей: старые сверху, новые снизу."""
     conn = None
     try:
         conn = get_connection()
@@ -298,7 +298,7 @@ def get_news_page_asc(offset=0, limit=5):
         cursor.execute('''
             SELECT id, title, content, published_at, views_count
             FROM news
-            ORDER BY published_at ASC
+            ORDER BY published_at ASC  # ✅ ASC = старые сначала, новые в конце
             OFFSET %s LIMIT %s
         ''', (offset, limit))
         return cursor.fetchall()
