@@ -2349,26 +2349,17 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
     elif query.data == 'menu_ai':
-        if not GPT_AVAILABLE:
-            await safe_edit_message(
-                query,
-                "❌ ИИ-помощник не настроен. Обратитесь к администратору.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
-                ]])
-            )
-            return
-        context.user_data['awaiting_ai'] = True
-        await safe_edit_message(
-            query,
-            "🤖 <b>ИИ-помощник</b>\n\n"
-            "Напишите ваш вопрос по любым школьным предметам, и я постараюсь на него ответить.\n\n"
-            "<i>Для отмены отправьте /cancel</i>",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Отмена", callback_data='back_to_main')
-            ]])
-        )
-        return
+    await safe_edit_message(
+        query,
+        "🤖 <b>ИИ-помощник</b>\n\n"
+        "⚙️ ИИ-помощник находится в разработке.\n"
+        "Пожалуйста, пользуйтесь другими разделами бота.\n\n"
+        "<i>Следите за обновлениями!</i>",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
+        ]])
+    )
+    return
 
     # Обработка остальных кнопок
     if query.data == 'back_to_main':
