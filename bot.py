@@ -8,7 +8,7 @@ from telegram.error import TimedOut, BadRequest, Forbidden
 import database as db
 import os
 import pytz
-import httpx  # для OpenRouter
+import httpx
 
 # ================== НАСТРОЙКА ЛОГИРОВАНИЯ ==================
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -23,7 +23,7 @@ if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
 
-#================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
+# ================== НАСТРОЙКА ИИ (Hugging Face Free) ==================
 HF_TOKEN = os.environ.get('HF_TOKEN')
 HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"  # качественная бесплатная модель
 if HF_TOKEN:
@@ -76,13 +76,13 @@ TEACHER_IDS = {
 }
 ALL_CLASSES = ['5а', '5б', '5в', '6а', '6б', '6в', '7а', '7б', '7в', '8а', '8б', '9а', '9б', '10а', '10б', '11']
 SUBJECTS = [
-    "Математика ", "Математика(проф.) ", "Русский язык ", "Русский язык(проф.) ",
-    "Белорусский язык ", "Белорусский язык(проф.) ", "Русская литература ",
-    "Белорусская литература ", "Физика ", "Информатика ",
-    "Английский язык ", "Английский язык(проф.) ", "Химия ", "Химия(проф.) ",
-    "Биология ", "Биология(проф.) ", "Обществоведение ", "Обществоведение(проф.) ",
-    "История ", "География ", "Физкультура ", "ОБЖ ", "Трудовое обучение ",
-    "Искусство ", "Астрономия ", "ЧЗС ", "Черчение ", "ДП ", "МП ", "Человек и мир "
+    "Математика", "Математика(проф.)", "Русский язык", "Русский язык(проф.)",
+    "Белорусский язык", "Белорусский язык(проф.)", "Русская литература",
+    "Белорусская литература", "Физика", "Информатика",
+    "Английский язык", "Английский язык(проф.)", "Химия", "Химия(проф.)",
+    "Биология", "Биология(проф.)", "Обществоведение", "Обществоведение(проф.)",
+    "История", "География", "Физкультура", "ОБЖ", "Трудовое обучение",
+    "Искусство", "Астрономия", "ЧЗС", "Черчение", "ДП", "МП", "Человек и мир"
 ]
 DAYS_OF_WEEK = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
 BELLS_SCHEDULE_HTML = """
@@ -3293,7 +3293,6 @@ async def cancel_broadcast(query, context):
 async def handle_message(update: Update, context: CallbackContext):
     if not update.message or not update.message.text:
         return
-
     user = update.effective_user
     await asyncio.to_thread(
         db.update_user_and_log,
@@ -3392,161 +3391,6 @@ async def handle_message(update: Update, context: CallbackContext):
     else:
         await handle_teacher_mentions(update, context)
 
-async def handle_teacher_mentions(update: Update, context: CallbackContext):
-    if not update.message or not update.message.text:
-        return
-
-    message_text = update.message.text
-    user = update.message.from_user
-    found_mentions = []
-
-    for teacher_name, teacher_id in TEACHER_IDS.items():
-        if not teacher_id or teacher_id == 0:
-            continue
-        surname = teacher_name.split()[0]
-        pattern = r'\b' + re.escape(surname) + r'\b'
-        if re.search(pattern, message_text, re.IGNORECASE):
-            found_mentions.append((teacher_name, teacher_id))
-
-    if not found_mentions:
-        return
-
-    for teacher_name, teacher_id in found_mentions:
-        try:
-            notification = (
-                f"🔔 Вас упомянули в школьном боте!\n"
-                f"👤 От: {user.full_name}\n"
-                f"📅 Время: {datetime.now().strftime('%H:%M %d.%m.%Y')}\n"
-                f"💬 Сообщение:\n"
-                f"`{message_text[:300]}`\n"
-                f"Чтобы ответить, нажмите «Ответить» на это сообщение."
-            )
-            await context.bot.send_message(chat_id=teacher_id, text=notification, parse_mode='HTML')
-
-            keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(
-                f"✅ Учитель {teacher_name} получил(а) уведомление о вашем сообщении.",
-                reply_markup=reply_markup,
-                parse_mode='HTML'
-            )
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Ошибка отправки уведомления {teacher_name}: {error_msg}")
-            keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            if "chat not found" in error_msg.lower():
-                await update.message.reply_text(
-                    f"⚠️ Учитель {teacher_name} не начал диалог с ботом. "
-                    f"Попросите его отправить /start боту.",
-                    reply_markup=reply_markup,
-                    parse_mode='HTML'
-                )
-            elif "blocked" in error_msg.lower():
-                await update.message.reply_text(
-                    f"⚠️ Учитель {teacher_name} заблокировал бота.",
-                    reply_markup=reply_markup,
-                    parse_mode='HTML'
-                )
-            else:
-                await update.message.reply_text(
-                    f"⚠️ Не удалось отправить уведомление {teacher_name}: {error_msg[:100]}",
-                    reply_markup=reply_markup,
-                    parse_mode='HTML'
-                )
-
-async def test_notification(update: Update, context: CallbackContext):
-    if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("❌ Только администраторы могут тестировать уведомления.", parse_mode='HTML')
-        return
-
-    if not context.args:
-        teachers_list = "\n".join([f"• {teacher}" for teacher in TEACHER_IDS.keys()])
-        await update.message.reply_text(
-            f"Использование: /test [фамилия учителя]\n"
-            f"Доступные учителя:\n{teachers_list}",
-            parse_mode='HTML'
-        )
-        return
-
-    teacher_name = context.args[0]
-    found_teacher = None
-    for teacher in TEACHER_IDS.keys():
-        if teacher_name.lower() in teacher.lower():
-            found_teacher = teacher
-            break
-
-    if not found_teacher:
-        await update.message.reply_text(f"❌ Учитель '{teacher_name}' не найден в списке.", parse_mode='HTML')
-        return
-
-    teacher_id = TEACHER_IDS[found_teacher]
-    if not teacher_id or teacher_id == 0:
-        await update.message.reply_text(f"❌ Для учителя '{found_teacher}' не установлен ID.", parse_mode='HTML')
-        return
-
-    try:
-        test_message = (
-            f"🔔 ТЕСТОВОЕ УВЕДОМЛЕНИЕ\n"
-            f"👨‍💻 От: Администратор бота\n"
-            f"🕐 Время: {datetime.now().strftime('%H:%M %d.%m.%Y')}\n"
-            f"✅ Система уведомлений работает корректно!\n"
-            f"Это тестовое сообщение для проверки работы бота."
-        )
-        await context.bot.send_message(chat_id=teacher_id, text=test_message, parse_mode='HTML')
-        keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            f"✅ Тестовое уведомление отправлено учителю {found_teacher} (ID: {teacher_id})",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Ошибка тестовой отправки: {error_msg}")
-        keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        if "chat not found" in error_msg.lower():
-            await update.message.reply_text(
-                f"❌ Учитель {found_teacher} не начал диалог с ботом.\n"
-                f"Попросите его отправить команду /start боту.",
-                reply_markup=reply_markup,
-                parse_mode='HTML'
-            )
-        else:
-            await update.message.reply_text(
-                f"❌ Ошибка: {error_msg[:100]}",
-                reply_markup=reply_markup,
-                parse_mode='HTML'
-            )
-
-async def teachers_list(update: Update, context: CallbackContext):
-    all_teachers = ALL_TEACHERS
-    if not all_teachers:
-        await update.message.reply_text(
-            "❌ Список учителей пуст.",
-            parse_mode='HTML'
-        )
-        return
-
-    teachers_text = "👨‍🏫 <b>СПИСОК УЧИТЕЛЕЙ:</b>\n"
-    for i, teacher in enumerate(all_teachers, 1):
-        teachers_text += f"{i}. {teacher}\n"
-        if i % 10 == 0:
-            teachers_text += "\n"
-
-    keyboard = [
-        [InlineKeyboardButton("🔍 Поиск учителя", callback_data='menu_search_teacher')],
-        [InlineKeyboardButton("📋 Расписание учителей", callback_data='menu_teacher')],
-        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        teachers_text,
-        reply_markup=reply_markup,
-        parse_mode='HTML'
-    )
-
 # ================== ГЛАВНАЯ ФУНКЦИЯ ==================
 def main():
     try:
@@ -3585,8 +3429,8 @@ def main():
     print(f"🌍 Часовой пояс: Europe/Minsk (UTC+3)")
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
     print(f"✅ Функции: новости (пагинация, просмотры, редактирование, удаление), избранное, замены, расписания, ИИ-помощник")
-    if not OPENROUTER_API_KEY:
-        print("⚠️ ИИ-помощник отключён (не задан OPENROUTER_API_KEY)")
+    if not HF_TOKEN:
+        print("⚠️ ИИ-помощник отключён (не задан HF_TOKEN)")
 
     try:
         application.run_polling(
