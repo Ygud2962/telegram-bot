@@ -2349,17 +2349,17 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
     elif query.data == 'menu_ai':
-    await safe_edit_message(
-        query,
-        "🤖 <b>ИИ-помощник</b>\n\n"
-        "⚙️ ИИ-помощник находится в разработке.\n"
-        "Пожалуйста, пользуйтесь другими разделами бота.\n\n"
-        "<i>Следите за обновлениями!</i>",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
-        ]])
-    )
-    return
+        await safe_edit_message(
+            query,
+            "🤖 <b>ИИ-помощник</b>\n\n"
+            "⚙️ ИИ-помощник находится в разработке.\n"
+            "Пожалуйста, пользуйтесь другими разделами бота.\n\n"
+            "<i>Следите за обновлениями!</i>",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("◀️ Назад", callback_data='back_to_main')
+            ]])
+        )
+        return
 
     # Обработка остальных кнопок
     if query.data == 'back_to_main':
