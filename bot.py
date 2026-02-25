@@ -75,7 +75,7 @@ TEACHER_IDS = {
     'Хорошко Т.А.': 0
 }
 ALL_CLASSES = ['5а', '5б', '5в', '6а', '6б', '6в', '7а', '7б', '7в', '8а', '8б', '9а', '9б', '10а', '10б', '11']
-DAYS_OF_WEEK = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+DAYS_OF_WEEK = ("Понедельник", "Вторник", "Среда", "Четверг", "Пятница")
 BELLS_SCHEDULE_HTML = """
 🕒 РАСПИСАНИЕ ЗВОНКОВ И ПИТАНИЯ
 ─────────────────────────────────
@@ -967,7 +967,7 @@ def format_weekly_schedule_with_buttons(class_name):
     text_lines.append(f"📅 <b>РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}</b>")
     text_lines.append("=" * 30)
     
-    days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+    days_order = ("Понедельник", "Вторник", "Среда", "Четверг", "Пятница")
     
     for day in days_order:
         if day in SCHEDULE_STRUCTURED[class_name]:
@@ -2766,8 +2766,7 @@ async def show_teacher_schedule(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
-async def format_teacher_schedule_with_buttons(teacher_name, schedule):
-    """Форматирует расписание учителя с inline кнопками."""
+async def format_teacher_schedule(teacher_name, schedule):
     today = datetime.now().date()
     tz_minsk = pytz.timezone('Europe/Minsk')
     now = datetime.now(tz_minsk)
@@ -2775,7 +2774,6 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
     current_day_name = DAYS_OF_WEEK[current_weekday] if current_weekday < 5 else "Пятница"
     current_lesson_info = get_current_lesson_info()
     current_lesson_number = current_lesson_info['number'] if current_lesson_info['status'] == 'lesson' else None
-    
     start_date = today.strftime('%Y-%m-%d')
     end_date = (today + timedelta(days=30)).strftime('%Y-%m-%d')
     
@@ -2791,9 +2789,6 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
         date_str = sub[1]
         subs_by_date.setdefault(date_str, []).append(sub)
     
-    text_lines = []
-    keyboard = []
-    
     text = f"<b>👨‍🏫 {teacher_name}</b>\n"
     text += "=" * 30 + "\n"
     
@@ -2805,7 +2800,6 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
             for lesson in day_lessons:
                 classes.add(lesson['class'])
                 subjects.add(lesson['subject'])
-        
         text += f"<b>📊 Статистика:</b>\n"
         text += f"• Уроков: <b>{total_lessons}</b>\n"
         text += f"• Классы: <b>{', '.join(sorted(classes))}</b>\n"
@@ -2820,7 +2814,8 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
     text += "\n" + "=" * 30 + "\n"
     text += "<b>📅 ОСНОВНОЕ РАСПИСАНИЕ:</b>\n"
     
-    days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+    # ✅ ИСПРАВЛЕНО: кортеж вместо списка
+    days_order = ("Понедельник", "Вторник", "Среда", "Четверг", "Пятница")
     has_main_schedule = False
     
     for day in days_order:
@@ -2836,31 +2831,18 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
                     emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson['number'] - 1]
                     lesson_marker = emoji
                 else:
-                    lesson_marker = f"{lesson['number']}."
+                    lesson_marker = f"{lesson['number']}. "
                 
-                # Создаём inline кнопки
-                time_btn = InlineKeyboardButton(
-                    text=lesson['time'],
-                    callback_data=f't_time_{teacher_name}_{day}_{lesson["number"]}'
-                )
-                class_btn = InlineKeyboardButton(
-                    text=lesson['class'].upper(),
-                    callback_data=f't_class_{teacher_name}_{day}_{lesson["number"]}'
-                )
-                subject_short = lesson['subject'][:15]
-                subject_btn = InlineKeyboardButton(
-                    text=subject_short,
-                    callback_data=f't_subject_{teacher_name}_{day}_{lesson["number"]}'
-                )
-                
-                keyboard.append([time_btn, class_btn, subject_btn])
-                
+                col1 = f"{lesson_marker} <b>{lesson['time']}</b> "
+                col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']} "
                 teachers = lesson['full_teacher'].split('/')
                 if len(teachers) > 1:
-                    text += f"{lesson_marker} <b>{lesson['time']}</b>   <code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']} <i>(с совм.)</i>\n"
+                    col2 += " <i>(с совм.)</i> "
+                
+                if day == current_day_name and lesson['number'] == current_lesson_number:
+                    text += f"🟢 {col1}   {col2}\n"
                 else:
-                    text += f"{lesson_marker} <b>{lesson['time']}</b>   <code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']}\n"
-            
+                    text += f"{col1}   {col2}\n"
             text += "\n"
     
     if not has_main_schedule:
@@ -2880,7 +2862,6 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
                     day_name = DAYS_OF_WEEK[weekday]
                 else:
                     continue
-                
                 text += f"<b>{day_name}</b> <i>({date_obj.strftime('%d.%m')})</i>\n"
                 text += "─" * 18 + "\n"
                 
@@ -2892,7 +2873,7 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
                         emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
                         lesson_marker = emoji
                     else:
-                        lesson_marker = f"{lesson_num}."
+                        lesson_marker = f"{lesson_num}. "
                     
                     if sub[7] == teacher_name:
                         text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> ➡️ {sub[5]}\n"
@@ -2911,9 +2892,9 @@ async def format_teacher_schedule_with_buttons(teacher_name, schedule):
         text += "<i>На ближайшие 30 дней замен нет</i>\n"
     
     text += "\n" + "=" * 30 + "\n"
-    text += "<i>ℹ️ Расписание и замены на 30 дней</i>"
+    text += "<i>ℹ️ 🟢 — текущий урок | Расписание и замены на 30 дней</i>"
     
-    return text, InlineKeyboardMarkup(keyboard) if keyboard else None
+    return text
 
 async def show_bells_schedule(query):
     keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
