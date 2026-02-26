@@ -2366,7 +2366,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_teacher_schedule_by_name(query, context, teacher_name)
         return
     elif query.data == 'noop':
-        await query.answer("ℹ️ Это урок", show_alert=False)
+        await query.answer()  # или с сообщением: await query.answer("ℹ️ Информация", show_alert=False)
         return
 
     # 🔑 ОБРАБОТКА НОВОСТЕЙ
@@ -2841,22 +2841,25 @@ async def show_daily_schedule(query, context):
     lessons = SCHEDULE_STRUCTURED[class_name][day]
     lessons.sort(key=lambda x: x[0])
 
-    # Сохраняем текущий класс и день для возврата
-    context.user_data['current_class'] = class_name
-    context.user_data['current_day'] = day
+    # Формируем текстовую часть (заголовок + строки с номерами уроков и временем)
+    text_lines = [f"📚 <b>{class_name.upper()} – {day}</b>", "─" * 20]
+    keyboard = []  # здесь будут ряды кнопок
 
-    # Формируем кнопки уроков (по 2 в ряд)
-    keyboard = []
-    row = []
     for lesson_num, subject, teacher in lessons:
         lesson_time = get_lesson_time(lesson_num)
-        short_subject = subject[:15] + "…" if len(subject) > 15 else subject
-        button_text = f"{lesson_num}️⃣ {lesson_time} – {short_subject}"
-        row.append(InlineKeyboardButton(button_text, callback_data='noop'))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
+        # Эмодзи для номера урока
+        if 1 <= lesson_num <= 7:
+            emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+        else:
+            emoji = f"{lesson_num}."
+        # Добавляем строку с номером и временем
+        text_lines.append(f"{emoji} {lesson_time}")
+
+        # Создаём ряд из двух неактивных кнопок: предмет и учитель
+        row = [
+            InlineKeyboardButton(f"📖 {subject}", callback_data='noop'),
+            InlineKeyboardButton(f"👤 {teacher}", callback_data='noop')
+        ]
         keyboard.append(row)
 
     # Навигационные кнопки (активные)
@@ -2873,15 +2876,12 @@ async def show_daily_schedule(query, context):
     fav_callback = f"toggle_favorite_class_{class_name}"
     keyboard.append([InlineKeyboardButton(fav_text, callback_data=fav_callback)])
 
-    # В главное меню
+    # Кнопка возврата в главное меню
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
 
+    text = "\n".join(text_lines)
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(
-        query,
-        f"📚 <b>{class_name.upper()} – {day}</b>\n(Кнопки неактивны, просто для просмотра)",
-        reply_markup=reply_markup
-    )
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
     keyboard = [
         [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
