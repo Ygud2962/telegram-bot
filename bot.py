@@ -2582,15 +2582,39 @@ async def show_weekly_schedule(query, context):
     class_name = query.data.replace('weekly_', '')
     context.user_data['selected_class'] = class_name
 
-    # Получаем текстовое расписание на неделю (используем существующую функцию)
-    schedule_text = format_weekly_schedule(class_name)
+    if class_name not in SCHEDULE_STRUCTURED:
+        await query.answer("❌ Расписание для этого класса не найдено")
+        return
 
-    # Кнопки для выбора дня недели (активные)
+    # Формируем текст расписания на неделю
+    lines = []
+    lines.append(f"📅 <b>РАСПИСАНИЕ НА НЕДЕЛЮ - {class_name.upper()}</b>")
+    lines.append("=" * 30)
+
+    days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+    for day in days_order:
+        if day in SCHEDULE_STRUCTURED[class_name]:
+            lessons = SCHEDULE_STRUCTURED[class_name][day]
+            if lessons:
+                lines.append(f"\n<b>📌 {day.upper()}</b>")
+                lines.append("─" * 18)
+                for lesson_num, subject, teacher in lessons:
+                    lesson_time = get_lesson_time(lesson_num)
+                    if 1 <= lesson_num <= 7:
+                        emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                    else:
+                        emoji = f"{lesson_num}. "
+                    line = f"{emoji} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
+                    lines.append(line)
+
+    schedule_text = "\n".join(lines)
+
+    # Кнопки для выбора дня (активные)
     keyboard = []
-    for day in DAYS_OF_WEEK:
+    for day in days_order:
         keyboard.append([InlineKeyboardButton(day, callback_data=f'schedule_{day.lower()}')])
 
-    # Кнопка избранного для класса
+    # Кнопка избранного
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_text = "🗑 Убрать из избранного" if is_fav else "⭐ В избранное"
