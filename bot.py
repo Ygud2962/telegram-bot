@@ -2320,8 +2320,8 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_teacher_schedule_by_name(query, context, teacher_name)
         return
     elif query.data == 'noop':
-    await query.answer("ℹ️ Кнопка неактивна", show_alert=False)
-    return
+        await query.answer("ℹ️ Кнопка неактивна", show_alert=False)
+        return
 
     # 🔑 ОБРАБОТКА НОВОСТЕЙ
     if query.data == 'menu_news':
