@@ -2841,26 +2841,28 @@ async def show_daily_schedule(query, context):
     lessons = SCHEDULE_STRUCTURED[class_name][day]
     lessons.sort(key=lambda x: x[0])
 
-    # Формируем текстовую часть (заголовок + строки с номерами уроков и временем)
+    # Формируем текстовую часть (заголовок)
     text_lines = [f"📚 <b>{class_name.upper()} – {day}</b>", "─" * 20]
     keyboard = []  # здесь будут ряды кнопок
 
     for lesson_num, subject, teacher in lessons:
-    lesson_time = get_lesson_time(lesson_num)
-    if 1 <= lesson_num <= 7:
-        emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
-    else:
-        emoji = f"{lesson_num}."
+        lesson_time = get_lesson_time(lesson_num)
 
-    # Текстовая строка с номером и временем (оставляем как есть)
-    text_lines.append(f"{emoji} {lesson_time}")
+        # Определяем эмодзи для номера урока
+        if 1 <= lesson_num <= 7:
+            emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+        else:
+            emoji = f"{lesson_num}."
 
-    # Ряд кнопок с эмодзи в первой кнопке
-    row = [
-        InlineKeyboardButton(f"{emoji} 📖 {subject}", callback_data='noop'),
-        InlineKeyboardButton(f"👤 {teacher}", callback_data='noop')
-    ]
-    keyboard.append(row)
+        # Добавляем строку с номером и временем
+        text_lines.append(f"{emoji} {lesson_time}")
+
+        # Ряд из двух неактивных кнопок: предмет и учитель
+        row = [
+            InlineKeyboardButton(f"{emoji} 📖 {subject}", callback_data='noop'),
+            InlineKeyboardButton(f"👤 {teacher}", callback_data='noop')
+        ]
+        keyboard.append(row)
 
     # Навигационные кнопки (активные)
     nav_row = [
