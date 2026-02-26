@@ -2846,21 +2846,21 @@ async def show_daily_schedule(query, context):
     keyboard = []  # здесь будут ряды кнопок
 
     for lesson_num, subject, teacher in lessons:
-        lesson_time = get_lesson_time(lesson_num)
-        # Эмодзи для номера урока
-        if 1 <= lesson_num <= 7:
-            emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
-        else:
-            emoji = f"{lesson_num}."
-        # Добавляем строку с номером и временем
-        text_lines.append(f"{emoji} {lesson_time}")
+    lesson_time = get_lesson_time(lesson_num)
+    if 1 <= lesson_num <= 7:
+        emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+    else:
+        emoji = f"{lesson_num}."
 
-        # Создаём ряд из двух неактивных кнопок: предмет и учитель
-        row = [
-            InlineKeyboardButton(f"📖 {subject}", callback_data='noop'),
-            InlineKeyboardButton(f"👤 {teacher}", callback_data='noop')
-        ]
-        keyboard.append(row)
+    # Текстовая строка с номером и временем (оставляем как есть)
+    text_lines.append(f"{emoji} {lesson_time}")
+
+    # Ряд кнопок с эмодзи в первой кнопке
+    row = [
+        InlineKeyboardButton(f"{emoji} 📖 {subject}", callback_data='noop'),
+        InlineKeyboardButton(f"👤 {teacher}", callback_data='noop')
+    ]
+    keyboard.append(row)
 
     # Навигационные кнопки (активные)
     nav_row = [
