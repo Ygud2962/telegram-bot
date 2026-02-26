@@ -2319,6 +2319,9 @@ async def button_handler(update: Update, context: CallbackContext):
             await query.answer(f"Учитель {teacher_name} добавлен в избранное", show_alert=True)
         await show_teacher_schedule_by_name(query, context, teacher_name)
         return
+    elif query.data == 'noop':
+    await query.answer("ℹ️ Кнопка неактивна", show_alert=False)
+    return
 
     # 🔑 ОБРАБОТКА НОВОСТЕЙ
     if query.data == 'menu_news':
@@ -2575,43 +2578,50 @@ async def show_teacher_schedule(query, context):
         parts = query.data.split('_')
         teacher_index = int(parts[1])
         teachers_list = context.user_data.get('teachers_list', ALL_TEACHERS)
-    except (ValueError, IndexError, KeyError) as e:
-        logger.error(f"Ошибка обработки callback {query.data}, ошибка: {e}")
-        keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await safe_edit_message(
-            query,
-            "❌ Ошибка обработки запроса.\nПожалуйста, воспользуйтесь меню.",
-            reply_markup=reply_markup
-        )
-        return
-    if not teachers_list or teacher_index >= len(teachers_list):
-        keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await safe_edit_message(
-            query,
-            "<b>❌ Ошибка: список учителей не найден.</b>",
-            reply_markup=reply_markup
-        )
+        if not teachers_list or teacher_index >= len(teachers_list):
+            raise IndexError
+        teacher_name = teachers_list[teacher_index]
+    except (ValueError, IndexError, KeyError):
+        await query.answer("❌ Ошибка выбора учителя")
         return
 
-    teacher_name = teachers_list[teacher_index]
     teacher_schedule = get_cached_teacher_schedule(teacher_name)
-    schedule_text = await format_teacher_schedule(teacher_name, teacher_schedule)
 
+    # Собираем все уроки учителя по дням
+    all_lessons = []
+    for day, lessons in teacher_schedule.items():
+        for lesson in lessons:
+            all_lessons.append((day, lesson))
+
+    # Сортируем по дню и номеру урока
+    day_order = {"Понедельник": 1, "Вторник": 2, "Среда": 3, "Четверг": 4, "Пятница": 5}
+    all_lessons.sort(key=lambda x: (day_order.get(x[0], 99), x[1]['number']))
+
+    # Формируем кнопки (по одной на урок)
+    keyboard = []
+    for day, lesson in all_lessons:
+        # Краткая подпись: "Пн. 3 – 8А"
+        short_day = day[:3]  # первая буква? можно "Пн", "Вт" и т.д.
+        button_text = f"{short_day}. {lesson['number']} – {lesson['class'].upper()}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data='noop')])
+
+    # Кнопки навигации
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
-    fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
-    fav_callback = f"toggle_favorite_teacher_{ALL_TEACHERS.index(teacher_name)}"
+    fav_text = "🗑 Убрать из избранного" if is_fav else "⭐ В избранное"
+    # Находим индекс в ALL_TEACHERS для callback (гарантированно есть)
+    teacher_global_index = ALL_TEACHERS.index(teacher_name)
+    fav_callback = f"toggle_favorite_teacher_{teacher_global_index}"
+    keyboard.append([InlineKeyboardButton(fav_text, callback_data=fav_callback)])
+    keyboard.append([InlineKeyboardButton("👨‍🏫 Все учителя", callback_data='menu_teacher')])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
 
-    keyboard = [
-        [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        [InlineKeyboardButton("↩️ К списку учителей", callback_data='menu_teacher')],
-        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
+    await safe_edit_message(
+        query,
+        f"👨‍🏫 <b>{teacher_name}</b>\nСписок уроков (неактивные кнопки):",
+        reply_markup=reply_markup
+    )
 
 async def format_teacher_schedule(teacher_name, schedule):
     today = datetime.now().date()
