@@ -2578,19 +2578,29 @@ async def show_main_menu(query):
         reply_markup=reply_markup
     )
 
-async def show_weekly_schedule_for_class(query, context, class_name):
+async def show_weekly_schedule(query, context):
+    class_name = query.data.replace('weekly_', '')
+    context.user_data['selected_class'] = class_name
+
+    # Получаем текстовое расписание на неделю (используем существующую функцию)
     schedule_text = format_weekly_schedule(class_name)
+
+    # Кнопки для выбора дня недели (активные)
+    keyboard = []
+    for day in DAYS_OF_WEEK:
+        keyboard.append([InlineKeyboardButton(day, callback_data=f'schedule_{day.lower()}')])
+
+    # Кнопка избранного для класса
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
-    fav_button_text = "🗑 Удалить из избранного" if is_fav else "⭐ Добавить в избранное"
+    fav_text = "🗑 Убрать из избранного" if is_fav else "⭐ В избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
+    keyboard.append([InlineKeyboardButton(fav_text, callback_data=fav_callback)])
 
-    keyboard = [
-        [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        [InlineKeyboardButton("↩️ Назад к выбору дня", callback_data=f'class_{class_name}')],
-        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-    ]
+    # Кнопки навигации
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f'class_{class_name}')])
+    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
 
