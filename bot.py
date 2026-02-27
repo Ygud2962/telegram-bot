@@ -23,15 +23,14 @@ if not TOKEN:
     print("ОШИБКА: Токен не найден! Установите переменную окружения BOT_TOKEN")
     exit(1)
 
-# ================== НАСТРОЙКА ИИ (Groq Free) ==================
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-GROQ_MODEL = "llama-3.1-8b-instant"  # Быстрая и качественная модель
-if GROQ_API_KEY:
+# ================== НАСТРОЙКА ИИ (DeepSeek) ==================
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
+if DEEPSEEK_API_KEY:
     GPT_AVAILABLE = True
-    logger.info(f"✅ ИИ-помощник активирован (Groq: {GROQ_MODEL})")
+    logger.info(f"✅ ИИ-помощник активирован (DeepSeek)")
 else:
     GPT_AVAILABLE = False
-    logger.warning("⚠️ GROQ_API_KEY не установлен. ИИ будет недоступен.")
+    logger.warning("⚠️ DEEPSEEK_API_KEY не установлен. ИИ будет недоступен.")
 
 # ================== НАСТРОЙКИ ==================
 ADMIN_IDS = [516406248]
@@ -1029,20 +1028,23 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
-     # ================== ИИ-ПОМОЩНИК (Groq Free) ==================
+     # ================== ИИ-ПОМОЩНИК (DeepSeek) ==================
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
+DEEPSEEK_MODEL = "deepseek-chat"  # или "deepseek-reasoner" для R1
+
 async def ask_gpt(question: str, user_id: int = None) -> str:
-    """Отправляет вопрос в Groq API (бесплатно, быстро)."""
-    if not GROQ_API_KEY:
-        return "❌ ИИ-помощник не настроен. Администратору нужно установить GROQ_API_KEY."
-    
-    url = "https://api.groq.com/openai/v1/chat/completions"
+    """Отправляет вопрос в DeepSeek API (бесплатно, качественно)."""
+    if not DEEPSEEK_API_KEY:
+        return "❌ ИИ-помощник не настроен. Администратору нужно установить DEEPSEEK_API_KEY."
+
+    url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
-    
+
     data = {
-        "model": GROQ_MODEL,
+        "model": DEEPSEEK_MODEL,
         "messages": [
             {
                 "role": "system",
@@ -1056,38 +1058,38 @@ async def ask_gpt(question: str, user_id: int = None) -> str:
         "max_tokens": 500,
         "temperature": 0.7
     }
-    
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             resp = await client.post(url, json=data, headers=headers)
-            
+
             if resp.status_code == 429:
-                return "⏳ Превышен лимит запросов. Попробуйте через минуту."
+                return "⏳ Превышен лимит запросов. Попробуйте позже."
             elif resp.status_code == 401:
-                return "❌ Ошибка API-ключа. Проверьте GROQ_API_KEY."
+                return "❌ Ошибка API-ключа. Проверьте DEEPSEEK_API_KEY."
             elif resp.status_code >= 400:
                 return f"❌ Ошибка API: {resp.status_code}. Попробуйте позже."
-            
+
             resp.raise_for_status()
             result = resp.json()
-            
+
             answer = result['choices'][0]['message']['content'].strip()
-            
+
             if not answer:
                 return "❌ ИИ вернул пустой ответ. Попробуйте перефразировать вопрос."
-            
+
             if len(answer) > 4000:
                 answer = answer[:4000] + "\n\n<em>Ответ обрезан</em>"
-            
+
             return answer
-            
+
         except httpx.TimeoutException:
-            logger.error("Groq API: таймаут")
+            logger.error("DeepSeek API: таймаут")
             return "⏳ Превышено время ожидания. Попробуйте позже."
         except Exception as e:
-            logger.error(f"Ошибка Groq: {e}")
+            logger.error(f"Ошибка DeepSeek: {e}")
             return f"❌ Ошибка ИИ: {str(e)[:100]}"
-
+            
 # ================== ФУНКЦИИ ДЛЯ ИЗБРАННОГО ==================
 async def show_my_menu(query, context):
     user_id = query.from_user.id
@@ -3571,11 +3573,10 @@ def main():
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
     print(f"✅ Функции: новости, избранное, замены, расписания, ИИ-помощник")
     
-    # ✅ ПРОВЕРКА API-КЛЮЧА (с правильным отступом!)
-    if not GROQ_API_KEY:
-        print("⚠️ ИИ-помощник отключён (не задан GROQ_API_KEY)")
-    else:
-        print(f"✅ ИИ-помощник активирован (Groq: {GROQ_MODEL})")
+   if not DEEPSEEK_API_KEY:
+    print("⚠️ ИИ-помощник отключён (не задан DEEPSEEK_API_KEY)")
+else:
+    print(f"✅ ИИ-помощник активирован (DeepSeek)")
 
     try:
         application.run_polling(
