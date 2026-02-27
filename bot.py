@@ -25,7 +25,7 @@ if not TOKEN:
 
 # ================== НАСТРОЙКА ИИ (Groq Free) ==================
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-GROQ_MODEL = "llama-3.1-8b-instant"  # Быстрая и качественная модель
+GROQ_MODEL = "llama-3.1-8b-instant"
 if GROQ_API_KEY:
     GPT_AVAILABLE = True
     logger.info(f"✅ ИИ-помощник активирован (Groq: {GROQ_MODEL})")
@@ -1029,7 +1029,8 @@ def convert_utc_to_minsk(utc_str):
     except Exception as e:
         logger.error(f"Ошибка конвертации времени: {e}")
         return utc_str
-     # ================== ИИ-ПОМОЩНИК (Groq Free) ==================
+
+# ================== ИИ-ПОМОЩНИК (Groq Free) ==================
 async def ask_gpt(question: str, user_id: int = None) -> str:
     """Отправляет вопрос в Groq API (бесплатно, быстро)."""
     if not GROQ_API_KEY:
@@ -1137,44 +1138,43 @@ async def show_my_menu(query, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, text, reply_markup=reply_markup)
 
-async def show_teacher_schedule(query, context):
-    try:
-        parts = query.data.split('_')
-        teacher_index = int(parts[1])
-        teachers_list = context.user_data.get('teachers_list', ALL_TEACHERS)
-        if not teachers_list or teacher_index >= len(teachers_list):
-            raise IndexError
-        teacher_name = teachers_list[teacher_index]
-    except (ValueError, IndexError, KeyError):
-        await query.answer("❌ Ошибка выбора учителя")
-        return
-
+async def show_teacher_schedule_by_name(query, context, teacher_name):
     teacher_schedule = get_cached_teacher_schedule(teacher_name)
 
-    # Собираем все уроки учителя по дням
-    all_lessons = []
-    for day, lessons in teacher_schedule.items():
-        for lesson in lessons:
-            all_lessons.append((day, lesson))
-
-    # Сортируем по дню и номеру урока
-    day_order = {"Понедельник": 1, "Вторник": 2, "Среда": 3, "Четверг": 4, "Пятница": 5}
-    all_lessons.sort(key=lambda x: (day_order.get(x[0], 99), x[1]['number']))
-
-    # Формируем кнопки (по одной на урок, можно в две колонки)
+    text_lines = [f"👨‍🏫 <b>{teacher_name}</b>", "=" * 30]
     keyboard = []
-    row = []
-    for day, lesson in all_lessons:
-        short_day = day[:3]  # "Пон", "Вто" и т.п.
-        button_text = f"{short_day}. {lesson['number']} – {lesson['class'].upper()}"
-        row.append(InlineKeyboardButton(button_text, callback_data='noop'))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
 
-    # Кнопки навигации
+    days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+
+    for day in days_order:
+        if day in teacher_schedule and teacher_schedule[day]:
+            lessons = teacher_schedule[day]
+            lessons.sort(key=lambda x: x['number'])
+
+            keyboard.append([InlineKeyboardButton(f"📌 {day}", callback_data='noop')])
+
+            for lesson in lessons:
+                lesson_num = lesson['number']
+                lesson_time = lesson['time']
+                class_name = lesson['class'].upper()
+                subject = lesson['subject']
+
+                if 1 <= lesson_num <= 7:
+                    emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                else:
+                    emoji = f"{lesson_num}."
+
+                text_lines.append(f"{emoji} {lesson_time}")
+
+                row = [
+                    InlineKeyboardButton(f"{emoji} 🏫 {class_name}", callback_data='noop'),
+                    InlineKeyboardButton(f"📖 {subject}", callback_data='noop')
+                ]
+                keyboard.append(row)
+
+    if not any(day in teacher_schedule for day in days_order):
+        text_lines.append("<i>Нет уроков в расписании</i>")
+
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
     fav_text = "🗑 Убрать из избранного" if is_fav else "⭐ В избранное"
@@ -1184,21 +1184,9 @@ async def show_teacher_schedule(query, context):
     keyboard.append([InlineKeyboardButton("👨‍🏫 Все учителя", callback_data='menu_teacher')])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
 
+    text = "\n".join(text_lines)
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(
-        query,
-        f"👨‍🏫 <b>{teacher_name}</b>\nСписок уроков (неактивные кнопки):",
-        reply_markup=reply_markup
-    )
-
-    keyboard = [
-        [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        [InlineKeyboardButton("👨‍🏫 Все учителя", callback_data='menu_teacher')],
-        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
 # ================== ФУНКЦИИ ДЛЯ НОВОСТЕЙ (ПАГИНАЦИЯ, ПРОСМОТРЫ) ==================
 NEWS_PER_PAGE = 5
@@ -2093,7 +2081,8 @@ async def check_new_news_notification(update: Update, context: CallbackContext) 
 
     context.user_data['news_notification_shown'] = True
     return True
-    # ================== КОМАНДА /start ==================
+
+# ================== КОМАНДА /start ==================
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     await asyncio.to_thread(
@@ -2366,7 +2355,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await show_teacher_schedule_by_name(query, context, teacher_name)
         return
     elif query.data == 'noop':
-        await query.answer()  # или с сообщением: await query.answer("ℹ️ Информация", show_alert=False)
+        await query.answer()  # Неактивная кнопка – просто гасим нажатие
         return
 
     # 🔑 ОБРАБОТКА НОВОСТЕЙ
@@ -2389,9 +2378,6 @@ async def button_handler(update: Update, context: CallbackContext):
         return
     elif query.data == 'cancel_edit_news':
         await cancel_edit_news(query, context)
-        return
-    elif query.data == 'noop':
-        await query.answer()
         return
     elif query.data == 'admin_publish_news':
         await start_publish_news(query, context)
@@ -2418,7 +2404,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await delete_news_handler(query, context, news_id)
         return
 
-        # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
+    # 🤖 ОБРАБОТКА ИИ-ПОМОЩНИКА
     elif query.data == 'menu_ai':
         if not GPT_AVAILABLE:
             await safe_edit_message(
@@ -2578,10 +2564,8 @@ async def show_main_menu(query):
         reply_markup=reply_markup
     )
 
-async def show_weekly_schedule(query, context):
-    class_name = query.data.replace('weekly_', '')
-    context.user_data['selected_class'] = class_name
-
+async def show_weekly_schedule_for_class(query, context, class_name):
+    """Показывает расписание на неделю для класса (текст) и кнопки дней."""
     if class_name not in SCHEDULE_STRUCTURED:
         await query.answer("❌ Расписание для этого класса не найдено")
         return
@@ -2609,7 +2593,7 @@ async def show_weekly_schedule(query, context):
 
     schedule_text = "\n".join(lines)
 
-    # Кнопки для выбора дня (активные)
+    # Кнопки для выбора дня
     keyboard = []
     for day in days_order:
         keyboard.append([InlineKeyboardButton(day, callback_data=f'schedule_{day.lower()}')])
@@ -2667,169 +2651,55 @@ async def show_teacher_schedule(query, context):
 
     teacher_schedule = get_cached_teacher_schedule(teacher_name)
 
-    # Собираем все уроки учителя по дням
-    all_lessons = []
-    for day, lessons in teacher_schedule.items():
-        for lesson in lessons:
-            all_lessons.append((day, lesson))
-
-    # Сортируем по дню и номеру урока
-    day_order = {"Понедельник": 1, "Вторник": 2, "Среда": 3, "Четверг": 4, "Пятница": 5}
-    all_lessons.sort(key=lambda x: (day_order.get(x[0], 99), x[1]['number']))
-
-    # Формируем кнопки (по одной на урок)
+    text_lines = [f"👨‍🏫 <b>{teacher_name}</b>", "=" * 30]
     keyboard = []
-    for day, lesson in all_lessons:
-        # Краткая подпись: "Пн. 3 – 8А"
-        short_day = day[:3]  # первая буква? можно "Пн", "Вт" и т.д.
-        button_text = f"{short_day}. {lesson['number']} – {lesson['class'].upper()}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data='noop')])
 
-    # Кнопки навигации
+    days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+
+    for day in days_order:
+        if day in teacher_schedule and teacher_schedule[day]:
+            lessons = teacher_schedule[day]
+            lessons.sort(key=lambda x: x['number'])
+
+            # Неактивная кнопка с названием дня
+            keyboard.append([InlineKeyboardButton(f"📌 {day}", callback_data='noop')])
+
+            for lesson in lessons:
+                lesson_num = lesson['number']
+                lesson_time = lesson['time']
+                class_name = lesson['class'].upper()
+                subject = lesson['subject']
+
+                if 1 <= lesson_num <= 7:
+                    emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+                else:
+                    emoji = f"{lesson_num}."
+
+                text_lines.append(f"{emoji} {lesson_time}")
+
+                row = [
+                    InlineKeyboardButton(f"{emoji} 🏫 {class_name}", callback_data='noop'),
+                    InlineKeyboardButton(f"📖 {subject}", callback_data='noop')
+                ]
+                keyboard.append(row)
+
+    if not any(day in teacher_schedule for day in days_order):
+        text_lines.append("<i>Нет уроков в расписании</i>")
+
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'teacher', teacher_name)
     fav_text = "🗑 Убрать из избранного" if is_fav else "⭐ В избранное"
-    # Находим индекс в ALL_TEACHERS для callback (гарантированно есть)
     teacher_global_index = ALL_TEACHERS.index(teacher_name)
     fav_callback = f"toggle_favorite_teacher_{teacher_global_index}"
     keyboard.append([InlineKeyboardButton(fav_text, callback_data=fav_callback)])
     keyboard.append([InlineKeyboardButton("👨‍🏫 Все учителя", callback_data='menu_teacher')])
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
 
+    text = "\n".join(text_lines)
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(
-        query,
-        f"👨‍🏫 <b>{teacher_name}</b>\nСписок уроков (неактивные кнопки):",
-        reply_markup=reply_markup
-    )
+    await safe_edit_message(query, text, reply_markup=reply_markup)
 
-async def format_teacher_schedule(teacher_name, schedule):
-    today = datetime.now().date()
-    tz_minsk = pytz.timezone('Europe/Minsk')
-    now = datetime.now(tz_minsk)
-    current_weekday = now.weekday()
-    current_day_name = DAYS_OF_WEEK[current_weekday] if current_weekday < 5 else "Пятница"
-    current_lesson_info = get_current_lesson_info()
-    current_lesson_number = current_lesson_info['number'] if current_lesson_info['status'] == 'lesson' else None
-
-    start_date = today.strftime('%Y-%m-%d')
-    end_date = (today + timedelta(days=30)).strftime('%Y-%m-%d')
-    all_subs = await asyncio.to_thread(
-        db.get_teacher_substitutions_between,
-        teacher_name,
-        start_date,
-        end_date
-    )
-
-    subs_by_date = {}
-    for sub in all_subs:
-        date_str = sub[1]
-        subs_by_date.setdefault(date_str, []).append(sub)
-
-    text = f"<b>👨‍🏫 {teacher_name}</b>\n"
-    text += "=" * 30 + "\n"
-
-    if schedule:
-        total_lessons = sum(len(lessons) for lessons in schedule.values())
-        classes = set()
-        subjects = set()
-        for day_lessons in schedule.values():
-            for lesson in day_lessons:
-                classes.add(lesson['class'])
-                subjects.add(lesson['subject'])
-        text += f"<b>📊 Статистика:</b>\n"
-        text += f"• Уроков: <b>{total_lessons}</b>\n"
-        text += f"• Классы: <b>{', '.join(sorted(classes))}</b>\n"
-        text += f"• Предметы: <b>{', '.join(sorted(subjects))}</b>\n"
-    else:
-        text += "<i>❌ Нет уроков в расписании</i>\n"
-
-    total_subs = len(all_subs)
-    if total_subs > 0:
-        text += f"• <b>⚠️ Замен: {total_subs}</b>\n"
-
-    text += "\n" + "=" * 30 + "\n"
-    text += "<b>📅 ОСНОВНОЕ РАСПИСАНИЕ:</b>\n"
-
-    days_order = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
-    has_main_schedule = False
-
-    for day in days_order:
-        if day in schedule and schedule[day]:
-            has_main_schedule = True
-            text += f"<b>{day.upper()}</b>\n"
-            text += "─" * 18 + "\n"
-            sorted_lessons = sorted(schedule[day], key=lambda x: x['number'])
-
-            for lesson in sorted_lessons:
-                if 1 <= lesson['number'] <= 7:
-                    emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson['number'] - 1]
-                    lesson_marker = emoji
-                else:
-                    lesson_marker = f"{lesson['number']}. "
-
-                col1 = f"{lesson_marker} <b>{lesson['time']}</b> "
-                col2 = f"<code>{lesson['class'].upper()}</code> ➡️ {lesson['subject']} "
-                teachers = lesson['full_teacher'].split('/')
-                if len(teachers) > 1:
-                    col2 += " <i>(с совм.)</i> "
-
-                if day == current_day_name and lesson['number'] == current_lesson_number:
-                    text += f"🟢 {col1}   {col2}\n"
-                else:
-                    text += f"{col1}   {col2}\n"
-            text += "\n"
-
-    if not has_main_schedule:
-        text += "<i>Нет уроков на неделю</i>\n"
-
-    text += "=" * 30 + "\n"
-    text += "<b>🔄 ЗАМЕНЫ (30 дней):</b>\n"
-
-    if subs_by_date:
-        shown_dates = 0
-        for i in range(30):
-            date_obj = today + timedelta(days=i)
-            date_str = date_obj.strftime('%Y-%m-%d')
-            if date_str in subs_by_date:
-                weekday = date_obj.weekday()
-                if weekday < 5:
-                    day_name = DAYS_OF_WEEK[weekday]
-                else:
-                    continue
-                text += f"<b>{day_name}</b> <i>({date_obj.strftime('%d.%m')})</i>\n"
-                text += "─" * 18 + "\n"
-                for sub in subs_by_date[date_str]:
-                    lesson_num = sub[3]
-                    lesson_time = get_lesson_time(lesson_num)
-                    if 1 <= lesson_num <= 7:
-                        emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
-                        lesson_marker = emoji
-                    else:
-                        lesson_marker = f"{lesson_num}. "
-                    if sub[7] == teacher_name:
-                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> ➡️ {sub[5]}\n"
-                        text += f"   🔄 вместо {sub[4]} ({sub[6]})\n"
-                    elif sub[6] == teacher_name:
-                        text += f"{lesson_marker} <b>{lesson_time}</b> <code>{sub[8]}</code> ➡️ {sub[4]}\n"
-                        text += f"   🔄 заменён на {sub[7]} ({sub[5]})\n"
-                shown_dates += 1
-                if shown_dates >= 7:
-                    break
-        if shown_dates == 0:
-            text += "<i>На ближайшие 30 дней замен нет</i>\n"
-    else:
-        text += "<i>На ближайшие 30 дней замен нет</i>\n"
-
-    text += "\n" + "=" * 30 + "\n"
-    text += "<i>ℹ️ 🟢 — текущий урок | Расписание и замены на 30 дней</i>"
-    return text
-
-async def show_bells_schedule(query):
-    keyboard = [[InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, BELLS_SCHEDULE_HTML, reply_markup=reply_markup)
-
+# ================== ФУНКЦИИ ДЛЯ РАСПИСАНИЯ (КЛАССЫ) ==================
 async def show_class_selection(query):
     keyboard = [
         [InlineKeyboardButton("5А", callback_data='class_5а'), InlineKeyboardButton("5Б", callback_data='class_5б'), InlineKeyboardButton("5В", callback_data='class_5в')],
@@ -2875,20 +2745,20 @@ async def show_daily_schedule(query, context):
     lessons = SCHEDULE_STRUCTURED[class_name][day]
     lessons.sort(key=lambda x: x[0])
 
-    # Формируем текстовую часть (заголовок)
+    # Текстовая часть (заголовок)
     text_lines = [f"📚 <b>{class_name.upper()} – {day}</b>", "─" * 20]
-    keyboard = []  # здесь будут ряды кнопок
+    keyboard = []  # ряды кнопок
 
     for lesson_num, subject, teacher in lessons:
         lesson_time = get_lesson_time(lesson_num)
 
-        # Определяем эмодзи для номера урока
+        # Эмодзи для номера урока
         if 1 <= lesson_num <= 7:
             emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
         else:
             emoji = f"{lesson_num}."
 
-        # Добавляем строку с номером и временем
+        # Строка с номером и временем
         text_lines.append(f"{emoji} {lesson_time}")
 
         # Ряд из двух неактивных кнопок: предмет и учитель
@@ -2898,70 +2768,34 @@ async def show_daily_schedule(query, context):
         ]
         keyboard.append(row)
 
-    # Навигационные кнопки (активные)
+    # Навигационные кнопки
     nav_row = [
         InlineKeyboardButton("📅 Неделя", callback_data=f'weekly_{class_name}'),
         InlineKeyboardButton("🔙 Назад", callback_data=f'class_{class_name}')
     ]
     keyboard.append(nav_row)
 
-    # Кнопка избранного для класса
+    # Кнопка избранного
     user_id = query.from_user.id
     is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
     fav_text = "🗑 Убрать из избранного" if is_fav else "⭐ В избранное"
     fav_callback = f"toggle_favorite_class_{class_name}"
     keyboard.append([InlineKeyboardButton(fav_text, callback_data=fav_callback)])
 
-    # Кнопка возврата в главное меню
+    # Главное меню
     keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
 
     text = "\n".join(text_lines)
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, text, reply_markup=reply_markup)
 
-    keyboard = [
-        [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("📅 Расписание на всю неделю", callback_data=f'weekly_{class_name}')],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        [InlineKeyboardButton("↩️ Назад к дням", callback_data=f'class_{class_name}')],
-        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
-
 async def show_weekly_schedule(query, context):
+    # Эта функция теперь вызывает show_weekly_schedule_for_class, чтобы избежать дублирования
     class_name = query.data.replace('weekly_', '')
     context.user_data['selected_class'] = class_name
+    await show_weekly_schedule_for_class(query, context, class_name)
 
-    # Кнопки для выбора дня недели (активные)
-    keyboard = []
-    for day in DAYS_OF_WEEK:
-        keyboard.append([InlineKeyboardButton(day, callback_data=f'schedule_{day.lower()}')])
-
-    user_id = query.from_user.id
-    is_fav = await asyncio.to_thread(db.is_favorite, user_id, 'class', class_name)
-    fav_text = "🗑 Убрать из избранного" if is_fav else "⭐ В избранное"
-    fav_callback = f"toggle_favorite_class_{class_name}"
-    keyboard.append([InlineKeyboardButton(fav_text, callback_data=fav_callback)])
-    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f'class_{class_name}')])
-    keyboard.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(
-        query,
-        f"📅 <b>{class_name.upper()} – неделя</b>\nВыберите день:",
-        reply_markup=reply_markup
-    )
-
-    keyboard = [
-        [InlineKeyboardButton(fav_button_text, callback_data=fav_callback)],
-        [InlineKeyboardButton("🌟 МОё", callback_data='menu_my')],
-        [InlineKeyboardButton("↩️ Назад к выбору дня", callback_data=f'class_{class_name}')],
-        [InlineKeyboardButton("🏠 Старт / Главное меню", callback_data='back_to_main')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await safe_edit_message(query, schedule_text, reply_markup=reply_markup)
-
+# ================== ФУНКЦИИ ДЛЯ ЗАМЕН ==================
 async def show_substitutions_menu(query):
     keyboard = [
         [InlineKeyboardButton("🔄 Вчера", callback_data='subs_yesterday')],
@@ -3022,6 +2856,7 @@ async def show_all_substitutions(query):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await safe_edit_message(query, text, reply_markup=reply_markup)
 
+# ================== ПОМОЩЬ И АДМИН-ПАНЕЛЬ ==================
 async def show_help(query):
     help_text = (
         "🆘 <b>ПОМОЩЬ И ПОДДЕРЖКА</b>\n\n"
@@ -3425,7 +3260,7 @@ async def handle_message(update: Update, context: CallbackContext):
     if not isinstance(context.user_data, dict):
         context.user_data = {}
 
-   # Обработка ИИ-помощника
+    # Обработка ИИ-помощника
     if context.user_data.get('awaiting_ai'):
         question = update.message.text
         thinking = await update.message.reply_text("🤔 Думаю...")
@@ -3699,7 +3534,6 @@ def main():
     print(f"👥 Пользователей в базе: {db.get_user_count()}")
     print(f"✅ Функции: новости, избранное, замены, расписания, ИИ-помощник")
     
-    # ✅ ПРОВЕРКА API-КЛЮЧА (с правильным отступом!)
     if not GROQ_API_KEY:
         print("⚠️ ИИ-помощник отключён (не задан GROQ_API_KEY)")
     else:
