@@ -922,20 +922,21 @@ async def format_schedule_day(class_name, day, structured_lessons, target_date=N
             'new_teacher': sub[7]
         }
     result_lines = []
-    # Заголовок (оставляем)
     header = f"📅 <b>{day.upper()} - {class_name.upper()}</b>"
     result_lines.append(header)
-    # Убрали декоративную линию
+    result_lines.append("─" * 18)
     for lesson_num, subject, teacher in structured_lessons:
         lesson_time = get_lesson_time(lesson_num)
-        # Используем цифры вместо эмодзи
-        lesson_str = f"{lesson_num}. "
-        main_line = f"{lesson_str} <b>{lesson_time}</b> → {subject} ✅ {teacher}"
+        if 1 <= lesson_num <= 7:
+            emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣"][lesson_num - 1]
+            lesson_str = f"{emoji} "
+        else:
+            lesson_str = f"{lesson_num}. "
+        main_line = f"{lesson_str} <b>{lesson_time}</b> ➡️ {subject} ✅ {teacher}"
         result_lines.append(main_line)
         if lesson_num in sub_dict:
             sub = sub_dict[lesson_num]
-            # Замену можно сделать более компактной, например:
-            result_lines.append(f"   🔄 {sub['new_subject']} ✅ {sub['new_teacher']}")
+            result_lines.append(f"   └─ 🔄 <b>ЗАМЕНА:</b> {sub['new_subject']} ✅ {sub['new_teacher']}")
     return "\n".join(result_lines)
 
 def format_weekly_schedule(class_name):
