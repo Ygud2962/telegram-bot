@@ -2096,7 +2096,8 @@ async def show_admin_panel(query):
         [maint_btn],
         [btn("📣 Опубликовать новость", 'admin_publish_news')],
         [btn("🗑 Управление новостями", 'admin_manage_news')],
-        [btn("➕ Добавить замену", 'admin_add_sub')],
+        [btn("➕ Добавить замену (вручную)", 'admin_add_sub')],
+        [btn("📸 Добавить замены из фото", 'admin_photo_subs')],
         [btn("📋 Все замены", 'admin_view_subs')],
         [btn("🗑 Удалить замену (по ID)", 'admin_del_sub')],
         [btn("🧹 Очистить все замены", 'admin_clear_subs')],
@@ -2523,6 +2524,16 @@ async def button_handler(update: Update, context: CallbackContext):
         await admin_do_clear_subs(query, context)
         return
 
+    # ── Фото замен: подтверждение/отмена ──
+    if d == 'confirm_photo_subs' and user.id in ADMIN_IDS:
+        await save_photo_subs(query, context)
+        return
+    if d == 'cancel_photo_subs':
+        context.user_data.pop('pending_subs', None)
+        kb = [[btn("↩️ Админка", 'admin_panel')]]
+        await safe_edit(query, "❌ Сохранение отменено. Замены не добавлены.", kb)
+        return
+
     # ── Рассылка ──
     if d == 'admin_broadcast' and user.id in ADMIN_IDS:
         await admin_broadcast_start(query, context)
@@ -2554,6 +2565,17 @@ async def button_handler(update: Update, context: CallbackContext):
         'admin_publish_news':     start_publish_news,
         'admin_manage_news':      admin_manage_news,
         'admin_add_sub':          admin_add_sub_start,
+        'admin_photo_subs':       lambda q, c: safe_edit(q,
+            "📸 <b>ДОБАВЛЕНИЕ ЗАМЕН ИЗ ФОТО</b>\n\n"
+            "Отправьте фотографию листа с заменами в этот чат.\n\n"
+            "📌 <b>Советы для лучшего результата:</b>\n"
+            "• Фото при хорошем освещении\n"
+            "• Текст должен быть чётким и читаемым\n"
+            "• Держите камеру прямо над листом\n"
+            "• Весь лист должен быть в кадре\n\n"
+            "<i>После отправки фото ИИ автоматически распознает замены "
+            "и покажет предпросмотр для подтверждения.</i>",
+            [[btn("❌ Отмена", 'admin_panel')]]),
         'admin_analytics':        show_analytics,
         'admin_users':            show_users_stats,
         'noop':                   lambda q, c: None,
@@ -2707,6 +2729,367 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
 
 
 # ══════════════════════════════════════════════════════════
+#  ФОТО ЗАМЕН — GROQ VISION
+# ══════════════════════════════════════════════════════════
+
+PHOTO_SUB_PROMPT = """Ты — помощник для белорусской школы.
+На фото — расписание замен уроков.
+Извлеки все замены и верни ТОЛЬКО JSON-массив, без пояснений и markdown-блоков.
+
+Формат каждого элемента:
+{
+  "date": "YYYY-MM-DD или название дня (Понедельник/Вторник/...)",
+  "class": "название класса (например: 7а, 8б, 11)",
+  "lesson": номер урока (целое число),
+  "old_teacher": "фамилия И.О. заменяемого учителя или пустая строка",
+  "new_teacher": "фамилия И.О. нового учителя",
+  "subject": "название предмета"
+}
+
+Если дата не указана явно — используй ближайший будний день от сегодня.
+Если класс написан заглавными буквами (7А) — переводи в строчные (7а).
+Если данных нет или фото нечёткое — верни пустой массив [].
+Возвращай ТОЛЬКО валидный JSON без каких-либо пояснений."""
+
+
+async def parse_photo_substitutions(photo_bytes: bytes) -> list:
+    """Отправляет фото в Groq Vision и получает список замен."""
+    if not GROQ_API_KEY:
+        return []
+
+    import base64
+    b64 = base64.b64encode(photo_bytes).decode('utf-8')
+
+    payload = {
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",  # Groq vision модель
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": PHOTO_SUB_PROMPT
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 1500,
+        "temperature": 0.1,
+    }
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            r = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload, headers=headers
+            )
+            if r.status_code != 200:
+                logger.error(f"Groq Vision error {r.status_code}: {r.text[:200]}")
+                return []
+
+            raw = r.json()['choices'][0]['message']['content'].strip()
+            logger.info(f"Groq Vision ответ: {raw[:300]}")
+
+            # Убираем возможные markdown-блоки
+            raw = re.sub(r'```(?:json)?', '', raw).strip()
+            # Находим JSON-массив
+            match = re.search(r'\[.*\]', raw, re.DOTALL)
+            if not match:
+                logger.warning(f"JSON-массив не найден в ответе: {raw[:200]}")
+                return []
+
+            data = __import__('json').loads(match.group())
+            return data if isinstance(data, list) else []
+
+        except Exception as e:
+            logger.error(f"parse_photo_substitutions error: {e}")
+            return []
+
+
+def resolve_sub_date(date_str: str) -> tuple:
+    """
+    Преобразует строку даты из ответа ИИ в (date_iso, day_name).
+    Принимает: 'YYYY-MM-DD', 'Понедельник', 'пн', '15.01' и т.п.
+    """
+    today = datetime.now(TZ_MINSK).date()
+
+    # Уже ISO формат
+    try:
+        d = datetime.strptime(date_str, '%Y-%m-%d').date()
+        return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()] if d.weekday() < 5 else None
+    except ValueError:
+        pass
+
+    # ДД.ММ или ДД.ММ.ГГГГ
+    for fmt in ('%d.%m.%Y', '%d.%m'):
+        try:
+            d = datetime.strptime(date_str, fmt)
+            if fmt == '%d.%m':
+                d = d.replace(year=today.year)
+            return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()] if d.weekday() < 5 else None
+        except ValueError:
+            pass
+
+    # Название дня недели → ближайшая дата
+    day_aliases = {
+        'понедельник': 0, 'пн': 0,
+        'вторник': 1, 'вт': 1,
+        'среда': 2, 'ср': 2,
+        'четверг': 3, 'чт': 3,
+        'пятница': 4, 'пт': 4,
+    }
+    key = date_str.lower().strip()
+    if key in day_aliases:
+        target_wd = day_aliases[key]
+        diff = (target_wd - today.weekday()) % 7
+        if diff == 0 and datetime.now(TZ_MINSK).hour >= 14:
+            diff = 7   # уже прошло сегодня — следующая неделя
+        d = today + timedelta(days=diff)
+        return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()]
+
+    # Завтра по умолчанию
+    d = today + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()]
+
+
+def fuzzy_match_teacher(name: str) -> str:
+    """Находит ближайшее совпадение учителя из списка по фамилии."""
+    if not name:
+        return name
+    name_lower = name.lower()
+    # Точное совпадение
+    for t in ALL_TEACHERS:
+        if t.lower() == name_lower:
+            return t
+    # По первому слову (фамилии)
+    surname = name_lower.split()[0] if name_lower.split() else ''
+    for t in ALL_TEACHERS:
+        if t.lower().startswith(surname):
+            return t
+    return name  # вернуть как есть, если не нашли
+
+
+async def handle_photo_message(update: Update, context: CallbackContext):
+    """Обработчик фото — только для администраторов."""
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        return
+
+    if await check_maintenance(update, context):
+        return
+
+    photo = update.message.photo[-1]  # берём максимальное качество
+    status_msg = await update.message.reply_text(
+        "📸 Фото получено. Анализирую замены...\n"
+        "<i>Это занимает 5–15 секунд</i>",
+        parse_mode='HTML'
+    )
+
+    try:
+        # Скачиваем фото
+        file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await file.download_as_bytearray()
+
+        await status_msg.edit_text("🔍 Groq Vision читает расписание...")
+
+        # Отправляем в Groq Vision
+        parsed = await parse_photo_substitutions(bytes(photo_bytes))
+
+        if not parsed:
+            await status_msg.edit_text(
+                "❌ <b>Не удалось распознать замены.</b>\n\n"
+                "Попробуйте:\n"
+                "• Сфотографировать чётче, при хорошем освещении\n"
+                "• Убедитесь, что текст читается на фото\n"
+                "• Добавьте замены вручную через 👑 Админку",
+                parse_mode='HTML'
+            )
+            return
+
+        await status_msg.edit_text(
+            f"✅ Найдено замен: <b>{len(parsed)}</b>\n"
+            f"Проверяю данные...",
+            parse_mode='HTML'
+        )
+
+        # Сохраняем в context для подтверждения
+        context.user_data['pending_subs'] = parsed
+        context.user_data['pending_subs_saved'] = []
+
+        # Формируем предпросмотр
+        await show_photo_subs_preview(update, context, status_msg)
+
+    except Exception as e:
+        logger.error(f"handle_photo_message error: {e}")
+        await status_msg.edit_text(
+            f"❌ Ошибка при обработке фото: {str(e)[:100]}",
+            parse_mode='HTML'
+        )
+
+
+async def show_photo_subs_preview(update, context, status_msg=None):
+    """Показывает предпросмотр распознанных замен для подтверждения."""
+    parsed = context.user_data.get('pending_subs', [])
+    if not parsed:
+        return
+
+    lines = ["📋 <b>РАСПОЗНАННЫЕ ЗАМЕНЫ — ПРЕДПРОСМОТР</b>\n"]
+    valid_count = 0
+
+    for i, sub in enumerate(parsed, 1):
+        date_str = sub.get('date', '')
+        cls      = str(sub.get('class', '')).lower().strip()
+        lesson   = sub.get('lesson', 0)
+        subject  = sub.get('subject', '—')
+        old_t    = sub.get('old_teacher', '—')
+        new_t    = sub.get('new_teacher', '—')
+
+        date_iso, day_name = resolve_sub_date(date_str)
+        new_t_matched = fuzzy_match_teacher(new_t)
+        old_t_matched = fuzzy_match_teacher(old_t) if old_t and old_t != '—' else old_t
+
+        # Проверка валидности
+        is_valid = bool(cls and lesson and new_t and day_name and cls in ALL_CLASSES)
+        mark = "✅" if is_valid else "⚠️"
+        if is_valid:
+            valid_count += 1
+
+        try:
+            d_obj = datetime.strptime(date_iso, '%Y-%m-%d')
+            date_display = d_obj.strftime('%d.%m') + f" ({day_name or '?'})"
+        except Exception:
+            date_display = date_iso
+
+        lines.append(
+            f"{mark} <b>{i}.</b> {date_display}  {cls.upper()}  Урок {lesson}\n"
+            f"   📚 {subject}\n"
+            f"   👨‍🏫 {old_t_matched} → <b>{new_t_matched}</b>"
+        )
+        if not is_valid:
+            issues = []
+            if cls not in ALL_CLASSES:
+                issues.append(f"класс «{cls}» не найден")
+            if not lesson:
+                issues.append("нет номера урока")
+            if not day_name:
+                issues.append("не будний день")
+            lines.append(f"   ❗ Проблема: {', '.join(issues)}")
+        lines.append("")
+
+    lines.append(f"─────────────────────")
+    lines.append(f"✅ Валидных: <b>{valid_count}</b> из {len(parsed)}")
+    if valid_count < len(parsed):
+        lines.append(f"⚠️ Записи с проблемами будут пропущены")
+
+    text = "\n".join(lines)
+    kb = []
+    if valid_count > 0:
+        kb.append([btn(f"✅ Сохранить {valid_count} замен(ы)", 'confirm_photo_subs')])
+    kb.append([btn("❌ Отменить всё", 'cancel_photo_subs')])
+    kb.append([btn("✏️ Добавить вручную", 'admin_add_sub')])
+
+    markup = InlineKeyboardMarkup(kb)
+
+    if status_msg:
+        try:
+            await status_msg.edit_text(text, reply_markup=markup, parse_mode='HTML')
+            return
+        except Exception:
+            pass
+
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(
+        chat_id=chat_id, text=text,
+        reply_markup=markup, parse_mode='HTML'
+    )
+
+
+async def save_photo_subs(query, context):
+    """Сохраняет подтверждённые замены из фото в БД."""
+    parsed = context.user_data.get('pending_subs', [])
+    if not parsed:
+        await safe_edit(query, "❌ Нет данных для сохранения.", BACK_TO_MAIN)
+        return
+
+    saved = 0
+    skipped = 0
+    errors = []
+    notified = []
+
+    for sub in parsed:
+        date_str = sub.get('date', '')
+        cls      = str(sub.get('class', '')).lower().strip()
+        lesson   = sub.get('lesson', 0)
+        subject  = sub.get('subject', 'Неизвестно')
+        old_t    = sub.get('old_teacher', '')
+        new_t    = sub.get('new_teacher', '')
+
+        date_iso, day_name = resolve_sub_date(date_str)
+        new_t = fuzzy_match_teacher(new_t)
+        old_t = fuzzy_match_teacher(old_t) if old_t else '—'
+
+        # Валидация
+        if not cls or not lesson or not new_t or not day_name:
+            skipped += 1
+            continue
+        if cls not in ALL_CLASSES:
+            skipped += 1
+            errors.append(f"Класс «{cls}» не найден")
+            continue
+
+        try:
+            await asyncio.to_thread(
+                db.add_substitution,
+                date_iso, day_name, int(lesson),
+                subject, subject, old_t, new_t, cls
+            )
+            saved += 1
+
+            # Уведомляем учителя
+            if new_t not in notified:
+                sub_data = {
+                    'date': date_iso, 'day': day_name,
+                    'class_name': cls, 'lesson': int(lesson),
+                    'old_subject': subject,
+                }
+                await notify_teacher_substitution(context, new_t, sub_data)
+                notified.append(new_t)
+
+        except Exception as e:
+            skipped += 1
+            errors.append(str(e)[:80])
+
+    context.user_data.pop('pending_subs', None)
+
+    lines = [f"✅ <b>ЗАМЕНЫ СОХРАНЕНЫ</b>\n"]
+    lines.append(f"📥 Сохранено: <b>{saved}</b>")
+    if skipped:
+        lines.append(f"⏭️ Пропущено: <b>{skipped}</b>")
+    if notified:
+        lines.append(f"🔔 Уведомлено учителей: <b>{len(notified)}</b> ({', '.join(notified[:3])}{'...' if len(notified) > 3 else ''})")
+    if errors:
+        lines.append(f"\n⚠️ Ошибки:\n" + "\n".join(f"• {e}" for e in errors[:3]))
+
+    kb = [
+        [btn("📋 Посмотреть замены", 'menu_substitutions')],
+        [btn("↩️ Админка", 'admin_panel')],
+    ]
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+# ══════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════
 def main():
@@ -2733,6 +3116,7 @@ def main():
     app.add_handler(CommandHandler("teacher", cmd_teacher))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
 
     print("🤖 Бот запущен!")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
