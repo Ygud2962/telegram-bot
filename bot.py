@@ -1311,35 +1311,68 @@ async def reg_role_teacher(query, context):
         return
 
     page = context.user_data.get('reg_teacher_page', 0)
+
+    # Убираем уже зарегистрированных из списка
+    registered = await asyncio.to_thread(db.get_registered_teacher_names)
+    available = [t for t in ALL_TEACHERS if t not in registered]
+
+    if not available:
+        await safe_edit(query,
+            "👨‍🏫 <b>РЕГИСТРАЦИЯ УЧИТЕЛЯ</b>\n\n"
+            "Все учителя уже зарегистрированы в боте.",
+            [BACK_TO_MAIN[0]])
+        return
+
     start = page * TEACHERS_PER_PAGE
-    chunk = ALL_TEACHERS[start:start + TEACHERS_PER_PAGE]
-    context.user_data['reg_teacher_names'] = ALL_TEACHERS
+    chunk = available[start:start + TEACHERS_PER_PAGE]
+    context.user_data['reg_teacher_names'] = available
 
     kb = []
     for i in range(0, len(chunk), 2):
-        row = [btn(chunk[i], f'reg_teacher_{start+i}')]
+        idx = available.index(chunk[i])
+        row = [btn(chunk[i], f'reg_teacher_{idx}')]
         if i + 1 < len(chunk):
-            row.append(btn(chunk[i+1], f'reg_teacher_{start+i+1}'))
+            idx2 = available.index(chunk[i+1])
+            row.append(btn(chunk[i+1], f'reg_teacher_{idx2}'))
         kb.append(row)
 
     nav = []
-    total_pages = (len(ALL_TEACHERS) + TEACHERS_PER_PAGE - 1) // TEACHERS_PER_PAGE
+    total_pages = (len(available) + TEACHERS_PER_PAGE - 1) // TEACHERS_PER_PAGE
     if page > 0:
         nav.append(btn("◀️", f'reg_tch_page_{page-1}'))
     nav.append(btn(f"{page+1}/{total_pages}", 'noop'))
-    if start + TEACHERS_PER_PAGE < len(ALL_TEACHERS):
+    if start + TEACHERS_PER_PAGE < len(available):
         nav.append(btn("▶️", f'reg_tch_page_{page+1}'))
     if nav:
         kb.append(nav)
     kb.append([btn("↩️ Назад", 'menu_register'), BACK_TO_MAIN[0][0]])
 
+    free = len(available)
+    total = len(ALL_TEACHERS)
     await safe_edit(query,
-        "👨‍🏫 <b>РЕГИСТРАЦИЯ УЧИТЕЛЯ</b>\n\n"
-        "Выберите своё имя из списка:", kb)
+        f"👨‍🏫 <b>РЕГИСТРАЦИЯ УЧИТЕЛЯ</b>\n\n"
+        f"Доступно: <b>{free} из {total}</b>\n"
+        f"Выберите своё имя из списка:", kb)
 
 
 async def reg_role_student(query, context):
     """Ученик вводит имя → выбирает класс."""
+    uid = query.from_user.id
+
+    # Уже зарегистрирован в любой роли — блокируем
+    profile = await asyncio.to_thread(db.get_user_profile, uid)
+    already_teacher = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    if profile or already_teacher:
+        name = already_teacher or profile.get('display_name', '—')
+        role_map = {'student': 'Ученик', 'parent': 'Родитель', 'teacher': 'Учитель'}
+        role = 'teacher' if already_teacher else profile.get('role', 'guest')
+        await safe_edit(query,
+            f"⛔ <b>Повторная регистрация невозможна</b>\n\n"
+            f"Вы уже зарегистрированы как <b>{role_map.get(role, role)}: {name}</b>.\n\n"
+            f"Для изменения данных удалите текущий профиль.",
+            [[btn("👤 Мой профиль", 'menu_profile')], BACK_TO_MAIN[0]])
+        return
+
     context.user_data['reg_role'] = 'student'
     context.user_data['awaiting_reg_name'] = True
     kb = [[btn("❌ Отмена", 'menu_register')]]
@@ -1351,6 +1384,22 @@ async def reg_role_student(query, context):
 
 async def reg_role_parent(query, context):
     """Родитель вводит имя → выбирает класс ребёнка."""
+    uid = query.from_user.id
+
+    # Уже зарегистрирован в любой роли — блокируем
+    profile = await asyncio.to_thread(db.get_user_profile, uid)
+    already_teacher = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    if profile or already_teacher:
+        name = already_teacher or profile.get('display_name', '—')
+        role_map = {'student': 'Ученик', 'parent': 'Родитель', 'teacher': 'Учитель'}
+        role = 'teacher' if already_teacher else profile.get('role', 'guest')
+        await safe_edit(query,
+            f"⛔ <b>Повторная регистрация невозможна</b>\n\n"
+            f"Вы уже зарегистрированы как <b>{role_map.get(role, role)}: {name}</b>.\n\n"
+            f"Для изменения данных удалите текущий профиль.",
+            [[btn("👤 Мой профиль", 'menu_profile')], BACK_TO_MAIN[0]])
+        return
+
     context.user_data['reg_role'] = 'parent'
     context.user_data['awaiting_reg_name'] = True
     kb = [[btn("❌ Отмена", 'menu_register')]]
@@ -2759,14 +2808,22 @@ async def button_handler(update: Update, context: CallbackContext):
     # ── Регистрация учителя ──
     if d.startswith('reg_teacher_'):
         idx = int(d.replace('reg_teacher_', ''))
-        names = context.user_data.get('reg_teacher_names', [])
-        if idx >= len(names):
-            await query.answer("❌ Ошибка", show_alert=True)
+        if idx >= len(ALL_TEACHERS):
+            await query.answer("❌ Ошибка индекса", show_alert=True)
             return
-        name = names[idx]
+        name = ALL_TEACHERS[idx]
+
+        # Двойная проверка — вдруг учитель зарегистрировался пока пользователь листал список
+        registered = await asyncio.to_thread(db.get_registered_teacher_names)
+        if name in registered:
+            await safe_edit(query,
+                f"⛔ <b>{name}</b> уже зарегистрирован другим пользователем.\n\n"
+                f"Если это ваш аккаунт — обратитесь к администратору.",
+                [[btn("↩️ К списку", 'reg_role_teacher')], BACK_TO_MAIN[0]])
+            return
+
         ok = await asyncio.to_thread(db.register_teacher, name, user.id)
         if ok:
-            # Сбрасываем кэш расписания
             _teacher_schedule_cache.pop(name, None)
             await safe_edit(query,
                 f"✅ <b>Вы зарегистрированы как {name}</b>\n\n"
