@@ -483,6 +483,27 @@ def find_teacher_by_telegram_id(telegram_id):
         release_connection(conn)
 
 
+def unregister_teacher(full_name):
+    """Сбрасывает telegram_id и registered для учителя — освобождает имя."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE teachers SET telegram_id=0, registered=FALSE, registered_at=NULL
+            WHERE full_name=%s
+        ''', (full_name,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"unregister_teacher: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        release_connection(conn)
+
+
 def get_registered_teacher_names():
     """Возвращает set имён учителей которые уже зарегистрировались в боте."""
     conn = None
