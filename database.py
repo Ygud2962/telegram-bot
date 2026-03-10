@@ -148,6 +148,29 @@ def init_db():
             )
         ''')
 
+        # Профили пользователей (роль + данные регистрации)
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id      BIGINT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                role         TEXT NOT NULL DEFAULT 'guest',
+                display_name TEXT,
+                class_name   TEXT,
+                registered_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+
+        # Подписки на замены классов
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS class_subscriptions (
+                id         SERIAL PRIMARY KEY,
+                user_id    BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                class_name TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(user_id, class_name)
+            )
+        ''')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_class_sub_class ON class_subscriptions(class_name)')
+
         # Индексы
         for idx_sql in [
             'CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)',
@@ -268,8 +291,131 @@ def get_user_role(user_id):
 
 
 # ──────────────────────────────────────────────
-#  УЧИТЕЛЯ
+#  ПРОФИЛИ ПОЛЬЗОВАТЕЛЕЙ
 # ──────────────────────────────────────────────
+def get_user_profile(user_id):
+    """Возвращает профиль пользователя или None."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT role, display_name, class_name, registered_at
+            FROM user_profiles WHERE user_id=%s
+        ''', (user_id,))
+        row = cur.fetchone()
+        if row:
+            return {'role': row[0], 'display_name': row[1],
+                    'class_name': row[2], 'registered_at': row[3]}
+        return None
+    except Exception as e:
+        logger.error(f"get_user_profile: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+
+def save_user_profile(user_id, role, display_name=None, class_name=None):
+    """Сохраняет или обновляет профиль пользователя."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO user_profiles (user_id, role, display_name, class_name, registered_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                role         = EXCLUDED.role,
+                display_name = EXCLUDED.display_name,
+                class_name   = EXCLUDED.class_name,
+                registered_at = NOW()
+        ''', (user_id, role, display_name, class_name))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"save_user_profile: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        release_connection(conn)
+
+
+def delete_user_profile(user_id):
+    """Удаляет профиль пользователя (сброс регистрации)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM user_profiles WHERE user_id=%s', (user_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"delete_user_profile: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_profile_stats():
+    """Возвращает статистику по ролям для аналитики."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT role, COUNT(*) FROM user_profiles GROUP BY role ORDER BY COUNT(*) DESC
+        ''')
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_profile_stats: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+# ──────────────────────────────────────────────
+#  ПОДПИСКИ НА ЗАМЕНЫ КЛАССА
+# ──────────────────────────────────────────────
+def subscribe_class(user_id, class_name):
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO class_subscriptions (user_id, class_name)
+            VALUES (%s, %s) ON CONFLICT DO NOTHING
+        ''', (user_id, class_name))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"subscribe_class: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_class_subscribers(class_name):
+    """Возвращает список user_id подписанных на замены класса."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT user_id FROM class_subscriptions WHERE class_name=%s
+        ''', (class_name,))
+        return [r[0] for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"get_class_subscribers: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
 def get_all_teachers_db():
     conn = None
     try:
