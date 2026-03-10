@@ -1164,6 +1164,34 @@ async def notify_teacher_substitution(context, teacher_name: str, sub_data: dict
                 pass
 
 
+async def notify_class_substitution(context, class_name: str, sub_data: dict):
+    """Уведомляет всех подписчиков класса о замене."""
+    subscribers = await asyncio.to_thread(db.get_class_subscribers, class_name)
+    if not subscribers:
+        return
+
+    t = lesson_time_str(sub_data['lesson'])
+    msg = (
+        f"🔔 <b>ЗАМЕНА В {class_name.upper()}</b>\n\n"
+        f"📅 {sub_data['date']} ({sub_data['day']})\n"
+        f"🕐 {t}  (урок {sub_data['lesson']})\n"
+        f"📚 {sub_data['old_subject']}\n"
+        f"👨‍🏫 Новый учитель: <b>{sub_data.get('new_teacher','—')}</b>"
+    )
+    kb = [[btn("📋 Все замены", 'menu_substitutions')]]
+    for uid in subscribers:
+        try:
+            await context.bot.send_message(
+                chat_id=uid, text=msg, parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            logger.warning(f"notify_class_sub {uid}: {e}")
+
+
+
+
 async def notify_new_news(context, title: str):
     """Рассылка уведомления о новой новости всем пользователям (с ограничением скорости)."""
     users = await asyncio.to_thread(db.get_all_users)
@@ -1196,13 +1224,301 @@ MAIN_MENU_KB = [
     [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
     [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
     [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+    [btn("👤 Регистрация", 'menu_register')],
+    [btn("👑 Админка", 'admin_panel')],
+]
+
+MAIN_MENU_KB_REGISTERED = [
+    [btn("⏰ Сейчас", 'menu_now'),     btn("📚 Классы", 'menu_schedule')],
+    [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
+    [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
+    [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
+    [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+    [btn("👤 Мой профиль", 'menu_profile')],
     [btn("👑 Админка", 'admin_panel')],
 ]
 
 
+def get_main_menu_kb(profile: dict | None, is_admin: bool = False) -> list:
+    """Возвращает клавиатуру главного меню с учётом профиля."""
+    role_row = []
+    if profile:
+        role = profile.get('role', 'guest')
+        name = profile.get('display_name', '')
+        cls  = profile.get('class_name', '')
+        if role == 'teacher':
+            label = f"👨‍🏫 {name}"
+        elif role == 'student':
+            label = f"👨‍🎓 {cls.upper()} · {name}"
+        elif role == 'parent':
+            label = f"👨‍👩‍👧 Родитель · {cls.upper()}"
+        else:
+            label = "👤 Мой профиль"
+        role_row = [btn(label, 'menu_profile')]
+    else:
+        role_row = [btn("👤 Зарегистрироваться", 'menu_register')]
+
+    kb = [
+        [btn("⏰ Сейчас", 'menu_now'),     btn("📚 Классы", 'menu_schedule')],
+        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
+        [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
+        [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
+        [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+        role_row,
+    ]
+    if is_admin:
+        kb.append([btn("👑 Админка", 'admin_panel')])
+    return kb
+
+
+# ══════════════════════════════════════════════════════════
+#  РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЕЙ
+# ══════════════════════════════════════════════════════════
+
+async def menu_register(query, context):
+    """Главный экран регистрации — выбор роли."""
+    uid = query.from_user.id
+    profile = await asyncio.to_thread(db.get_user_profile, uid)
+
+    if profile:
+        await show_profile(query, context)
+        return
+
+    kb = [
+        [btn("👨‍🏫 Я учитель",    'reg_role_teacher')],
+        [btn("👨‍🎓 Я ученик",     'reg_role_student')],
+        [btn("👨‍👩‍👧 Я родитель",  'reg_role_parent')],
+        BACK_TO_MAIN[0],
+    ]
+    await safe_edit(query,
+        "👤 <b>РЕГИСТРАЦИЯ</b>\n\n"
+        "Регистрация позволяет:\n"
+        "• Получать уведомления о заменах вашего класса\n"
+        "• Персональное меню под вашу роль\n"
+        "• Подписка на новости и объявления\n\n"
+        "Кто вы?", kb)
+
+
+async def reg_role_teacher(query, context):
+    """Учитель выбирает своё имя из списка."""
+    uid = query.from_user.id
+    already = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    if already:
+        await safe_edit(query,
+            f"✅ Вы уже зарегистрированы как <b>{already}</b>.\n\n"
+            f"Уведомления о заменах приходят автоматически.",
+            [[btn("👤 Мой профиль", 'menu_profile')], BACK_TO_MAIN[0]])
+        return
+
+    page = context.user_data.get('reg_teacher_page', 0)
+    start = page * TEACHERS_PER_PAGE
+    chunk = ALL_TEACHERS[start:start + TEACHERS_PER_PAGE]
+    context.user_data['reg_teacher_names'] = ALL_TEACHERS
+
+    kb = []
+    for i in range(0, len(chunk), 2):
+        row = [btn(chunk[i], f'reg_teacher_{start+i}')]
+        if i + 1 < len(chunk):
+            row.append(btn(chunk[i+1], f'reg_teacher_{start+i+1}'))
+        kb.append(row)
+
+    nav = []
+    total_pages = (len(ALL_TEACHERS) + TEACHERS_PER_PAGE - 1) // TEACHERS_PER_PAGE
+    if page > 0:
+        nav.append(btn("◀️", f'reg_tch_page_{page-1}'))
+    nav.append(btn(f"{page+1}/{total_pages}", 'noop'))
+    if start + TEACHERS_PER_PAGE < len(ALL_TEACHERS):
+        nav.append(btn("▶️", f'reg_tch_page_{page+1}'))
+    if nav:
+        kb.append(nav)
+    kb.append([btn("↩️ Назад", 'menu_register'), BACK_TO_MAIN[0][0]])
+
+    await safe_edit(query,
+        "👨‍🏫 <b>РЕГИСТРАЦИЯ УЧИТЕЛЯ</b>\n\n"
+        "Выберите своё имя из списка:", kb)
+
+
+async def reg_role_student(query, context):
+    """Ученик вводит имя → выбирает класс."""
+    context.user_data['reg_role'] = 'student'
+    context.user_data['awaiting_reg_name'] = True
+    kb = [[btn("❌ Отмена", 'menu_register')]]
+    await safe_edit(query,
+        "👨‍🎓 <b>РЕГИСТРАЦИЯ УЧЕНИКА</b>\n\n"
+        "Введите ваше <b>имя и фамилию</b>:\n"
+        "<i>(например: Иван Петров)</i>", kb)
+
+
+async def reg_role_parent(query, context):
+    """Родитель вводит имя → выбирает класс ребёнка."""
+    context.user_data['reg_role'] = 'parent'
+    context.user_data['awaiting_reg_name'] = True
+    kb = [[btn("❌ Отмена", 'menu_register')]]
+    await safe_edit(query,
+        "👨‍👩‍👧 <b>РЕГИСТРАЦИЯ РОДИТЕЛЯ</b>\n\n"
+        "Введите ваше <b>имя</b>:\n"
+        "<i>(например: Мария Петрова)</i>", kb)
+
+
+async def reg_select_class(query, context):
+    """Показывает выбор класса после ввода имени."""
+    role = context.user_data.get('reg_role', 'student')
+    name = context.user_data.get('reg_name', '')
+    role_label = "ученика" if role == 'student' else "ребёнка"
+
+    kb = []
+    for i in range(0, len(ALL_CLASSES), 4):
+        row = [btn(c.upper(), f'reg_class_{c}') for c in ALL_CLASSES[i:i+4]]
+        kb.append(row)
+    kb.append([btn("↩️ Назад", f'reg_role_{role}'), BACK_TO_MAIN[0][0]])
+
+    await safe_edit(query,
+        f"📚 <b>ВЫБОР КЛАССА</b>\n\n"
+        f"Имя: <b>{name}</b>\n\n"
+        f"Выберите класс {role_label}:", kb)
+
+
+async def reg_confirm(query, context, class_name: str):
+    """Финальное подтверждение регистрации."""
+    uid  = query.from_user.id
+    role = context.user_data.get('reg_role', 'student')
+    name = context.user_data.get('reg_name', '')
+    role_labels = {'student': 'Ученик', 'parent': 'Родитель'}
+    role_emojis = {'student': '👨‍🎓', 'parent': '👨‍👩‍👧'}
+
+    kb = [
+        [btn("✅ Подтвердить", f'reg_save_{class_name}')],
+        [btn("✏️ Изменить класс", f'reg_role_{role}')],
+        [btn("❌ Отмена", 'menu_register')],
+    ]
+    await safe_edit(query,
+        f"{role_emojis.get(role,'👤')} <b>ПОДТВЕРЖДЕНИЕ РЕГИСТРАЦИИ</b>\n\n"
+        f"Роль: <b>{role_labels.get(role, role)}</b>\n"
+        f"Имя: <b>{name}</b>\n"
+        f"Класс: <b>{class_name.upper()}</b>\n\n"
+        f"Всё верно?", kb)
+
+
+async def reg_save(query, context, class_name: str):
+    """Сохраняет профиль в БД."""
+    uid  = query.from_user.id
+    role = context.user_data.get('reg_role', 'student')
+    name = context.user_data.get('reg_name', '')
+
+    ok = await asyncio.to_thread(db.save_user_profile, uid, role, name, class_name)
+    if ok:
+        # Автоматически подписываем на замены класса
+        await asyncio.to_thread(db.subscribe_class, uid, class_name)
+
+        role_emojis = {'student': '👨‍🎓', 'parent': '👨‍👩‍👧'}
+        role_labels = {'student': 'Ученик', 'parent': 'Родитель'}
+
+        # Уведомляем админа
+        for a in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=a,
+                    text=f"✅ Новая регистрация!\n"
+                         f"{role_emojis.get(role,'👤')} <b>{role_labels.get(role,role)}</b>\n"
+                         f"Имя: <b>{name}</b>  Класс: <b>{class_name.upper()}</b>\n"
+                         f"ID: {uid}",
+                    parse_mode='HTML'
+                )
+            except Exception:
+                pass
+
+        context.user_data.pop('reg_role', None)
+        context.user_data.pop('reg_name', None)
+        context.user_data.pop('awaiting_reg_name', None)
+
+        kb = [
+            [btn("👤 Мой профиль", 'menu_profile')],
+            BACK_TO_MAIN[0],
+        ]
+        await safe_edit(query,
+            f"✅ <b>Регистрация завершена!</b>\n\n"
+            f"{role_emojis.get(role,'👤')} {role_labels.get(role,role)}: <b>{name}</b>\n"
+            f"📚 Класс: <b>{class_name.upper()}</b>\n\n"
+            f"🔔 Вы будете получать уведомления о заменах класса <b>{class_name.upper()}</b> автоматически.",
+            kb)
+    else:
+        await safe_edit(query, "❌ Ошибка сохранения. Попробуйте ещё раз.", [[btn("↩️ Назад", 'menu_register')]])
+
+
+async def show_profile(query, context):
+    """Показывает профиль пользователя."""
+    uid = query.from_user.id
+    profile = await asyncio.to_thread(db.get_user_profile, uid)
+    teacher_name = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+
+    if teacher_name:
+        # Учитель
+        text = (
+            f"👨‍🏫 <b>МОЙ ПРОФИЛЬ</b>\n\n"
+            f"Роль: <b>Учитель</b>\n"
+            f"Имя: <b>{teacher_name}</b>\n"
+            f"🔔 Уведомления о заменах: <b>включены</b>\n"
+        )
+        kb = [
+            [btn("📅 Моё расписание", f'tch_{ALL_TEACHERS.index(teacher_name) if teacher_name in ALL_TEACHERS else 0}')],
+            [btn("🔄 Сменить имя", 'reg_role_teacher')],
+            BACK_TO_MAIN[0],
+        ]
+    elif profile:
+        role = profile.get('role', 'guest')
+        name = profile.get('display_name', '—')
+        cls  = profile.get('class_name', '—')
+        reg  = profile.get('registered_at')
+        reg_str = reg.strftime('%d.%m.%Y') if reg else '—'
+        role_labels = {'student': 'Ученик', 'parent': 'Родитель', 'guest': 'Гость'}
+        role_emojis = {'student': '👨‍🎓', 'parent': '👨‍👩‍👧', 'guest': '👤'}
+
+        text = (
+            f"{role_emojis.get(role,'👤')} <b>МОЙ ПРОФИЛЬ</b>\n\n"
+            f"Роль: <b>{role_labels.get(role, role)}</b>\n"
+            f"Имя: <b>{name}</b>\n"
+            f"Класс: <b>{cls.upper()}</b>\n"
+            f"🔔 Уведомления о заменах: <b>включены</b>\n"
+            f"📅 Зарегистрирован: <b>{reg_str}</b>"
+        )
+        kb = [
+            [btn(f"📚 Расписание {cls.upper()}", f'week_{cls}')],
+            [btn("🔔 Замены моего класса", 'menu_substitutions')],
+            [btn("🗑 Удалить профиль", 'reg_delete_confirm')],
+            BACK_TO_MAIN[0],
+        ]
+    else:
+        text = "👤 <b>МОЙ ПРОФИЛЬ</b>\n\nВы не зарегистрированы."
+        kb = [[btn("👤 Зарегистрироваться", 'menu_register')], BACK_TO_MAIN[0]]
+
+    await safe_edit(query, text, kb)
+
+
+async def reg_delete_confirm(query, context):
+    kb = [
+        [btn("✅ Да, удалить", 'reg_delete_do')],
+        [btn("❌ Отмена", 'menu_profile')],
+    ]
+    await safe_edit(query,
+        "⚠️ <b>Удалить профиль?</b>\n\n"
+        "Вы потеряете подписку на уведомления о заменах.\n"
+        "Это действие необратимо.", kb)
+
+
+async def reg_delete_do(query, context):
+    uid = query.from_user.id
+    await asyncio.to_thread(db.delete_user_profile, uid)
+    await safe_edit(query,
+        "✅ Профиль удалён.\n\nВы можете зарегистрироваться снова в любое время.",
+        [[btn("👤 Зарегистрироваться", 'menu_register')], BACK_TO_MAIN[0]])
+
+
+
+
 async def show_main_menu_msg(update: Update, context: CallbackContext):
     """Отправляет главное меню новым сообщением."""
-    now = datetime.now(TZ_MINSK)
+    user = update.effective_user
+    now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
     if info['status'] == 'lesson':
         status_line = f"🔔 Сейчас {info['number']} урок, осталось {info['time_left']} мин"
@@ -1211,19 +1527,34 @@ async def show_main_menu_msg(update: Update, context: CallbackContext):
     else:
         status_line = "✅ Уроки закончились на сегодня"
 
-    text = (f"🏫 <b>Школьный бот</b>\n"
-            f"<i>{now.strftime('%d.%m.%Y, %A').replace('Monday','Понедельник').replace('Tuesday','Вторник').replace('Wednesday','Среда').replace('Thursday','Четверг').replace('Friday','Пятница').replace('Saturday','Суббота').replace('Sunday','Воскресенье')}</i>\n"
+    profile  = await asyncio.to_thread(db.get_user_profile, user.id)
+    is_admin = user.id in ADMIN_IDS
+    kb       = get_main_menu_kb(profile, is_admin)
+
+    # Персональное приветствие
+    if profile:
+        greet = f"👋 {profile.get('display_name', 'Привет')}!"
+    else:
+        greet = "👋 Добро пожаловать!"
+
+    days_ru = {"Monday":"Понедельник","Tuesday":"Вторник","Wednesday":"Среда",
+               "Thursday":"Четверг","Friday":"Пятница","Saturday":"Суббота","Sunday":"Воскресенье"}
+    day_name = days_ru.get(now.strftime('%A'), now.strftime('%A'))
+
+    text = (f"🏫 <b>Школьный бот</b>  {greet}\n"
+            f"<i>{now.strftime('%d.%m.%Y')}, {day_name}</i>\n"
             f"{status_line}\n\n"
             f"Выберите раздел:")
     await update.message.reply_text(
         text, parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup(MAIN_MENU_KB)
+        reply_markup=InlineKeyboardMarkup(kb)
     )
 
 
 async def show_main_menu_edit(query):
     """Редактирует текущее сообщение на главное меню."""
-    now = datetime.now(TZ_MINSK)
+    uid  = query.from_user.id
+    now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
     if info['status'] == 'lesson':
         status_line = f"🔔 Сейчас {info['number']} урок, осталось {info['time_left']} мин"
@@ -1232,10 +1563,14 @@ async def show_main_menu_edit(query):
     else:
         status_line = "✅ Уроки закончились на сегодня"
 
+    profile  = await asyncio.to_thread(db.get_user_profile, uid)
+    is_admin = uid in ADMIN_IDS
+    kb       = get_main_menu_kb(profile, is_admin)
+
     text = (f"🏫 <b>Школьный бот</b>\n"
             f"<i>{now.strftime('%d.%m.%Y')}</i>  {status_line}\n\n"
             f"Выберите раздел:")
-    await safe_edit(query, text, MAIN_MENU_KB)
+    await safe_edit(query, text, kb)
 
 
 # ══════════════════════════════════════════════════════════
@@ -2136,7 +2471,7 @@ async def handle_sub_flow(query, context):
             'new_subject': subject, 'old_teacher': old_teacher,
         }
         await notify_teacher_substitution(context, new_teacher, sub_data)
-        context.user_data.clear()
+        await notify_class_substitution(context, cls, {**sub_data, 'new_teacher': new_teacher})
 
         kb = [
             [btn("➕ Добавить ещё", 'admin_add_sub')],
@@ -2406,6 +2741,21 @@ async def button_handler(update: Update, context: CallbackContext):
         await handle_sub_flow(query, context)
         return
 
+    # ── Регистрация: выбор класса ──
+    if d.startswith('reg_class_'):
+        cls = d.replace('reg_class_', '')
+        await reg_confirm(query, context, cls)
+        return
+    if d.startswith('reg_save_'):
+        cls = d.replace('reg_save_', '')
+        await reg_save(query, context, cls)
+        return
+    if d.startswith('reg_tch_page_'):
+        page = int(d.split('_')[3])
+        context.user_data['reg_teacher_page'] = page
+        await reg_role_teacher(query, context)
+        return
+
     # ── Регистрация учителя ──
     if d.startswith('reg_teacher_'):
         idx = int(d.replace('reg_teacher_', ''))
@@ -2629,6 +2979,13 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # ── Основные роуты ──
     routes = {
+        'menu_register':          menu_register,
+        'menu_profile':           show_profile,
+        'reg_role_teacher':       reg_role_teacher,
+        'reg_role_student':       reg_role_student,
+        'reg_role_parent':        reg_role_parent,
+        'reg_delete_confirm':     reg_delete_confirm,
+        'reg_delete_do':          reg_delete_do,
         'back_to_main':           show_main_menu_edit,
         'menu_now':               menu_now,
         'menu_schedule':          menu_schedule,
@@ -2693,6 +3050,25 @@ async def handle_message(update: Update, context: CallbackContext):
         context.user_data = {}
 
     text = update.message.text.strip()
+
+    # ── Регистрация: ввод имени ──
+    if context.user_data.get('awaiting_reg_name'):
+        context.user_data['reg_name'] = text
+        context.user_data.pop('awaiting_reg_name', None)
+        role = context.user_data.get('reg_role', 'student')
+        kb = []
+        for i in range(0, len(ALL_CLASSES), 4):
+            row = [btn(c.upper(), f'reg_class_{c}') for c in ALL_CLASSES[i:i+4]]
+            kb.append(row)
+        kb.append([btn("❌ Отмена", 'menu_register')])
+        role_label = "ученика" if role == 'student' else "ребёнка"
+        await update.message.reply_text(
+            f"✅ Имя: <b>{text}</b>\n\n"
+            f"Теперь выберите класс {role_label}:",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+        return
 
     # ── ИИ ──
     if context.user_data.get('awaiting_ai'):
