@@ -1510,7 +1510,8 @@ async def show_profile(query, context):
         )
         kb = [
             [btn("📅 Моё расписание", f'tch_{ALL_TEACHERS.index(teacher_name) if teacher_name in ALL_TEACHERS else 0}')],
-            [btn("🔄 Сменить имя", 'reg_role_teacher')],
+            [btn("🔄 Сменить имя", 'teacher_change_name')],
+            [btn("🗑 Отвязать аккаунт", 'teacher_unlink_confirm')],
             BACK_TO_MAIN[0],
         ]
     elif profile:
@@ -1560,6 +1561,185 @@ async def reg_delete_do(query, context):
     await safe_edit(query,
         "✅ Профиль удалён.\n\nВы можете зарегистрироваться снова в любое время.",
         [[btn("👤 Зарегистрироваться", 'menu_register')], BACK_TO_MAIN[0]])
+
+
+# ── Смена имени учителя ──
+
+async def teacher_change_name(query, context):
+    """Показывает список доступных имён для смены."""
+    uid = query.from_user.id
+    current = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    if not current:
+        await safe_edit(query, "❌ Вы не зарегистрированы как учитель.",
+                        [[btn("↩️ Назад", 'menu_profile')]])
+        return
+
+    # Список: все учителя кроме уже занятых (кроме текущего — его показываем с меткой)
+    registered = await asyncio.to_thread(db.get_registered_teacher_names)
+    # Убираем из заблокированных текущее имя — его можно "переподтвердить"
+    registered.discard(current)
+
+    page = context.user_data.get('chname_page', 0)
+    available = [t for t in ALL_TEACHERS if t not in registered]
+    start = page * TEACHERS_PER_PAGE
+    chunk = available[start:start + TEACHERS_PER_PAGE]
+
+    kb = []
+    for i in range(0, len(chunk), 2):
+        t1 = chunk[i]
+        label1 = f"✅ {t1}" if t1 == current else t1
+        idx1 = ALL_TEACHERS.index(t1)
+        row = [btn(label1, f'chname_pick_{idx1}')]
+        if i + 1 < len(chunk):
+            t2 = chunk[i + 1]
+            label2 = f"✅ {t2}" if t2 == current else t2
+            idx2 = ALL_TEACHERS.index(t2)
+            row.append(btn(label2, f'chname_pick_{idx2}'))
+        kb.append(row)
+
+    nav = []
+    total_pages = (len(available) + TEACHERS_PER_PAGE - 1) // TEACHERS_PER_PAGE
+    if page > 0:
+        nav.append(btn("◀️", f'chname_page_{page-1}'))
+    nav.append(btn(f"{page+1}/{total_pages}", 'noop'))
+    if start + TEACHERS_PER_PAGE < len(available):
+        nav.append(btn("▶️", f'chname_page_{page+1}'))
+    if nav:
+        kb.append(nav)
+    kb.append([btn("↩️ Назад", 'menu_profile'), BACK_TO_MAIN[0][0]])
+
+    await safe_edit(query,
+        f"🔄 <b>СМЕНА ИМЕНИ</b>\n\n"
+        f"Текущее: <b>{current}</b>\n\n"
+        f"Выберите новое имя из списка:\n"
+        f"<i>(✅ — ваше текущее имя)</i>", kb)
+
+
+async def chname_pick(query, context, idx: int):
+    """Подтверждение смены имени."""
+    uid = query.from_user.id
+    current = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    if idx >= len(ALL_TEACHERS):
+        await query.answer("❌ Ошибка", show_alert=True)
+        return
+
+    new_name = ALL_TEACHERS[idx]
+
+    if new_name == current:
+        await safe_edit(query,
+            f"ℹ️ Вы уже зарегистрированы как <b>{current}</b>.",
+            [[btn("↩️ Назад", 'menu_profile')]])
+        return
+
+    # Проверяем что имя ещё свободно
+    registered = await asyncio.to_thread(db.get_registered_teacher_names)
+    registered.discard(current)
+    if new_name in registered:
+        await safe_edit(query,
+            f"⛔ <b>{new_name}</b> уже занято другим пользователем.\n\n"
+            f"Выберите другое имя.",
+            [[btn("↩️ К списку", 'teacher_change_name')]])
+        return
+
+    kb = [
+        [btn("✅ Да, сменить",  f'chname_confirm_{idx}')],
+        [btn("❌ Отмена",       'teacher_change_name')],
+    ]
+    await safe_edit(query,
+        f"🔄 <b>ПОДТВЕРЖДЕНИЕ СМЕНЫ ИМЕНИ</b>\n\n"
+        f"Было: <b>{current}</b>\n"
+        f"Станет: <b>{new_name}</b>\n\n"
+        f"Вы уверены?", kb)
+
+
+async def chname_confirm(query, context, idx: int):
+    """Выполняет смену имени."""
+    uid = query.from_user.id
+    current = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    if idx >= len(ALL_TEACHERS):
+        await query.answer("❌ Ошибка", show_alert=True)
+        return
+
+    new_name = ALL_TEACHERS[idx]
+
+    # Финальная проверка на занятость
+    registered = await asyncio.to_thread(db.get_registered_teacher_names)
+    registered.discard(current)
+    if new_name in registered:
+        await safe_edit(query,
+            f"⛔ <b>{new_name}</b> уже занято. Попробуйте другое имя.",
+            [[btn("↩️ К списку", 'teacher_change_name')]])
+        return
+
+    # Сбрасываем старое имя и регистрируем новое
+    await asyncio.to_thread(db.unregister_teacher, current)
+    ok = await asyncio.to_thread(db.register_teacher, new_name, uid)
+
+    if ok:
+        _teacher_schedule_cache.pop(current, None)
+        _teacher_schedule_cache.pop(new_name, None)
+        context.user_data.pop('chname_page', None)
+
+        for a in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=a,
+                    text=f"🔄 Учитель сменил имя:\n"
+                         f"<b>{current}</b> → <b>{new_name}</b>\n"
+                         f"ID: {uid}",
+                    parse_mode='HTML'
+                )
+            except Exception:
+                pass
+
+        await safe_edit(query,
+            f"✅ <b>Имя успешно изменено!</b>\n\n"
+            f"Было: <s>{current}</s>\n"
+            f"Стало: <b>{new_name}</b>\n\n"
+            f"Уведомления о заменах будут приходить на новое имя.",
+            [[btn("👤 Мой профиль", 'menu_profile')], BACK_TO_MAIN[0]])
+    else:
+        await safe_edit(query, "❌ Не удалось сменить имя. Попробуйте ещё раз.",
+                        [[btn("↩️ Назад", 'teacher_change_name')]])
+
+
+async def teacher_unlink_confirm(query, context):
+    """Подтверждение отвязки аккаунта учителя."""
+    uid = query.from_user.id
+    name = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    kb = [
+        [btn("✅ Да, отвязать", 'teacher_unlink_do')],
+        [btn("❌ Отмена",       'menu_profile')],
+    ]
+    await safe_edit(query,
+        f"⚠️ <b>Отвязать аккаунт?</b>\n\n"
+        f"Вы отвяжете Telegram от имени <b>{name}</b>.\n"
+        f"Уведомления о заменах перестанут приходить.\n\n"
+        f"Имя <b>{name}</b> снова появится в списке для регистрации.", kb)
+
+
+async def teacher_unlink_do(query, context):
+    """Отвязывает Telegram ID от имени учителя."""
+    uid = query.from_user.id
+    name = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    if name:
+        await asyncio.to_thread(db.unregister_teacher, name)
+        _teacher_schedule_cache.pop(name, None)
+        for a in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=a,
+                    text=f"⚠️ Учитель <b>{name}</b> отвязал аккаунт (ID: {uid})",
+                    parse_mode='HTML'
+                )
+            except Exception:
+                pass
+    await safe_edit(query,
+        f"✅ Аккаунт отвязан от имени <b>{name}</b>.\n\n"
+        f"Вы можете зарегистрироваться снова.",
+        [[btn("👤 Зарегистрироваться", 'menu_register')], BACK_TO_MAIN[0]])
+
+
 
 
 
@@ -2790,6 +2970,18 @@ async def button_handler(update: Update, context: CallbackContext):
         await handle_sub_flow(query, context)
         return
 
+    # ── Смена имени учителя ──
+    if d.startswith('chname_page_'):
+        context.user_data['chname_page'] = int(d.split('_')[2])
+        await teacher_change_name(query, context)
+        return
+    if d.startswith('chname_pick_'):
+        await chname_pick(query, context, int(d.split('_')[2]))
+        return
+    if d.startswith('chname_confirm_'):
+        await chname_confirm(query, context, int(d.split('_')[2]))
+        return
+
     # ── Регистрация: выбор класса ──
     if d.startswith('reg_class_'):
         cls = d.replace('reg_class_', '')
@@ -3036,6 +3228,9 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # ── Основные роуты ──
     routes = {
+        'teacher_change_name':    teacher_change_name,
+        'teacher_unlink_confirm': teacher_unlink_confirm,
+        'teacher_unlink_do':      teacher_unlink_do,
         'menu_register':          menu_register,
         'menu_profile':           show_profile,
         'reg_role_teacher':       reg_role_teacher,
