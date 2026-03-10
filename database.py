@@ -483,6 +483,21 @@ def find_teacher_by_telegram_id(telegram_id):
         release_connection(conn)
 
 
+def get_registered_teacher_names():
+    """Возвращает set имён учителей которые уже зарегистрировались в боте."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT full_name FROM teachers WHERE registered=TRUE AND telegram_id != 0')
+        return {row[0] for row in cur.fetchall()}
+    except Exception as e:
+        logger.error(f"get_registered_teacher_names: {e}")
+        return set()
+    finally:
+        release_connection(conn)
+
+
 def seed_teachers(teacher_names: list):
     """Заполняет таблицу teachers из списка имён (только если ещё нет записей)."""
     conn = None
