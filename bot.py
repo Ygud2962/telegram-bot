@@ -1615,22 +1615,23 @@ async def show_all_subs(query, context):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: НОВОСТИ
 # ══════════════════════════════════════════════════════════
-NEWS_PER_PAGE = 5
+NEWS_ARCHIVE_PER_PAGE = 5
 
 
 async def menu_news(query, context, page=0):
-    uid = query.from_user.id
+    """
+    Главный экран новостей:
+    • page=0 — 3 последних новости + кнопка «Архив»
+    • page>0 — постраничный архив (5 на страницу), новые сверху
+    """
+    uid     = query.from_user.id
+    chat_id = query.message.chat_id
+
     await asyncio.to_thread(db.update_user_last_news_check, uid)
     context.user_data.pop('news_shown', None)
 
-    total = await asyncio.to_thread(db.get_total_news_count)
-    total_pages = max(1, (total + NEWS_PER_PAGE - 1) // NEWS_PER_PAGE)
-    news_list = await asyncio.to_thread(db.get_news_page_asc, page * NEWS_PER_PAGE, NEWS_PER_PAGE)
-
-    chat_id = query.message.chat_id
-    # Удаляем старые сообщения новостей
-    old_ids = context.user_data.get('news_msg_ids', [])
-    for mid in old_ids:
+    # Удаляем предыдущие сообщения новостей
+    for mid in context.user_data.get('news_msg_ids', []):
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=mid)
         except Exception:
@@ -1638,40 +1639,115 @@ async def menu_news(query, context, page=0):
     context.user_data['news_msg_ids'] = []
     context.user_data['news_page'] = page
 
+    total = await asyncio.to_thread(db.get_total_news_count)
     msg_ids = []
-    if not news_list:
-        m = await safe_send(context, chat_id, "📭 Новостей пока нет.")
-        if m:
-            msg_ids.append(m.message_id)
-    else:
-        for news_id, title, content, pub_date, views in news_list:
-            pub_str = convert_utc_to_minsk(pub_date)
-            text = (f"📌 <b>{title}</b>\n"
-                    f"<i>📅 {pub_str}  👁 {views}</i>\n\n"
-                    f"{content[:300]}{'...' if len(content) > 300 else ''}\n"
-                    f"{'─' * 20}")
-            kb_row = []
-            if uid in ADMIN_IDS:
-                kb_row.append(btn("✏️", f'edit_news_{news_id}'))
-                kb_row.append(btn("🗑", f'del_news_{news_id}'))
-            kb_row.append(btn("📖 Читать полностью", f'news_full_{news_id}'))
-            m = await safe_send(context, chat_id, text, [kb_row])
+
+    # ── ГЛАВНЫЙ ЭКРАН (page = 0) ──────────────────────────
+    if page == 0:
+        latest = await asyncio.to_thread(db.get_latest_news, 3)
+
+        if not latest:
+            m = await safe_send(context, chat_id, "📭 Новостей пока нет.")
+            if m:
+                msg_ids.append(m.message_id)
+        else:
+            # Заголовок
+            m = await safe_send(
+                context, chat_id,
+                f"📰 <b>НОВОСТИ ШКОЛЫ</b>\n"
+                f"<i>Последние {len(latest)} из {total}</i>"
+            )
             if m:
                 msg_ids.append(m.message_id)
 
-    nav = []
-    if page > 0:
-        nav.append(btn("◀️", f'news_page_{page-1}'))
-    nav.append(btn(f"{page+1}/{total_pages}", 'noop'))
-    if page < total_pages - 1:
-        nav.append(btn("▶️", f'news_page_{page+1}'))
+            for news_id, title, content, pub_date, views in latest:
+                pub_str  = convert_utc_to_minsk(pub_date)
+                preview  = content[:350] + ('...' if len(content) > 350 else '')
+                text = (
+                    f"📌 <b>{title}</b>\n"
+                    f"<i>📅 {pub_str}  👁 {views}</i>\n\n"
+                    f"{preview}\n"
+                    f"{'─' * 22}"
+                )
+                kb_row = []
+                if uid in ADMIN_IDS:
+                    kb_row += [btn("✏️", f'edit_news_{news_id}'),
+                               btn("🗑", f'del_news_{news_id}')]
+                kb_row.append(btn("📖 Читать полностью", f'news_full_{news_id}'))
+                m = await safe_send(context, chat_id, text, [kb_row])
+                if m:
+                    msg_ids.append(m.message_id)
 
-    nav_kb = [nav, BACK_TO_MAIN[0]]
-    if uid in ADMIN_IDS:
-        nav_kb.insert(0, [btn("📣 Опубликовать новость", 'admin_publish_news')])
-    m = await safe_send(context, chat_id, "📰 <b>Новости школы</b>", nav_kb)
-    if m:
-        msg_ids.append(m.message_id)
+        # Нижняя навигация
+        nav_kb = []
+        if uid in ADMIN_IDS:
+            nav_kb.append([btn("📣 Опубликовать новость", 'admin_publish_news')])
+        if total > 3:
+            nav_kb.append([btn(f"📚 Архив новостей ({total - 3} ещё)", 'news_archive_1')])
+        nav_kb.append(BACK_TO_MAIN[0])
+
+        m = await safe_send(context, chat_id, "─" * 22, nav_kb)
+        if m:
+            msg_ids.append(m.message_id)
+
+    # ── АРХИВ (page >= 1) ─────────────────────────────────
+    else:
+        # Пропускаем первые 3 (они на главном), остальные постранично
+        archive_offset = 3 + (page - 1) * NEWS_ARCHIVE_PER_PAGE
+        archive_total  = max(0, total - 3)
+        total_pages    = max(1, -(-archive_total // NEWS_ARCHIVE_PER_PAGE))  # ceiling div
+
+        news_list = await asyncio.to_thread(
+            db.get_archive_news_page, archive_offset, NEWS_ARCHIVE_PER_PAGE
+        )
+
+        m = await safe_send(
+            context, chat_id,
+            f"📚 <b>АРХИВ НОВОСТЕЙ</b>\n"
+            f"<i>Страница {page} из {total_pages}</i>"
+        )
+        if m:
+            msg_ids.append(m.message_id)
+
+        if not news_list:
+            m = await safe_send(context, chat_id, "📭 Новостей в архиве нет.")
+            if m:
+                msg_ids.append(m.message_id)
+        else:
+            for news_id, title, content, pub_date, views in news_list:
+                pub_str = convert_utc_to_minsk(pub_date)
+                preview = content[:300] + ('...' if len(content) > 300 else '')
+                text = (
+                    f"📌 <b>{title}</b>\n"
+                    f"<i>📅 {pub_str}  👁 {views}</i>\n\n"
+                    f"{preview}\n"
+                    f"{'─' * 22}"
+                )
+                kb_row = []
+                if uid in ADMIN_IDS:
+                    kb_row += [btn("✏️", f'edit_news_{news_id}'),
+                               btn("🗑", f'del_news_{news_id}')]
+                kb_row.append(btn("📖 Читать полностью", f'news_full_{news_id}'))
+                m = await safe_send(context, chat_id, text, [kb_row])
+                if m:
+                    msg_ids.append(m.message_id)
+
+        # Навигация архива
+        nav = []
+        if page > 1:
+            nav.append(btn("◀️ Назад", f'news_archive_{page-1}'))
+        nav.append(btn(f"{page}/{total_pages}", 'noop'))
+        if page < total_pages:
+            nav.append(btn("Вперёд ▶️", f'news_archive_{page+1}'))
+
+        nav_kb = [nav]
+        nav_kb.append([btn("🔝 Последние новости", 'menu_news')])
+        nav_kb.append(BACK_TO_MAIN[0])
+
+        m = await safe_send(context, chat_id, "─" * 22, nav_kb)
+        if m:
+            msg_ids.append(m.message_id)
+
     context.user_data['news_msg_ids'] = msg_ids
 
 
@@ -1690,7 +1766,8 @@ async def show_news_full(query, context, news_id: int):
         kb.append([btn("✏️ Редактировать", f"edit_news_{news_id}"),
                    btn("🗑 Удалить", f"del_news_{news_id}")])
     page = context.user_data.get('news_page', 0)
-    kb.append([btn("◀️ К списку", f'news_page_{page}'), BACK_TO_MAIN[0][0]])
+    back_cb = f'news_archive_{page}' if page > 0 else 'menu_news'
+    kb.append([btn("◀️ К списку", back_cb), BACK_TO_MAIN[0][0]])
     chat_id = query.message.chat_id
     await safe_send(context, chat_id, text, kb)
 
@@ -2412,6 +2489,10 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # ── Новости ──
     if d.startswith('news_page_'):
+        page = int(d.split('_')[2])
+        await menu_news(query, context, page)
+        return
+    if d.startswith('news_archive_'):
         page = int(d.split('_')[2])
         await menu_news(query, context, page)
         return
