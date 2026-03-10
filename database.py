@@ -401,6 +401,43 @@ def get_news_page_asc(offset=0, limit=5):
         release_connection(conn)
 
 
+def get_latest_news(limit=3):
+    """Возвращает N последних новостей (новые сверху)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT id, title, content, published_at, views_count
+            FROM news ORDER BY published_at DESC LIMIT %s
+        ''', (limit,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_latest_news: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_archive_news_page(offset=0, limit=5):
+    """Возвращает страницу архивных новостей (без последних 3), новые сверху."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT id, title, content, published_at, views_count
+            FROM news ORDER BY published_at DESC
+            OFFSET %s LIMIT %s
+        ''', (offset, limit))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_archive_news_page: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
 def get_total_news_count():
     conn = None
     try:
