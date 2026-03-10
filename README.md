@@ -9,7 +9,7 @@
 ```
 
 [![Статус](https://img.shields.io/badge/🟢_статус-работает-brightgreen?style=for-the-badge&logo=telegram&logoColor=white)](#)
-[![Версия](https://img.shields.io/badge/📦_версия-3.0-blue?style=for-the-badge)](#)
+[![Версия](https://img.shields.io/badge/📦_версия-5.0-blue?style=for-the-badge)](#)
 [![Python](https://img.shields.io/badge/🐍_python-3.9+-yellow?style=for-the-badge&logo=python&logoColor=white)](#)
 [![Обновлено](https://img.shields.io/badge/🔄_обновлено-сегодня-orange?style=for-the-badge)](#)
 
