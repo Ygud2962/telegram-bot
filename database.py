@@ -468,14 +468,19 @@ def register_teacher(full_name, telegram_id):
 
 
 def find_teacher_by_telegram_id(telegram_id):
-    """Возвращает имя учителя по Telegram-ID или None."""
+    """Возвращает {'full_name': ..., 'registered_at': ...} или None."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('SELECT full_name FROM teachers WHERE telegram_id=%s', (telegram_id,))
+        cur.execute(
+            'SELECT full_name, registered_at FROM teachers WHERE telegram_id=%s',
+            (telegram_id,)
+        )
         row = cur.fetchone()
-        return row[0] if row else None
+        if row:
+            return {'full_name': row[0], 'registered_at': row[1]}
+        return None
     except Exception as e:
         logger.error(f"find_teacher_by_telegram_id: {e}")
         return None
@@ -565,59 +570,40 @@ def add_news(title, content):
         release_connection(conn)
 
 
-def get_news_page_asc(offset=0, limit=5):
+def get_news(offset=0, limit=8, order='DESC'):
+    """Универсальная функция получения новостей. Заменяет get_news_page_asc,
+    get_latest_news, get_archive_news_page, get_recent_news."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('''
+        direction = 'ASC' if order == 'ASC' else 'DESC'
+        cur.execute(f'''
             SELECT id, title, content, published_at, views_count
-            FROM news ORDER BY published_at ASC
+            FROM news ORDER BY published_at {direction}
             OFFSET %s LIMIT %s
         ''', (offset, limit))
         return cur.fetchall()
     except Exception as e:
-        logger.error(f"get_news_page_asc: {e}")
+        logger.error(f"get_news: {e}")
         return []
     finally:
         release_connection(conn)
 
+
+# Алиасы для обратной совместимости
+def get_archive_news_page(offset=0, limit=8):
+    return get_news(offset=offset, limit=limit, order='DESC')
 
 def get_latest_news(limit=3):
-    """Возвращает N последних новостей (новые сверху)."""
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute('''
-            SELECT id, title, content, published_at, views_count
-            FROM news ORDER BY published_at DESC LIMIT %s
-        ''', (limit,))
-        return cur.fetchall()
-    except Exception as e:
-        logger.error(f"get_latest_news: {e}")
-        return []
-    finally:
-        release_connection(conn)
+    return get_news(offset=0, limit=limit, order='DESC')
 
+def get_recent_news(limit=15):
+    return get_news(offset=0, limit=limit, order='DESC')
 
-def get_archive_news_page(offset=0, limit=5):
-    """Возвращает страницу архивных новостей (без последних 3), новые сверху."""
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute('''
-            SELECT id, title, content, published_at, views_count
-            FROM news ORDER BY published_at DESC
-            OFFSET %s LIMIT %s
-        ''', (offset, limit))
-        return cur.fetchall()
-    except Exception as e:
-        logger.error(f"get_archive_news_page: {e}")
-        return []
-    finally:
-        release_connection(conn)
+def get_news_page_asc(offset=0, limit=5):
+    return get_news(offset=offset, limit=limit, order='ASC')
+
 
 
 def get_total_news_count():
@@ -669,21 +655,9 @@ def get_news_by_id(news_id):
         release_connection(conn)
 
 
-def get_recent_news(limit=15):
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            'SELECT id, title, content, published_at FROM news ORDER BY published_at DESC LIMIT %s',
-            (limit,)
-        )
-        return cur.fetchall()
-    except Exception as e:
-        logger.error(f"get_recent_news: {e}")
-        return []
-    finally:
-        release_connection(conn)
+def get_news_by_id(news_id):
+    """Алиас для get_news_detail — обратная совместимость."""
+    return get_news_detail(news_id)
 
 
 def increment_news_views(news_id, user_id):
