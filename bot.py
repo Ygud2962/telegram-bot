@@ -1483,6 +1483,8 @@ async def reg_save(query, context, class_name: str):
         context.user_data.pop('reg_role', None)
         context.user_data.pop('reg_name', None)
         context.user_data.pop('awaiting_reg_name', None)
+        context.user_data.pop('profile_cache', None)      # сброс кэша профиля
+        context.user_data.pop('profile_cache_id', None)
 
         kb = [
             [btn("👤 Мой профиль", 'menu_profile')],
@@ -1562,6 +1564,8 @@ async def reg_delete_confirm(query, context):
 async def reg_delete_do(query, context):
     uid = query.from_user.id
     await asyncio.to_thread(db.delete_user_profile, uid)
+    context.user_data.pop('profile_cache', None)
+    context.user_data.pop('profile_cache_id', None)
     await safe_edit(query,
         "✅ Профиль удалён.\n\nВы можете зарегистрироваться снова в любое время.",
         [[btn("👤 Зарегистрироваться", 'menu_register')], BACK_TO_MAIN[0]])
@@ -1784,7 +1788,7 @@ async def show_main_menu_msg(update: Update, context: CallbackContext):
     )
 
 
-async def show_main_menu_edit(query):
+async def show_main_menu_edit(query, context=None):
     """Редактирует текущее сообщение на главное меню."""
     uid  = query.from_user.id
     now  = datetime.now(TZ_MINSK)
@@ -1796,7 +1800,15 @@ async def show_main_menu_edit(query):
     else:
         status_line = "✅ Уроки закончились на сегодня"
 
-    profile  = await asyncio.to_thread(db.get_user_profile, uid)
+    # Берём профиль из кэша context, чтобы не лезть в БД при каждом нажатии "Назад"
+    if context and context.user_data.get('profile_cache_id') == uid:
+        profile = context.user_data.get('profile_cache')
+    else:
+        profile = await asyncio.to_thread(db.get_user_profile, uid)
+        if context:
+            context.user_data['profile_cache'] = profile
+            context.user_data['profile_cache_id'] = uid
+
     is_admin = uid in ADMIN_IDS
     kb       = get_main_menu_kb(profile, is_admin)
 
@@ -3000,17 +3012,18 @@ async def button_handler(update: Update, context: CallbackContext):
         context.user_data = {}
     user = query.from_user
 
+    # ── Сразу отвечаем Telegram — убирает "часики" с кнопки ──
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"query.answer error: {e}")
+
+    # Логируем активность в фоне — не блокируем
     asyncio.create_task(asyncio.to_thread(
         db.log_user_activity, user.id, f'btn_{query.data[:40]}'
     ))
 
     if await check_maintenance(update, context):
-        return
-
-    try:
-        await query.answer()
-    except Exception as e:
-        logger.warning(f"query.answer error: {e}")
         return
 
     d = query.data
@@ -3319,11 +3332,10 @@ async def button_handler(update: Update, context: CallbackContext):
 
     handler = routes.get(d)
     if handler:
-        if d in ('back_to_main',):
-            await handler(query)
-        elif d == 'admin_panel':
+        if d == 'admin_panel':
             await handler(query)
         else:
+            await handler(query, context)
             await handler(query, context)
     else:
         logger.warning(f"Неизвестный callback: {d}")
