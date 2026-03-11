@@ -1878,6 +1878,61 @@ async def show_main_menu_edit(query, context=None):
 # ══════════════════════════════════════════════════════════
 #  /start
 # ══════════════════════════════════════════════════════════
+async def cmd_cancel(update: Update, context: CallbackContext):
+    """Сбрасывает любое активное состояние. Работает всегда."""
+    keys_to_clear = [
+        'adding_sub', 'sub_step', 'sub_data',
+        'reg_role', 'reg_name', 'awaiting_reg_name',
+        'pub_news', 'pub_step', 'pub_title',
+        'edit_news_id', 'edit_step',
+        'photo_subs_pending', 'chname_page',
+        'profile_cache', 'profile_cache_id', 'teacher_name_cache',
+    ]
+    cleared = any(k in context.user_data for k in keys_to_clear)
+    for k in keys_to_clear:
+        context.user_data.pop(k, None)
+
+    msg = "✅ Действие отменено." if cleared else "ℹ️ Нечего отменять."
+    await update.message.reply_text(msg)
+    await show_main_menu_msg(update, context)
+
+
+async def global_error_handler(update: object, context: CallbackContext):
+    """Глобальный обработчик ошибок."""
+    import traceback
+    tb = ''.join(traceback.format_exception(type(context.error), context.error,
+                                             context.error.__traceback__))
+    logger.error(f"Необработанная ошибка:\n{tb}")
+
+    short = str(context.error)[:300]
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=f"⚠️ <b>Ошибка в боте</b>\n\n<code>{short}</code>",
+                parse_mode='HTML'
+            )
+        except Exception:
+            pass
+
+    try:
+        if isinstance(update, Update):
+            text = "⚠️ Что-то пошло не так. Попробуйте ещё раз или нажмите /start"
+            if update.callback_query:
+                try:
+                    await update.callback_query.answer("⚠️ Ошибка, попробуйте ещё раз")
+                except Exception:
+                    pass
+                try:
+                    await update.callback_query.message.reply_text(text)
+                except Exception:
+                    pass
+            elif update.message:
+                await update.message.reply_text(text)
+    except Exception:
+        pass
+
+
 async def cmd_start(update: Update, context: CallbackContext):
     user = update.effective_user
     await asyncio.to_thread(
