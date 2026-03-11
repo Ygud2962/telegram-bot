@@ -31,6 +31,10 @@ GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 GROQ_MODEL   = "llama-3.3-70b-versatile"   # Более мощная бесплатная модель
 GPT_AVAILABLE = bool(GROQ_API_KEY)
 
+# URL Mini App игры (задайте в Railway как переменную окружения GAME_URL)
+GAME_URL = os.environ.get('GAME_URL', '')
+
+
 # ══════════════════════════════════════════════════════════
 #  КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════
@@ -1264,6 +1268,7 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False) -> list:
         [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
         [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
         [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+        [btn("🔐 Шифровальщик", 'menu_game')],
         role_row,
     ]
     if is_admin:
@@ -2184,156 +2189,84 @@ NEWS_ARCHIVE_PER_PAGE = 5
 
 async def menu_news(query, context, page=0):
     """
-    Главный экран новостей:
-    • page=0 — 3 последних новости + кнопка «Архив»
-    • page>0 — постраничный архив (5 на страницу), новые сверху
+    Новости списком — инлайн-кнопки (Тема · Дата).
+    Нажатие открывает полный текст в том же сообщении.
     """
-    uid     = query.from_user.id
-    chat_id = query.message.chat_id
-
+    uid = query.from_user.id
     await asyncio.to_thread(db.update_user_last_news_check, uid)
     context.user_data.pop('news_shown', None)
-
-    # Удаляем предыдущие сообщения новостей
-    for mid in context.user_data.get('news_msg_ids', []):
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=mid)
-        except Exception:
-            pass
-    context.user_data['news_msg_ids'] = []
     context.user_data['news_page'] = page
 
-    total = await asyncio.to_thread(db.get_total_news_count)
-    msg_ids = []
+    PER_PAGE = 8  # новостей на одну страницу
 
-    # ── ГЛАВНЫЙ ЭКРАН (page = 0) ──────────────────────────
-    if page == 0:
-        latest = await asyncio.to_thread(db.get_latest_news, 3)
+    total     = await asyncio.to_thread(db.get_total_news_count)
+    offset    = page * PER_PAGE
+    news_list = await asyncio.to_thread(db.get_archive_news_page, offset, PER_PAGE)
+    total_pages = max(1, -(-total // PER_PAGE))
 
-        if not latest:
-            m = await safe_send(context, chat_id, "📭 Новостей пока нет.")
-            if m:
-                msg_ids.append(m.message_id)
-        else:
-            # Заголовок
-            m = await safe_send(
-                context, chat_id,
-                f"📰 <b>НОВОСТИ ШКОЛЫ</b>\n"
-                f"<i>Последние {len(latest)} из {total}</i>"
-            )
-            if m:
-                msg_ids.append(m.message_id)
-
-            for news_id, title, content, pub_date, views in latest:
-                pub_str  = convert_utc_to_minsk(pub_date)
-                preview  = content[:350] + ('...' if len(content) > 350 else '')
-                text = (
-                    f"📌 <b>{title}</b>\n"
-                    f"<i>📅 {pub_str}  👁 {views}</i>\n\n"
-                    f"{preview}\n"
-                    f"{'─' * 22}"
-                )
-                kb_row = []
-                if uid in ADMIN_IDS:
-                    kb_row += [btn("✏️", f'edit_news_{news_id}'),
-                               btn("🗑", f'del_news_{news_id}')]
-                kb_row.append(btn("📖 Читать полностью", f'news_full_{news_id}'))
-                m = await safe_send(context, chat_id, text, [kb_row])
-                if m:
-                    msg_ids.append(m.message_id)
-
-        # Нижняя навигация
-        nav_kb = []
+    if not news_list:
+        kb = [BACK_TO_MAIN[0]]
         if uid in ADMIN_IDS:
-            nav_kb.append([btn("📣 Опубликовать новость", 'admin_publish_news')])
-        if total > 3:
-            nav_kb.append([btn(f"📚 Архив новостей ({total - 3} ещё)", 'news_archive_1')])
-        nav_kb.append(BACK_TO_MAIN[0])
+            kb.insert(0, [btn("📣 Опубликовать", 'admin_publish_news')])
+        await safe_edit(query, "📭 <b>Новостей пока нет</b>", kb)
+        return
 
-        m = await safe_send(context, chat_id, "─" * 22, nav_kb)
-        if m:
-            msg_ids.append(m.message_id)
+    # ── Список новостей инлайн-кнопками ──
+    kb = []
+    for news_id, title, content, pub_date, views in news_list:
+        pub_str = convert_utc_to_minsk(pub_date)
+        # Обрезаем заголовок если слишком длинный
+        short_title = title if len(title) <= 32 else title[:30] + '…'
+        kb.append([btn(f"📰 {short_title}  ·  {pub_str}", f'news_full_{news_id}')])
 
-    # ── АРХИВ (page >= 1) ─────────────────────────────────
-    else:
-        # Пропускаем первые 3 (они на главном), остальные постранично
-        archive_offset = 3 + (page - 1) * NEWS_ARCHIVE_PER_PAGE
-        archive_total  = max(0, total - 3)
-        total_pages    = max(1, -(-archive_total // NEWS_ARCHIVE_PER_PAGE))  # ceiling div
+    # ── Пагинация ──
+    nav = []
+    if page > 0:
+        nav.append(btn("◀️", f'news_page_{page-1}'))
+    nav.append(btn(f"{page+1} / {total_pages}", 'noop'))
+    if page + 1 < total_pages:
+        nav.append(btn("▶️", f'news_page_{page+1}'))
+    if len(nav) > 1:
+        kb.append(nav)
 
-        news_list = await asyncio.to_thread(
-            db.get_archive_news_page, archive_offset, NEWS_ARCHIVE_PER_PAGE
-        )
+    # ── Нижние кнопки ──
+    if uid in ADMIN_IDS:
+        kb.append([btn("📣 Опубликовать новость", 'admin_publish_news')])
+    kb.append(BACK_TO_MAIN[0])
 
-        m = await safe_send(
-            context, chat_id,
-            f"📚 <b>АРХИВ НОВОСТЕЙ</b>\n"
-            f"<i>Страница {page} из {total_pages}</i>"
-        )
-        if m:
-            msg_ids.append(m.message_id)
-
-        if not news_list:
-            m = await safe_send(context, chat_id, "📭 Новостей в архиве нет.")
-            if m:
-                msg_ids.append(m.message_id)
-        else:
-            for news_id, title, content, pub_date, views in news_list:
-                pub_str = convert_utc_to_minsk(pub_date)
-                preview = content[:300] + ('...' if len(content) > 300 else '')
-                text = (
-                    f"📌 <b>{title}</b>\n"
-                    f"<i>📅 {pub_str}  👁 {views}</i>\n\n"
-                    f"{preview}\n"
-                    f"{'─' * 22}"
-                )
-                kb_row = []
-                if uid in ADMIN_IDS:
-                    kb_row += [btn("✏️", f'edit_news_{news_id}'),
-                               btn("🗑", f'del_news_{news_id}')]
-                kb_row.append(btn("📖 Читать полностью", f'news_full_{news_id}'))
-                m = await safe_send(context, chat_id, text, [kb_row])
-                if m:
-                    msg_ids.append(m.message_id)
-
-        # Навигация архива
-        nav = []
-        if page > 1:
-            nav.append(btn("◀️ Назад", f'news_archive_{page-1}'))
-        nav.append(btn(f"{page}/{total_pages}", 'noop'))
-        if page < total_pages:
-            nav.append(btn("Вперёд ▶️", f'news_archive_{page+1}'))
-
-        nav_kb = [nav]
-        nav_kb.append([btn("🔝 Последние новости", 'menu_news')])
-        nav_kb.append(BACK_TO_MAIN[0])
-
-        m = await safe_send(context, chat_id, "─" * 22, nav_kb)
-        if m:
-            msg_ids.append(m.message_id)
-
-    context.user_data['news_msg_ids'] = msg_ids
+    header = (
+        f"📰 <b>НОВОСТИ ШКОЛЫ</b>\n"
+        f"<i>Всего: {total}  ·  Страница {page+1} из {total_pages}</i>"
+    )
+    await safe_edit(query, header, kb)
 
 
 async def show_news_full(query, context, news_id: int):
+    """Открывает полный текст новости в том же сообщении."""
     await asyncio.to_thread(db.increment_news_views, news_id, query.from_user.id)
     news = await asyncio.to_thread(db.get_news_detail, news_id)
     if not news:
         await query.answer("❌ Новость не найдена", show_alert=True)
         return
+
     pub_str = convert_utc_to_minsk(news['published_at'])
-    text = (f"📌 <b>{news['title']}</b>\n"
-            f"<i>📅 {pub_str}  👁 {news['views_count']}</i>\n\n"
-            f"{news['content']}")
+    text = (
+        f"📌 <b>{news['title']}</b>\n"
+        f"<i>📅 {pub_str}  👁 {news['views_count']}</i>\n\n"
+        f"{news['content']}"
+    )
+
     kb = []
     if query.from_user.id in ADMIN_IDS:
         kb.append([btn("✏️ Редактировать", f"edit_news_{news_id}"),
-                   btn("🗑 Удалить", f"del_news_{news_id}")])
+                   btn("🗑 Удалить",        f"del_news_{news_id}")])
+
     page = context.user_data.get('news_page', 0)
-    back_cb = f'news_archive_{page}' if page > 0 else 'menu_news'
-    kb.append([btn("◀️ К списку", back_cb), BACK_TO_MAIN[0][0]])
-    chat_id = query.message.chat_id
-    await safe_send(context, chat_id, text, kb)
+    kb.append([btn("📋 Новости", f'news_page_{page}'), BACK_TO_MAIN[0][0]])
+
+    await safe_edit(query, text, kb)
+
+
 
 
 # ══════════════════════════════════════════════════════════
@@ -2468,7 +2401,120 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ЗВОНКИ
 # ══════════════════════════════════════════════════════════
-async def menu_bells(query, context):
+async def menu_game(query, context):
+    """Запуск игры Шифровальщик."""
+    if not GAME_URL:
+        await safe_edit(query,
+            "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
+            "⚠️ Игра временно недоступна.\n"
+            "Администратор ещё не настроил ссылку на игру.\n\n"
+            "<i>Нужно добавить переменную GAME_URL в Railway.</i>",
+            [BACK_TO_MAIN[0]])
+        return
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎮 ОТКРЫТЬ ИГРУ", web_app=WebAppInfo(url=GAME_URL))],
+        [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
+        [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
+    ])
+    await query.message.edit_text(
+        "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
+        "1941–1945. Вы — советский разведчик.\n"
+        "Расшифруйте донесения и приблизьте Победу.\n\n"
+        "🗺 <b>4 операции</b> на территории Беларуси\n"
+        "🔐 <b>Шифр Цезаря</b> и <b>Азбука Морзе</b>\n"
+        "🏆 <b>Таблица лидеров</b> школы\n"
+        "🎖 <b>Значки</b> за мастерство\n\n"
+        "<i>Игра приурочена ко Дню Победы — 9 мая</i>",
+        parse_mode='HTML', reply_markup=kb
+    )
+
+
+async def game_leaderboard(query, context):
+    """Показывает таблицу лидеров из БД."""
+    lb = await asyncio.to_thread(db.get_game_leaderboard)
+    if not lb:
+        await safe_edit(query,
+            "🏆 <b>ТАБЛИЦА ЛИДЕРОВ</b>\n\n"
+            "Пока никто не прошёл игру.\n"
+            "<i>Будь первым шифровальщиком школы!</i>",
+            [[btn("🎮 Играть", 'menu_game')], BACK_TO_MAIN[0]])
+        return
+
+    medals = ['🥇','🥈','🥉']
+    lines = ["🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ ШКОЛЫ</b>\n"]
+    for i, (name, score, chapters, tg_id) in enumerate(lb[:10]):
+        m = medals[i] if i < 3 else f"{i+1}."
+        lines.append(f"{m} <b>{name}</b> — {score} очков  <i>({chapters}/4 глав)</i>")
+
+    await safe_edit(query, '\n'.join(lines),
+        [[btn("🎮 Играть", 'menu_game')], BACK_TO_MAIN[0]])
+
+
+async def handle_web_app_data(update: Update, context: CallbackContext):
+    """Обрабатывает данные из Mini App после завершения игры."""
+    import json
+    data_str = update.message.web_app_data.data
+    try:
+        data = json.loads(data_str)
+    except Exception:
+        return
+
+    user = update.effective_user
+    event_type = data.get('type', '')
+
+    if event_type == 'chapter_complete':
+        chapter     = data.get('chapter', 0)
+        ch_title    = data.get('chapter_title', '')
+        score       = data.get('score', 0)
+        total_score = data.get('total_score', 0)
+        hints       = data.get('hints_used', 0)
+        badges      = data.get('badges', [])
+
+        await asyncio.to_thread(
+            db.save_game_result,
+            user.id, chapter, score, total_score, hints, badges
+        )
+
+        hint_str = "без подсказок 🎯" if hints == 0 else f"{hints} подсказок"
+        badge_str = "  ".join(badges) if badges else ""
+        await update.message.reply_text(
+            f"🔐 <b>Глава завершена!</b>\n\n"
+            f"📖 {ch_title}\n"
+            f"⭐ <b>{score} очков</b>  ({hint_str})\n"
+            f"📊 Всего: <b>{total_score} очков</b>\n"
+            f"{badge_str}",
+            parse_mode='HTML'
+        )
+
+    elif event_type == 'game_complete':
+        total_score = data.get('total_score', 0)
+        badges      = data.get('badges', [])
+
+        # Уведомляем всех — новый рекордсмен!
+        name = user.first_name + (f" {user.last_name}" if user.last_name else "")
+        for a in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=a,
+                    text=f"🏆 <b>{name}</b> прошёл Шифровальщика!\n"
+                         f"Очков: <b>{total_score}</b>\n"
+                         f"Наград: {len(badges)}",
+                    parse_mode='HTML'
+                )
+            except Exception:
+                pass
+
+        await update.message.reply_text(
+            f"🏆 <b>ПОБЕДА! Вы прошли всю игру!</b>\n\n"
+            f"⭐ Итого: <b>{total_score} очков</b>\n"
+            f"🎖 Наград: <b>{len(badges)}</b>\n\n"
+            f"Ваш результат добавлен в таблицу лидеров школы!",
+            parse_mode='HTML'
+        )
+
+
     now = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
     extra = ""
@@ -3091,10 +3137,6 @@ async def button_handler(update: Update, context: CallbackContext):
         page = int(d.split('_')[2])
         await menu_news(query, context, page)
         return
-    if d.startswith('news_archive_'):
-        page = int(d.split('_')[2])
-        await menu_news(query, context, page)
-        return
     if d.startswith('news_full_'):
         news_id = int(d.split('_')[2])
         await show_news_full(query, context, news_id)
@@ -3228,6 +3270,8 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # ── Основные роуты ──
     routes = {
+        'menu_game':              menu_game,
+        'game_leaderboard':       game_leaderboard,
         'teacher_change_name':    teacher_change_name,
         'teacher_unlink_confirm': teacher_unlink_confirm,
         'teacher_unlink_do':      teacher_unlink_do,
@@ -3826,6 +3870,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
 
     print("🤖 Бот запущен!")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
