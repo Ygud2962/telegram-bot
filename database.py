@@ -447,6 +447,10 @@ def get_teacher_telegram_id(full_name):
 
 def register_teacher(full_name, telegram_id):
     """Привязывает Telegram-ID к учителю по имени. Возвращает True при успехе."""
+    if isinstance(full_name, dict):
+        full_name = full_name.get('full_name')
+    if not full_name:
+        return False
     conn = None
     try:
         conn = get_connection()
@@ -490,6 +494,11 @@ def find_teacher_by_telegram_id(telegram_id):
 
 def unregister_teacher(full_name):
     """Сбрасывает telegram_id и registered для учителя — освобождает имя."""
+    # Защита: если случайно передали dict — извлекаем строку
+    if isinstance(full_name, dict):
+        full_name = full_name.get('full_name')
+    if not full_name:
+        return False
     conn = None
     try:
         conn = get_connection()
