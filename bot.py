@@ -2194,18 +2194,18 @@ NEWS_ARCHIVE_PER_PAGE = 5
 async def menu_news(query, context, page=0):
     """
     Новости списком — инлайн-кнопки (Тема · Дата).
-    Нажатие открывает полный текст в том же сообщении.
+    Страницы: page=0 — самые новые. Внутри страницы новые снизу.
     """
     uid = query.from_user.id
     await asyncio.to_thread(db.update_user_last_news_check, uid)
     context.user_data.pop('news_shown', None)
     context.user_data['news_page'] = page
 
-    PER_PAGE = 8  # новостей на одну страницу
+    PER_PAGE = 8
 
-    total     = await asyncio.to_thread(db.get_total_news_count)
-    offset    = page * PER_PAGE
-    news_list = await asyncio.to_thread(db.get_archive_news_page, offset, PER_PAGE)
+    total      = await asyncio.to_thread(db.get_total_news_count)
+    offset     = page * PER_PAGE
+    news_list  = await asyncio.to_thread(db.get_archive_news_page, offset, PER_PAGE)
     total_pages = max(1, -(-total // PER_PAGE))
 
     if not news_list:
@@ -2215,25 +2215,25 @@ async def menu_news(query, context, page=0):
         await safe_edit(query, "📭 <b>Новостей пока нет</b>", kb)
         return
 
-    # ── Список новостей инлайн-кнопками ──
+    # Переворачиваем: новые снизу (ближе к полю ввода)
+    news_list = list(reversed(news_list))
+
     kb = []
     for news_id, title, content, pub_date, views in news_list:
         pub_str = convert_utc_to_minsk(pub_date)
-        # Обрезаем заголовок если слишком длинный
         short_title = title if len(title) <= 32 else title[:30] + '…'
         kb.append([btn(f"📰 {short_title}  ·  {pub_str}", f'news_full_{news_id}')])
 
-    # ── Пагинация ──
+    # Пагинация: ◀️ — более старые (page+1), ▶️ — более новые (page-1)
     nav = []
-    if page > 0:
-        nav.append(btn("◀️", f'news_page_{page-1}'))
-    nav.append(btn(f"{page+1} / {total_pages}", 'noop'))
     if page + 1 < total_pages:
-        nav.append(btn("▶️", f'news_page_{page+1}'))
+        nav.append(btn("◀️ Старее", f'news_page_{page+1}'))
+    nav.append(btn(f"{page+1} / {total_pages}", 'noop'))
+    if page > 0:
+        nav.append(btn("Новее ▶️", f'news_page_{page-1}'))
     if len(nav) > 1:
         kb.append(nav)
 
-    # ── Нижние кнопки ──
     if uid in ADMIN_IDS:
         kb.append([btn("📣 Опубликовать новость", 'admin_publish_news')])
     kb.append(BACK_TO_MAIN[0])
