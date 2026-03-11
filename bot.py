@@ -2362,7 +2362,7 @@ async def menu_news(query, context, page=0):
 
     header = (
         f"📰 <b>НОВОСТИ ШКОЛЫ</b>\n"
-        f"<i>Всего: {total}  ·  Страница {page+1} из {total_pages}</i>"
+        f"<i>Всего- {total}  ·  Страница {page+1} из {total_pages}</i>"
     )
     await safe_edit(query, header, kb)
 
@@ -2609,7 +2609,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
             f"🔐 <b>Глава завершена!</b>\n\n"
             f"📖 {ch_title}\n"
             f"⭐ <b>{score} очков</b>  ({hint_str})\n"
-            f"📊 Всего: <b>{total_score} очков</b>\n"
+            f"📊 Всего- <b>{total_score} очков</b>\n"
             f"{badge_str}",
             parse_mode='HTML'
         )
@@ -3028,7 +3028,7 @@ async def show_users_stats(query, context):
     total = await asyncio.to_thread(db.get_user_count)
     users = await asyncio.to_thread(db.get_all_users)
 
-    lines = [f"👥 <b>ПОЛЬЗОВАТЕЛИ</b>  Всего: <b>{total}</b>\n"]
+    lines = [f"👥 <b>ПОЛЬЗОВАТЕЛИ</b>  Всего- <b>{total}</b>\n"]
     for uid, username, fname, lname in users[:20]:
         name = f"{fname or ''} {lname or ''}".strip() or "—"
         uname = f" (@{username})" if username else ""
