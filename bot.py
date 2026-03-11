@@ -2362,7 +2362,7 @@ async def menu_news(query, context, page=0):
 
     header = (
         f"📰 <b>НОВОСТИ ШКОЛЫ</b>\n"
-        f"<i>Всего- {total}  ·  Страница {page+1} из {total_pages}</i>"
+        f"<i>Всего: {total}  ·  Страница {page+1} из {total_pages}</i>"
     )
     await safe_edit(query, header, kb)
 
@@ -2609,7 +2609,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
             f"🔐 <b>Глава завершена!</b>\n\n"
             f"📖 {ch_title}\n"
             f"⭐ <b>{score} очков</b>  ({hint_str})\n"
-            f"📊 Всего- <b>{total_score} очков</b>\n"
+            f"📊 Всего: <b>{total_score} очков</b>\n"
             f"{badge_str}",
             parse_mode='HTML'
         )
@@ -2944,7 +2944,7 @@ async def admin_manage_news(query, context):
         return
 
     lines = [f"📰 <b>УПРАВЛЕНИЕ НОВОСТЯМИ</b> ({len(news_list)} шт.):\n"]
-    for nid, title, _, pub in news_list:
+    for nid, title, _, pub, _views in news_list:
         pub_str = convert_utc_to_minsk(pub)
         lines.append(f"<code>{nid}</code> | <b>{title}</b> | {pub_str}")
     text = "\n".join(lines)
@@ -3028,7 +3028,7 @@ async def show_users_stats(query, context):
     total = await asyncio.to_thread(db.get_user_count)
     users = await asyncio.to_thread(db.get_all_users)
 
-    lines = [f"👥 <b>ПОЛЬЗОВАТЕЛИ</b>  Всего- <b>{total}</b>\n"]
+    lines = [f"👥 <b>ПОЛЬЗОВАТЕЛИ</b>  Всего: <b>{total}</b>\n"]
     for uid, username, fname, lname in users[:20]:
         name = f"{fname or ''} {lname or ''}".strip() or "—"
         uname = f" (@{username})" if username else ""
@@ -3490,27 +3490,6 @@ async def handle_message(update: Update, context: CallbackContext):
         )
         return
 
-    # ── ИИ ──
-    if context.user_data.get('awaiting_ai'):
-        thinking = await update.message.reply_text("🤔 Думаю...")
-        is_teacher = bool(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id))
-        answer = await ask_ai(text, user.id, is_teacher)
-        try:
-            await thinking.edit_text(answer, parse_mode='HTML')
-        except Exception:
-            await update.message.reply_text(answer, parse_mode='HTML')
-        kb = [
-            [btn("❓ Ещё вопрос", 'menu_ai')],
-            [btn("🗑 Очистить историю", 'ai_clear_history')],
-            BACK_TO_MAIN[0],
-        ]
-        await update.message.reply_text(
-            "Что дальше?",
-            reply_markup=InlineKeyboardMarkup(kb)
-        )
-        # Не сбрасываем флаг — пусть продолжает диалог
-        return
-
     # ── Публикация новости ──
     if context.user_data.get('pub_news') and user.id in ADMIN_IDS:
         await handle_publish_news_input(update, context)
@@ -3569,6 +3548,26 @@ async def handle_message(update: Update, context: CallbackContext):
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup(kb)
             )
+        return
+
+    # ── ИИ — проверяем последним, чтобы не перехватывать другие флоу ──
+    if context.user_data.get('awaiting_ai'):
+        thinking = await update.message.reply_text("🤔 Думаю...")
+        is_teacher = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id)) is not None
+        answer = await ask_ai(text, user.id, is_teacher)
+        try:
+            await thinking.edit_text(answer, parse_mode='HTML')
+        except Exception:
+            await update.message.reply_text(answer, parse_mode='HTML')
+        kb = [
+            [btn("❓ Ещё вопрос", 'menu_ai')],
+            [btn("🗑 Очистить историю", 'ai_clear_history')],
+            BACK_TO_MAIN[0],
+        ]
+        await update.message.reply_text(
+            "Что дальше?",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
         return
 
     # ── Упоминание учителей ──
