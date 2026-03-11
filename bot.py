@@ -1268,7 +1268,6 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False) -> list:
         [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
         [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
         [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
-        [btn("🔐 Шифровальщик", 'menu_game')],
         role_row,
     ]
     if is_admin:
@@ -3270,8 +3269,6 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # ── Основные роуты ──
     routes = {
-        'menu_game':              menu_game,
-        'game_leaderboard':       game_leaderboard,
         'teacher_change_name':    teacher_change_name,
         'teacher_unlink_confirm': teacher_unlink_confirm,
         'teacher_unlink_do':      teacher_unlink_do,
