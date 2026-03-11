@@ -1889,6 +1889,11 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: СЕЙЧАС
 # ══════════════════════════════════════════════════════════
+async def menu_bells(query, context):
+    """Расписание звонков."""
+    await safe_edit(query, BELLS_TEXT, [BACK_TO_MAIN[0]])
+
+
 async def menu_now(query, context):
     kb = []
     for i in range(0, len(ALL_CLASSES), 3):
