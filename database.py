@@ -26,17 +26,56 @@ def init_pool():
 
 
 def get_connection():
+    """Возвращает живое соединение из пула. При обрыве SSL — пересоздаёт."""
+    global db_pool
     if db_pool is None:
-        raise RuntimeError("Пул не инициализирован! Вызовите init_pool()")
-    return db_pool.getconn()
+        init_pool()
+    conn = db_pool.getconn()
+    try:
+        # Проверяем что соединение живое
+        conn.cursor().execute("SELECT 1")
+        return conn
+    except Exception:
+        # Соединение мёртвое — закрываем и создаём новое напрямую
+        try:
+            db_pool.putconn(conn, close=True)
+        except Exception:
+            pass
+        try:
+            new_conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+            db_pool.putconn(new_conn)
+            return db_pool.getconn()
+        except Exception as e:
+            logger.error(f"Не удалось переподключиться к БД: {e}")
+            raise
 
 
 def release_connection(conn):
-    if db_pool is not None and conn is not None:
-        db_pool.putconn(conn)
+    global db_pool
+    if db_pool is None or conn is None:
+        return
+    try:
+        # Если соединение в плохом состоянии — закрываем его
+        if conn.closed:
+            db_pool.putconn(conn, close=True)
+        else:
+            db_pool.putconn(conn)
+    except Exception:
+        pass
 
 
-# ──────────────────────────────────────────────
+def _safe_rollback(conn):
+    """Безопасный rollback — не падает если соединение уже закрыто."""
+    if conn is None:
+        return
+    try:
+        if not conn.closed:
+            _safe_rollback(conn)
+    except Exception:
+        pass
+
+
+
 #  ИНИЦИАЛИЗАЦИЯ БД
 # ──────────────────────────────────────────────
 def init_db():
@@ -223,7 +262,7 @@ def update_user_and_log(user_id, action, class_name=None,
     except Exception as e:
         logger.error(f"update_user_and_log error {user_id}: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
     finally:
         release_connection(conn)
 
@@ -242,7 +281,7 @@ def log_user_activity(user_id, action, class_name=None):
     except Exception as e:
         logger.error(f"log_user_activity error: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
     finally:
         release_connection(conn)
 
@@ -335,7 +374,7 @@ def save_user_profile(user_id, role, display_name=None, class_name=None):
     except Exception as e:
         logger.error(f"save_user_profile: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
         return False
     finally:
         release_connection(conn)
@@ -353,7 +392,7 @@ def delete_user_profile(user_id):
     except Exception as e:
         logger.error(f"delete_user_profile: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
         return False
     finally:
         release_connection(conn)
@@ -393,7 +432,7 @@ def subscribe_class(user_id, class_name):
     except Exception as e:
         logger.error(f"subscribe_class: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
         return False
     finally:
         release_connection(conn)
@@ -465,7 +504,7 @@ def register_teacher(full_name, telegram_id):
     except Exception as e:
         logger.error(f"register_teacher: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
         return False
     finally:
         release_connection(conn)
@@ -512,7 +551,7 @@ def unregister_teacher(full_name):
     except Exception as e:
         logger.error(f"unregister_teacher: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
         return False
     finally:
         release_connection(conn)
@@ -552,7 +591,7 @@ def seed_teachers(teacher_names: list):
     except Exception as e:
         logger.error(f"seed_teachers: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
     finally:
         release_connection(conn)
 
@@ -684,7 +723,7 @@ def increment_news_views(news_id, user_id):
     except Exception as e:
         logger.error(f"increment_news_views: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
         return False
     finally:
         release_connection(conn)
@@ -701,7 +740,7 @@ def update_news(news_id, title, content):
     except Exception as e:
         logger.error(f"update_news: {e}")
         if conn:
-            conn.rollback()
+            _safe_rollback(conn)
         return False
     finally:
         release_connection(conn)
