@@ -12,8 +12,28 @@ import pytz
 import httpx
 
 # ══════════════════════════════════════════════════════════
-#  ЛОГИРОВАНИЕ
+#  ХЕЛПЕРЫ ДЛЯ ДАННЫХ УЧИТЕЛЯ
 # ══════════════════════════════════════════════════════════
+def _tname(t) -> str | None:
+    """Извлекает имя из результата find_teacher_by_telegram_id (dict или None)."""
+    if t is None:
+        return None
+    if isinstance(t, dict):
+        return t.get('full_name')
+    return str(t)  # обратная совместимость со старым строковым форматом
+
+def _treg(t) -> str:
+    """Извлекает дату регистрации учителя как строку."""
+    if not isinstance(t, dict):
+        return '—'
+    reg = t.get('registered_at')
+    if reg and hasattr(reg, 'strftime'):
+        if reg.tzinfo is None:
+            reg = pytz.utc.localize(reg)
+        return reg.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y')
+    return '—'
+
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
