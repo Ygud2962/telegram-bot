@@ -1887,14 +1887,12 @@ async def cmd_start(update: Update, context: CallbackContext):
     if await check_maintenance(update, context):
         return
 
-    # Проверяем авторегистрацию учителя
-    teacher_name = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id))
-    if teacher_name:
-        # Уже зарегистрирован
-        pass
-    else:
-        # Проверяем: может учитель регистрируется впервые через команду /teacher
-        pass
+    # Сбрасываем любой активный флоу — /start всегда возвращает в начало
+    for key in ('adding_sub','sub_step','sub_data','reg_role','reg_name',
+                'awaiting_reg_name','pub_news','pub_step','pub_title',
+                'edit_news_id','edit_step','photo_subs_pending','chname_page',
+                'profile_cache','profile_cache_id','teacher_name_cache'):
+        context.user_data.pop(key, None)
 
     # Уведомление о новых новостях
     new_cnt = await asyncio.to_thread(db.count_new_news_since, user.id)
@@ -3936,12 +3934,15 @@ def main():
         .build()
     )
 
-    app.add_handler(CommandHandler("start",   cmd_start))
+    # group=-1 — /start и /cancel срабатывают ВСЕГДА, даже в середине любого флоу
+    app.add_handler(CommandHandler("start",   cmd_start),  group=-1)
+    app.add_handler(CommandHandler("cancel",  cmd_cancel), group=-1)
     app.add_handler(CommandHandler("teacher", cmd_teacher))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
+    app.add_error_handler(global_error_handler)
 
     print("🤖 Бот запущен!")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
