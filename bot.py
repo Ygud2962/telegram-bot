@@ -837,29 +837,6 @@ def convert_utc_to_minsk(utc_str) -> str:
         return str(utc_str)
 
 
-
-def _tname(t) -> str | None:
-    """Извлекает имя из результата find_teacher_by_telegram_id (dict или None)."""
-    if t is None:
-        return None
-    if isinstance(t, dict):
-        return t.get('full_name')
-    return t  # обратная совместимость
-
-def _treg(t) -> str:
-    """Извлекает дату регистрации учителя как строку."""
-    if t is None or not isinstance(t, dict):
-        return '—'
-    reg = t.get('registered_at')
-    if reg and hasattr(reg, 'strftime'):
-        import pytz
-        TZ = pytz.timezone('Europe/Minsk')
-        if reg.tzinfo is None:
-            import pytz as _p; reg = _p.utc.localize(reg)
-        return reg.astimezone(TZ).strftime('%d.%m.%Y')
-    return '—'
-
-
 async def safe_edit(query, text: str, keyboard=None, parse_mode='HTML'):
     markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     if len(text) > 4096:
@@ -1266,19 +1243,22 @@ MAIN_MENU_KB_REGISTERED = [
 ]
 
 
-def get_main_menu_kb(profile: dict | None, is_admin: bool = False) -> list:
+def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
+                     teacher_name: str | None = None) -> list:
     """Возвращает клавиатуру главного меню с учётом профиля."""
     role_row = []
-    if profile:
+    if teacher_name:
+        # Учитель — показываем имя (как у учеников)
+        label = f"👨‍🏫 {teacher_name}"
+        role_row = [btn(label, 'menu_profile')]
+    elif profile:
         role = profile.get('role', 'guest')
         name = profile.get('display_name', '')
         cls  = profile.get('class_name', '')
-        if role == 'teacher':
-            label = f"👨‍🏫 {name}"
-        elif role == 'student':
+        if role == 'student':
             label = f"👨‍🎓 {cls.upper()} · {name}"
         elif role == 'parent':
-            label = f"👨‍👩‍👧 Родитель · {cls.upper()}"
+            label = f"👨‍👩‍👧 {cls.upper()} · {name}"
         else:
             label = "👤 Мой профиль"
         role_row = [btn(label, 'menu_profile')]
@@ -1329,10 +1309,10 @@ async def menu_register(query, context):
 async def reg_role_teacher(query, context):
     """Учитель выбирает своё имя из списка."""
     uid = query.from_user.id
-    already = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
-    if _tname(already):
+    already = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, uid))
+    if already:
         await safe_edit(query,
-            f"✅ Вы уже зарегистрированы как <b>{_tname(already)}</b>.\n\n"
+            f"✅ Вы уже зарегистрированы как <b>{already}</b>.\n\n"
             f"Уведомления о заменах приходят автоматически.",
             [[btn("👤 Мой профиль", 'menu_profile')], BACK_TO_MAIN[0]])
         return
@@ -1387,12 +1367,13 @@ async def reg_role_student(query, context):
     uid = query.from_user.id
 
     # Уже зарегистрирован в любой роли — блокируем
-    profile, already_teacher = await asyncio.gather(
+    profile, _at = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, uid),
         asyncio.to_thread(db.find_teacher_by_telegram_id, uid),
     )
+    already_teacher = _tname(_at)
     if profile or already_teacher:
-        name = _tname(already_teacher) or profile.get('display_name', '—')
+        name = already_teacher or profile.get('display_name', '—')
         role_map = {'student': 'Ученик', 'parent': 'Родитель', 'teacher': 'Учитель'}
         role = 'teacher' if already_teacher else profile.get('role', 'guest')
         await safe_edit(query,
@@ -1416,12 +1397,13 @@ async def reg_role_parent(query, context):
     uid = query.from_user.id
 
     # Уже зарегистрирован в любой роли — блокируем
-    profile, already_teacher = await asyncio.gather(
+    profile, _at = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, uid),
         asyncio.to_thread(db.find_teacher_by_telegram_id, uid),
     )
+    already_teacher = _tname(_at)
     if profile or already_teacher:
-        name = _tname(already_teacher) or profile.get('display_name', '—')
+        name = already_teacher or profile.get('display_name', '—')
         role_map = {'student': 'Ученик', 'parent': 'Родитель', 'teacher': 'Учитель'}
         role = 'teacher' if already_teacher else profile.get('role', 'guest')
         await safe_edit(query,
@@ -1530,21 +1512,19 @@ async def reg_save(query, context, class_name: str):
 async def show_profile(query, context):
     """Показывает профиль пользователя."""
     uid = query.from_user.id
-    # Параллельно получаем профиль и данные учителя
-    profile, t_data = await asyncio.gather(
+    profile, _t_raw = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, uid),
         asyncio.to_thread(db.find_teacher_by_telegram_id, uid),
     )
-    teacher_name = _tname(t_data)
+    teacher_name = _tname(_t_raw)
 
     if teacher_name:
-        reg_str = _treg(t_data)
+        # Учитель
         text = (
             f"👨‍🏫 <b>МОЙ ПРОФИЛЬ</b>\n\n"
             f"Роль: <b>Учитель</b>\n"
             f"Имя: <b>{teacher_name}</b>\n"
-            f"📅 Зарегистрирован: <b>{reg_str}</b>\n"
-            f"🔔 Уведомления о заменах: <b>включены</b>"
+            f"🔔 Уведомления о заменах: <b>включены</b>\n"
         )
         kb = [
             [btn("📅 Моё расписание", f'tch_{ALL_TEACHERS.index(teacher_name) if teacher_name in ALL_TEACHERS else 0}')],
@@ -1608,7 +1588,8 @@ async def reg_delete_do(query, context):
 async def teacher_change_name(query, context):
     """Показывает список доступных имён для смены."""
     uid = query.from_user.id
-    current = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    t_data  = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    current = _tname(t_data)
     if not current:
         await safe_edit(query, "❌ Вы не зарегистрированы как учитель.",
                         [[btn("↩️ Назад", 'menu_profile')]])
@@ -1658,7 +1639,8 @@ async def teacher_change_name(query, context):
 async def chname_pick(query, context, idx: int):
     """Подтверждение смены имени."""
     uid = query.from_user.id
-    current = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    t_data  = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    current = _tname(t_data)
     if idx >= len(ALL_TEACHERS):
         await query.answer("❌ Ошибка", show_alert=True)
         return
@@ -1694,8 +1676,9 @@ async def chname_pick(query, context, idx: int):
 
 async def chname_confirm(query, context, idx: int):
     """Выполняет смену имени."""
-    uid = query.from_user.id
-    current = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    uid     = query.from_user.id
+    t_data  = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    current = _tname(t_data)   # строка
     if idx >= len(ALL_TEACHERS):
         await query.answer("❌ Ошибка", show_alert=True)
         return
@@ -1719,6 +1702,10 @@ async def chname_confirm(query, context, idx: int):
         _teacher_schedule_cache.pop(current, None)
         _teacher_schedule_cache.pop(new_name, None)
         context.user_data.pop('chname_page', None)
+        # Сброс кэша меню — имя изменилось
+        context.user_data.pop('profile_cache', None)
+        context.user_data.pop('profile_cache_id', None)
+        context.user_data.pop('teacher_name_cache', None)
 
         for a in ADMIN_IDS:
             try:
@@ -1746,7 +1733,7 @@ async def chname_confirm(query, context, idx: int):
 async def teacher_unlink_confirm(query, context):
     """Подтверждение отвязки аккаунта учителя."""
     uid = query.from_user.id
-    name = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    name = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, uid))
     kb = [
         [btn("✅ Да, отвязать", 'teacher_unlink_do')],
         [btn("❌ Отмена",       'menu_profile')],
@@ -1760,11 +1747,17 @@ async def teacher_unlink_confirm(query, context):
 
 async def teacher_unlink_do(query, context):
     """Отвязывает Telegram ID от имени учителя."""
-    uid = query.from_user.id
-    name = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    uid    = query.from_user.id
+    t_data = await asyncio.to_thread(db.find_teacher_by_telegram_id, uid)
+    name   = _tname(t_data)   # строка, не dict
     if name:
         await asyncio.to_thread(db.unregister_teacher, name)
         _teacher_schedule_cache.pop(name, None)
+        # Сбрасываем кэш меню
+        if context:
+            context.user_data.pop('profile_cache', None)
+            context.user_data.pop('profile_cache_id', None)
+            context.user_data.pop('teacher_name_cache', None)
         for a in ADMIN_IDS:
             try:
                 await context.bot.send_message(
@@ -1796,12 +1789,18 @@ async def show_main_menu_msg(update: Update, context: CallbackContext):
     else:
         status_line = "✅ Уроки закончились на сегодня"
 
-    profile  = await asyncio.to_thread(db.get_user_profile, user.id)
+    profile, t_data = await asyncio.gather(
+        asyncio.to_thread(db.get_user_profile, user.id),
+        asyncio.to_thread(db.find_teacher_by_telegram_id, user.id),
+    )
+    teacher_name = _tname(t_data)
     is_admin = user.id in ADMIN_IDS
-    kb       = get_main_menu_kb(profile, is_admin)
+    kb = get_main_menu_kb(profile, is_admin, teacher_name=teacher_name)
 
     # Персональное приветствие
-    if profile:
+    if teacher_name:
+        greet = f"👋 {teacher_name}!"
+    elif profile:
         greet = f"👋 {profile.get('display_name', 'Привет')}!"
     else:
         greet = "👋 Добро пожаловать!"
@@ -1832,17 +1831,23 @@ async def show_main_menu_edit(query, context=None):
     else:
         status_line = "✅ Уроки закончились на сегодня"
 
-    # Берём профиль из кэша context, чтобы не лезть в БД при каждом нажатии "Назад"
+    # Кэш профиля — не лезем в БД при каждом нажатии "Назад"
     if context and context.user_data.get('profile_cache_id') == uid:
-        profile = context.user_data.get('profile_cache')
+        profile      = context.user_data.get('profile_cache')
+        teacher_name = context.user_data.get('teacher_name_cache')
     else:
-        profile = await asyncio.to_thread(db.get_user_profile, uid)
+        profile, t_data = await asyncio.gather(
+            asyncio.to_thread(db.get_user_profile, uid),
+            asyncio.to_thread(db.find_teacher_by_telegram_id, uid),
+        )
+        teacher_name = _tname(t_data)
         if context:
-            context.user_data['profile_cache'] = profile
+            context.user_data['profile_cache']    = profile
             context.user_data['profile_cache_id'] = uid
+            context.user_data['teacher_name_cache'] = teacher_name
 
     is_admin = uid in ADMIN_IDS
-    kb       = get_main_menu_kb(profile, is_admin)
+    kb = get_main_menu_kb(profile, is_admin, teacher_name=teacher_name)
 
     text = (f"🏫 <b>Школьный бот</b>\n"
             f"<i>{now.strftime('%d.%m.%Y')}</i>  {status_line}\n\n"
@@ -1853,70 +1858,6 @@ async def show_main_menu_edit(query, context=None):
 # ══════════════════════════════════════════════════════════
 #  /start
 # ══════════════════════════════════════════════════════════
-async def cmd_cancel(update: Update, context: CallbackContext):
-    """Сбрасывает любое активное состояние. Работает всегда."""
-    # Флаги которые могут «застрять»
-    keys_to_clear = [
-        'adding_sub', 'sub_step', 'sub_data',
-        'reg_role', 'reg_name', 'awaiting_reg_name',
-        'pub_news', 'pub_step', 'pub_title',
-        'edit_news_id', 'edit_step',
-        'photo_subs_pending',
-        'chname_page',
-        'profile_cache', 'profile_cache_id',
-    ]
-    cleared = any(k in context.user_data for k in keys_to_clear)
-    for k in keys_to_clear:
-        context.user_data.pop(k, None)
-
-    if cleared:
-        msg = "✅ Действие отменено. Возвращаемся в главное меню."
-    else:
-        msg = "ℹ️ Нечего отменять. Вы в главном меню."
-
-    await update.message.reply_text(msg)
-    # Показываем главное меню заново
-    await show_main_menu_msg(update, context)
-
-
-async def global_error_handler(update: object, context: CallbackContext):
-    """Глобальный обработчик ошибок — пользователь получает ответ, не зависает."""
-    import traceback
-    err = context.error
-    tb = ''.join(traceback.format_exception(type(err), err, err.__traceback__))
-    logger.error(f"Необработанная ошибка:\n{tb}")
-
-    # Уведомляем администратора
-    short = str(err)[:300]
-    for admin_id in ADMIN_IDS:
-        try:
-            await context.bot.send_message(
-                chat_id=admin_id,
-                text=f"⚠️ <b>Ошибка в боте</b>\n\n<code>{short}</code>",
-                parse_mode='HTML'
-            )
-        except Exception:
-            pass
-
-    # Отвечаем пользователю
-    try:
-        if isinstance(update, Update):
-            text = "⚠️ Что-то пошло не так. Попробуйте ещё раз или нажмите /start"
-            if update.callback_query:
-                try:
-                    await update.callback_query.answer("⚠️ Ошибка, попробуйте ещё раз", show_alert=False)
-                except Exception:
-                    pass
-                try:
-                    await update.callback_query.message.reply_text(text)
-                except Exception:
-                    pass
-            elif update.message:
-                await update.message.reply_text(text)
-    except Exception:
-        pass
-
-
 async def cmd_start(update: Update, context: CallbackContext):
     user = update.effective_user
     await asyncio.to_thread(
@@ -1927,8 +1868,7 @@ async def cmd_start(update: Update, context: CallbackContext):
         return
 
     # Проверяем авторегистрацию учителя
-    _t = await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id)
-    teacher_name = _tname(_t)
+    teacher_name = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id))
     if teacher_name:
         # Уже зарегистрирован
         pass
@@ -1960,8 +1900,7 @@ async def cmd_start(update: Update, context: CallbackContext):
 async def cmd_teacher(update: Update, context: CallbackContext):
     """Учитель вводит /teacher и своё имя для привязки Telegram-ID."""
     user = update.effective_user
-    _already = await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id)
-    already = _tname(_already)
+    already = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id))
     if already:
         await update.message.reply_text(
             f"✅ Вы уже зарегистрированы как <b>{already}</b>.\n"
@@ -2315,10 +2254,7 @@ async def menu_news(query, context, page=0):
 
     total      = await asyncio.to_thread(db.get_total_news_count)
     offset     = page * PER_PAGE
-    total, news_list = await asyncio.gather(
-        asyncio.to_thread(db.get_total_news_count),
-        asyncio.to_thread(db.get_archive_news_page, offset, PER_PAGE),
-    )
+    news_list  = await asyncio.to_thread(db.get_archive_news_page, offset, PER_PAGE)
     total_pages = max(1, -(-total // PER_PAGE))
 
     if not news_list:
@@ -2993,14 +2929,11 @@ async def admin_do_clear_subs(query, context):
 
 
 async def show_analytics(query, context):
-    # Все 5 запросов параллельно вместо последовательных
-    active_24h, total_users, pop_classes, peak_hours, total_subs_list = await asyncio.gather(
-        asyncio.to_thread(db.get_active_users_24h),
-        asyncio.to_thread(db.get_user_count),
-        asyncio.to_thread(db.get_popular_classes),
-        asyncio.to_thread(db.get_peak_hours),
-        asyncio.to_thread(db.get_all_substitutions),
-    )
+    active_24h    = await asyncio.to_thread(db.get_active_users_24h)
+    total_users   = await asyncio.to_thread(db.get_user_count)
+    pop_classes   = await asyncio.to_thread(db.get_popular_classes)
+    peak_hours    = await asyncio.to_thread(db.get_peak_hours)
+    total_subs_list = await asyncio.to_thread(db.get_all_substitutions)
 
     text = (
         "<b>📊 АНАЛИТИКА БОТА</b>\n\n"
@@ -3487,7 +3420,7 @@ async def handle_message(update: Update, context: CallbackContext):
     # ── ИИ ──
     if context.user_data.get('awaiting_ai'):
         thinking = await update.message.reply_text("🤔 Думаю...")
-        is_teacher = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id)) is not None
+        is_teacher = bool(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id))
         answer = await ask_ai(text, user.id, is_teacher)
         try:
             await thinking.edit_text(answer, parse_mode='HTML')
@@ -3985,12 +3918,10 @@ def main():
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("teacher", cmd_teacher))
-    app.add_handler(CommandHandler("cancel",  cmd_cancel))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
-    app.add_error_handler(global_error_handler)
 
     print("🤖 Бот запущен!")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
