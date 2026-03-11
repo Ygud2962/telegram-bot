@@ -1900,11 +1900,24 @@ async def cmd_cancel(update: Update, context: CallbackContext):
 async def global_error_handler(update: object, context: CallbackContext):
     """Глобальный обработчик ошибок."""
     import traceback
-    tb = ''.join(traceback.format_exception(type(context.error), context.error,
-                                             context.error.__traceback__))
+    from telegram.error import Conflict, NetworkError, TimedOut
+
+    err = context.error
+
+    # Conflict — два экземпляра при редеплое Railway, не баг кода — молча логируем
+    if isinstance(err, Conflict):
+        logger.warning(f"Конфликт getUpdates (редеплой): {err}")
+        return
+
+    # Сетевые таймауты — тоже не спамим админу
+    if isinstance(err, (NetworkError, TimedOut)):
+        logger.warning(f"Сетевая ошибка: {err}")
+        return
+
+    tb = ''.join(traceback.format_exception(type(err), err, err.__traceback__))
     logger.error(f"Необработанная ошибка:\n{tb}")
 
-    short = str(context.error)[:300]
+    short = str(err)[:300]
     for admin_id in ADMIN_IDS:
         try:
             await context.bot.send_message(
