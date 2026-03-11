@@ -3979,9 +3979,17 @@ def main():
         logger.critical(f"Ошибка инициализации БД: {e}")
         raise SystemExit(1)
 
+    async def post_init(application):
+        await application.bot.set_my_commands([
+            ("start",   "🏠 Главное меню"),
+            ("teacher", "👨‍🏫 Зарегистрироваться как учитель"),
+            ("cancel",  "❌ Отменить текущее действие"),
+        ])
+
     app = (
         Application.builder()
         .token(TOKEN)
+        .post_init(post_init)
         .read_timeout(REQUEST_TIMEOUT)
         .write_timeout(REQUEST_TIMEOUT)
         .connect_timeout(REQUEST_TIMEOUT)
