@@ -1253,6 +1253,7 @@ MAIN_MENU_KB = [
     [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
     [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
     [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+    [btn("🎮 Шифровальщик", 'menu_game')],
     [btn("👤 Регистрация", 'menu_register')],
     [btn("👑 Админка", 'admin_panel')],
 ]
@@ -1263,6 +1264,7 @@ MAIN_MENU_KB_REGISTERED = [
     [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
     [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
     [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+    [btn("🎮 Шифровальщик", 'menu_game')],
     [btn("👤 Мой профиль", 'menu_profile')],
     [btn("👑 Админка", 'admin_panel')],
 ]
@@ -1296,6 +1298,7 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
         [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
         [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
         [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+        [btn("🎮 Шифровальщик", 'menu_game')],
         role_row,
     ]
     if is_admin:
