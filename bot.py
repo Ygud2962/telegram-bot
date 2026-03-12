@@ -53,6 +53,11 @@ GPT_AVAILABLE = bool(GROQ_API_KEY)
 
 # URL Mini App игры (задайте в Railway как переменную окружения GAME_URL)
 GAME_URL = os.environ.get('GAME_URL', '')
+# Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
+GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
+# Кэш тестеров (обновляется при изменениях из бота)
+_beta_cache: set = set()
+_beta_cache_ts: float = 0
 
 
 # ══════════════════════════════════════════════════════════
@@ -2540,39 +2545,97 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ЗВОНКИ
 # ══════════════════════════════════════════════════════════
+async def is_game_allowed(user_id: int) -> bool:
+    """Проверяет доступ к игре: если бета включена — только белый список + ADMIN_IDS."""
+    import time
+    global _beta_cache, _beta_cache_ts
+    if not GAME_BETA:
+        return True
+    if user_id in ADMIN_IDS:
+        return True
+    # Кэш на 60 секунд чтобы не ломиться в БД при каждом тапе
+    if time.time() - _beta_cache_ts > 60:
+        rows = await asyncio.to_thread(db.get_beta_users)
+        _beta_cache = {r[0] for r in rows}
+        _beta_cache_ts = time.time()
+    return user_id in _beta_cache
+
+
 async def menu_game(query, context):
     """Запуск игры Шифровальщик."""
+    await query.answer()
+    user = query.from_user
+
+    # Проверка доступа (бета-режим)
+    if not await is_game_allowed(user.id):
+        await safe_edit(query,
+            "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
+            "🔒 Игра сейчас в режиме бета-тестирования.\n"
+            "Доступ открыт только для избранных участников.\n\n"
+            "<i>Следи за новостями — скоро откроется для всех!</i>",
+            [BACK_TO_MAIN[0]])
+        return
+
     if not GAME_URL:
         await safe_edit(query,
             "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
             "⚠️ Игра временно недоступна.\n"
-            "Администратор ещё не настроил ссылку на игру.\n\n"
-            "<i>Нужно добавить переменную GAME_URL в Railway.</i>",
+            "<i>Администратор ещё не добавил GAME_URL в Railway.</i>",
             [BACK_TO_MAIN[0]])
         return
 
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    from telegram import InlineKeyboardButton, WebAppInfo
+
+    # Передаём leaderboard в игру через start_param URL
+    lb_rows = await asyncio.to_thread(db.get_game_leaderboard, 20)
+    my_result = await asyncio.to_thread(db.get_game_result, user.id)
+
+    import json, urllib.parse
+    lb_data = [
+        {'uid': str(r[0]), 'name': r[1] or 'Игрок', 'score': r[2], 'completed': r[3]}
+        for r in lb_rows
+    ]
+    my_data = None
+    if my_result:
+        my_data = {
+            'uid': str(my_result[0]), 'name': my_result[1] or 'Игрок',
+            'score': my_result[2], 'completed': my_result[3], 'game_over': my_result[4]
+        }
+
+    payload = urllib.parse.quote(json.dumps({'lb': lb_data, 'me': my_data}, ensure_ascii=False))
+    game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
+
+    # Формируем описание результата игрока
+    if my_result:
+        uid, uname, total, comp, game_over, updated = my_result
+        updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y') if updated else '—'
+        my_info = (f"\n📊 Ваш результат: <b>{total} очков</b>, {comp}/4 глав"
+                   + (" ✅" if game_over else "") + f"\n📅 Последняя игра: {updated_str}")
+    else:
+        my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
+
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎮 ОТКРЫТЬ ИГРУ", web_app=WebAppInfo(url=GAME_URL))],
+        [InlineKeyboardButton("🎮 ОТКРЫТЬ ИГРУ", web_app=WebAppInfo(url=game_url))],
         [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
         [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
     ])
     await query.message.edit_text(
         "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
-        "1941–1945. Вы — советский разведчик.\n"
-        "Расшифруйте донесения и приблизьте Победу.\n\n"
+        "1941–1945 · Вы — советский разведчик.\n"
+        "Расшифруйте 20 донесений и приблизьте Победу.\n\n"
         "🗺 <b>4 операции</b> на территории Беларуси\n"
-        "🔐 <b>Шифр Цезаря</b> и <b>Азбука Морзе</b>\n"
-        "🏆 <b>Таблица лидеров</b> школы\n"
-        "🎖 <b>Значки</b> за мастерство\n\n"
-        "<i>Игра приурочена ко Дню Победы — 9 мая</i>",
+        "🔐 <b>4 типа шифров:</b> Цезарь, Морзе, Атбаш, Числовой\n"
+        "❤️ <b>5 жизней</b> на каждую главу\n"
+        "🏆 <b>Таблица лидеров</b> всей школы"
+        + my_info,
         parse_mode='HTML', reply_markup=kb
     )
 
 
 async def game_leaderboard(query, context):
-    """Показывает таблицу лидеров из БД."""
-    lb = await asyncio.to_thread(db.get_game_leaderboard)
+    """Таблица лидеров из БД."""
+    await query.answer()
+    lb = await asyncio.to_thread(db.get_game_leaderboard, 15)
     if not lb:
         await safe_edit(query,
             "🏆 <b>ТАБЛИЦА ЛИДЕРОВ</b>\n\n"
@@ -2582,17 +2645,20 @@ async def game_leaderboard(query, context):
         return
 
     medals = ['🥇','🥈','🥉']
-    lines = ["🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ ШКОЛЫ</b>\n"]
-    for i, (name, score, chapters, tg_id) in enumerate(lb[:10]):
-        m = medals[i] if i < 3 else f"{i+1}."
-        lines.append(f"{m} <b>{name}</b> — {score} очков  <i>({chapters}/4 глав)</i>")
+    lines  = ["🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ ШКОЛЫ</b>\n"]
+    uid_me = query.from_user.id
+    for i, (uid, name, score, completed, game_over) in enumerate(lb):
+        m    = medals[i] if i < 3 else f"{i+1}."
+        done = " ✅" if game_over else f" ({completed}/4)"
+        me   = " 👈" if uid == uid_me else ""
+        lines.append(f"{m} <b>{name or 'Игрок'}</b>{me} — <b>{score}</b> оч{done}")
 
     await safe_edit(query, '\n'.join(lines),
         [[btn("🎮 Играть", 'menu_game')], BACK_TO_MAIN[0]])
 
 
 async def handle_web_app_data(update: Update, context: CallbackContext):
-    """Обрабатывает данные из Mini App после завершения игры."""
+    """Обрабатывает данные из Mini App игры."""
     import json
     data_str = update.message.web_app_data.data
     try:
@@ -2600,75 +2666,78 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
     except Exception:
         return
 
-    user = update.effective_user
-    event_type = data.get('type', '')
+    user        = update.effective_user
+    event_type  = data.get('type', '')
+    user_name   = user.first_name + (f" {user.last_name}" if user.last_name else "")
+    chapter     = data.get('chapter', 0)
+    score       = data.get('score', 0)
+    total_score = data.get('total_score', 0)
+    completed   = data.get('completed', chapter)
+    game_over   = data.get('game_over', False)
+    failed      = (event_type == 'chapter_failed')
+
+    # Сохраняем в БД
+    await asyncio.to_thread(
+        db.save_game_result,
+        user.id, user_name, chapter, score, total_score,
+        completed, game_over, failed
+    )
 
     if event_type == 'chapter_complete':
-        chapter     = data.get('chapter', 0)
-        ch_title    = data.get('chapter_title', '')
-        score       = data.get('score', 0)
-        total_score = data.get('total_score', 0)
-        hints       = data.get('hints_used', 0)
-        badges      = data.get('badges', [])
-
-        await asyncio.to_thread(
-            db.save_game_result,
-            user.id, chapter, score, total_score, hints, badges
-        )
-
-        hint_str = "без подсказок 🎯" if hints == 0 else f"{hints} подсказок"
-        badge_str = "  ".join(badges) if badges else ""
+        ch_title = data.get('chapter_title', f'Глава {chapter}')
         await update.message.reply_text(
             f"🔐 <b>Глава завершена!</b>\n\n"
             f"📖 {ch_title}\n"
-            f"⭐ <b>{score} очков</b>  ({hint_str})\n"
-            f"📊 Всего: <b>{total_score} очков</b>\n"
-            f"{badge_str}",
+            f"⭐ <b>{score} очков</b> за главу\n"
+            f"📊 Всего: <b>{total_score} очков</b>\n\n"
+            f"{'🏆 Все главы пройдены!' if game_over else 'Продолжай — следующая глава ждёт!'}",
+            parse_mode='HTML'
+        )
+        if game_over:
+            for a in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        chat_id=a,
+                        text=f"🏆 <b>{user_name}</b> прошёл Шифровальщика!\nОчков: <b>{total_score}</b>",
+                        parse_mode='HTML'
+                    )
+                except Exception:
+                    pass
+
+    elif event_type == 'chapter_failed':
+        ch_title = data.get('chapter_title', f'Глава {chapter}')
+        await update.message.reply_text(
+            f"💔 <b>Глава не пройдена</b>\n\n"
+            f"📖 {ch_title}\n"
+            f"⭐ Очков за главу: <b>{score}</b>\n"
+            f"📊 Всего: <b>{total_score} очков</b>\n\n"
+            f"<i>Ничего страшного — впереди ещё новые задания!</i>",
             parse_mode='HTML'
         )
 
     elif event_type == 'game_complete':
-        total_score = data.get('total_score', 0)
-        badges      = data.get('badges', [])
-
-        # Уведомляем всех — новый рекордсмен!
-        name = user.first_name + (f" {user.last_name}" if user.last_name else "")
+        rank = data.get('rank', '')
+        pct  = data.get('pct', 0)
+        await update.message.reply_text(
+            f"🏆 <b>ИГРА ПРОЙДЕНА!</b>\n\n"
+            f"👤 {user_name}\n"
+            f"⭐ Итого: <b>{total_score} очков</b> ({pct}% от максимума)\n"
+            f"🎖 Звание: <b>{rank}</b>\n\n"
+            f"Результат сохранён в таблице лидеров школы!",
+            parse_mode='HTML'
+        )
         for a in ADMIN_IDS:
             try:
                 await context.bot.send_message(
                     chat_id=a,
-                    text=f"🏆 <b>{name}</b> прошёл Шифровальщика!\n"
-                         f"Очков: <b>{total_score}</b>\n"
-                         f"Наград: {len(badges)}",
+                    text=f"🏆 <b>{user_name}</b> завершил Шифровальщика!\n"
+                         f"Очков: <b>{total_score}</b> · {rank}",
                     parse_mode='HTML'
                 )
             except Exception:
                 pass
 
-        await update.message.reply_text(
-            f"🏆 <b>ПОБЕДА! Вы прошли всю игру!</b>\n\n"
-            f"⭐ Итого: <b>{total_score} очков</b>\n"
-            f"🎖 Наград: <b>{len(badges)}</b>\n\n"
-            f"Ваш результат добавлен в таблицу лидеров школы!",
-            parse_mode='HTML'
-        )
 
-
-    now = datetime.now(TZ_MINSK)
-    info = get_current_lesson_info()
-    extra = ""
-    if info['status'] == 'lesson':
-        extra = f"\n\n🟢 <b>Сейчас идёт {info['number']} урок</b>, осталось {info['time_left']} мин"
-    elif info['status'] == 'break':
-        extra = f"\n\n⏸️ <b>Перемена</b> — следующий ({info['next_number']}) урок через {info['minutes_until']} мин"
-
-    kb = [BACK_TO_MAIN[0]]
-    await safe_edit(query, BELLS_TEXT + extra, kb)
-
-
-# ══════════════════════════════════════════════════════════
-#  МЕНЮ: ИИ-ПОМОЩНИК
-# ══════════════════════════════════════════════════════════
 async def menu_ai(query, context):
     if not GPT_AVAILABLE:
         await safe_edit(query,
@@ -2901,6 +2970,317 @@ async def handle_sub_flow(query, context):
             f"<i>Уведомление отправлено учителю.</i>", kb)
 
 
+
+
+# ══════════════════════════════════════════════════════════
+#  БЕТА-ТЕСТ: УПРАВЛЕНИЕ БЕЛЫМ СПИСКОМ
+# ══════════════════════════════════════════════════════════
+
+async def admin_beta_panel(query, context):
+    """Панель управления бета-доступом."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    users = await asyncio.to_thread(db.get_beta_users)
+    beta_on = len(users) > 0
+
+    if beta_on:
+        mode_text = f"🔒 <b>Режим бета-теста ВКЛЮЧЁН</b>\nДоступ имеют <b>{len(users)}</b> чел. + администраторы."
+    else:
+        mode_text = "🌐 <b>Игра открыта для всех</b>\nДобавьте тестеров чтобы включить бета-режим."
+
+    lines = [f"🧪 <b>БЕТА-ТЕСТ «ШИФРОВАЛЬЩИК»</b>\n\n{mode_text}"]
+    if users:
+        lines.append("\n<b>Тестеры:</b>")
+        for uid, name, added, note in users[:15]:
+            lines.append(f"• <b>{name or 'Игрок'}</b> <code>{uid}</code>"
+                         + (f" — {note}" if note else ""))
+
+    kb = [
+        [btn("➕ Добавить тестера",    'admin_beta_add')],
+        [btn("➖ Убрать тестера",      'admin_beta_remove')],
+        [btn("🌐 Открыть для ВСЕХ",   'admin_beta_clear_confirm')],
+        [btn("↩️ Управление игрой",   'admin_game_panel')],
+    ]
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_beta_add(query, context):
+    """Начало добавления тестера — просим ввести ID."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    context.user_data['beta_action'] = 'add'
+    await safe_edit(query,
+        "➕ <b>ДОБАВИТЬ ТЕСТЕРА</b>\n\n"
+        "Перешли мне сообщение от нужного пользователя,\n"
+        "или введи его <b>Telegram ID</b> (цифры).\n\n"
+        "<i>Как узнать ID: попроси пользователя написать боту /start — "
+        "ID появится в базе пользователей.</i>\n\n"
+        "Можно ввести несколько ID через запятую:\n"
+        "<code>123456789, 987654321</code>",
+        [[btn("❌ Отмена", 'admin_beta_panel')]])
+
+
+async def admin_beta_remove(query, context):
+    """Начало удаления тестера."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    users = await asyncio.to_thread(db.get_beta_users)
+    if not users:
+        await safe_edit(query, "ℹ️ Список тестеров пуст.",
+            [[btn("↩️ Бета-панель", 'admin_beta_panel')]]); return
+
+    kb = [[btn(f"✖ {r[1] or r[0]} ({r[0]})", f'abeta_rm_{r[0]}')] for r in users]
+    kb.append([btn("❌ Отмена", 'admin_beta_panel')])
+    await safe_edit(query,
+        "➖ <b>УБРАТЬ ТЕСТЕРА</b>\n\nВыберите кого убрать:",
+        kb)
+
+
+async def admin_beta_clear_confirm(query, context):
+    """Подтверждение очистки списка."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    await safe_edit(query,
+        "⚠️ Очистить список тестеров?\n\n"
+        "После этого игра станет <b>доступна всем</b> пользователям бота.",
+        [
+            [btn("✅ Да, открыть для всех", 'abeta_clear_do')],
+            [btn("❌ Отмена",               'admin_beta_panel')],
+        ])
+
+
+async def admin_beta_clear_do(query, context):
+    """Выполняет очистку белого списка."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    # Сбрасываем кэш
+    global _beta_cache, _beta_cache_ts
+    _beta_cache = set(); _beta_cache_ts = 0
+    deleted = await asyncio.to_thread(db.clear_beta_list)
+    await safe_edit(query,
+        f"✅ Белый список очищен ({deleted} тестеров удалено).\n"
+        f"Игра теперь <b>доступна всем</b>.",
+        [[btn("↩️ Управление игрой", 'admin_game_panel')]])
+
+
+async def handle_beta_add_input(update, context, text):
+    """Обрабатывает ввод ID тестеров от админа."""
+    global _beta_cache, _beta_cache_ts
+    parts = [p.strip() for p in text.replace(',', ' ').split()]
+    added, failed = [], []
+    for part in parts:
+        try:
+            uid = int(part)
+            # Пробуем найти имя в БД пользователей
+            uinfo = await asyncio.to_thread(db.get_user_info, uid) if hasattr(db, 'get_user_info') else None
+            uname = None
+            if uinfo and isinstance(uinfo, dict):
+                uname = uinfo.get('first_name') or uinfo.get('username')
+            ok = await asyncio.to_thread(db.add_beta_user, uid, uname)
+            if ok: added.append(str(uid))
+            else:  failed.append(str(uid))
+        except ValueError:
+            failed.append(part)
+    # Сбрасываем кэш
+    _beta_cache = set(); _beta_cache_ts = 0
+    context.user_data.pop('beta_action', None)
+    lines = []
+    if added:   lines.append(f"✅ Добавлено: {', '.join(added)}")
+    if failed:  lines.append(f"❌ Ошибка:    {', '.join(failed)}")
+    lines.append("\n<i>Теперь они смогут открыть игру в боте.</i>")
+    kb = [[btn("↩️ Бета-панель", 'admin_beta_panel')]]
+    await update.message.reply_text("\n".join(lines), parse_mode='HTML',
+                                    reply_markup=InlineKeyboardMarkup(kb))
+
+
+# ══════════════════════════════════════════════════════════
+#  АДМИН: УПРАВЛЕНИЕ ИГРОЙ
+# ══════════════════════════════════════════════════════════
+
+async def admin_game_panel(query, context):
+    """Главная панель управления игрой."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔ Доступ запрещён"); return
+    await query.answer()
+
+    rows = await asyncio.to_thread(db.get_game_leaderboard_admin, 50)
+    total = len(rows)
+    finished = sum(1 for r in rows if r[4])   # game_over
+    banned   = sum(1 for r in rows if r[6])   # banned
+
+    text = (
+        "🎮 <b>УПРАВЛЕНИЕ ИГРОЙ «ШИФРОВАЛЬЩИК»</b>\n\n"
+        f"👥 Всего игроков:       <b>{total}</b>\n"
+        f"✅ Завершили игру:     <b>{finished}</b>\n"
+        f"🚫 Забанено:            <b>{banned}</b>\n\n"
+        "Выберите действие:"
+    )
+    beta_on = await asyncio.to_thread(db.is_beta_enabled)
+    beta_count = len(await asyncio.to_thread(db.get_beta_users))
+    beta_label = f"🔒 Бета: {beta_count} тестеров" if beta_on else "🌐 Бета: ВЫКЛ (игра для всех)"
+
+    kb = [
+        [btn("📋 Список игроков",      'admin_game_leaderboard')],
+        [btn(beta_label,               'admin_beta_panel')],
+        [btn("🗑 Сбросить ВСЕХ",       'admin_game_reset_all')],
+        [btn("↩️ Админка",             'admin_panel')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_leaderboard(query, context):
+    """Список всех игроков для админа."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔ Доступ запрещён"); return
+    await query.answer()
+
+    rows = await asyncio.to_thread(db.get_game_leaderboard_admin, 30)
+    if not rows:
+        await safe_edit(query,
+            "🎮 <b>Игроков пока нет</b>\n\nНикто не начал игру.",
+            [[btn("↩️ Управление игрой", 'admin_game_panel')]])
+        return
+
+    lines = ["🎮 <b>ИГРОКИ (нажми для управления)</b>\n"]
+    kb    = []
+    medals = ['🥇','🥈','🥉']
+    for i, r in enumerate(rows[:20]):
+        uid, name, score, comp, done, failed, banned, upd = r
+        status = "🚫" if banned else ("✅" if done else f"{comp}/4")
+        m      = medals[i] if i < 3 else f"{i+1}."
+        lines.append(f"{m} <b>{name or 'Игрок'}</b> — {score} оч {status}")
+        kb.append([btn(f"{'🚫 ' if banned else ''}{name or 'Игрок'} ({score}оч)", f'agame_view_{uid}')])
+
+    kb.append([btn("↩️ Управление игрой", 'admin_game_panel')])
+    await safe_edit(query, '\n'.join(lines), kb)
+
+
+async def admin_game_view_player(query, context, uid):
+    """Детальный просмотр игрока + кнопки действий."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    r = await asyncio.to_thread(db.get_game_result_detail, uid)
+    if not r:
+        await safe_edit(query, "❌ Игрок не найден.",
+            [[btn("↩️ Список", 'admin_game_leaderboard')]]); return
+
+    uid2, name, total, completed, game_over, chapter, chap_score, failed, banned, upd = r
+    import pytz
+    upd_str = upd.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M') if upd else '—'
+
+    status_icon = "🚫 ЗАБАНЕН" if banned else ("✅ ЗАВЕРШИЛ" if game_over else f"▶ В ПРОЦЕССЕ ({completed}/4 глав)")
+    text = (
+        f"👤 <b>{name or 'Игрок'}</b>\n"
+        f"🆔 <code>{uid2}</code>\n\n"
+        f"📊 Статус:        {status_icon}\n"
+        f"⭐ Очков:          <b>{total}</b>\n"
+        f"📖 Глав пройдено: <b>{completed}/4</b>\n"
+        f"📌 Последняя гл.: <b>{chapter}</b> ({chap_score} оч)\n"
+        f"💔 Провалена:      {'Да' if failed else 'Нет'}\n"
+        f"📅 Последнее обновление: {upd_str}\n"
+    )
+
+    kb = []
+    if banned:
+        kb.append([btn("✅ Разбанить", f'agame_unban_{uid}')])
+    else:
+        kb.append([btn("🚫 Забанить в игре", f'agame_ban_{uid}')])
+    kb.append([btn("🗑 Сбросить прогресс", f'agame_reset_{uid}')])
+    kb.append([btn("↩️ Список", 'admin_game_leaderboard')])
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_reset_player(query, context, uid):
+    """Сброс прогресса конкретного игрока."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    r = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name = r[1] if r else str(uid)
+    ok = await asyncio.to_thread(db.reset_game_result, uid)
+
+    text = (
+        f"{'✅ Прогресс игрока <b>' + (name or 'Игрок') + '</b> сброшен.' if ok else '❌ Не удалось сбросить — игрок не найден.'}"
+    )
+    kb = [[btn("↩️ Список", 'admin_game_leaderboard')]]
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_ban_player(query, context, uid):
+    """Бан игрока (обнуление очков + флаг)."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    r = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name = r[1] if r else str(uid)
+    ok = await asyncio.to_thread(db.ban_game_user, uid)
+
+    text = (
+        f"{'🚫 Игрок <b>' + (name or str(uid)) + '</b> забанен. Очки обнулены.' if ok else '❌ Не удалось забанить.'}"
+    )
+    kb = [
+        [btn("✅ Разбанить", f'agame_unban_{uid}')],
+        [btn("↩️ Список",  'admin_game_leaderboard')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_unban_player(query, context, uid):
+    """Снятие бана игрока."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    r = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name = r[1] if r else str(uid)
+    ok = await asyncio.to_thread(db.unban_game_user, uid)
+
+    text = (
+        f"{'✅ Бан с игрока <b>' + (name or str(uid)) + '</b> снят.' if ok else '❌ Не удалось разбанить.'}"
+    )
+    kb = [[btn("↩️ Список", 'admin_game_leaderboard')]]
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_reset_all(query, context):
+    """Запрос подтверждения сброса всех."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    await safe_edit(query,
+        "⚠️ <b>ВНИМАНИЕ!</b>\n\n"
+        "Вы собираетесь <b>удалить прогресс ВСЕХ игроков</b>.\n"
+        "Это действие необратимо.\n\n"
+        "Вы уверены?",
+        [
+            [btn("🗑 ДА, СБРОСИТЬ ВСЕХ", 'agame_reset_all_confirm')],
+            [btn("❌ Отмена",             'admin_game_panel')],
+        ])
+
+
+async def admin_game_reset_all_confirm(query, context):
+    """Подтверждённый сброс всех игроков."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    deleted = await asyncio.to_thread(db.reset_all_game_results)
+    await safe_edit(query,
+        f"✅ Сброшено игроков: <b>{deleted}</b>",
+        [[btn("↩️ Управление игрой", 'admin_game_panel')]])
+
+
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ADMIN PANEL
 # ══════════════════════════════════════════════════════════
@@ -2930,6 +3310,7 @@ async def show_admin_panel(query):
         [btn("📊 Аналитика", 'admin_analytics')],
         [btn("👥 Пользователи", 'admin_users')],
         [btn("📢 Рассылка", 'admin_broadcast')],
+        [btn("🎮 Управление игрой", 'admin_game_panel')],
         BACK_TO_MAIN[0],
     ]
     await safe_edit(query, "👑 <b>АДМИН-ПАНЕЛЬ</b>\nВыберите действие:", kb)
@@ -3281,6 +3662,43 @@ async def button_handler(update: Update, context: CallbackContext):
         news_id = int(d.split('_')[2])
         await show_news_full(query, context, news_id)
         return
+    # ── Игровые колбэки для игрока ──
+    if d.startswith('game_lb_p_'):  # пагинация лидерборда
+        await game_leaderboard(query, context)
+        return
+
+    # ── Админские колбэки игры ──
+    if user.id in ADMIN_IDS:
+        if d.startswith('abeta_rm_'):
+            uid = int(d.replace('abeta_rm_', ''))
+            global _beta_cache, _beta_cache_ts
+            _beta_cache = set(); _beta_cache_ts = 0
+            ok = await asyncio.to_thread(db.remove_beta_user, uid)
+            await safe_edit(query,
+                f"{'✅ Тестер удалён из списка.' if ok else '❌ Не найден.'}",
+                [[btn("↩️ Бета-панель", 'admin_beta_panel')]])
+            return
+
+        if d.startswith('agame_view_'):
+            uid = int(d.replace('agame_view_', ''))
+            await admin_game_view_player(query, context, uid)
+            return
+        if d.startswith('agame_reset_'):
+            uid = int(d.replace('agame_reset_', ''))
+            await admin_game_reset_player(query, context, uid)
+            return
+        if d.startswith('agame_ban_'):
+            uid = int(d.replace('agame_ban_', ''))
+            await admin_game_ban_player(query, context, uid)
+            return
+        if d.startswith('agame_unban_'):
+            uid = int(d.replace('agame_unban_', ''))
+            await admin_game_unban_player(query, context, uid)
+            return
+        if d == 'agame_reset_all_confirm':
+            await admin_game_reset_all_confirm(query, context)
+            return
+
     if d.startswith('edit_news_') and user.id in ADMIN_IDS:
         news_id = int(d.split('_')[2])
         await start_edit_news(query, context, news_id)
@@ -3449,6 +3867,15 @@ async def button_handler(update: Update, context: CallbackContext):
             "и покажет предпросмотр для подтверждения.</i>",
             [[btn("❌ Отмена", 'admin_panel')]]),
         'admin_analytics':        show_analytics,
+        'admin_game_panel':       admin_game_panel,
+        'admin_beta_panel':       admin_beta_panel,
+        'admin_beta_add':         admin_beta_add,
+        'admin_beta_remove':      admin_beta_remove,
+        'admin_beta_clear_confirm': admin_beta_clear_confirm,
+        'abeta_clear_do':         admin_beta_clear_do,
+        'admin_game_leaderboard': admin_game_leaderboard,
+        'admin_game_reset_all':   admin_game_reset_all,
+        'game_leaderboard':       game_leaderboard,
         'admin_users':            show_users_stats,
         'noop':                   lambda q, c: None,
     }
@@ -3458,7 +3885,6 @@ async def button_handler(update: Update, context: CallbackContext):
         if d == 'admin_panel':
             await handler(query)
         else:
-            await handler(query, context)
             await handler(query, context)
     else:
         logger.warning(f"Неизвестный callback: {d}")
@@ -3511,6 +3937,11 @@ async def handle_message(update: Update, context: CallbackContext):
     # ── Редактирование новости ──
     if context.user_data.get('edit_news_id') and user.id in ADMIN_IDS:
         await handle_edit_news_input(update, context)
+        return
+
+    # ── Добавление тестеров (бета) ──
+    if context.user_data.get('beta_action') == 'add' and user.id in ADMIN_IDS:
+        await handle_beta_add_input(update, context, text)
         return
 
     # ── Удаление замены по ID ──
