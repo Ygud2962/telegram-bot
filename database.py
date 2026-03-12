@@ -228,6 +228,8 @@ def init_db():
         ''')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_game_score ON game_results(total_score DESC)')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_game_user  ON game_results(user_id)')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT FALSE')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS failed BOOLEAN DEFAULT FALSE')
 
         # Индексы
         for idx_sql in [
