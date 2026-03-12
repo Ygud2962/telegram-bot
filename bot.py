@@ -3851,6 +3851,7 @@ async def button_handler(update: Update, context: CallbackContext):
         'menu_news':              lambda q, c: menu_news(q, c, 0),
         'menu_my':                menu_my,
         'menu_ai':                menu_ai,
+        'menu_game':              menu_game,
         'menu_help':              menu_help,
         'admin_panel':            show_admin_panel,
         'admin_enable_maintenance': admin_enable_maintenance,
