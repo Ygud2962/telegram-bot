@@ -710,6 +710,97 @@ body::before{
 }
 .cipher-box{animation:glitch-in .5s ease both,borderGlow 2.5s ease infinite .6s}
 
+
+/* ══ НОВЫЕ ТИПЫ ЗАДАНИЙ ══ */
+
+/* Анаграмма — перетаскиваемые буквы */
+.anagram-pool{
+  display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+  padding:16px;min-height:56px
+}
+.anagram-letter{
+  width:clamp(36px,9vw,44px);height:clamp(36px,9vw,44px);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--head);font-size:var(--fs-lg);font-weight:700;
+  color:#0a0a08;background:var(--accent);
+  border-radius:4px;cursor:pointer;user-select:none;
+  transition:transform .15s,opacity .2s,box-shadow .15s;
+  box-shadow:0 3px 0 rgba(0,0,0,.5)
+}
+.anagram-letter:hover{transform:translateY(-3px) scale(1.08);box-shadow:0 6px 12px rgba(255,224,51,.4)}
+.anagram-letter.used{opacity:.25;transform:scale(.88);pointer-events:none;background:var(--muted)}
+.anagram-answer{
+  display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+  padding:12px;min-height:56px;
+  border:2px dashed rgba(255,224,51,.3);border-radius:4px;
+  margin:0 16px
+}
+.anagram-slot{
+  width:clamp(36px,9vw,44px);height:clamp(36px,9vw,44px);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--head);font-size:var(--fs-lg);font-weight:700;
+  color:var(--accent);
+  border:2px solid rgba(255,224,51,.5);border-radius:4px;
+  cursor:pointer;transition:all .15s;
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.3)
+}
+.anagram-slot:hover{border-color:var(--accent2);background:rgba(255,58,58,.1)}
+.anagram-slot.filled{background:rgba(255,224,51,.15);border-color:var(--accent)}
+.anagram-reset{
+  font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);
+  background:none;border:1px solid rgba(255,255,255,.1);padding:6px 14px;
+  cursor:pointer;letter-spacing:.1em;margin-top:8px;border-radius:2px
+}
+.anagram-reset:hover{color:var(--accent2);border-color:var(--accent2)}
+
+/* Математика */
+.math-formula{
+  font-family:var(--mono);font-size:var(--fs-xl);
+  color:var(--accent);text-align:center;padding:20px;
+  letter-spacing:.1em;line-height:1.4;
+  border:1px solid rgba(255,224,51,.25);background:var(--card);
+  border-radius:4px;margin:0 16px
+}
+
+/* Фото/описание */
+.photo-task-img{
+  width:calc(100% - 32px);max-width:320px;margin:0 auto 12px;
+  display:block;border:1px solid rgba(255,224,51,.2);
+  border-radius:4px;overflow:hidden
+}
+.photo-task-img svg{width:100%;display:block}
+
+/* Карта Беларуси */
+.map-container{
+  position:relative;width:calc(100% - 32px);max-width:360px;
+  margin:0 auto;border:1px solid rgba(255,224,51,.2);
+  background:var(--card);border-radius:4px;overflow:hidden;
+  cursor:crosshair
+}
+.map-container svg{width:100%;display:block}
+.map-city-dot{
+  cursor:pointer;transition:r .2s,opacity .2s
+}
+.map-city-dot:hover circle{r:8}
+.map-city-label{
+  font-family:var(--head);font-size:10px;fill:#c4b890;
+  pointer-events:none;font-weight:500
+}
+.map-city-dot.correct circle{fill:#55dd55;r:9}
+.map-city-dot.wrong circle{fill:#ff3a3a;r:9}
+.map-city-dot.target circle{
+  fill:#ffe033;
+  animation:mapPulse 1.2s ease-in-out infinite
+}
+@keyframes mapPulse{
+  0%,100%{r:7;opacity:1}
+  50%{r:10;opacity:.7}
+}
+.map-hint-text{
+  font-size:var(--fs-xs);color:var(--accent);text-align:center;
+  padding:8px;letter-spacing:.05em
+}
+
 </style>
 </head>
 <body>
@@ -1173,6 +1264,152 @@ const CHAPTERS = [
         hint:".-- = В, --- = О, .--- = Й, -. = Н, .- = А → ВОЙНА. --- = О, -.- = К, --- = О, -. = Н, ---. = Ч, . = Е, -. = Н, .- = А → ОКОНЧЕНА.",
         fact:"8 мая 1945 в Берлине подписан акт о капитуляции. 9 мая стало Днём Победы для советского народа.", points:300 }
     ]
+  },
+  {
+    id:5, title:"ЗНАЙ СВОЮ ЗЕМЛЮ", subtitle:"Глава V",
+    place:"БЕЛАРУСЬ · ИСТОРИЯ", stamp:"🗺",
+    meta:"Тип: ИСТОРИЯ И ГЕОГРАФИЯ\nТема: Беларусь\nСтатус: ПРОВЕРКА ЗНАНИЙ",
+    briefing:`Разведчик должен знать свою землю как себя. Города, реки, даты, имена. Здесь нет шифров — только знание. Ответь на вопросы о Беларуси и Великой Отечественной войне. Пять заданий — пять проверок.`,
+    mission:"Выполни 5 заданий по истории и географии Беларуси",
+    ciphers:[
+      { type:"anagram", typeLabel:"АНАГРАММА",
+        task:"Переставь буквы чтобы получить название белорусского города — место крупнейшего партизанского движения:",
+        encrypted:"ТИСКМ", answer:"МИНСК",
+        hint:"Столица Беларуси. В ней находится Площадь Победы с обелиском.",
+        fact:"Минск — один из немногих городов-героев СССР. Был полностью разрушен во время оккупации и отстроен заново.", points:150 },
+      { type:"math", typeLabel:"МАТЕМАТИКА",
+        task:"Партизанский отряд из 120 человек разделился на 3 группы. Первая группа — вдвое больше второй. Третья — 20 человек. Сколько человек во второй группе?",
+        encrypted:"120 = 2x + x + 20", answer:"33",
+        hint:"120 − 20 = 100. Остаток делится 2x + x = 3x = 100. x = 100/3 ≈ 33. Во второй группе 33 человека (33+67+20=120).",
+        fact:"Белорусские партизаны к 1944 году насчитывали более 370 000 человек — крупнейшее движение в Европе.", points:170 },
+      { type:"photo", typeLabel:"УГАДАЙ ПО ОПИСАНИЮ",
+        task:"Это место — символ стойкости и героизма. Здесь 1200 советских солдат держались против 45 000 немцев в первые дни войны. Крепость стала символом несгибаемости. Назови это место (одно слово):",
+        encrypted:"🏰",
+        image:`<svg viewBox="0 0 280 160" xmlns="http://www.w3.org/2000/svg">
+  <rect width="280" height="160" fill="#1a1208"/>
+  
+  <rect width="280" height="80" fill="#1a0a00"/>
+  <ellipse cx="140" cy="80" rx="140" ry="40" fill="#3d1500" opacity=".8"/>
+  
+  <ellipse cx="140" cy="82" rx="30" ry="12" fill="#cc4400" opacity=".6"/>
+  
+  <rect x="20" y="80" width="240" height="60" fill="#2a1f0a"/>
+  
+  <rect x="15" y="55" width="35" height="90" fill="#241a08"/>
+  <polygon points="15,55 32,38 50,55" fill="#1a1208"/>
+  <rect x="230" y="55" width="35" height="90" fill="#241a08"/>
+  <polygon points="230,55 247,38 265,55" fill="#1a1208"/>
+  
+  <rect x="110" y="45" width="60" height="95" fill="#2e2510"/>
+  <polygon points="110,45 140,25 170,45" fill="#221c0c"/>
+  
+  <rect x="125" y="60" width="12" height="16" rx="6" fill="#0a0804"/>
+  <rect x="143" y="60" width="12" height="16" rx="6" fill="#0a0804"/>
+  <rect x="125" y="85" width="12" height="16" rx="1" fill="#0a0804"/>
+  <rect x="143" y="85" width="12" height="16" rx="1" fill="#0a0804"/>
+  
+  <path d="M128,140 L128,115 Q140,105 152,115 L152,140Z" fill="#0a0804"/>
+  
+  <polygon points="140,28 142,34 148,34 143,38 145,44 140,40 135,44 137,38 132,34 138,34" fill="#cc2200" opacity=".9"/>
+  
+  <path d="M50,75 L55,68 L52,62 L58,55" stroke="#3a2810" stroke-width="1.5" fill="none" opacity=".7"/>
+  <path d="M220,80 L225,70 L222,62" stroke="#3a2810" stroke-width="1.5" fill="none" opacity=".7"/>
+  
+  <ellipse cx="60" cy="155" rx="25" ry="8" fill="#cc4400" opacity=".3"/>
+  <ellipse cx="220" cy="155" rx="25" ry="8" fill="#cc4400" opacity=".3"/>
+  
+  <text x="140" y="152" text-anchor="middle" font-family="serif" font-size="9" fill="#e8a060" opacity=".8">22 ИЮНЯ 1941</text>
+</svg>`,
+        answer:"БРЕСТ",
+        hint:"Западный форпост СССР. Её гарнизон дрался до последнего. Город на реке Буг.",
+        fact:"Брестская крепость держалась почти месяц. На стене бойцы написали: «Я умираю, но не сдаюсь! Прощай, Родина. 20.VII.41»", points:180 },
+      { type:"map", typeLabel:"НАЙДИ НА КАРТЕ",
+        task:"Покажи на карте Беларуси, где находится Брестская крепость. Тапни по нужному городу:",
+        encrypted:"🗺",
+        answer:"БРЕСТ",
+        mapCity:"БРЕСТ",
+        hint:"Крайний юго-запад Беларуси, на границе с Польшей, у слияния рек Буг и Мухавец.",
+        fact:"Брест основан в 1019 году. Во время войны город был оккупирован в первый же день — 22 июня 1941.", points:200 },
+      { type:"anagram", typeLabel:"АНАГРАММА",
+        task:"Переставь буквы чтобы получить фамилию командира обороны Брестской крепости, удостоенного звания Героя Советского Союза посмертно:",
+        encrypted:"АВЗУБРБА", answer:"ЗУБАРЕВА",
+        hint:"8 букв. Майор, комендант крепости. Его звание — майор. Фамилия на -ЕВА.",
+        fact:"Пётр Гаврилов — последний защитник крепости, взят в плен 23 июля после 32 дней сопротивления. Зубарев — другой герой обороны.", points:220 }
+    ]
+  },
+  {
+    id:6, title:"ДОРОГА К ПОБЕДЕ", subtitle:"Глава VI",
+    place:"БЕЛАРУСЬ · ПАМЯТЬ", stamp:"🌟",
+    meta:"Тип: ЭРУДИЦИЯ\nТема: ВОВ и Беларусь\nСтатус: ФИНАЛЬНЫЙ ЭКЗАМЕН",
+    briefing:`Последняя глава. Здесь собраны самые важные знания о войне. Математика разведчика, тайные места, зашифрованные имена. Докажи что ты достоин звания Маршала Победы.`,
+    mission:"Пройди финальный экзамен — 5 заданий разного типа",
+    ciphers:[
+      { type:"math", typeLabel:"МАТЕМАТИКА",
+        task:"Операция «Багратион» началась 23 июня 1944. Минск освобождён 3 июля 1944. Сколько дней прошло от начала операции до освобождения Минска?",
+        encrypted:"23 июня → 3 июля", answer:"10",
+        hint:"Июнь: 23, 24, 25, 26, 27, 28, 29, 30 — 7 дней. Июль: 1, 2, 3 — 3 дня. Итого: 10 дней.",
+        fact:"За 10 дней операции «Багратион» советские войска окружили и разгромили группу армий «Центр».", points:160 },
+      { type:"photo", typeLabel:"УГАДАЙ ПО ОПИСАНИЮ",
+        task:"Этот монумент — главный символ Победы в Беларуси. Высота обелиска — 38 метров, увенчан орденом Победы. Находится в столице на главном проспекте. Как называется эта площадь? (два слова):",
+        encrypted:"🏛",
+        image:`<svg viewBox="0 0 280 180" xmlns="http://www.w3.org/2000/svg">
+  <rect width="280" height="180" fill="#0d0b08"/>
+  
+  <rect width="280" height="130" fill="#080604"/>
+  
+  <circle cx="30" cy="20" r="1" fill="#ffe033" opacity=".6"/>
+  <circle cx="80" cy="15" r="1.5" fill="#fff" opacity=".5"/>
+  <circle cx="150" cy="10" r="1" fill="#fff" opacity=".7"/>
+  <circle cx="200" cy="25" r="1" fill="#ffe033" opacity=".5"/>
+  <circle cx="250" cy="12" r="1.5" fill="#fff" opacity=".6"/>
+  <circle cx="45" cy="40" r="1" fill="#fff" opacity=".4"/>
+  <circle cx="240" cy="35" r="1" fill="#ffe033" opacity=".5"/>
+  
+  <ellipse cx="140" cy="130" rx="100" ry="30" fill="#cc4400" opacity=".15"/>
+  
+  <rect x="110" y="115" width="60" height="55" rx="2" fill="#1e1810"/>
+  <rect x="105" y="112" width="70" height="8" rx="1" fill="#2a2318"/>
+  
+  <polygon points="133,20 147,20 150,115 130,115" fill="#2a2318"/>
+  <polygon points="136,18 144,18 143,22 137,22" fill="#332b1c"/>
+  
+  <polygon points="140,8 142,15 149,15 143,19 145,26 140,22 135,26 137,19 131,15 138,15" fill="#ffe033" opacity=".95"/>
+  
+  <ellipse cx="140" cy="100" rx="18" ry="5" fill="none" stroke="#e8a060" stroke-width="1.5" opacity=".7"/>
+  
+  <rect x="112" y="120" width="56" height="25" rx="1" fill="#241e0c"/>
+  
+  <ellipse cx="125" cy="127" rx="5" ry="7" fill="#1a1608"/>
+  <ellipse cx="140" cy="126" rx="5" ry="8" fill="#1a1608"/>
+  <ellipse cx="155" cy="127" rx="5" ry="7" fill="#1a1608"/>
+  
+  <ellipse cx="140" cy="168" rx="20" ry="6" fill="#cc4400" opacity=".5"/>
+  <path d="M133,168 C132,158 136,153 140,148 C144,153 148,158 147,168Z" fill="#ff6600" opacity=".7"/>
+  <path d="M136,168 C135,161 138,157 140,153 C142,157 145,161 144,168Z" fill="#ffaa00" opacity=".8"/>
+  
+  <text x="140" y="177" text-anchor="middle" font-family="serif" font-size="8" fill="#e8a060" opacity=".9">МИНСК</text>
+</svg>`,
+        answer:"ПЛОЩАДЬ ПОБЕДЫ",
+        hint:"Две слова. Второе слово — главный итог войны. Площадь находится в центре Минска.",
+        fact:"Площадь Победы в Минске заложена в 1954 году. Обелиск высотой 38 м с орденом Победы виден со всего проспекта.", points:190 },
+      { type:"map", typeLabel:"НАЙДИ НА КАРТЕ",
+        task:"Покажи на карте, где находится город Витебск — место крупнейшей операции Рельсовой войны:",
+        encrypted:"🗺",
+        answer:"ВИТЕБСК",
+        mapCity:"ВИТЕБСК",
+        hint:"Северо-восток Беларуси, на реке Западная Двина. Четвёртый по величине город страны.",
+        fact:"Витебск оккупирован 11 июля 1941 и освобождён 26 июня 1944 в ходе операции «Багратион».", points:200 },
+      { type:"anagram", typeLabel:"АНАГРАММА",
+        task:"Переставь буквы чтобы получить название главной военной операции по освобождению Беларуси в 1944 году:",
+        encrypted:"АНИТАБОРГ", answer:"БАГРАТИОН",
+        hint:"9 букв. Назван в честь русского полководца Отечественной войны 1812 года.",
+        fact:"Операция «Багратион» (23 июня — 19 августа 1944) — крупнейшая наступательная операция Второй мировой войны.", points:230 },
+      { type:"math", typeLabel:"МАТЕМАТИКА",
+        task:"Беларусь потеряла в войне каждого 3-го жителя. В 1941 году население БССР составляло около 9 миллионов человек. Сколько приблизительно человек погибло? (ответ в миллионах, одна цифра):",
+        encrypted:"9 000 000 ÷ 3 = ?", answer:"3",
+        hint:"9 разделить на 3 равно 3. Три миллиона человек — каждый третий житель Беларуси.",
+        fact:"Беларусь потеряла 3 миллиона человек — больше, чем любая другая советская республика в пересчёте на долю населения.", points:250 }
+    ]
   }
 ];
 
@@ -1385,14 +1622,47 @@ function loadCipher() {
   document.getElementById('cipher-type-label').textContent    = cipher.typeLabel;
   document.getElementById('cipher-task').textContent          = cipher.task;
 
-  // Шифрованный текст
+  // Шифрованный текст / задание
   const box = document.getElementById('cipher-box');
   box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
+  box.style.position = 'relative';
+
   if (cipher.type === 'morse') {
     box.innerHTML = '';
     animateMorse(box, cipher.encrypted);
+  } else if (cipher.type === 'anagram') {
+    renderAnagram(cipher);
+    box.textContent = '';
+    box.style.display = 'none';
+  } else if (cipher.type === 'math') {
+    box.style.display = '';
+    box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`;
+  } else if (cipher.type === 'photo') {
+    box.style.display = '';
+    box.innerHTML = `<div class="photo-task-img">${cipher.image}</div>
+      <div style="font-family:var(--mono);font-size:var(--fs-2xl);text-align:center;padding:8px 0">${cipher.encrypted}</div>`;
+  } else if (cipher.type === 'map') {
+    box.style.display = '';
+    box.innerHTML = '';
+    renderMap(cipher);
   } else {
+    box.style.display = '';
     box.textContent = cipher.encrypted;
+  }
+
+  // Поле ввода — скрываем для карты и анаграммы
+  const inputWrap = document.querySelector('.cipher-input-wrap');
+  const actions   = document.querySelector('.cipher-actions');
+  const btnCheck  = document.querySelector('.btn-check');
+  if (cipher.type === 'map') {
+    inputWrap.style.display  = 'none';
+    btnCheck.style.display   = 'none';
+  } else if (cipher.type === 'anagram') {
+    inputWrap.style.display  = 'none';
+    btnCheck.style.display   = 'none';
+  } else {
+    inputWrap.style.display  = '';
+    btnCheck.style.display   = '';
   }
 
   // Жизни
@@ -1438,6 +1708,14 @@ function renderRef(type, shift) {
     const a = RU_ALPHA;
     ref.innerHTML = `<div class="cipher-ref-title">// ЧИСЛОВОЙ КОД (буква = номер в алфавите)</div>
     <div class="caesar-ref">${a.split('').map((l,i)=>`${i+1}=${l}`).join('  ')}</div>`;
+  } else if (type === 'anagram' || type === 'map') {
+    ref.innerHTML = ''; // рендерится отдельно
+  } else if (type === 'math') {
+    ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div>
+    <div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ цифрой в поле ниже.</div>`;
+  } else if (type === 'photo') {
+    ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div>
+    <div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ словами в поле ниже.</div>`;
   } else {
     const alpha = RU_ALPHA;
     ref.innerHTML = `<div class="cipher-ref-title">// АЛФАВИТ ДЛЯ РАСШИФРОВКИ (сдвиг ${shift})</div>
@@ -2267,10 +2545,12 @@ loadCipher = function(){
   _origLoadCipher();
   const box = document.getElementById('cipher-box');
   const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
-  if(cipher.type !== 'morse'){
+  if(cipher.type !== 'morse' && cipher.type !== 'anagram' && cipher.type !== 'photo' && cipher.type !== 'map' && cipher.type !== 'math'){
     const originalText = box.textContent;
-    box.textContent = '';
-    typewriterEffect(box, originalText, 55);
+    if(originalText.trim()){
+      box.textContent = '';
+      typewriterEffect(box, originalText, 55);
+    }
   }
 };
 
@@ -2310,6 +2590,171 @@ renderChapters = function(){
     card.style.animationDelay = (i*80)+'ms';
   });
 };
+
+
+// ═══════════════════════════════════════════════════════
+//  АНАГРАММА
+// ═══════════════════════════════════════════════════════
+let anagramState = { letters: [], placed: [], indices: [] };
+
+function renderAnagram(cipher) {
+  const box = document.getElementById('cipher-box');
+  box.style.display = 'none';
+
+  // Перемешанные буквы
+  const letters = cipher.encrypted.split('');
+  anagramState = { letters: [...letters], placed: Array(letters.length).fill(null), usedIdx: Array(letters.length).fill(false) };
+
+  const ref = document.getElementById('cipher-ref');
+  ref.innerHTML = `
+    <div class="cipher-ref-title">// СОСТАВЬ СЛОВО — тапни по буквам</div>
+    <div class="anagram-answer" id="ag-answer">${
+      letters.map((_,i) => `<div class="anagram-slot" id="ag-slot-${i}" onclick="removeFromSlot(${i})"></div>`).join('')
+    }</div>
+    <div class="anagram-pool" id="ag-pool">${
+      letters.map((l,i) => `<div class="anagram-letter" id="ag-letter-${i}" onclick="addToSlot(${i})">${l}</div>`).join('')
+    }</div>
+    <div style="text-align:center">
+      <button class="anagram-reset" onclick="resetAnagram()">↺ Сбросить</button>
+    </div>`;
+}
+
+function addToSlot(letterIdx) {
+  if (anagramState.usedIdx[letterIdx]) return;
+  const slotIdx = anagramState.placed.indexOf(null);
+  if (slotIdx === -1) return;
+  anagramState.placed[slotIdx] = letterIdx;
+  anagramState.usedIdx[letterIdx] = true;
+  // Обновляем UI
+  document.getElementById(`ag-letter-${letterIdx}`).classList.add('used');
+  const slot = document.getElementById(`ag-slot-${slotIdx}`);
+  slot.textContent = anagramState.letters[letterIdx];
+  slot.classList.add('filled');
+  // Если все слоты заполнены — автопроверка
+  if (!anagramState.placed.includes(null)) {
+    setTimeout(checkAnagram, 300);
+  }
+}
+
+function removeFromSlot(slotIdx) {
+  const letterIdx = anagramState.placed[slotIdx];
+  if (letterIdx === null) return;
+  anagramState.placed[slotIdx] = null;
+  anagramState.usedIdx[letterIdx] = false;
+  document.getElementById(`ag-letter-${letterIdx}`).classList.remove('used');
+  const slot = document.getElementById(`ag-slot-${slotIdx}`);
+  slot.textContent = '';
+  slot.classList.remove('filled');
+}
+
+function resetAnagram() {
+  const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
+  renderAnagram(cipher);
+}
+
+function checkAnagram() {
+  const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
+  const answer  = anagramState.placed.map(i => i !== null ? anagramState.letters[i] : '').join('');
+  const elapsed = Math.round((Date.now() - state.startTime) / 1000);
+
+  // Подсветить слоты
+  const slots = document.querySelectorAll('.anagram-slot');
+  if (answer.toUpperCase() === cipher.answer.toUpperCase()) {
+    slots.forEach(s => { s.style.borderColor = '#55dd55'; s.style.background = 'rgba(85,221,85,.15)'; });
+    const pts = calcPoints(cipher, elapsed);
+    state.chapterScore += pts;
+    saveState();
+    setTimeout(() => showSuccess(cipher, pts, elapsed), 600);
+  } else {
+    slots.forEach(s => { s.style.borderColor = '#ff3a3a'; s.style.background = 'rgba(255,58,58,.1)'; });
+    setTimeout(() => slots.forEach(s => { s.style.borderColor = ''; s.style.background = ''; }), 800);
+    state.lives--;
+    saveState();
+    if (state.lives <= 0) { setTimeout(() => failChapter(), 1200); }
+    else { renderLives(); setTimeout(resetAnagram, 900); }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  КАРТА БЕЛАРУСИ
+// ═══════════════════════════════════════════════════════
+const MAP_CITIES = [
+  { name:'МИНСК',    x:188, y:175, hint:'Столица' },
+  { name:'БРЕСТ',    x:62,  y:268, hint:'Юго-запад' },
+  { name:'ГРОДНО',   x:75,  y:148, hint:'Северо-запад' },
+  { name:'ВИТЕБСК',  x:255, y:82,  hint:'Север' },
+  { name:'МОГИЛЁВ',  x:268, y:198, hint:'Восток' },
+  { name:'ГОМЕЛЬ',   x:278, y:298, hint:'Юго-восток' },
+  { name:'ПОЛОЦК',   x:215, y:72,  hint:'Север' },
+  { name:'БАРАНОВИЧИ',x:130, y:212, hint:'Центр-запад' },
+  { name:'ПИНСК',    x:110, y:285, hint:'Юг' },
+  { name:'БОБРУЙСК', x:228, y:240, hint:'Центр' },
+];
+
+let mapAnswered = false;
+
+function renderMap(cipher) {
+  mapAnswered = false;
+  const target = cipher.mapCity;
+  const ref = document.getElementById('cipher-ref');
+
+  const dots = MAP_CITIES.map(c => {
+    const isTarget = false; // не показываем правильный заранее
+    return `<g class="map-city-dot" id="mcdot-${c.name}" onclick="checkMapAnswer('${c.name}','${target}')">
+      <circle cx="${c.x}" cy="${c.y}" r="6" fill="#ffe033" opacity=".7" stroke="#0a0a08" stroke-width="1"/>
+      <text class="map-city-label" x="${c.x + 9}" y="${c.y + 4}">${c.name}</text>
+    </g>`;
+  }).join('');
+
+  ref.innerHTML = `
+    <div class="cipher-ref-title">// КАРТА БЕЛАРУСИ — тапни по нужному городу</div>
+    <div class="map-container">
+      <svg viewBox="0 0 360 370" xmlns="http://www.w3.org/2000/svg">
+        
+        <path d="M80,20 L100,15 L130,18 L160,12 L195,18 L230,14 L265,22 L290,35 L310,55 L318,80
+                 L322,105 L315,130 L320,155 L315,175 L322,200 L318,225 L308,248 L295,268
+                 L275,285 L255,298 L230,308 L205,318 L175,322 L148,318 L120,310 L95,298
+                 L72,282 L55,262 L42,238 L35,212 L30,185 L28,158 L32,132 L28,105
+                 L35,80 L48,58 L65,40 Z"
+              fill="#1a1a0c" stroke="#3a3a20" stroke-width="1.5"/>
+        
+        <path d="M188,175 L200,140 L215,100 L225,70" stroke="#1a3a5a" stroke-width="2" fill="none" opacity=".5"/>
+        <path d="M188,175 L170,200 L145,230 L120,258 L95,275" stroke="#1a3a5a" stroke-width="1.5" fill="none" opacity=".4"/>
+        
+        ${dots}
+      </svg>
+    </div>
+    <div class="map-hint-text" id="map-hint-text">Тапни по городу на карте</div>`;
+}
+
+function checkMapAnswer(clicked, target) {
+  if (mapAnswered) return;
+  const elapsed = Math.round((Date.now() - state.startTime) / 1000);
+  const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
+
+  const dotEl = document.getElementById(`mcdot-${clicked}`);
+
+  if (clicked === target) {
+    mapAnswered = true;
+    if (dotEl) dotEl.querySelector('circle').setAttribute('fill','#55dd55');
+    document.getElementById('map-hint-text').textContent = '✅ Верно! ' + target;
+    const pts = calcPoints(cipher, elapsed);
+    state.chapterScore += pts;
+    saveState();
+    setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
+  } else {
+    if (dotEl) {
+      const c = dotEl.querySelector('circle');
+      c.setAttribute('fill','#ff3a3a');
+      setTimeout(() => c.setAttribute('fill','#ffe033'), 700);
+    }
+    document.getElementById('map-hint-text').textContent = '❌ Не здесь. Попробуй ещё раз.';
+    state.lives--;
+    saveState();
+    if (state.lives <= 0) { setTimeout(() => failChapter(), 1200); }
+    else { renderLives(); }
+  }
+}
 
 // ═══════════════════════════════════════════════════════
 //  INIT
