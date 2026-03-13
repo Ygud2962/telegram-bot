@@ -230,6 +230,20 @@ def init_db():
         cur.execute('CREATE INDEX IF NOT EXISTS idx_game_user  ON game_results(user_id)')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT FALSE')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS failed BOOLEAN DEFAULT FALSE')
+        # Таблица управления главами игры
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_chapters (
+                chapter_id   INTEGER PRIMARY KEY,
+                is_open      BOOLEAN DEFAULT FALSE,
+                open_at      TIMESTAMPTZ,
+                updated_at   TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('''
+            INSERT INTO game_chapters (chapter_id, is_open)
+            VALUES (1,TRUE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
+            ON CONFLICT (chapter_id) DO NOTHING
+        ''')
 
         # Индексы
         for idx_sql in [
@@ -1296,6 +1310,130 @@ def get_game_result_detail(user_id):
     except Exception as e:
         logger.error(f"get_game_result_detail error {user_id}: {e}")
         return None
+    finally:
+        release_connection(conn)
+
+
+
+# ──────────────────────────────────────────────
+#  УПРАВЛЕНИЕ ГЛАВАМИ ИГРЫ
+# ──────────────────────────────────────────────
+
+def get_chapters_status():
+    """Возвращает статус всех глав: [(chapter_id, is_open, open_at), ...]"""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT chapter_id, is_open, open_at, updated_at
+            FROM game_chapters ORDER BY chapter_id
+        ''')
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_chapters_status error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_open_chapters():
+    """Возвращает set открытых chapter_id (с учётом open_at)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT chapter_id FROM game_chapters
+            WHERE is_open = TRUE
+               OR (open_at IS NOT NULL AND open_at <= NOW())
+        ''')
+        return {r[0] for r in cur.fetchall()}
+    except Exception as e:
+        logger.error(f"get_open_chapters error: {e}")
+        return {1}
+    finally:
+        release_connection(conn)
+
+
+def open_chapter(chapter_id):
+    """Немедленно открывает главу."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE game_chapters
+            SET is_open = TRUE, open_at = NULL, updated_at = NOW()
+            WHERE chapter_id = %s
+        ''', (chapter_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"open_chapter error {chapter_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def close_chapter(chapter_id):
+    """Закрывает главу (кроме 1-й)."""
+    if chapter_id == 1:
+        return False
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE game_chapters
+            SET is_open = FALSE, open_at = NULL, updated_at = NOW()
+            WHERE chapter_id = %s
+        ''', (chapter_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"close_chapter error {chapter_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def schedule_chapter(chapter_id, open_at_dt):
+    """Устанавливает дату/время автоматического открытия главы."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE game_chapters
+            SET is_open = FALSE, open_at = %s, updated_at = NOW()
+            WHERE chapter_id = %s
+        ''', (open_at_dt, chapter_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"schedule_chapter error {chapter_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def open_all_chapters():
+    """Открывает все главы сразу."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE game_chapters SET is_open = TRUE, open_at = NULL, updated_at = NOW()")
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"open_all_chapters error: {e}")
+        _safe_rollback(conn)
+        return False
     finally:
         release_connection(conn)
 
