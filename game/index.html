@@ -1025,7 +1025,10 @@ body::before{
     <div style="text-align:center">
       <div style="font-size:var(--fs-base);color:var(--accent);letter-spacing:.1em" id="cipher-chapter-label"></div>
     </div>
-    <div class="cipher-attempts" id="cipher-attempts-label"></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="cipher-attempts" id="cipher-attempts-label"></div>
+      <button onclick="pauseGame()" style="background:none;border:none;font-size:18px;cursor:pointer;opacity:.6;padding:4px" title="Выйти (прогресс сохранится)">⏸</button>
+    </div>
   </div>
   <div class="cipher-body">
     <div class="cipher-type-label" id="cipher-type-label"></div>
@@ -1045,7 +1048,22 @@ body::before{
       <button class="btn-hint" id="btn-hint" onclick="showHint()">💡 ПОДСКАЗКА</button>
     </div>
     <div class="cipher-ref" id="cipher-ref"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:center">
+      <button class="btn-back" onclick="pauseGame()" style="font-size:var(--fs-xs)">⏸ Пауза</button>
+      <button class="btn-back" onclick="goToChapters()" style="font-size:var(--fs-xs)">📖 Главы</button>
+      <button class="btn-back" onclick="exitToMain()" style="font-size:var(--fs-xs)">🏠 Меню</button>
+    </div>
   </div>
+</div>
+
+<!-- ════════ PAUSE ════════ -->
+<div id="s-pause" class="screen" style="justify-content:center;text-align:center">
+  <div style="font-size:48px">⏸</div>
+  <div style="font-family:var(--head);font-size:var(--fs-3xl);color:var(--accent);margin:12px 0">ПАУЗА</div>
+  <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:24px">Прогресс сохранён. Можешь вернуться позже.</div>
+  <button class="btn-primary" onclick="resumeGame()" style="margin-bottom:12px">▶ ПРОДОЛЖИТЬ</button>
+  <button class="btn-secondary" onclick="goToChapters()" style="margin-bottom:12px">📖 К ГЛАВАМ</button>
+  <button class="btn-back" onclick="exitToMain()">🏠 В ГЛАВНОЕ МЕНЮ</button>
 </div>
 
 <!-- ════════ SUCCESS (одна задача) ════════ -->
@@ -1107,12 +1125,14 @@ body::before{
   <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px">
     <button class="btn-primary" id="fail-next-btn">СЛЕДУЮЩАЯ ГЛАВА →</button>
     <button class="btn-secondary" onclick="showScreen('s-chapters');renderChapters()">← К ЗАДАНИЯМ</button>
+    <button class="btn-back" onclick="exitToMain()" style="margin-top:8px">🏠 Главное меню</button>
   </div>
 </div>
 <!-- ════════ LEADERBOARD ════════ -->
 <div id="s-leaderboard" class="screen">
   <div class="lb-header">
-    <button class="btn-back" onclick="showScreen('s-chapters')" style="margin-bottom:8px">← НАЗАД</button>
+    <button class="btn-back" onclick="showScreen('s-chapters')" style="margin-bottom:8px">← К ГЛАВАМ</button>
+    <button class="btn-back" onclick="exitToMain()" style="margin-bottom:8px;opacity:.6">🏠 Главное меню</button>
     <div class="lb-title">🏆 ТАБЛИЦА ЛИДЕРОВ</div>
   </div>
   <div id="lb-list"></div>
@@ -1425,7 +1445,7 @@ const RU_ALPHA = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭ
 // ═══════════════════════════════════════════════════════
 //  TELEGRAM INTEGRATION
 // ═══════════════════════════════════════════════════════
-let tg = null, tgUser = null, tgInitLB = [], tgInitMe = null;
+let tg = null, tgUser = null, tgInitLB = [], tgInitMe = null, tgOpenChapters = null;
 try {
   tg = window.Telegram?.WebApp;
   if (tg) {
@@ -1433,13 +1453,14 @@ try {
     tg.expand();
     tgUser = tg.initDataUnsafe?.user;
 
-    // Таблица лидеров и прогресс передаются через startParam
+    // Таблица лидеров, прогресс и открытые главы передаются через startParam
     const sp = tg.initDataUnsafe?.start_param;
     if (sp) {
       try {
         const parsed = JSON.parse(decodeURIComponent(sp));
         tgInitLB = parsed.lb || [];
         tgInitMe = parsed.me || null;
+        if (parsed.open) tgOpenChapters = new Set(parsed.open);
       } catch(e) {}
     }
   }
@@ -1541,7 +1562,10 @@ function renderChapters() {
   CHAPTERS.forEach((ch, i) => {
     const isAdmin = tgUser && tgUser.id === 516406248;
     const isDone  = !!state.completedChapters[ch.id];
-    const isLocked = !isAdmin && i > 0 && !state.completedChapters[CHAPTERS[i-1].id];
+    // Глава открыта если: admin ИЛИ сервер разрешил ИЛИ предыдущая пройдена
+    const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
+    const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
+    const isLocked = !isAdmin && !(serverAllows && prevDone);
     if (isDone) completedCount++;
 
     const card = document.createElement('div');
@@ -1551,7 +1575,7 @@ function renderChapters() {
       ? `<div style="font-size:var(--fs-base);color:var(--accent);margin-top:8px;letter-spacing:.1em;text-shadow:0 0 8px rgba(255,224,51,.4)">⭐ ${state.chapterScores[ch.id]} очков</div>` : '';
     card.innerHTML = `
       <div class="ch-inner">
-        <div class="ch-num">${ch.subtitle} · ${isDone?(state.chapterScores[ch.id]>0?'✅ ЗАВЕРШЕНО':'💔 ПРОВАЛЕНО'):isLocked?'🔒 ЗАКРЫТО':'◉ ДОСТУПНО'}</div>
+        <div class="ch-num">${ch.subtitle} · ${isDone?(state.chapterScores[ch.id]>0?'✅ ЗАВЕРШЕНО':'💔 ПРОВАЛЕНО'):isLocked?'🔒 ЗАКРЫТО':(serverAllows?'◉ ДОСТУПНО':'🔒 НЕ ОТКРЫТА')}</div>
         <div class="ch-title">${ch.title}</div>
         <div class="ch-place">${ch.place}</div>
         <div class="ch-desc">${ch.briefing.slice(0,90)}...</div>
@@ -1559,7 +1583,16 @@ function renderChapters() {
         ${scoreStr}
       </div>
       <div class="ch-badge">${isDone?(state.chapterScores[ch.id]>0?'✅':'💔'):isLocked?'🔒':'▶'}</div>`;
-    if (!isLocked && !isDone) card.onclick = () => showBriefing(i);
+    const canPlay = !isLocked && (!isDone || (tgUser && tgUser.id === 516406248));
+    if (canPlay) card.onclick = () => {
+      if (isDone && tgUser && tgUser.id === 516406248) {
+        // Сброс прогресса этой главы для админа
+        delete state.completedChapters[ch.id];
+        delete state.chapterScores[ch.id];
+        saveState();
+      }
+      showBriefing(i);
+    };
     else if (isDone) card.style.cursor = 'default';
     list.appendChild(card);
   });
@@ -1632,7 +1665,6 @@ function loadCipher() {
     box.innerHTML = '';
     animateMorse(box, cipher.encrypted);
   } else if (cipher.type === 'anagram') {
-    renderAnagram(cipher);
     box.textContent = '';
     box.style.display = 'none';
   } else if (cipher.type === 'math') {
@@ -1679,7 +1711,10 @@ function loadCipher() {
 
   // Справочник
   renderRef(cipher.type, cipher.shift);
-  inp.focus();
+  // Для анаграммы и карты рендерим ПОСЛЕ renderRef (иначе перезапишет)
+  if (cipher.type === 'anagram') renderAnagram(cipher);
+  if (cipher.type === 'map')     renderMap(cipher);
+  if (cipher.type !== 'map' && cipher.type !== 'anagram') inp.focus();
 }
 
 function renderLives() {
@@ -1778,10 +1813,20 @@ async function checkAnswer() {
     saveState();
 
     if (state.lives <= 0) {
-      // Жизни кончились — сразу завершаем главу с провалом
-      inp.disabled = true;
-      renderLives();
-      setTimeout(() => failChapter(), 1200);
+      if (tgUser && tgUser.id === 516406248) {
+        // Админ — восстанавливаем жизни
+        state.lives = 5; saveState(); renderLives();
+        const hb = document.getElementById('cipher-hint-box');
+        const ht = document.getElementById('cipher-hint-text');
+        hb.className = 'cipher-hint-box show';
+        ht.textContent = '⚡ Режим админа: жизни восстановлены';
+        setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
+      } else {
+        // Жизни кончились — сразу завершаем главу с провалом
+        inp.disabled = true;
+        renderLives();
+        setTimeout(() => failChapter(), 1200);
+      }
     } else {
       renderLives();
     }
@@ -2600,6 +2645,44 @@ renderChapters = function(){
 };
 
 
+
+// ═══════════════════════════════════════════════════════
+//  НАВИГАЦИЯ И ПАУЗА
+// ═══════════════════════════════════════════════════════
+let pausedFromScreen = null;
+
+function pauseGame() {
+  saveState();
+  pausedFromScreen = 's-cipher';
+  showScreen('s-pause');
+}
+
+function resumeGame() {
+  if (pausedFromScreen) {
+    showScreen(pausedFromScreen);
+    pausedFromScreen = null;
+  } else {
+    showScreen('s-cipher');
+  }
+}
+
+function goToChapters() {
+  saveState();
+  showScreen('s-chapters');
+  renderChapters();
+}
+
+function exitToMain() {
+  saveState();
+  // Если открыты в Telegram Mini App — закрываем
+  if (tg) {
+    tg.close();
+  } else {
+    // В браузере — возвращаемся на экран глав
+    goToChapters();
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 //  АНАГРАММА
 // ═══════════════════════════════════════════════════════
@@ -2679,8 +2762,12 @@ async function checkAnagram() {
     setTimeout(() => slots.forEach(s => { s.style.borderColor = ''; s.style.background = ''; }), 800);
     state.lives--;
     saveState();
-    if (state.lives <= 0) { setTimeout(() => failChapter(), 1200); }
-    else { renderLives(); setTimeout(resetAnagram, 900); }
+    if (state.lives <= 0) {
+      if (tgUser && tgUser.id === 516406248) {
+        state.lives = 5; saveState(); renderLives();
+        setTimeout(resetAnagram, 500);
+      } else { setTimeout(() => failChapter(), 1200); }
+    } else { renderLives(); setTimeout(resetAnagram, 900); }
   }
 }
 
@@ -2761,8 +2848,12 @@ async function checkMapAnswer(clicked, target) {
     document.getElementById('map-hint-text').textContent = '❌ Не здесь. Попробуй ещё раз.';
     state.lives--;
     saveState();
-    if (state.lives <= 0) { setTimeout(() => failChapter(), 1200); }
-    else { renderLives(); }
+    if (state.lives <= 0) {
+      if (tgUser && tgUser.id === 516406248) {
+        state.lives = 5; saveState(); renderLives();
+        document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
+      } else { setTimeout(() => failChapter(), 1200); }
+    } else { renderLives(); }
   }
 }
 
