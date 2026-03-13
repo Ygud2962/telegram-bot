@@ -2605,7 +2605,11 @@ async def menu_game(query, context):
             'score': my_result[2], 'completed': my_result[3], 'game_over': my_result[4]
         }
 
-    payload = urllib.parse.quote(json.dumps({'lb': lb_data, 'me': my_data}, ensure_ascii=False))
+    open_chapters = await asyncio.to_thread(db.get_open_chapters)
+    payload = urllib.parse.quote(json.dumps(
+        {'lb': lb_data, 'me': my_data, 'open': sorted(list(open_chapters))},
+        ensure_ascii=False
+    ))
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
 
     # Формируем описание результата игрока
@@ -2975,6 +2979,128 @@ async def handle_sub_flow(query, context):
 
 
 
+
+# ══════════════════════════════════════════════════════════
+#  АДМИН: УПРАВЛЕНИЕ ГЛАВАМИ ИГРЫ
+# ══════════════════════════════════════════════════════════
+
+CHAPTER_NAMES = {
+    1: "Подполье Минска",
+    2: "Рельсовая война",
+    3: "Операция Багратион",
+    4: "Последний шифр",
+    5: "Знай свою землю",
+    6: "Дорога к Победе",
+}
+
+async def admin_chapters_panel(query, context):
+    """Панель управления открытием глав."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    chapters = await asyncio.to_thread(db.get_chapters_status)
+    import pytz
+    tz = pytz.timezone('Europe/Minsk')
+
+    lines = ["📖 <b>УПРАВЛЕНИЕ ГЛАВАМИ</b>\n"]
+    kb = []
+    for ch_id, is_open, open_at, updated_at in chapters:
+        name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        if is_open:
+            status = "✅ ОТКРЫТА"
+        elif open_at:
+            dt_str = open_at.astimezone(tz).strftime('%d.%m %H:%M')
+            status = f"⏰ откроется {dt_str}"
+        else:
+            status = "🔒 ЗАКРЫТА"
+        lines.append(f"Глава {ch_id} — <b>{name}</b>: {status}")
+        # Кнопки управления этой главой
+        row = []
+        if not is_open:
+            row.append(btn(f"▶ Открыть {ch_id}", f"ach_open_{ch_id}"))
+            row.append(btn(f"⏰ Дата {ch_id}",   f"ach_sched_{ch_id}"))
+        elif ch_id > 1:
+            row.append(btn(f"🔒 Закрыть {ch_id}", f"ach_close_{ch_id}"))
+        if row:
+            kb.append(row)
+
+    kb.append([btn("🌐 Открыть ВСЕ главы", 'admin_chapters_open_all')])
+    kb.append([btn("↩️ Управление игрой",  'admin_game_panel')])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_chapters_open_all(query, context):
+    """Открывает все главы сразу."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    ok = await asyncio.to_thread(db.open_all_chapters)
+    await safe_edit(query,
+        "✅ Все 6 глав открыты для всех игроков!",
+        [[btn("↩️ Управление главами", 'admin_chapters_panel')]])
+
+
+async def handle_chapter_action(query, context, data):
+    """Обрабатывает открытие/закрытие/планирование главы."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    if data.startswith('ach_open_'):
+        ch_id = int(data.replace('ach_open_', ''))
+        ok = await asyncio.to_thread(db.open_chapter, ch_id)
+        name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        await safe_edit(query,
+            f"✅ Глава {ch_id} «{name}» открыта для всех игроков!",
+            [[btn("↩️ Управление главами", 'admin_chapters_panel')]])
+
+    elif data.startswith('ach_close_'):
+        ch_id = int(data.replace('ach_close_', ''))
+        ok = await asyncio.to_thread(db.close_chapter, ch_id)
+        name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        await safe_edit(query,
+            f"🔒 Глава {ch_id} «{name}» закрыта.",
+            [[btn("↩️ Управление главами", 'admin_chapters_panel')]])
+
+    elif data.startswith('ach_sched_'):
+        ch_id = int(data.replace('ach_sched_', ''))
+        context.user_data['schedule_chapter'] = ch_id
+        name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        await safe_edit(query,
+            f"⏰ <b>Запланировать открытие — Глава {ch_id} «{name}»</b>\n\n"
+            f"Введи дату и время в формате:\n"
+            f"<code>ДД.ММ.ГГГГ ЧЧ:ММ</code>\n\n"
+            f"Например: <code>20.03.2026 09:00</code>\n"
+            f"(время минское)",
+            [[btn("❌ Отмена", 'admin_chapters_panel')]])
+
+
+async def handle_schedule_input(update, context, text):
+    """Обрабатывает ввод даты для планирования главы."""
+    ch_id = context.user_data.pop('schedule_chapter', None)
+    if not ch_id:
+        return
+    from datetime import datetime
+    import pytz
+    tz = pytz.timezone('Europe/Minsk')
+    try:
+        dt_naive = datetime.strptime(text.strip(), '%d.%m.%Y %H:%M')
+        dt_aware = tz.localize(dt_naive)
+        ok = await asyncio.to_thread(db.schedule_chapter, ch_id, dt_aware)
+        name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        dt_str = dt_aware.strftime('%d.%m.%Y в %H:%M')
+        await update.message.reply_text(
+            f"⏰ Глава {ch_id} «{name}» откроется автоматически\n"
+            f"<b>{dt_str}</b> (по Минску)",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[btn("↩️ Управление главами", 'admin_chapters_panel')]]))
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Неверный формат. Введи как: <code>20.03.2026 09:00</code>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[btn("↩️ Управление главами", 'admin_chapters_panel')]]))
+
 # ══════════════════════════════════════════════════════════
 #  БЕТА-ТЕСТ: УПРАВЛЕНИЕ БЕЛЫМ СПИСКОМ
 # ══════════════════════════════════════════════════════════
@@ -3132,6 +3258,7 @@ async def admin_game_panel(query, context):
     kb = [
         [btn("📋 Список игроков",      'admin_game_leaderboard')],
         [btn(beta_label,               'admin_beta_panel')],
+        [btn("📖 Управление главами",    'admin_chapters_panel')],
         [btn("🗑 Сбросить ВСЕХ",       'admin_game_reset_all')],
         [btn("↩️ Админка",             'admin_panel')],
     ]
@@ -3672,6 +3799,10 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # ── Админские колбэки игры ──
     if user.id in ADMIN_IDS:
+        if d.startswith('ach_open_') or d.startswith('ach_close_') or d.startswith('ach_sched_'):
+            await handle_chapter_action(query, context, d)
+            return
+
         if d.startswith('abeta_rm_'):
             uid = int(d.replace('abeta_rm_', ''))
             global _beta_cache, _beta_cache_ts
@@ -3873,6 +4004,8 @@ async def button_handler(update: Update, context: CallbackContext):
         'admin_analytics':        show_analytics,
         'admin_game_panel':       admin_game_panel,
         'admin_beta_panel':       admin_beta_panel,
+        'admin_chapters_panel':   admin_chapters_panel,
+        'admin_chapters_open_all': admin_chapters_open_all,
         'admin_beta_add':         admin_beta_add,
         'admin_beta_remove':      admin_beta_remove,
         'admin_beta_clear_confirm': admin_beta_clear_confirm,
@@ -3944,6 +4077,10 @@ async def handle_message(update: Update, context: CallbackContext):
         return
 
     # ── Добавление тестеров (бета) ──
+    if context.user_data.get('schedule_chapter') and user.id in ADMIN_IDS:
+        await handle_schedule_input(update, context, text)
+        return
+
     if context.user_data.get('beta_action') == 'add' and user.id in ADMIN_IDS:
         await handle_beta_add_input(update, context, text)
         return
