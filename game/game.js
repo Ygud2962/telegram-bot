@@ -253,6 +253,7 @@ try {
         tgInitLB = parsed.lb || [];
         tgInitMe = parsed.me || null;
         if (parsed.open) tgOpenChapters = new Set(parsed.open);
+        if (parsed.sync_url) window._syncUrl = parsed.sync_url;
       } catch(e) {}
     }
   }
@@ -1908,11 +1909,8 @@ function showSyncModal(mode) {
   document.body.appendChild(modal);
 }
 
-function doSync() {
-  if (!tg) {
-    alert('Синхронизация доступна только в Telegram');
-    return;
-  }
+async function doSync() {
+  const syncUrl = window._syncUrl || '';
   const completed = Object.keys(state.completedChapters).length;
   const chapters  = Object.keys(state.completedChapters).map(Number);
   const data = {
@@ -1926,38 +1924,73 @@ function doSync() {
     user_name:   getTgUserName(),
   };
 
-  // Обновляем модал — показываем отправку
+  // Показываем статус отправки
   const modal = document.getElementById('sync-modal');
-  if (modal) {
-    modal.querySelector('div').innerHTML = `
-      <div style="font-size:40px;margin-bottom:12px">⏳</div>
-      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:12px">
-        ОТПРАВКА...
-      </div>
-      <div style="font-size:var(--fs-sm);color:var(--muted)">
-        Приложение закроется автоматически
-      </div>`;
-  }
+  const setModalContent = (icon, title, subtitle, extra='') => {
+    if (modal) modal.querySelector('div').innerHTML = `
+      <div style="font-size:40px;margin-bottom:12px">${icon}</div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">${title}</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:${extra?'8px':'20px'}">${subtitle}</div>
+      ${extra}`;
+  };
 
-  // Небольшая задержка чтобы UI обновился
-  setTimeout(() => {
+  setModalContent('⏳', 'ОТПРАВКА...', 'Подождите несколько секунд');
+
+  // Если есть sync_url — используем fetch (не закрывает приложение)
+  if (syncUrl) {
+    try {
+      const resp = await fetch(syncUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(10000)
+      });
+      const result = await resp.json();
+      if (result.ok) {
+        // Успех — обновляем tgInitMe локально
+        if (!tgInitMe) tgInitMe = {};
+        tgInitMe.score     = state.totalScore;
+        tgInitMe.completed = completed;
+        tgInitMe.game_over = state.gameOver;
+        setModalContent('✅', 'СОХРАНЕНО!',
+          `⭐ ${state.totalScore} очков · ${completed}/6 глав`,
+          `<button onclick="document.getElementById('sync-modal').remove()"
+            style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+            border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">
+            ЗАКРЫТЬ
+          </button>`);
+      } else {
+        throw new Error(result.error || 'Ошибка сервера');
+      }
+    } catch(e) {
+      const isTimeout = e.name === 'TimeoutError' || e.message.includes('timeout');
+      setModalContent('❌', 'НЕ УДАЛОСЬ',
+        isTimeout ? 'Сервер не отвечает. Попробуй позже.' : e.message,
+        `<button onclick="document.getElementById('sync-modal').remove()"
+          style="background:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);
+          padding:8px 24px;border-radius:4px;cursor:pointer;font-family:var(--head);
+          font-size:var(--fs-xs);width:100%">ОТМЕНА</button>`);
+    }
+  } else {
+    // Нет sync_url — fallback на sendData (закроет приложение)
+    if (!tg) {
+      setModalContent('❌', 'НЕДОСТУПНО', 'Откройте игру через Telegram-бота',
+        `<button onclick="document.getElementById('sync-modal').remove()"
+          style="background:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);
+          padding:8px 24px;border-radius:4px;cursor:pointer;font-family:var(--head);
+          font-size:var(--fs-xs);width:100%">ОК</button>`);
+      return;
+    }
     try {
       tg.sendData(JSON.stringify(data));
-      // sendData закрывает приложение — пользователь увидит результат в боте
     } catch(e) {
-      if (modal) modal.remove();
-      // Показываем ошибку
-      const errModal = document.createElement('div');
-      errModal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px';
-      errModal.innerHTML = `<div style="background:#141108;border:1px solid rgba(255,58,58,.3);border-radius:10px;padding:24px;max-width:320px;text-align:center">
-        <div style="font-size:32px;margin-bottom:8px">❌</div>
-        <div style="font-family:var(--head);color:var(--accent2);margin-bottom:12px">ОШИБКА ОТПРАВКИ</div>
-        <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:16px">${e.message}</div>
-        <button onclick="this.closest('div[style]').remove()" style="background:var(--accent);color:#0a0a08;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;font-family:var(--head)">ОК</button>
-      </div>`;
-      document.body.appendChild(errModal);
+      setModalContent('❌', 'ОШИБКА', e.message,
+        `<button onclick="document.getElementById('sync-modal').remove()"
+          style="background:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);
+          padding:8px 24px;border-radius:4px;cursor:pointer;font-family:var(--head);
+          font-size:var(--fs-xs);width:100%">ОТМЕНА</button>`);
     }
-  }, 300);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
