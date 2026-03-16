@@ -1148,6 +1148,21 @@ def save_game_result(user_id, user_name, chapter, score, total_score,
         release_connection(conn)
 
 
+
+def get_game_players_count():
+    """Возвращает общее количество игроков в БД."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT COUNT(*) FROM game_results WHERE NOT COALESCE(banned, FALSE)')
+        return cur.fetchone()[0]
+    except Exception as e:
+        logger.error(f"get_game_players_count error: {e}")
+        return 0
+    finally:
+        release_connection(conn)
+
 def get_game_leaderboard(limit=20):
     """Возвращает топ игроков: [(user_id, user_name, total_score, completed, game_over), ...]."""
     conn = None
