@@ -1715,7 +1715,12 @@ function renderProfileTab() {
   const completed = Object.keys(state.completedChapters).length;
   const pct = Math.round((completed / CHAPTERS.length) * 100);
 
-  // Звание
+  // Роль из БД (передаётся через tgInitMe)
+  const myRole = tgInitMe?.role || (tgUser?.id === 516406248 ? 'admin' : 'player');
+  const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
+  const roleBadge  = roleLabels[myRole] || '';
+
+  // Звание по очкам
   const titles = [
     [0,   'Новобранец', '🎖'],
     [35,  'Сержант связи', '🏅'],
@@ -1751,6 +1756,7 @@ function renderProfileTab() {
       <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div>
       <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div>
       <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
+      ${roleBadge ? `<div style="margin-top:6px;font-size:var(--fs-sm);color:var(--accent);font-weight:700;letter-spacing:.06em">${roleBadge}</div>` : ''}
       <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
         background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
         border-radius:20px;padding:5px 14px">
@@ -1792,10 +1798,11 @@ function renderProfileTab() {
     <button onclick="syncProfile()"
       style="width:100%;margin-top:8px;background:rgba(255,224,51,.08);
       border:1px solid rgba(255,224,51,.2);color:var(--accent);
-      padding:10px;font-family:var(--head);font-size:var(--fs-xs);
-      border-radius:4px;cursor:pointer;letter-spacing:.08em"
+      padding:12px;font-family:var(--head);font-size:var(--fs-xs);
+      border-radius:4px;cursor:pointer;letter-spacing:.08em;display:flex;
+      align-items:center;justify-content:center;gap:8px"
       id="sync-btn">
-      🔄 СИНХРОНИЗИРОВАТЬ С БОТОМ
+      <span>🔄</span><span>СОХРАНИТЬ ПРОГРЕСС В БОТ</span>
     </button>
     <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.4;margin-top:8px">🗑 Сбросить прогресс</button>`;
 }
@@ -1803,22 +1810,89 @@ function renderProfileTab() {
 
 function syncProfile() {
   const btn = document.getElementById('sync-btn');
-  if (!tg) {
-    if (btn) btn.textContent = '❌ Только в Telegram';
-    return;
-  }
-  if (!_pendingBotData.length && state.totalScore === 0) {
-    if (btn) btn.textContent = '✅ Нет данных для отправки';
-    setTimeout(() => { if (btn) btn.textContent = '🔄 СИНХРОНИЗИРОВАТЬ С БОТОМ'; }, 2000);
+
+  // Без Telegram — показываем подсказку
+  if (!tg || !getTgUserId()) {
+    showSyncModal('browser');
     return;
   }
 
-  if (btn) btn.textContent = '⏳ Отправка...';
+  // Нет данных для отправки
+  if (state.totalScore === 0 && Object.keys(state.completedChapters).length === 0) {
+    if (btn) { btn.textContent = '✅ Прогресс пуст'; }
+    setTimeout(() => { if (btn) btn.textContent = '🔄 СИНХРОНИЗИРОВАТЬ'; }, 2000);
+    return;
+  }
 
-  // Формируем актуальные данные
+  // Есть данные — отправляем через sendData (закроет приложение)
+  showSyncModal('confirm');
+}
+
+function showSyncModal(mode) {
+  // Убираем старый модал если есть
+  const old = document.getElementById('sync-modal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'sync-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.85);
+    z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px`;
+
+  if (mode === 'browser') {
+    modal.innerHTML = `
+      <div style="background:#141108;border:1px solid rgba(255,224,51,.2);border-radius:10px;
+        padding:24px;max-width:320px;text-align:center">
+        <div style="font-size:32px;margin-bottom:12px">💡</div>
+        <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:12px">
+          КАК СИНХРОНИЗИРОВАТЬ
+        </div>
+        <div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:20px">
+          Прогресс с компьютера и телефона синхронизируется автоматически при открытии игры через бота.<br><br>
+          <b style="color:#fdfaf0">Прогресс сохраняется в Telegram по вашему ID.</b><br>
+          Открывайте игру только через бота — тогда данные всегда будут актуальными.
+        </div>
+        <button onclick="document.getElementById('sync-modal').remove()"
+          style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+          font-family:var(--head);font-size:var(--fs-sm);border-radius:4px;cursor:pointer;width:100%">
+          ПОНЯТНО
+        </button>
+      </div>`;
+  } else {
+    modal.innerHTML = `
+      <div style="background:#141108;border:1px solid rgba(255,224,51,.2);border-radius:10px;
+        padding:24px;max-width:320px;text-align:center">
+        <div style="font-size:32px;margin-bottom:12px">🔄</div>
+        <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:12px">
+          СИНХРОНИЗАЦИЯ
+        </div>
+        <div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:8px">
+          Текущий прогресс будет отправлен боту:<br>
+          <b style="color:var(--accent)">⭐ ${state.totalScore} очков · ${Object.keys(state.completedChapters).length}/6 глав</b>
+        </div>
+        <div style="font-size:10px;color:rgba(255,255,255,.3);margin-bottom:20px">
+          ⚠️ Приложение закроется после отправки
+        </div>
+        <button onclick="doSync()"
+          style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+          font-family:var(--head);font-size:var(--fs-sm);border-radius:4px;cursor:pointer;
+          width:100%;margin-bottom:8px">
+          ✓ ОТПРАВИТЬ И ЗАКРЫТЬ
+        </button>
+        <button onclick="document.getElementById('sync-modal').remove()"
+          style="background:none;border:1px solid rgba(255,255,255,.1);color:var(--muted);
+          padding:8px 24px;font-family:var(--head);font-size:var(--fs-xs);
+          border-radius:4px;cursor:pointer;width:100%">
+          ОТМЕНА
+        </button>
+      </div>`;
+  }
+  document.body.appendChild(modal);
+}
+
+function doSync() {
   const data = {
     type:        'chapter_complete',
-    chapter:     Math.max(...Object.keys(state.completedChapters).map(Number), 0),
+    chapter:     Math.max(...[0, ...Object.keys(state.completedChapters).map(Number)]),
     score:       0,
     total_score: state.totalScore,
     completed:   Object.keys(state.completedChapters).length,
@@ -1826,14 +1900,7 @@ function syncProfile() {
     user_id:     getTgUserId(),
     user_name:   getTgUserName(),
   };
-  _pendingBotData = [data];
-
-  try {
-    tg.sendData(JSON.stringify(data));
-    // sendData закрывает приложение — предупреждаем
-  } catch(e) {
-    if (btn) btn.textContent = '❌ Ошибка';
-  }
+  try { tg.sendData(JSON.stringify(data)); } catch(e) {}
 }
 
 // ═══════════════════════════════════════════════════════
