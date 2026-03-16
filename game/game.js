@@ -266,10 +266,44 @@ function getTgUserName() {
   if (tgUser) return tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '');
   return 'Разведчик';
 }
-function sendResultToBot(data) {
-  // Добавляем completed для сохранения в БД
-  data.completed = Object.keys(state.completedChapters).length;
-  if (tg) { try { tg.sendData(JSON.stringify(data)); } catch(e) {} }
+async function sendResultToBot(data) {
+  data.completed  = Object.keys(state.completedChapters).length;
+  data.total_score = state.totalScore;
+  data.user_id    = getTgUserId();
+  data.user_name  = tgUser
+    ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim()
+    : 'Игрок';
+
+  // Способ 1: tg.sendData (работает только когда открыто через кнопку бота)
+  if (tg && tg.sendData) {
+    try {
+      tg.sendData(JSON.stringify(data));
+      return; // успешно
+    } catch(e) {
+      console.warn('tg.sendData failed:', e);
+    }
+  }
+
+  // Способ 2: localStorage — бот прочитает при следующем открытии
+  try {
+    const pending = JSON.parse(localStorage.getItem('pending_results') || '[]');
+    pending.push({ ...data, ts: Date.now() });
+    // Храним не более 10 последних
+    localStorage.setItem('pending_results', JSON.stringify(pending.slice(-10)));
+  } catch(e) {}
+}
+
+// Отправляем накопленные результаты при открытии через бот
+function flushPendingResults() {
+  if (!tg || !tg.sendData) return;
+  try {
+    const pending = JSON.parse(localStorage.getItem('pending_results') || '[]');
+    if (!pending.length) return;
+    // Берём самый актуальный результат
+    const last = pending[pending.length - 1];
+    tg.sendData(JSON.stringify(last));
+    localStorage.removeItem('pending_results');
+  } catch(e) {}
 }
 
 // ═══════════════════════════════════════════════════════
@@ -529,10 +563,13 @@ function loadCipher() {
   // Сброс ввода
   const inp = document.getElementById('cipher-input');
   inp.value = ''; inp.className = 'cipher-input'; inp.disabled = false;
-  document.getElementById('cipher-hint-box').className = 'cipher-hint-box';
-  document.getElementById('cipher-hint-text').textContent = '';
-  document.getElementById('btn-hint').disabled = false;
-  document.getElementById('btn-hint').textContent = '💡 ПОДСКАЗКА';
+  state.hintsUsed = false;
+  const hb = document.getElementById('cipher-hint-box');
+  const ht = document.getElementById('cipher-hint-text');
+  const bh = document.getElementById('btn-hint');
+  if (hb) hb.className = 'cipher-hint-box';
+  if (ht) ht.textContent = '';
+  if (bh) { bh.disabled = false; bh.textContent = '💡 ПОДСКАЗКА'; }
 
   // Справочник
   renderRef(cipher.type, cipher.shift);
@@ -627,7 +664,9 @@ async function checkAnswer() {
   const valHash = await sha256(val);
   const closeHash = await sha256(val.replace(/\s+/g,''));
 
-  if (valHash === correct || closeHash === correct) {
+  // Проверяем точное совпадение и вариант без пробелов
+  const valHashNS   = await sha256(val.replace(/\s+/g,''));
+  if (valHash === correct || closeHash === correct || valHashNS === correct) {
     // ── ПРАВИЛЬНО ──
     inp.className  = 'cipher-input correct';
     inp.disabled   = true;
@@ -681,12 +720,28 @@ function levenshtein(a, b) {
 
 function showHint() {
   const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
-  document.getElementById('cipher-hint-text').textContent = cipher.hint;
-  document.getElementById('cipher-hint-box').className = 'cipher-hint-box show';
-  document.getElementById('btn-hint').disabled = true;
-  document.getElementById('btn-hint').textContent = '✓ ПОДСКАЗКА';
-  // Подсказка стоит жизнь
-  if (state.lives > 1) {
+  if (state.hintsUsed) return;
+  state.hintsUsed = true;
+
+  // Показываем подсказку в hint-box
+  const hintBox  = document.getElementById('cipher-hint-box');
+  const hintText = document.getElementById('cipher-hint-text');
+  if (hintBox && hintText) {
+    hintText.textContent = cipher.hint;
+    hintBox.className = 'cipher-hint-box show';
+  }
+  const btn = document.getElementById('btn-hint');
+  if (btn) { btn.disabled = true; btn.textContent = '✓ ПОДСКАЗКА'; }
+
+  // Для карты — дополнительно показываем hint в map-hint-text
+  if (cipher.type === 'map') {
+    const mht = document.getElementById('map-hint-text');
+    if (mht) mht.textContent = '💡 ' + cipher.hint;
+  }
+
+  // Подсказка стоит жизнь (но не для админа)
+  const isAdmin = tgUser && tgUser.id === 516406248;
+  if (!isAdmin && state.lives > 1) {
     state.lives--;
     saveState();
     renderLives();
@@ -739,7 +794,7 @@ function nextCipher() {
 // ═══════════════════════════════════════════════════════
 //  ЗАВЕРШЕНИЕ ГЛАВЫ
 // ═══════════════════════════════════════════════════════
-function finishChapter() {
+async function finishChapter() {
   const ch = CHAPTERS[state.chapter];
   state.completedChapters[ch.id] = true;
   state.chapterScores[ch.id]     = state.chapterScore;
@@ -794,7 +849,7 @@ function finishChapter() {
 // ═══════════════════════════════════════════════════════
 //  ПРОВАЛ ГЛАВЫ (кончились жизни)
 // ═══════════════════════════════════════════════════════
-function failChapter() {
+async function failChapter() {
   const ch = CHAPTERS[state.chapter];
   // Глава считается пройденной (с 0 баллов за неотвеченные)
   state.completedChapters[ch.id] = true;
@@ -841,8 +896,16 @@ function failChapter() {
 // ═══════════════════════════════════════════════════════
 //  ФИНАЛ
 // ═══════════════════════════════════════════════════════
-function showFinal() {
+async function showFinal() {
   document.getElementById('final-score-val').textContent = state.totalScore;
+
+  // ID игрока на финальном экране
+  const uid = getTgUserId();
+  const finalUidEl = document.getElementById('final-uid');
+  if (finalUidEl && uid) {
+    finalUidEl.textContent = 'ID: ' + uid;
+    finalUidEl.style.display = 'block';
+  }
 
   const maxAll = CHAPTERS.reduce((s,ch)=>s+ch.ciphers.reduce((a,c)=>a+c.points,0),0);
   const pct    = Math.round(state.totalScore / maxAll * 100);
@@ -1653,10 +1716,15 @@ function renderProfileTab() {
 
   el.innerHTML = `
     <div style="text-align:center;margin-bottom:20px">
-      <div style="font-size:48px;margin-bottom:8px">${rank[2]}</div>
-      <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${name}</div>
-      <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">${rank[1]}</div>
-      ${uid ? `<div style="font-size:10px;color:rgba(255,255,255,.2);margin-top:4px">ID: ${uid}</div>` : ''}
+      <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div>
+      <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
+      <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
+        background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+        border-radius:20px;padding:5px 14px">
+        <span style="font-size:10px;color:var(--muted);letter-spacing:.06em">TELEGRAM ID</span>
+        <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span>
+      </div>
     </div>
     <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-around;text-align:center">
@@ -1700,16 +1768,22 @@ let pausedFromScreen = null;
 function pauseGame() {
   saveState();
   pausedFromScreen = 's-cipher';
+  hideBottomNav();
+  // Показываем инфо о текущей главе
+  const ch  = CHAPTERS[state.chapter];
+  const el  = document.getElementById('pause-chapter-info');
+  if (el && ch) {
+    el.textContent = ch.subtitle + ' · ' + ch.title
+      + ' · Задание ' + (state.cipherIdx + 1) + '/5';
+  }
   showScreen('s-pause');
 }
 
 function resumeGame() {
-  if (pausedFromScreen) {
-    showScreen(pausedFromScreen);
-    pausedFromScreen = null;
-  } else {
-    showScreen('s-cipher');
-  }
+  const target = pausedFromScreen || 's-cipher';
+  pausedFromScreen = null;
+  hideBottomNav();
+  showScreen(target);
 }
 
 function goToChapters() {
@@ -1717,15 +1791,18 @@ function goToChapters() {
   showScreen('s-chapters');
   renderChapters();
   showBottomNav();
+  // Отправляем накопленные результаты
+  setTimeout(flushPendingResults, 1000);
 }
 
 function exitToMain() {
   saveState();
-  // Если открыты в Telegram Mini App — закрываем
   if (tg) {
-    tg.close();
+    // Отправляем накопленные результаты в бот перед закрытием
+    flushBotData();
+    // Небольшая задержка чтобы sendData успел отправиться
+    setTimeout(() => tg.close(), 150);
   } else {
-    // В браузере — возвращаемся на экран глав
     goToChapters();
   }
 }
@@ -1914,7 +1991,5 @@ async function checkMapAnswer(clicked, target) {
 loadState();
 mergeBotLeaderboard();   // подгружаем данные из бота
 renderChapters();
-document.getElementById('s-leaderboard').addEventListener('transitionend', renderLeaderboard);
 try {
-  document.querySelector('[onclick="showScreen(\'s-leaderboard\')"]').addEventListener('click', renderLeaderboard);
 } catch(e) {}
