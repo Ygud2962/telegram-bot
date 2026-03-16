@@ -1625,6 +1625,8 @@ function switchTab(tab) {
 function renderLeaderboardTab() {
   const list = document.getElementById('lb-list-tab');
   if (!list) return;
+  // Если leaderboard пустой но tgInitLB есть — подгружаем
+  if (!state.leaderboard.length && tgInitLB.length) mergeBotLeaderboard();
   const lb    = state.leaderboard || [];
   const myUid = getTgUserId() || 'guest';
   const total = tgInitLB.length || lb.length;
@@ -1712,7 +1714,13 @@ function renderProfileTab() {
   if (!el) return;
   const uid = getTgUserId();
   const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-  const completed = Object.keys(state.completedChapters).length;
+  // Берём максимум из localStorage и данных БД (tgInitMe)
+  const dbCompleted = tgInitMe?.completed || 0;
+  const dbScore     = tgInitMe?.score     || 0;
+  const localCompleted = Object.keys(state.completedChapters).length;
+  const completed = Math.max(localCompleted, dbCompleted);
+  // Обновляем state если БД даёт больше
+  if (dbScore > state.totalScore) state.totalScore = dbScore;
   const pct = Math.round((completed / CHAPTERS.length) * 100);
 
   // Роль из БД (передаётся через tgInitMe)
@@ -1731,6 +1739,9 @@ function renderProfileTab() {
   const maxScore = 5330;
   const scorePct = Math.round((state.totalScore / maxScore) * 100);
   const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
+
+  // Роль игрока из БД
+  const roleDisplay = roleLabels[myRole] || '';
 
   // Строим историю глав
   const chapterHistory = CHAPTERS.map(ch => {
@@ -1756,6 +1767,8 @@ function renderProfileTab() {
       <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div>
       <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div>
       <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
+      ${roleDisplay ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);
+        color:var(--accent);letter-spacing:.06em">${roleDisplay}</div>` : ''}
       ${roleBadge ? `<div style="margin-top:6px;font-size:var(--fs-sm);color:var(--accent);font-weight:700;letter-spacing:.06em">${roleBadge}</div>` : ''}
       <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
         background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
