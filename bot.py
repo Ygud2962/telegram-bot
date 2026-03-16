@@ -4844,17 +4844,34 @@ async def handle_game_sync(request):
             {'ok': False, 'error': str(e)}, status=500, headers=headers)
 
 
-async def start_http_server():
-    """Запускает aiohttp сервер для приёма запросов из игры."""
-    app_http = aiohttp_web.Application()
-    app_http.router.add_post('/game_sync', handle_game_sync)
-    app_http.router.add_options('/game_sync', handle_game_sync)
-    app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
-    runner = aiohttp_web.AppRunner(app_http)
-    await runner.setup()
-    site = aiohttp_web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-    logger.info(f"HTTP server started on port {PORT}")
+def start_http_server_thread():
+    """Запускает aiohttp в отдельном потоке чтобы не конфликтовать с event loop бота."""
+    import threading
+
+    async def _run():
+        app_http = aiohttp_web.Application()
+        app_http.router.add_post('/game_sync', handle_game_sync)
+        app_http.router.add_options('/game_sync', handle_game_sync)
+        app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
+        runner = aiohttp_web.AppRunner(app_http)
+        await runner.setup()
+        site = aiohttp_web.TCPSite(runner, '0.0.0.0', PORT)
+        await site.start()
+        logger.info(f"✅ HTTP server started on port {PORT}")
+        # Держим сервер запущенным
+        await asyncio.Event().wait()
+
+    def _thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_run())
+        except Exception as e:
+            logger.error(f"HTTP server error: {e}")
+
+    t = threading.Thread(target=_thread, daemon=True)
+    t.start()
+    logger.info(f"HTTP server thread started (port {PORT})")
 
 def main():
     try:
