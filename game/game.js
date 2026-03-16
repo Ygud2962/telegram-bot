@@ -1974,7 +1974,10 @@ function doSync() {
     </button>`);
 }
 
-function doSendToBotAndClose() {
+async function doSendToBotAndClose() {
+  const btn = document.querySelector('[onclick="doSendToBotAndClose()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Отправка...'; }
+
   const completed = Object.keys(state.completedChapters).length;
   const chapters  = Object.keys(state.completedChapters).map(Number);
   const data = {
@@ -1987,12 +1990,68 @@ function doSendToBotAndClose() {
     user_id:     getTgUserId(),
     user_name:   getTgUserName(),
   };
-  try {
-    tg.sendData(JSON.stringify(data));
-    // Приложение закроется автоматически
-  } catch(e) {
-    alert('Ошибка: ' + e.message);
+
+  const syncUrl = window._syncUrl || '';
+
+  // Метод 1: fetch к нашему серверу (надёжно, не закрывает приложение)
+  if (syncUrl) {
+    try {
+      const resp = await fetch(syncUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(8000)
+      });
+      const result = await resp.json();
+      if (result.ok) {
+        // Успех!
+        if (!tgInitMe) tgInitMe = {};
+        tgInitMe.score     = state.totalScore;
+        tgInitMe.completed = completed;
+        const modal = document.getElementById('sync-modal');
+        if (modal) modal.querySelector('div').innerHTML = `
+          <div style="font-size:48px;margin-bottom:12px">✅</div>
+          <div style="font-family:var(--head);font-size:var(--fs-xl);color:#55dd55;margin-bottom:8px">СОХРАНЕНО!</div>
+          <div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:4px">⭐ ${state.totalScore} очков · ${completed}/6 глав</div>
+          <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:20px">
+            Прогресс синхронизирован на всех устройствах
+          </div>
+          <button onclick="document.getElementById('sync-modal').remove()"
+            style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+            border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">
+            ОТЛИЧНО!
+          </button>`;
+        return;
+      }
+    } catch(e) {
+      console.warn('fetch sync failed:', e.message);
+    }
   }
+
+  // Метод 2: tg.sendData (закрывает приложение)
+  if (tg) {
+    try {
+      tg.sendData(JSON.stringify(data));
+      return; // приложение закроется
+    } catch(e) {
+      console.warn('sendData failed:', e.message);
+    }
+  }
+
+  // Оба метода не сработали
+  const modal = document.getElementById('sync-modal');
+  if (modal) modal.querySelector('div').innerHTML = `
+    <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+    <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent2);margin-bottom:8px">НЕ УДАЛОСЬ</div>
+    <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:8px;line-height:1.6">
+      Прогресс сохранён <b style="color:#fdfaf0">на этом устройстве</b>.<br>
+      При следующем открытии через бота — синхронизируется автоматически.
+    </div>
+    <button onclick="document.getElementById('sync-modal').remove()"
+      style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+      border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">
+      ОК
+    </button>`;
 }
 
 // ═══════════════════════════════════════════════════════
