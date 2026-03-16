@@ -339,20 +339,33 @@ function storageKey() {
 
 // Загружаем таблицу лидеров из бота (если передана) в state
 function mergeBotLeaderboard() {
-  if (!tgInitLB.length) return;
   const myUid = getTgUserId();
-  // Перезаписываем leaderboard данными из БД
-  state.leaderboard = tgInitLB.map(r => ({
-    uid: String(r.uid), name: r.name, score: r.score, completed: r.completed
-  }));
-  // Если наш результат в боте лучше — обновляем
-  if (tgInitMe && myUid && tgInitMe.score > state.totalScore) {
-    state.totalScore  = tgInitMe.score;
-    state.completedChapters = {};
-    for (let i = 0; i < tgInitMe.completed; i++) {
-      state.completedChapters[i+1] = true;
+
+  // Всегда берём leaderboard из БД как источник правды
+  if (tgInitLB.length) {
+    state.leaderboard = tgInitLB.map(r => ({
+      uid: String(r.uid), name: r.name, score: r.score, completed: r.completed
+    }));
+  }
+
+  // Синхронизируем прогресс с БД — БД всегда приоритетнее localStorage
+  if (tgInitMe && myUid) {
+    const dbScore     = tgInitMe.score     || 0;
+    const dbCompleted = tgInitMe.completed || 0;
+    const dbGameOver  = tgInitMe.game_over || false;
+
+    // Берём максимум из БД и localStorage (защита от потери прогресса)
+    if (dbScore >= state.totalScore) {
+      state.totalScore = dbScore;
+      // Восстанавливаем пройденные главы из БД
+      if (dbCompleted > Object.keys(state.completedChapters).length) {
+        state.completedChapters = {};
+        for (let i = 1; i <= dbCompleted; i++) {
+          state.completedChapters[i] = true;
+        }
+      }
+      if (dbGameOver) state.gameOver = true;
     }
-    if (tgInitMe.game_over) state.gameOver = true;
     saveState();
   }
 }
@@ -993,14 +1006,27 @@ function renderLeaderboard() {
 //  СБРОС (только для гостей без tg-аккаунта)
 // ═══════════════════════════════════════════════════════
 function confirmReset() {
-  if (getTgUserId()) {
-    alert('Прогресс привязан к вашему Telegram-аккаунту и не может быть сброшен.');
+  const isAdmin = tgUser && tgUser.id === 516406248;
+  if (isAdmin) {
+    // Для админа — сброс своего прогресса разрешён
+    if (confirm('Сбросить свой прогресс? (для повторного тестирования)')) {
+      try { localStorage.removeItem(storageKey()); } catch(e) {}
+      state = DEFAULT_STATE();
+      saveState();
+      switchTab('chapters');
+    }
     return;
   }
-  if (confirm('Сбросить прогресс гостя?')) {
+  if (getTgUserId()) {
+    // Обычный пользователь — сброс запрещён
+    alert('Прогресс сохранён в системе и не может быть удалён.');
+    return;
+  }
+  // Гость
+  if (confirm('Сбросить прогресс?')) {
     try { localStorage.removeItem(storageKey()); } catch(e) {}
     state = DEFAULT_STATE();
-    renderChapters();
+    switchTab('chapters');
   }
 }
 
@@ -1798,10 +1824,14 @@ function goToChapters() {
 function exitToMain() {
   saveState();
   if (tg) {
-    // Отправляем накопленные результаты в бот перед закрытием
-    flushBotData();
-    // Небольшая задержка чтобы sendData успел отправиться
-    setTimeout(() => tg.close(), 150);
+    if (_pendingBotData.length > 0) {
+      // Есть результаты — отправляем и закрываем
+      flushBotData();
+      setTimeout(() => tg.close(), 200);
+    } else {
+      // Нет результатов — просто закрываем
+      tg.close();
+    }
   } else {
     goToChapters();
   }
