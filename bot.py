@@ -4015,7 +4015,7 @@ async def button_handler(update: Update, context: CallbackContext):
             uid = int(d.replace('agame_view_', ''))
             await admin_game_view_player(query, context, uid)
             return
-        if d.startswith('agame_reset_'):
+        if d.startswith('agame_reset_') and not d.startswith('agame_reset_all'):
             uid = int(d.replace('agame_reset_', ''))
             await admin_game_reset_player(query, context, uid)
             return
