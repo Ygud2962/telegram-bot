@@ -239,6 +239,15 @@ def init_db():
                 updated_at   TIMESTAMPTZ DEFAULT NOW()
             )
         ''')
+        # Инициализируем таблицу ролей
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_roles (
+                user_id    BIGINT PRIMARY KEY,
+                role       TEXT DEFAULT 'player',
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+
         cur.execute('''
             INSERT INTO game_chapters (chapter_id, is_open)
             VALUES (1,TRUE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
@@ -1164,15 +1173,28 @@ def get_game_players_count():
         release_connection(conn)
 
 def get_game_leaderboard(limit=20):
-    """Возвращает топ игроков: [(user_id, user_name, total_score, completed, game_over), ...]."""
+    """Возвращает топ: [(user_id, user_name, total_score, completed, game_over, role), ...]
+    Сортировка: сначала admin, потом tester, потом player — внутри каждой группы по очкам."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute('''
-            SELECT user_id, user_name, total_score, completed, game_over
-            FROM game_results
-            ORDER BY total_score DESC, updated_at ASC
+            SELECT
+                gr.user_id, gr.user_name, gr.total_score, gr.completed,
+                gr.game_over,
+                COALESCE(rol.role, 'player') AS role
+            FROM game_results gr
+            LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
+            WHERE NOT COALESCE(gr.banned, FALSE)
+            ORDER BY
+                CASE COALESCE(rol.role, 'player')
+                    WHEN 'admin'  THEN 1
+                    WHEN 'tester' THEN 2
+                    ELSE 3
+                END,
+                gr.total_score DESC,
+                gr.updated_at ASC
             LIMIT %s
         ''', (limit,))
         return cur.fetchall()
@@ -1449,6 +1471,103 @@ def open_all_chapters():
         logger.error(f"open_all_chapters error: {e}")
         _safe_rollback(conn)
         return False
+    finally:
+        release_connection(conn)
+
+
+
+# ──────────────────────────────────────────────
+#  РОЛИ ИГРОКОВ (admin / tester / player)
+# ──────────────────────────────────────────────
+
+def init_game_roles_table():
+    """Создаёт таблицу game_roles если не существует."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_roles (
+                user_id   BIGINT PRIMARY KEY,
+                role      TEXT DEFAULT 'player',  -- admin / tester / player
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        conn.commit()
+    except Exception as e:
+        logger.error(f"init_game_roles_table error: {e}")
+        _safe_rollback(conn)
+    finally:
+        release_connection(conn)
+
+
+def set_game_role(user_id, role):
+    """Устанавливает роль игрока: admin / tester / player."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO game_roles (user_id, role)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()
+        ''', (user_id, role))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_game_role error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_game_role(user_id):
+    """Возвращает роль игрока или 'player' по умолчанию."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT role FROM game_roles WHERE user_id = %s', (user_id,))
+        row = cur.fetchone()
+        return row[0] if row else 'player'
+    except Exception as e:
+        logger.error(f"get_game_role error: {e}")
+        return 'player'
+    finally:
+        release_connection(conn)
+
+
+def get_game_leaderboard_with_roles(limit=20):
+    """Таблица лидеров с ролями — сортировка: admin → tester → player, внутри по очкам."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT
+                gr.user_id,
+                gr.user_name,
+                gr.total_score,
+                gr.completed,
+                gr.game_over,
+                COALESCE(rol.role, 'player') AS role
+            FROM game_results gr
+            LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
+            WHERE NOT COALESCE(gr.banned, FALSE)
+            ORDER BY
+                CASE COALESCE(rol.role, 'player')
+                    WHEN 'admin'  THEN 1
+                    WHEN 'tester' THEN 2
+                    ELSE 3
+                END,
+                gr.total_score DESC
+            LIMIT %s
+        ''', (limit,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_game_leaderboard_with_roles error: {e}")
+        return []
     finally:
         release_connection(conn)
 
