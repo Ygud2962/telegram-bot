@@ -2640,28 +2640,49 @@ async def menu_game(query, context):
 
 
 async def game_leaderboard(query, context):
-    """Таблица лидеров из БД."""
+    """Таблица лидеров из БД — актуальные данные."""
     await query.answer()
-    lb = await asyncio.to_thread(db.get_game_leaderboard, 15)
+    lb    = await asyncio.to_thread(db.get_game_leaderboard, 20)
+    total = await asyncio.to_thread(db.get_game_players_count)
+    uid_me = query.from_user.id
+
     if not lb:
+        kb = [
+            [btn("🎮 Играть сейчас", 'menu_game')],
+            [btn("🔄 Обновить",       'game_leaderboard')],
+            BACK_TO_MAIN[0],
+        ]
         await safe_edit(query,
             "🏆 <b>ТАБЛИЦА ЛИДЕРОВ</b>\n\n"
-            "Пока никто не прошёл игру.\n"
-            "<i>Будь первым шифровальщиком школы!</i>",
-            [[btn("🎮 Играть", 'menu_game')], BACK_TO_MAIN[0]])
+            "🔒 Пока никто не прошёл ни одной главы.\n"
+            "<i>Стань первым шифровальщиком школы!</i>",
+            kb)
         return
 
     medals = ['🥇','🥈','🥉']
-    lines  = ["🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ ШКОЛЫ</b>\n"]
-    uid_me = query.from_user.id
+    lines  = [f"🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ</b>  👥 {total} участников\n"]
     for i, (uid, name, score, completed, game_over) in enumerate(lb):
-        m    = medals[i] if i < 3 else f"{i+1}."
-        done = " ✅" if game_over else f" ({completed}/4)"
+        m    = medals[i] if i < 3 else f"<b>{i+1}.</b>"
+        pct  = round((completed / 6) * 100)
+        done = " ✅ все главы" if game_over else f" {completed}/6 гл · {pct}%"
         me   = " 👈" if uid == uid_me else ""
-        lines.append(f"{m} <b>{name or 'Игрок'}</b>{me} — <b>{score}</b> оч{done}")
+        lines.append(f"{m} {name or 'Игрок'}{me}\n    └ <b>{score}</b> очков ·{done}")
 
-    await safe_edit(query, '\n'.join(lines),
-        [[btn("🎮 Играть", 'menu_game')], BACK_TO_MAIN[0]])
+    # Позиция текущего игрока если не в топ-20
+    my_pos = next((i+1 for i,(uid,*_) in enumerate(lb) if uid==uid_me), None)
+    if not my_pos:
+        my_res = await asyncio.to_thread(db.get_game_result, uid_me)
+        if my_res:
+            _, _, my_score, my_comp, *_ = my_res
+            pct = round((my_comp / 6) * 100)
+            lines.append(f"\n📍 <i>Ваша позиция: вне топ-20</i>\n    └ <b>{my_score}</b> очков · {my_comp}/6 гл · {pct}%")
+
+    kb = [
+        [btn("🎮 Играть",   'menu_game')],
+        [btn("🔄 Обновить", 'game_leaderboard')],
+        BACK_TO_MAIN[0],
+    ]
+    await safe_edit(query, '\n'.join(lines), kb)
 
 
 async def handle_web_app_data(update: Update, context: CallbackContext):
