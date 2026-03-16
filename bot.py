@@ -2616,18 +2616,18 @@ async def menu_game(query, context):
     ))
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
 
-    # Регистрируем игрока при первом открытии (только если ещё нет записи)
-    if not my_result:
-        await asyncio.to_thread(
-            db.register_game_player, user.id, user.first_name
-        )
-        my_result = await asyncio.to_thread(db.get_game_result, user.id)
+    # Регистрируем при первом открытии (не трогает существующий прогресс)
+    await asyncio.to_thread(db.register_game_player, user.id, user.first_name)
 
     # Назначаем роль если нет
     current_role = await asyncio.to_thread(db.get_game_role, user.id)
     if not current_role:
         role = 'admin' if user.id in ADMIN_IDS else 'player'
         await asyncio.to_thread(db.set_game_role, user.id, role)
+        current_role = role
+
+    # Перечитываем my_result — берём свежие данные из БД
+    my_result = await asyncio.to_thread(db.get_game_result, user.id)
 
     # Формируем описание результата игрока
     if my_result:
