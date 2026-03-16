@@ -831,6 +831,9 @@ def get_current_lesson_info() -> dict:
         (11, 0, 11, 45, 4), (12, 0, 12, 45, 5), (12, 55, 13, 40, 6),
         (14, 0, 14, 45, 7)
     ]
+    first_s = intervals[0][0] * 60 + intervals[0][1]  # 8:00
+
+    # Идёт урок
     for sh, sm, eh, em, n in intervals:
         s = sh * 60 + sm
         e = eh * 60 + em
@@ -839,6 +842,14 @@ def get_current_lesson_info() -> dict:
                     'time_left': e - cur,
                     'start': f"{sh:02d}:{sm:02d}",
                     'end': f"{eh:02d}:{em:02d}"}
+
+    # До начала школьного дня (00:00–08:00)
+    if cur < first_s:
+        return {'status': 'before_school',
+                'minutes_until': first_s - cur,
+                'start': f"{intervals[0][0]:02d}:{intervals[0][1]:02d}"}
+
+    # Перемена между уроками
     for sh, sm, eh, em, n in intervals:
         s = sh * 60 + sm
         if cur < s:
@@ -846,6 +857,7 @@ def get_current_lesson_info() -> dict:
                     'minutes_until': s - cur,
                     'start': f"{sh:02d}:{sm:02d}",
                     'end': f"{eh:02d}:{em:02d}"}
+
     return {'status': 'finished'}
 
 
@@ -1812,6 +1824,8 @@ async def show_main_menu_msg(update: Update, context: CallbackContext):
     info = get_current_lesson_info()
     if info['status'] == 'lesson':
         status_line = f"🔔 Сейчас {info['number']} урок, осталось {info['time_left']} мин"
+    elif info['status'] == 'before_school':
+        status_line = f"🌅 До первого урока: {info['minutes_until']} мин (начало {info['start']})"
     elif info['status'] == 'break':
         status_line = f"⏸️ Перемена, следующий урок через {info['minutes_until']} мин"
     else:
@@ -1854,6 +1868,8 @@ async def show_main_menu_edit(query, context=None):
     info = get_current_lesson_info()
     if info['status'] == 'lesson':
         status_line = f"🔔 Сейчас {info['number']} урок, осталось {info['time_left']} мин"
+    elif info['status'] == 'before_school':
+        status_line = f"🌅 До первого урока: {info['minutes_until']} мин (начало {info['start']})"
     elif info['status'] == 'break':
         status_line = f"⏸️ Перемена, следующий урок через {info['minutes_until']} мин"
     else:
