@@ -4901,13 +4901,30 @@ async def main():
     print(f"👥 Пользователей: {db.get_user_count()}")
 
     try:
-        # Запускаем HTTP сервер параллельно с ботом
-        await start_http_server()
-        await app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        async with app:
+            # Запускаем HTTP сервер
+            await start_http_server()
+            # Запускаем polling как coroutine внутри async context
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
+            print("✅ Polling запущен")
+            # Ждём бесконечно
+            await asyncio.Event().wait()
     except KeyboardInterrupt:
         print("\n🛑 Бот остановлен")
     except Exception as e:
         logger.critical(f"Критическая ошибка: {e}")
+    finally:
+        try:
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
