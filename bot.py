@@ -2616,19 +2616,18 @@ async def menu_game(query, context):
     ))
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
 
-    # Регистрируем игрока при первом открытии (чтобы счётчик работал)
+    # Регистрируем игрока при первом открытии (только если ещё нет записи)
     if not my_result:
         await asyncio.to_thread(
-            db.save_game_result,
-            user.id, user.first_name, 0, 0, 0, 0, False, False
+            db.register_game_player, user.id, user.first_name
         )
-        # Назначаем роль
-        current_role = await asyncio.to_thread(db.get_game_role, user.id)
-        if not current_role:
-            role = 'admin' if user.id in ADMIN_IDS else 'player'
-            await asyncio.to_thread(db.set_game_role, user.id, role)
-        # Обновляем my_result
         my_result = await asyncio.to_thread(db.get_game_result, user.id)
+
+    # Назначаем роль если нет
+    current_role = await asyncio.to_thread(db.get_game_role, user.id)
+    if not current_role:
+        role = 'admin' if user.id in ADMIN_IDS else 'player'
+        await asyncio.to_thread(db.set_game_role, user.id, role)
 
     # Формируем описание результата игрока
     if my_result:
@@ -2730,6 +2729,9 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
 
     user        = update.effective_user
     event_type  = data.get('type', '')
+    # 'sync' — синхронизация из профиля, обрабатываем как chapter_complete
+    if event_type == 'sync':
+        event_type = 'chapter_complete'
     user_name   = user.first_name + (f" {user.last_name}" if user.last_name else "")
     chapter     = data.get('chapter', 0)
     score       = data.get('score', 0)
@@ -3429,16 +3431,19 @@ async def admin_game_panel(query, context):
         await query.answer("⛔ Доступ запрещён"); return
     await query.answer()
 
-    rows = await asyncio.to_thread(db.get_game_leaderboard_admin, 50)
-    total = len(rows)
-    finished = sum(1 for r in rows if r[4])   # game_over
-    banned   = sum(1 for r in rows if r[6])   # banned
+    rows     = await asyncio.to_thread(db.get_game_leaderboard_admin, 50)
+    total    = len(rows)
+    finished = sum(1 for r in rows if r[4])
+    banned   = sum(1 for r in rows if r[6])
+    # Игроки с реальным прогрессом (score > 0)
+    active   = sum(1 for r in rows if r[2] > 0)
 
     text = (
         "🎮 <b>УПРАВЛЕНИЕ ИГРОЙ «ШИФРОВАЛЬЩИК»</b>\n\n"
-        f"👥 Всего игроков:       <b>{total}</b>\n"
-        f"✅ Завершили игру:     <b>{finished}</b>\n"
-        f"🚫 Забанено:            <b>{banned}</b>\n\n"
+        f"👥 Всего зарегистрировано: <b>{total}</b>\n"
+        f"🎯 Активно играют:         <b>{active}</b>\n"
+        f"✅ Завершили все главы:    <b>{finished}</b>\n"
+        f"🚫 Забанено:               <b>{banned}</b>\n\n"
         "Выберите действие:"
     )
     beta_on = await asyncio.to_thread(db.is_beta_enabled)
