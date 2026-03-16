@@ -1974,10 +1974,7 @@ function doSync() {
     </button>`);
 }
 
-async function doSendToBotAndClose() {
-  const btn = document.querySelector('[onclick="doSendToBotAndClose()"]');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Отправка...'; }
-
+function doSendToBotAndClose() {
   const completed = Object.keys(state.completedChapters).length;
   const chapters  = Object.keys(state.completedChapters).map(Number);
   const data = {
@@ -1991,67 +1988,40 @@ async function doSendToBotAndClose() {
     user_name:   getTgUserName(),
   };
 
-  const syncUrl = window._syncUrl || '';
-
-  // Метод 1: fetch к нашему серверу (надёжно, не закрывает приложение)
-  if (syncUrl) {
-    try {
-      const resp = await fetch(syncUrl, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(8000)
-      });
-      const result = await resp.json();
-      if (result.ok) {
-        // Успех!
-        if (!tgInitMe) tgInitMe = {};
-        tgInitMe.score     = state.totalScore;
-        tgInitMe.completed = completed;
-        const modal = document.getElementById('sync-modal');
-        if (modal) modal.querySelector('div').innerHTML = `
-          <div style="font-size:48px;margin-bottom:12px">✅</div>
-          <div style="font-family:var(--head);font-size:var(--fs-xl);color:#55dd55;margin-bottom:8px">СОХРАНЕНО!</div>
-          <div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:4px">⭐ ${state.totalScore} очков · ${completed}/6 глав</div>
-          <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:20px">
-            Прогресс синхронизирован на всех устройствах
-          </div>
-          <button onclick="document.getElementById('sync-modal').remove()"
-            style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
-            border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">
-            ОТЛИЧНО!
-          </button>`;
-        return;
-      }
-    } catch(e) {
-      console.warn('fetch sync failed:', e.message);
-    }
-  }
-
-  // Метод 2: tg.sendData (закрывает приложение)
-  if (tg) {
-    try {
-      tg.sendData(JSON.stringify(data));
-      return; // приложение закроется
-    } catch(e) {
-      console.warn('sendData failed:', e.message);
-    }
-  }
-
-  // Оба метода не сработали
   const modal = document.getElementById('sync-modal');
-  if (modal) modal.querySelector('div').innerHTML = `
-    <div style="font-size:40px;margin-bottom:12px">⚠️</div>
-    <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent2);margin-bottom:8px">НЕ УДАЛОСЬ</div>
-    <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:8px;line-height:1.6">
-      Прогресс сохранён <b style="color:#fdfaf0">на этом устройстве</b>.<br>
-      При следующем открытии через бота — синхронизируется автоматически.
-    </div>
-    <button onclick="document.getElementById('sync-modal').remove()"
-      style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
-      border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">
-      ОК
-    </button>`;
+
+  if (!tg) {
+    if (modal) modal.querySelector('div').innerHTML = `
+      <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+      <div style="font-family:var(--head);color:var(--accent2);margin-bottom:12px">ТОЛЬКО В TELEGRAM</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:16px">
+        Открой игру через кнопку в боте.
+      </div>
+      <button onclick="document.getElementById('sync-modal').remove()"
+        style="background:var(--accent);color:#0a0a08;border:none;padding:10px;
+        border-radius:4px;cursor:pointer;font-family:var(--head);width:100%">ОК</button>`;
+    return;
+  }
+
+  try {
+    tg.sendData(JSON.stringify(data));
+    // Telegram закроет приложение и отправит данные боту
+  } catch(e) {
+    // sendData не сработал — показываем инструкцию
+    if (modal) modal.querySelector('div').innerHTML = `
+      <div style="font-size:32px;margin-bottom:12px">💾</div>
+      <div style="font-family:var(--head);color:var(--accent);margin-bottom:8px">СОХРАНЕНО ЛОКАЛЬНО</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:8px;line-height:1.6">
+        Прогресс на устройстве: <b style="color:#fdfaf0">⭐ ${state.totalScore} оч · ${completed}/6 гл</b><br><br>
+        Для синхронизации с ботом:<br>
+        1. Закрой игру<br>
+        2. Напиши боту /start<br>
+        3. Открой игру снова
+      </div>
+      <button onclick="document.getElementById('sync-modal').remove()"
+        style="background:var(--accent);color:#0a0a08;border:none;padding:10px;
+        border-radius:4px;cursor:pointer;font-family:var(--head);width:100%">ОК</button>`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════
