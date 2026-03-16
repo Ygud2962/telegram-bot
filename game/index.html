@@ -801,6 +801,110 @@ body::before{
   padding:8px;letter-spacing:.05em
 }
 
+
+/* ══ НИЖНЕЕ МЕНЮ (таббар) ══ */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: 62px; background: #0e0c08;
+  border-top: 1px solid rgba(255,224,51,.15);
+  display: flex; align-items: stretch;
+  z-index: 200;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.bn-tab {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px; cursor: pointer; border: none;
+  background: none; color: var(--muted);
+  font-family: var(--head); font-size: 9px;
+  letter-spacing: .06em; text-transform: uppercase;
+  transition: color .2s;
+}
+.bn-tab .bn-icon { font-size: 20px; line-height: 1; }
+.bn-tab.active { color: var(--accent); }
+.bn-tab.active .bn-icon { filter: drop-shadow(0 0 6px rgba(255,224,51,.6)); }
+
+/* Отступ снизу для экранов с таббаром */
+#s-chapters { padding-bottom: 72px !important; }
+#s-leaderboard { padding-bottom: 72px !important; }
+
+/* ══ НОВЫЕ КАРТОЧКИ ГЛАВ — горизонтальные плитки ══ */
+.chapter-card {
+  display: flex; align-items: center;
+  margin: 8px 12px; padding: 0;
+  background: #141108; border: 1px solid rgba(255,224,51,.12);
+  border-radius: 10px; overflow: hidden;
+  cursor: pointer; position: relative;
+  transition: transform .15s, border-color .2s, box-shadow .2s;
+  min-height: 80px;
+}
+.chapter-card.locked { opacity: .45; cursor: not-allowed; }
+.chapter-card.completed { border-color: rgba(85,221,85,.35); }
+.chapter-card:not(.locked):active { transform: scale(.985); }
+.chapter-card:not(.locked):hover {
+  border-color: rgba(255,224,51,.4);
+  box-shadow: 0 4px 20px rgba(255,224,51,.1);
+}
+
+/* Цветная полоска слева */
+.chapter-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; background: var(--accent2); border-radius: 10px 0 0 10px;
+}
+.chapter-card.completed::before { background: var(--green); }
+.chapter-card.locked::before { background: #444; }
+
+/* Иконка главы */
+.ch-icon {
+  width: 64px; min-width: 64px; height: 80px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; background: rgba(255,224,51,.04);
+  border-right: 1px solid rgba(255,224,51,.08);
+}
+
+/* Контент */
+.ch-inner {
+  flex: 1; padding: 10px 12px 10px 10px; overflow: hidden;
+}
+.ch-num {
+  font-size: 9px; letter-spacing: .1em; color: var(--muted);
+  text-transform: uppercase; margin-bottom: 3px;
+}
+.ch-title {
+  font-family: var(--head); font-size: var(--fs-base);
+  font-weight: 700; color: #fdfaf0; letter-spacing: .04em;
+  margin-bottom: 2px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ch-place {
+  font-size: 10px; color: var(--accent); letter-spacing: .07em;
+  margin-bottom: 4px;
+}
+.ch-tags {
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.ch-tag {
+  font-size: 9px; padding: 2px 6px;
+  background: rgba(255,224,51,.08);
+  border: 1px solid rgba(255,224,51,.15);
+  border-radius: 3px; color: var(--muted);
+  letter-spacing: .05em;
+}
+
+/* Правая часть — статус */
+.ch-right {
+  width: 52px; min-width: 52px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 4px; padding: 8px;
+}
+.ch-badge { font-size: 22px; }
+.ch-score {
+  font-family: var(--head); font-size: 9px;
+  color: var(--accent); letter-spacing: .05em;
+  text-align: center;
+}
+
 </style>
 </head>
 <body>
@@ -968,32 +1072,74 @@ body::before{
 
 <!-- ════════ CHAPTERS ════════ -->
 <div id="s-chapters" class="screen">
+  <!-- Шапка -->
   <div class="chapters-header">
     <div style="display:flex;align-items:center;justify-content:space-between">
       <div>
-        <div class="chapters-title">ЗАДАНИЯ</div>
-        <div class="chapters-sub">ВЫБЕРИТЕ ОПЕРАЦИЮ</div>
+        <div class="chapters-title">ШИФРОВАЛЬЩИК</div>
+        <div class="chapters-sub" id="ch-header-sub">ВЫБЕРИТЕ ОПЕРАЦИЮ</div>
       </div>
-      <div style="display:flex;gap:12px;align-items:center">
-        <button class="btn-back" onclick="showScreen('s-about')" style="margin:0;font-size:var(--fs-base)">❓</button>
-        <button class="btn-back" onclick="showScreen('s-leaderboard');renderLeaderboard()" style="margin:0;font-size:var(--fs-base)">🏆 РЕЙТИНГ</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="text-align:right">
+          <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent)" id="stat-score">0</div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div>
+        </div>
+        <button class="btn-back" onclick="confirmReset()" style="margin:0;font-size:16px;opacity:.4">🗑</button>
       </div>
     </div>
+    <!-- Прогресс-бар -->
+    <div style="margin-top:10px;background:rgba(255,255,255,.06);border-radius:4px;height:4px;overflow:hidden">
+      <div id="ch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .5s ease"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px">
+      <div style="font-size:9px;color:var(--muted)" id="stat-completed-label">0 / 6 глав</div>
+      <div style="font-size:9px;color:var(--muted)" id="stat-players-label">👥 — игроков</div>
+    </div>
   </div>
+
+  <!-- Список глав -->
   <div id="chapters-list"></div>
-  <div class="chapters-stats" id="chapters-stats">
-    <div class="stats-row">
-      <div><div class="stat-val" id="stat-completed">0</div><div class="stat-lbl">ПРОЙДЕНО</div></div>
-      <div><div class="stat-val" id="stat-score">0</div><div class="stat-lbl">ОЧКОВ</div></div>
-      <div><div class="stat-val" id="stat-players">0</div><div class="stat-lbl">ИГРОКОВ</div></div>
+
+  <!-- Кнопка финала (если завершено) -->
+  <div style="padding:8px 12px 4px">
+    <button id="btn-to-final" class="btn-primary" onclick="showFinal()" style="display:none;width:100%">🏆 МОЙ РЕЗУЛЬТАТ</button>
+  </div>
+</div>
+
+<!-- ════════ LEADERBOARD ════════ -->
+<div id="s-leaderboard-tab" class="screen" style="display:none;padding-bottom:72px">
+  <div class="chapters-header">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div class="chapters-title">РЕЙТИНГ</div>
+        <div class="chapters-sub">ТАБЛИЦА ЛИДЕРОВ</div>
+      </div>
+      <button class="btn-back" onclick="renderLeaderboard()" style="margin:0;font-size:var(--fs-base)">🔄</button>
     </div>
   </div>
-  <div style="padding:0 16px 8px;display:flex;justify-content:space-between;align-items:center">
-    <button class="btn-back" onclick="confirmReset()" style="font-size:17px;color:var(--muted);opacity:.5">🗑 сброс</button>
-    <button id="btn-to-final" class="btn-back" onclick="showFinal()" style="display:none;font-size:var(--fs-base);color:var(--accent)">🏆 МОЙ РЕЗУЛЬТАТ</button>
-  </div>
-  <div style="height:8px"></div>
+  <div id="lb-list-tab" style="padding:8px 0"></div>
 </div>
+
+<!-- ════════ PROFILE TAB ════════ -->
+<div id="s-profile-tab" class="screen" style="display:none;padding-bottom:72px">
+  <div class="chapters-header">
+    <div class="chapters-title">МОЙ ПРОФИЛЬ</div>
+  </div>
+  <div id="profile-tab-content" style="padding:16px"></div>
+</div>
+
+<!-- ════════ НИЖНЕЕ МЕНЮ ════════ -->
+<nav class="bottom-nav" id="bottom-nav" style="display:none">
+  <button class="bn-tab active" id="bn-chapters" onclick="switchTab('chapters')">
+    <span class="bn-icon">🗺</span>ЗАДАНИЯ
+  </button>
+  <button class="bn-tab" id="bn-leaderboard" onclick="switchTab('leaderboard')">
+    <span class="bn-icon">🏆</span>РЕЙТИНГ
+  </button>
+  <button class="bn-tab" id="bn-profile" onclick="switchTab('profile')">
+    <span class="bn-icon">👤</span>ПРОФИЛЬ
+  </button>
+</nav>
 
 <!-- ════════ BRIEFING ════════ -->
 <div id="s-briefing" class="screen">
