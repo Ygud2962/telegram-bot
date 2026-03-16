@@ -2642,7 +2642,7 @@ async def menu_game(query, context):
 async def game_leaderboard(query, context):
     """Таблица лидеров из БД — актуальные данные."""
     await query.answer()
-    lb    = await asyncio.to_thread(db.get_game_leaderboard, 20)
+    lb    = await asyncio.to_thread(db.get_game_leaderboard_with_roles, 20)
     total = await asyncio.to_thread(db.get_game_players_count)
     uid_me = query.from_user.id
 
@@ -2659,14 +2659,22 @@ async def game_leaderboard(query, context):
             kb)
         return
 
-    medals = ['🥇','🥈','🥉']
-    lines  = [f"🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ</b>  👥 {total} участников\n"]
-    for i, (uid, name, score, completed, game_over) in enumerate(lb):
-        m    = medals[i] if i < 3 else f"<b>{i+1}.</b>"
+    medals     = ['🥇','🥈','🥉']
+    role_label = {'admin': ' 👑 <i>админ</i>', 'tester': ' 🧪 <i>тестер</i>', 'player': ''}
+    lines      = [f"🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ</b>  👥 {total} участников\n"]
+    prev_role  = None
+    for i, (uid, name, score, completed, game_over, role) in enumerate(lb):
+        # Разделитель между группами
+        if role != prev_role:
+            sep = {'admin': '👑 <b>АДМИНИСТРАТОРЫ</b>', 'tester': '🧪 <b>ТЕСТИРОВЩИКИ</b>', 'player': '🎮 <b>ИГРОКИ</b>'}
+            lines.append(f"\n{sep.get(role, '')}")
+            prev_role = role
+        m    = medals[i] if i < 3 else f"{i+1}."
         pct  = round((completed / 6) * 100)
-        done = " ✅ все главы" if game_over else f" {completed}/6 гл · {pct}%"
+        done = "✅ все главы" if game_over else f"{completed}/6 гл · {pct}%"
         me   = " 👈" if uid == uid_me else ""
-        lines.append(f"{m} {name or 'Игрок'}{me}\n    └ <b>{score}</b> очков ·{done}")
+        rl   = role_label.get(role, '')
+        lines.append(f"{m} <b>{name or 'Игрок'}</b>{rl}{me}\n    └ <b>{score}</b> оч · {done}")
 
     # Позиция текущего игрока если не в топ-20
     my_pos = next((i+1 for i,(uid,*_) in enumerate(lb) if uid==uid_me), None)
@@ -2710,6 +2718,10 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
         user.id, user_name, chapter, score, total_score,
         completed, game_over, failed
     )
+    # Автоматически назначаем роль при первом результате
+    current_role = await asyncio.to_thread(db.get_game_role, user.id)
+    if current_role == 'player' and user.id in ADMIN_IDS:
+        await asyncio.to_thread(db.set_game_role, user.id, 'admin')
 
     if event_type == 'chapter_complete':
         ch_title = data.get('chapter_title', f'Глава {chapter}')
@@ -3001,6 +3013,79 @@ async def handle_sub_flow(query, context):
 
 
 
+
+# ══════════════════════════════════════════════════════════
+#  АДМИН: УПРАВЛЕНИЕ РОЛЯМИ ИГРОКОВ
+# ══════════════════════════════════════════════════════════
+
+async def admin_roles_panel(query, context):
+    """Панель управления ролями игроков."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    players = await asyncio.to_thread(db.get_game_leaderboard_with_roles, 50)
+    if not players:
+        await safe_edit(query,
+            "🎭 <b>РОЛИ ИГРОКОВ</b>\n\nПока никто не играл.",
+            [[btn("↩️ Назад", 'admin_game_panel')]])
+        return
+
+    role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
+    lines = ["🎭 <b>РОЛИ ИГРОКОВ</b>\n"]
+    kb = []
+    for uid, name, score, completed, game_over, role in players[:20]:
+        icon = role_icon.get(role, '🎮')
+        lines.append(f"{icon} <b>{name or 'Игрок'}</b> — {score} оч ({completed}/6 гл)")
+        kb.append([btn(f"{icon} {name or uid} → сменить роль", f"arole_pick_{uid}")])
+
+    kb.append([btn("↩️ Управление игрой", 'admin_game_panel')])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_role_pick(query, context, uid):
+    """Выбор новой роли для игрока."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    current = await asyncio.to_thread(db.get_game_role, uid)
+    result  = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name    = result[1] if result else f"ID {uid}"
+
+    role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
+    cur_icon  = role_icon.get(current, '🎮')
+
+    kb = [
+        [btn("👑 Администратор", f"arole_set_{uid}_admin")],
+        [btn("🧪 Тестировщик",   f"arole_set_{uid}_tester")],
+        [btn("🎮 Игрок",         f"arole_set_{uid}_player")],
+        [btn("❌ Отмена",        'admin_roles_panel')],
+    ]
+    await safe_edit(query,
+        f"🎭 <b>Смена роли</b>\n\n"
+        f"Игрок: <b>{name}</b>\n"
+        f"Текущая роль: {cur_icon} <b>{current}</b>\n\n"
+        f"Выбери новую роль:",
+        kb)
+
+
+async def admin_role_set(query, context, uid, role):
+    """Устанавливает роль игроку."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    ok = await asyncio.to_thread(db.set_game_role, uid, role)
+    role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
+    result    = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name      = result[1] if result else f"ID {uid}"
+
+    await safe_edit(query,
+        f"{'✅' if ok else '❌'} Роль игрока <b>{name}</b> {'изменена на' if ok else 'не изменена'}:\n"
+        f"{role_icon.get(role, '🎮')} <b>{role}</b>",
+        [[btn("↩️ Список игроков", 'admin_roles_panel')]])
+
 # ══════════════════════════════════════════════════════════
 #  АДМИН: УПРАВЛЕНИЕ ГЛАВАМИ ИГРЫ
 # ══════════════════════════════════════════════════════════
@@ -3121,6 +3206,58 @@ async def handle_schedule_input(update, context, text):
             "❌ Неверный формат. Введи как: <code>20.03.2026 09:00</code>",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup([[btn("↩️ Управление главами", 'admin_chapters_panel')]]))
+
+
+# ══════════════════════════════════════════════════════════
+#  УПРАВЛЕНИЕ РОЛЯМИ ИГРОКОВ
+# ══════════════════════════════════════════════════════════
+
+async def admin_game_roles(query, context):
+    """Панель управления ролями игроков."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    rows = await asyncio.to_thread(db.get_game_leaderboard, 30)
+    if not rows:
+        await safe_edit(query, "ℹ️ Нет игроков.", [[btn("↩️ Назад", 'game_leaderboard')]])
+        return
+
+    role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
+    lines = ["⚙️ <b>УПРАВЛЕНИЕ РОЛЯМИ</b>\n"]
+    kb = []
+    for uid, name, score, completed, game_over, role in rows:
+        icon = role_icon.get(role, '🎮')
+        lines.append(f"{icon} <b>{name or 'Игрок'}</b> ({uid}) — {score} оч")
+        # Кнопки смены роли
+        btn_row = []
+        if role != 'admin':
+            btn_row.append(btn(f"👑 {(name or str(uid))[:12]}", f"grole_admin_{uid}"))
+        if role != 'tester':
+            btn_row.append(btn(f"🧪 {(name or str(uid))[:12]}", f"grole_tester_{uid}"))
+        if role != 'player':
+            btn_row.append(btn(f"🎮 {(name or str(uid))[:12]}", f"grole_player_{uid}"))
+        if btn_row: kb.append(btn_row)
+
+    kb.append([btn("↩️ К лидерборду", 'game_leaderboard')])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def handle_game_role_action(query, context, data):
+    """Устанавливает роль игроку."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    parts = data.split('_')  # grole_admin_123456
+    role  = parts[1]         # admin / tester / player
+    uid   = int(parts[2])    # user_id
+
+    ok = await asyncio.to_thread(db.set_game_role, uid, role)
+    role_name = {'admin': 'Администратор 👑', 'tester': 'Тестировщик 🧪', 'player': 'Игрок 🎮'}.get(role, role)
+    await safe_edit(query,
+        f"✅ Роль изменена\nID: <code>{uid}</code>\nНовая роль: <b>{role_name}</b>",
+        [[btn("↩️ Управление ролями", 'admin_game_roles')]])
 
 # ══════════════════════════════════════════════════════════
 #  БЕТА-ТЕСТ: УПРАВЛЕНИЕ БЕЛЫМ СПИСКОМ
@@ -3280,6 +3417,7 @@ async def admin_game_panel(query, context):
         [btn("📋 Список игроков",      'admin_game_leaderboard')],
         [btn(beta_label,               'admin_beta_panel')],
         [btn("📖 Управление главами",    'admin_chapters_panel')],
+        [btn("🎭 Роли игроков",          'admin_roles_panel')],
         [btn("🗑 Сбросить ВСЕХ",       'admin_game_reset_all')],
         [btn("↩️ Админка",             'admin_panel')],
     ]
@@ -3820,6 +3958,21 @@ async def button_handler(update: Update, context: CallbackContext):
 
     # ── Админские колбэки игры ──
     if user.id in ADMIN_IDS:
+        if d.startswith('arole_pick_'):
+            uid = int(d.replace('arole_pick_', ''))
+            await admin_role_pick(query, context, uid)
+            return
+
+        if d.startswith('arole_set_'):
+            parts = d.replace('arole_set_', '').rsplit('_', 1)
+            uid, role = int(parts[0]), parts[1]
+            await admin_role_set(query, context, uid, role)
+            return
+
+        if d.startswith('grole_'):
+            await handle_game_role_action(query, context, d)
+            return
+
         if d.startswith('ach_open_') or d.startswith('ach_close_') or d.startswith('ach_sched_'):
             await handle_chapter_action(query, context, d)
             return
@@ -4024,8 +4177,10 @@ async def button_handler(update: Update, context: CallbackContext):
             [[btn("❌ Отмена", 'admin_panel')]]),
         'admin_analytics':        show_analytics,
         'admin_game_panel':       admin_game_panel,
+        'admin_game_roles':       admin_game_roles,
         'admin_beta_panel':       admin_beta_panel,
         'admin_chapters_panel':   admin_chapters_panel,
+        'admin_roles_panel':      admin_roles_panel,
         'admin_chapters_open_all': admin_chapters_open_all,
         'admin_beta_add':         admin_beta_add,
         'admin_beta_remove':      admin_beta_remove,
