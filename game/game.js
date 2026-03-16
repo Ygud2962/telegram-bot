@@ -1975,6 +1975,38 @@ function doSync() {
 }
 
 function doSendToBotAndClose() {
+  const modal = document.getElementById('sync-modal');
+  const showMsg = (icon, title, body) => {
+    if (!modal) return;
+    modal.querySelector('div').innerHTML = `
+      <div style="font-size:36px;margin-bottom:10px">${icon}</div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:10px">${title}</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:18px">${body}</div>
+      <button onclick="document.getElementById('sync-modal').remove()"
+        style="background:var(--accent);color:#0a0a08;border:none;padding:10px;
+        border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">ОК</button>`;
+  };
+
+  // Проверка 1: есть ли tg объект
+  if (!tg) {
+    showMsg('⚠️', 'НЕТ TELEGRAM', 'tg объект недоступен. Открой игру через кнопку в боте.');
+    return;
+  }
+
+  // Проверка 2: есть ли sendData
+  if (typeof tg.sendData !== 'function') {
+    showMsg('⚠️', 'НЕТ sendData', 'Метод tg.sendData недоступен. Версия: ' + (tg.version || '?'));
+    return;
+  }
+
+  // Проверка 3: есть ли initData (признак что открыто через бота)
+  if (!tg.initData) {
+    showMsg('⚠️', 'НЕТ initData',
+      'Игра открыта не через кнопку бота — sendData недоступен.<br>' +
+      'Нажми кнопку 🎮 ОТКРЫТЬ ИГРУ прямо в чате с ботом.');
+    return;
+  }
+
   const completed = Object.keys(state.completedChapters).length;
   const chapters  = Object.keys(state.completedChapters).map(Number);
   const data = {
@@ -1988,39 +2020,11 @@ function doSendToBotAndClose() {
     user_name:   getTgUserName(),
   };
 
-  const modal = document.getElementById('sync-modal');
-
-  if (!tg) {
-    if (modal) modal.querySelector('div').innerHTML = `
-      <div style="font-size:32px;margin-bottom:12px">⚠️</div>
-      <div style="font-family:var(--head);color:var(--accent2);margin-bottom:12px">ТОЛЬКО В TELEGRAM</div>
-      <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:16px">
-        Открой игру через кнопку в боте.
-      </div>
-      <button onclick="document.getElementById('sync-modal').remove()"
-        style="background:var(--accent);color:#0a0a08;border:none;padding:10px;
-        border-radius:4px;cursor:pointer;font-family:var(--head);width:100%">ОК</button>`;
-    return;
-  }
-
   try {
     tg.sendData(JSON.stringify(data));
-    // Telegram закроет приложение и отправит данные боту
+    // Telegram автоматически закроет Mini App и пришлёт данные боту
   } catch(e) {
-    // sendData не сработал — показываем инструкцию
-    if (modal) modal.querySelector('div').innerHTML = `
-      <div style="font-size:32px;margin-bottom:12px">💾</div>
-      <div style="font-family:var(--head);color:var(--accent);margin-bottom:8px">СОХРАНЕНО ЛОКАЛЬНО</div>
-      <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:8px;line-height:1.6">
-        Прогресс на устройстве: <b style="color:#fdfaf0">⭐ ${state.totalScore} оч · ${completed}/6 гл</b><br><br>
-        Для синхронизации с ботом:<br>
-        1. Закрой игру<br>
-        2. Напиши боту /start<br>
-        3. Открой игру снова
-      </div>
-      <button onclick="document.getElementById('sync-modal').remove()"
-        style="background:var(--accent);color:#0a0a08;border:none;padding:10px;
-        border-radius:4px;cursor:pointer;font-family:var(--head);width:100%">ОК</button>`;
+    showMsg('❌', 'ОШИБКА: ' + e.name, e.message + '<br><br>Score: ' + state.totalScore + ', completed: ' + completed);
   }
 }
 
