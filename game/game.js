@@ -339,19 +339,18 @@ function saveState() {
 // ═══════════════════════════════════════════════════════
 let currentChapter = 0;
 function showScreen(id) {
-  // Таб-экраны управляются только через switchTab — не трогаем их здесь
   const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab'];
-  if (TAB_SCREENS.includes(id)) return; // таб-экраны через switchTab
+  if (TAB_SCREENS.includes(id)) return; // только через switchTab
 
   if (id === 's-chapters') {
-    showBottomNav();
     switchTab('chapters');
     return;
-  } else {
-    hideBottomNav();
   }
+
+  hideBottomNav();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1505,67 +1504,112 @@ function hideBottomNav() {
 function switchTab(tab) {
   currentTab = tab;
 
-  // Скрываем ВСЕ экраны
-  document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
-
-  // Сбрасываем активный таб
+  // Деактивируем все экраны
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  // Деактивируем все табы
   document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
 
   showBottomNav();
 
-  if (tab === 'chapters') {
-    const el = document.getElementById('s-chapters');
-    if (el) el.style.display = '';
-    const btn = document.getElementById('bn-chapters');
-    if (btn) btn.classList.add('active');
-    renderChapters();
-  } else if (tab === 'leaderboard') {
-    const el = document.getElementById('s-leaderboard-tab');
-    if (el) el.style.display = '';
-    const btn = document.getElementById('bn-leaderboard');
-    if (btn) btn.classList.add('active');
-    renderLeaderboardTab();
-  } else if (tab === 'profile') {
-    const el = document.getElementById('s-profile-tab');
-    if (el) el.style.display = '';
-    const btn = document.getElementById('bn-profile');
-    if (btn) btn.classList.add('active');
-    renderProfileTab();
-  }
+  const screenMap = {
+    'chapters':    's-chapters',
+    'leaderboard': 's-leaderboard-tab',
+    'profile':     's-profile-tab',
+  };
+  const tabMap = {
+    'chapters':    'bn-chapters',
+    'leaderboard': 'bn-leaderboard',
+    'profile':     'bn-profile',
+  };
+
+  const screenEl = document.getElementById(screenMap[tab]);
+  const tabEl    = document.getElementById(tabMap[tab]);
+  if (screenEl) screenEl.classList.add('active');
+  if (tabEl)    tabEl.classList.add('active');
+
+  if (tab === 'chapters')    renderChapters();
+  if (tab === 'leaderboard') renderLeaderboardTab();
+  if (tab === 'profile')     renderProfileTab();
 }
 
 function renderLeaderboardTab() {
   const list = document.getElementById('lb-list-tab');
   if (!list) return;
-  const lb = state.leaderboard;
+  const lb    = state.leaderboard || [];
   const myUid = getTgUserId() || 'guest';
+  const total = tgInitLB.length || lb.length;
+
+  // Шапка
+  const header = `<div style="padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">РЕЙТИНГ</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} участников</div>
+    </div>
+    <button onclick="switchTab('leaderboard')"
+      style="background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
+      color:var(--accent);padding:6px 12px;border-radius:4px;font-family:var(--head);
+      font-size:var(--fs-xs);cursor:pointer;letter-spacing:.06em">🔄 ОБНОВИТЬ</button>
+  </div>`;
+
   if (!lb.length) {
-    list.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--muted)">
-      <div style="font-size:40px;margin-bottom:12px">🏆</div>
-      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">ПОКА ПУСТО</div>
-      <div style="font-size:var(--fs-sm)">Никто ещё не прошёл игру.<br>Стань первым шифровальщиком школы!</div>
+    list.innerHTML = header + `
+    <div style="text-align:center;padding:50px 24px">
+      <div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div>
+      <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);
+        margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">
+        Никто ещё не прошёл ни одной главы.<br>
+        <b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b>
+      </div>
+      <button onclick="switchTab('chapters')"
+        style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px;
+        font-family:var(--head);font-size:var(--fs-base);font-weight:700;
+        border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%">
+        ▶ НАЧАТЬ ИГРУ
+      </button>
     </div>`;
     return;
   }
+
   const medals = ['🥇','🥈','🥉'];
-  list.innerHTML = lb.slice(0,20).map((e,i) => {
-    const isMe = e.uid === myUid;
-    const pct = Math.round((e.completed / 6) * 100);
-    const doneText = e.completed >= 6 ? '✅ Все главы' : e.completed + '/6 глав · ' + pct + '%';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;
-      border-bottom:1px solid rgba(255,255,255,.05);
-      ${isMe ? 'background:rgba(255,224,51,.05);border-left:3px solid var(--accent)' : ''}">
-      <div style="font-size:20px;min-width:28px;text-align:center">${medals[i] || String(i+1)}</div>
-      <div style="flex:1;overflow:hidden">
-        <div style="font-family:var(--head);font-size:var(--fs-base);color:${isMe?'var(--accent)':'#fdfaf0'};
-          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-          ${e.name}${isMe ? ' 👈' : ''}
-        </div>
-        <div style="font-size:10px;color:var(--muted);margin-top:2px">${doneText}</div>
+  const rows = lb.slice(0,20).map((e,i) => {
+    const isMe   = e.uid === myUid;
+    const pct    = Math.round((e.completed / 6) * 100);
+    const done   = e.completed >= 6 ? '✅ Все 6 глав' : `${e.completed}/6 глав · ${pct}%`;
+    const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
+        border-bottom:1px solid rgba(255,255,255,.04);
+        background:${isMe?'rgba(255,224,51,.06)':rankBg};
+        ${isMe?'border-left:3px solid var(--accent)':''}">
+      <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">
+        ${medals[i] || '<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">'+(i+1)+'</span>'}
       </div>
-      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent)">${e.score}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--head);font-size:var(--fs-base);
+          color:${isMe?'var(--accent)':'#fdfaf0'};
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${e.name}${isMe?' 👈':''}
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:3px;letter-spacing:.04em">${done}</div>
+      </div>
+      <div style="font-family:var(--head);font-size:var(--fs-xl);
+        color:${isMe?'var(--accent)':'#c4b06a'};
+        text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">
+        ${e.score}
+      </div>
     </div>`;
   }).join('');
+
+  // Моя позиция если не в топ-20
+  const myInTop = lb.some(e => e.uid === myUid);
+  const myPos   = myInTop ? '' : `
+    <div style="margin:12px 16px;padding:12px;
+      background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;
+      font-size:var(--fs-sm);color:var(--muted);text-align:center">
+      📍 Вы ещё не в топ-20. Играйте чтобы попасть в рейтинг!
+    </div>`;
+
+  list.innerHTML = header + rows + myPos;
 }
 
 function renderProfileTab() {
@@ -1587,6 +1631,25 @@ function renderProfileTab() {
   const maxScore = 5330;
   const scorePct = Math.round((state.totalScore / maxScore) * 100);
   const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
+
+  // Строим историю глав
+  const chapterHistory = CHAPTERS.map(ch => {
+    const done  = !!state.completedChapters[ch.id];
+    const score = state.chapterScores[ch.id] || 0;
+    const icon  = done ? (score > 0 ? '✅' : '💔') : '🔒';
+    const color = done ? (score > 0 ? 'var(--green)' : 'var(--accent2)') : 'rgba(255,255,255,.2)';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;
+        border-bottom:1px solid rgba(255,255,255,.04)">
+      <div style="font-size:18px">${icon}</div>
+      <div style="flex:1">
+        <div style="font-size:var(--fs-sm);color:${done?'#fdfaf0':'rgba(255,255,255,.3)'}">${ch.title}</div>
+        <div style="font-size:10px;color:var(--muted)">${ch.subtitle}</div>
+      </div>
+      <div style="font-family:var(--head);font-size:var(--fs-sm);color:${color}">
+        ${score ? score + ' оч' : done ? '—' : ''}
+      </div>
+    </div>`;
+  }).join('');
 
   el.innerHTML = `
     <div style="text-align:center;margin-bottom:20px">
@@ -1615,6 +1678,17 @@ function renderProfileTab() {
         <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
       </div>
     </div>
+    <div style="margin-top:16px">
+      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);
+        letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>
+      ${chapterHistory}
+    </div>
+    <button onclick="switchTab('chapters')"
+      style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08;
+      border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base);
+      font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em">
+      ▶ ПРОДОЛЖИТЬ ИГРУ
+    </button>
     <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.4;margin-top:8px">🗑 Сбросить прогресс</button>`;
 }
 
