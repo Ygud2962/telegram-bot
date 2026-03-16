@@ -2594,15 +2594,19 @@ async def menu_game(query, context):
     my_result = await asyncio.to_thread(db.get_game_result, user.id)
 
     import json, urllib.parse
+    # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role)
     lb_data = [
-        {'uid': str(r[0]), 'name': r[1] or 'Игрок', 'score': r[2], 'completed': r[3]}
+        {'uid': str(r[0]), 'name': r[1] or 'Игрок', 'score': r[2],
+         'completed': r[3], 'role': r[5] if len(r) > 5 else 'player'}
         for r in lb_rows
     ]
     my_data = None
     if my_result:
+        my_role = await asyncio.to_thread(db.get_game_role, user.id)
         my_data = {
             'uid': str(my_result[0]), 'name': my_result[1] or 'Игрок',
-            'score': my_result[2], 'completed': my_result[3], 'game_over': my_result[4]
+            'score': my_result[2], 'completed': my_result[3],
+            'game_over': my_result[4], 'role': my_role or 'player'
         }
 
     open_chapters = await asyncio.to_thread(db.get_open_chapters)
@@ -2611,6 +2615,20 @@ async def menu_game(query, context):
         ensure_ascii=False
     ))
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
+
+    # Регистрируем игрока при первом открытии (чтобы счётчик работал)
+    if not my_result:
+        await asyncio.to_thread(
+            db.save_game_result,
+            user.id, user.first_name, 0, 0, 0, 0, False, False
+        )
+        # Назначаем роль
+        current_role = await asyncio.to_thread(db.get_game_role, user.id)
+        if not current_role:
+            role = 'admin' if user.id in ADMIN_IDS else 'player'
+            await asyncio.to_thread(db.set_game_role, user.id, role)
+        # Обновляем my_result
+        my_result = await asyncio.to_thread(db.get_game_result, user.id)
 
     # Формируем описание результата игрока
     if my_result:
