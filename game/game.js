@@ -339,6 +339,13 @@ function saveState() {
 // ═══════════════════════════════════════════════════════
 let currentChapter = 0;
 function showScreen(id) {
+  // Показываем/скрываем нижнее меню
+  const tabScreens = ['s-chapters','s-leaderboard-tab','s-profile-tab'];
+  if (id === 's-chapters') {
+    showBottomNav();
+  } else if (!tabScreens.includes(id)) {
+    hideBottomNav();
+  }
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
@@ -354,7 +361,6 @@ function renderChapters() {
   CHAPTERS.forEach((ch, i) => {
     const isAdmin = tgUser && tgUser.id === 516406248;
     const isDone  = !!state.completedChapters[ch.id];
-    // Глава открыта если: admin ИЛИ сервер разрешил ИЛИ предыдущая пройдена
     const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
     const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
     const isLocked = !isAdmin && !(serverAllows && prevDone);
@@ -362,23 +368,38 @@ function renderChapters() {
 
     const card = document.createElement('div');
     card.className = 'chapter-card' + (isLocked?' locked':'') + (isDone?' completed':'');
-    const tags = [...new Set(ch.ciphers.map(c=>c.typeLabel))].map(t=>`<span class="ch-cipher-tag">${t}</span>`).join('');
-    const scoreStr = isDone && state.chapterScores[ch.id]
-      ? `<div style="font-size:var(--fs-base);color:var(--accent);margin-top:8px;letter-spacing:.1em;text-shadow:0 0 8px rgba(255,224,51,.4)">⭐ ${state.chapterScores[ch.id]} очков</div>` : '';
+
+    // Иконки типов заданий
+    const typeIcons = {'caesar':'🔐','morse':'📡','atbash':'🪞','num':'🔢','anagram':'🔤','math':'➗','photo':'🖼','map':'🗺'};
+    const uniqueTypes = [...new Set(ch.ciphers.map(c=>c.type))];
+    const tags = uniqueTypes.map(t=>`<span class="ch-tag">${typeIcons[t]||'❓'} ${ch.ciphers.find(c=>c.type===t).typeLabel}</span>`).join('');
+
+    // Статус
+    let statusText, badgeIcon;
+    if (isDone && state.chapterScores[ch.id] > 0) { statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅'; }
+    else if (isDone) { statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔'; }
+    else if (!serverAllows) { statusText='🔒 НЕ ОТКРЫТА'; badgeIcon='🔒'; }
+    else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
+    else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
+
+    const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
+
     card.innerHTML = `
+      <div class="ch-icon">${ch.stamp || '🔐'}</div>
       <div class="ch-inner">
-        <div class="ch-num">${ch.subtitle} · ${isDone?(state.chapterScores[ch.id]>0?'✅ ЗАВЕРШЕНО':'💔 ПРОВАЛЕНО'):isLocked?'🔒 ЗАКРЫТО':(serverAllows?'◉ ДОСТУПНО':'🔒 НЕ ОТКРЫТА')}</div>
+        <div class="ch-num">${ch.subtitle} · ${statusText}</div>
         <div class="ch-title">${ch.title}</div>
         <div class="ch-place">${ch.place}</div>
-        <div class="ch-desc">${ch.briefing.slice(0,90)}...</div>
-        <div class="ch-ciphers" style="margin-top:10px">${tags}</div>
-        ${scoreStr}
+        <div class="ch-tags">${tags}</div>
       </div>
-      <div class="ch-badge">${isDone?(state.chapterScores[ch.id]>0?'✅':'💔'):isLocked?'🔒':'▶'}</div>`;
-    const canPlay = !isLocked && (!isDone || (tgUser && tgUser.id === 516406248));
+      <div class="ch-right">
+        <div class="ch-badge">${badgeIcon}</div>
+        ${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
+      </div>`;
+
+    const canPlay = !isLocked && (!isDone || isAdmin);
     if (canPlay) card.onclick = () => {
-      if (isDone && tgUser && tgUser.id === 516406248) {
-        // Сброс прогресса этой главы для админа
+      if (isDone && isAdmin) {
         delete state.completedChapters[ch.id];
         delete state.chapterScores[ch.id];
         saveState();
@@ -389,9 +410,18 @@ function renderChapters() {
     list.appendChild(card);
   });
 
-  document.getElementById('stat-completed').textContent = completedCount+'/4';
-  document.getElementById('stat-score').textContent = state.totalScore;
-  document.getElementById('stat-players').textContent = tgInitLB.length || state.leaderboard.length || '—';
+  // Обновляем шапку
+  const total = CHAPTERS.length;
+  const pct = Math.round((completedCount / total) * 100);
+  const pbEl = document.getElementById('ch-progress-bar');
+  if (pbEl) pbEl.style.width = pct + '%';
+  const clEl = document.getElementById('stat-completed-label');
+  if (clEl) clEl.textContent = completedCount + ' / ' + total + ' глав';
+  const scEl = document.getElementById('stat-score');
+  if (scEl) scEl.textContent = state.totalScore;
+  const plEl = document.getElementById('stat-players-label');
+  const plCount = tgInitLB.length || state.leaderboard.length;
+  if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
 
   // Если игра окончена — показываем кнопку финала
   if (state.gameOver) {
@@ -1452,6 +1482,134 @@ renderChapters = function(){
 
 
 
+
+// ═══════════════════════════════════════════════════════
+//  НИЖНЕЕ МЕНЮ — ТАББАР
+// ═══════════════════════════════════════════════════════
+let currentTab = 'chapters';
+
+function showBottomNav() {
+  const nav = document.getElementById('bottom-nav');
+  if (nav) nav.style.display = 'flex';
+}
+
+function hideBottomNav() {
+  const nav = document.getElementById('bottom-nav');
+  if (nav) nav.style.display = 'none';
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  // Скрываем все таб-экраны
+  ['s-chapters','s-leaderboard-tab','s-profile-tab'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  // Сбрасываем активный таб
+  document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
+
+  if (tab === 'chapters') {
+    const el = document.getElementById('s-chapters');
+    if (el) el.style.display = '';
+    document.getElementById('bn-chapters').classList.add('active');
+    renderChapters();
+  } else if (tab === 'leaderboard') {
+    const el = document.getElementById('s-leaderboard-tab');
+    if (el) el.style.display = '';
+    document.getElementById('bn-leaderboard').classList.add('active');
+    renderLeaderboardTab();
+  } else if (tab === 'profile') {
+    const el = document.getElementById('s-profile-tab');
+    if (el) el.style.display = '';
+    document.getElementById('bn-profile').classList.add('active');
+    renderProfileTab();
+  }
+}
+
+function renderLeaderboardTab() {
+  const list = document.getElementById('lb-list-tab');
+  if (!list) return;
+  const lb = state.leaderboard;
+  const myUid = getTgUserId() || 'guest';
+  if (!lb.length) {
+    list.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">🏆</div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">ПОКА ПУСТО</div>
+      <div style="font-size:var(--fs-sm)">Никто ещё не прошёл игру.<br>Стань первым шифровальщиком школы!</div>
+    </div>`;
+    return;
+  }
+  const medals = ['🥇','🥈','🥉'];
+  list.innerHTML = lb.slice(0,20).map((e,i) => {
+    const isMe = e.uid === myUid;
+    const pct = Math.round((e.completed / 6) * 100);
+    const doneText = e.completed >= 6 ? '✅ Все главы' : e.completed + '/6 глав · ' + pct + '%';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;
+      border-bottom:1px solid rgba(255,255,255,.05);
+      ${isMe ? 'background:rgba(255,224,51,.05);border-left:3px solid var(--accent)' : ''}">
+      <div style="font-size:20px;min-width:28px;text-align:center">${medals[i] || String(i+1)}</div>
+      <div style="flex:1;overflow:hidden">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:${isMe?'var(--accent)':'#fdfaf0'};
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${e.name}${isMe ? ' 👈' : ''}
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${doneText}</div>
+      </div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent)">${e.score}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderProfileTab() {
+  const el = document.getElementById('profile-tab-content');
+  if (!el) return;
+  const uid = getTgUserId();
+  const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
+  const completed = Object.keys(state.completedChapters).length;
+  const pct = Math.round((completed / CHAPTERS.length) * 100);
+
+  // Звание
+  const titles = [
+    [0,   'Новобранец', '🎖'],
+    [35,  'Сержант связи', '🏅'],
+    [55,  'Капитан подполья', '🎖'],
+    [75,  'Полковник разведки', '⭐'],
+    [90,  'Маршал Победы', '🌟'],
+  ];
+  const maxScore = 5330;
+  const scorePct = Math.round((state.totalScore / maxScore) * 100);
+  const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
+
+  el.innerHTML = `
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:48px;margin-bottom:8px">${rank[2]}</div>
+      <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${name}</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">${rank[1]}</div>
+      ${uid ? `<div style="font-size:10px;color:rgba(255,255,255,.2);margin-top:4px">ID: ${uid}</div>` : ''}
+    </div>
+    <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-around;text-align:center">
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div>
+        </div>
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div>
+        </div>
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div>
+        </div>
+      </div>
+      <!-- Прогресс-бар -->
+      <div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
+        <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
+      </div>
+    </div>
+    <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.4;margin-top:8px">🗑 Сбросить прогресс</button>`;
+}
+
 // ═══════════════════════════════════════════════════════
 //  НАВИГАЦИЯ И ПАУЗА
 // ═══════════════════════════════════════════════════════
@@ -1476,6 +1634,7 @@ function goToChapters() {
   saveState();
   showScreen('s-chapters');
   renderChapters();
+  showBottomNav();
 }
 
 function exitToMain() {
