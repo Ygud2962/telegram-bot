@@ -344,7 +344,8 @@ function mergeBotLeaderboard() {
   // Всегда берём leaderboard из БД как источник правды
   if (tgInitLB.length) {
     state.leaderboard = tgInitLB.map(r => ({
-      uid: String(r.uid), name: r.name, score: r.score, completed: r.completed
+      uid: String(r.uid), name: r.name, score: r.score,
+      completed: r.completed, role: r.role || 'player'
     }));
   }
 
@@ -1664,8 +1665,10 @@ function renderLeaderboardTab() {
   const rows = lb.slice(0,20).map((e,i) => {
     const isMe   = e.uid === myUid;
     const pct    = Math.round((e.completed / 6) * 100);
-    const done   = e.completed >= 6 ? '✅ Все 6 глав' : `${e.completed}/6 глав · ${pct}%`;
+    const done   = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
     const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
+    const roleIcon = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
+    const roleLabel = e.role === 'admin' ? 'Администратор' : e.role === 'tester' ? 'Тестировщик' : '';
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
         border-bottom:1px solid rgba(255,255,255,.04);
         background:${isMe?'rgba(255,224,51,.06)':rankBg};
@@ -1677,9 +1680,12 @@ function renderLeaderboardTab() {
         <div style="font-family:var(--head);font-size:var(--fs-base);
           color:${isMe?'var(--accent)':'#fdfaf0'};
           white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-          ${e.name}${isMe?' 👈':''}
+          ${e.name}${roleIcon}${isMe?' 👈':''}
         </div>
-        <div style="font-size:10px;color:var(--muted);margin-top:3px;letter-spacing:.04em">${done}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em;display:flex;gap:6px">
+          <span>${done}</span>
+          ${roleLabel ? `<span style="color:rgba(255,224,51,.4)">${roleLabel}</span>` : ''}
+        </div>
       </div>
       <div style="font-family:var(--head);font-size:var(--fs-xl);
         color:${isMe?'var(--accent)':'#c4b06a'};
@@ -1783,7 +1789,51 @@ function renderProfileTab() {
       font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em">
       ▶ ПРОДОЛЖИТЬ ИГРУ
     </button>
+    <button onclick="syncProfile()"
+      style="width:100%;margin-top:8px;background:rgba(255,224,51,.08);
+      border:1px solid rgba(255,224,51,.2);color:var(--accent);
+      padding:10px;font-family:var(--head);font-size:var(--fs-xs);
+      border-radius:4px;cursor:pointer;letter-spacing:.08em"
+      id="sync-btn">
+      🔄 СИНХРОНИЗИРОВАТЬ С БОТОМ
+    </button>
     <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.4;margin-top:8px">🗑 Сбросить прогресс</button>`;
+}
+
+
+function syncProfile() {
+  const btn = document.getElementById('sync-btn');
+  if (!tg) {
+    if (btn) btn.textContent = '❌ Только в Telegram';
+    return;
+  }
+  if (!_pendingBotData.length && state.totalScore === 0) {
+    if (btn) btn.textContent = '✅ Нет данных для отправки';
+    setTimeout(() => { if (btn) btn.textContent = '🔄 СИНХРОНИЗИРОВАТЬ С БОТОМ'; }, 2000);
+    return;
+  }
+
+  if (btn) btn.textContent = '⏳ Отправка...';
+
+  // Формируем актуальные данные
+  const data = {
+    type:        'chapter_complete',
+    chapter:     Math.max(...Object.keys(state.completedChapters).map(Number), 0),
+    score:       0,
+    total_score: state.totalScore,
+    completed:   Object.keys(state.completedChapters).length,
+    game_over:   state.gameOver,
+    user_id:     getTgUserId(),
+    user_name:   getTgUserName(),
+  };
+  _pendingBotData = [data];
+
+  try {
+    tg.sendData(JSON.stringify(data));
+    // sendData закрывает приложение — предупреждаем
+  } catch(e) {
+    if (btn) btn.textContent = '❌ Ошибка';
+  }
 }
 
 // ═══════════════════════════════════════════════════════
