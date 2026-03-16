@@ -1890,17 +1890,31 @@ function showSyncModal(mode) {
 }
 
 function doSync() {
+  if (!tg) {
+    alert('Синхронизация доступна только в Telegram');
+    return;
+  }
+  const completed = Object.keys(state.completedChapters).length;
+  const chapters  = Object.keys(state.completedChapters).map(Number);
   const data = {
-    type:        'chapter_complete',
-    chapter:     Math.max(...[0, ...Object.keys(state.completedChapters).map(Number)]),
-    score:       0,
+    type:        completed > 0 ? 'chapter_complete' : 'sync',
+    chapter:     chapters.length > 0 ? Math.max(...chapters) : 0,
+    score:       state.chapterScore || 0,
     total_score: state.totalScore,
-    completed:   Object.keys(state.completedChapters).length,
-    game_over:   state.gameOver,
+    completed:   completed,
+    game_over:   state.gameOver || false,
     user_id:     getTgUserId(),
     user_name:   getTgUserName(),
   };
-  try { tg.sendData(JSON.stringify(data)); } catch(e) {}
+  // Закрываем модал
+  const modal = document.getElementById('sync-modal');
+  if (modal) modal.remove();
+  // Отправляем — приложение закроется
+  try {
+    tg.sendData(JSON.stringify(data));
+  } catch(e) {
+    alert('Ошибка отправки: ' + e.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
