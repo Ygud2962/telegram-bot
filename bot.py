@@ -2634,8 +2634,13 @@ async def menu_game(query, context):
     if my_result:
         uid, uname, total, comp, game_over, updated = my_result
         updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y') if updated else '—'
-        my_info = (f"\n📊 Ваш результат: <b>{total} очков</b>, {comp}/4 глав"
-                   + (" ✅" if game_over else "") + f"\n📅 Последняя игра: {updated_str}")
+        pct = round((comp / 6) * 100)
+        status = " ✅ <b>ВСЕ ГЛАВЫ!</b>" if game_over else ""
+        my_info = (
+            f"\n\n📊 Ваш прогресс: <b>{comp}/6 глав</b> · {pct}%{status}"
+            f"\n⭐ Очков: <b>{total}</b>"
+            f"\n📅 Последняя игра: {updated_str}"
+        )
     else:
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
 
@@ -2645,12 +2650,15 @@ async def menu_game(query, context):
         [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
     ])
     await query.message.edit_text(
-        "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
-        "1941–1945 · Вы — советский разведчик.\n"
-        "Расшифруйте 20 донесений и приблизьте Победу.\n\n"
-        "🗺 <b>4 операции</b> на территории Беларуси\n"
-        "🔐 <b>4 типа шифров:</b> Цезарь, Морзе, Атбаш, Числовой\n"
+        "🔐 <b>ШИФРОВАЛЬЩИК</b>\n"
+        "<i>1941–1945 · Беларусь</i>\n\n"
+        "Вы — советский разведчик. Расшифруйте донесения "
+        "и приблизьте День Победы.\n\n"
+        "🗺 <b>6 глав</b> — операции на территории Беларуси\n"
+        "📋 <b>30 заданий</b> — по 5 на каждую главу\n"
+        "🔐 <b>6 типов:</b> Цезарь · Морзе · Атбаш · Числовой · Анаграмма · Математика\n"
         "❤️ <b>5 жизней</b> на каждую главу\n"
+        "⚡ <b>Очки за скорость</b> — чем быстрее, тем больше\n"
         "🏆 <b>Таблица лидеров</b> всей школы"
         + my_info,
         parse_mode='HTML', reply_markup=kb
@@ -3490,13 +3498,13 @@ async def admin_game_view_player(query, context, uid):
     import pytz
     upd_str = upd.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M') if upd else '—'
 
-    status_icon = "🚫 ЗАБАНЕН" if banned else ("✅ ЗАВЕРШИЛ" if game_over else f"▶ В ПРОЦЕССЕ ({completed}/4 глав)")
+    status_icon = "🚫 ЗАБАНЕН" if banned else ("✅ ЗАВЕРШИЛ" if game_over else f"▶ В ПРОЦЕССЕ ({completed}/6 глав)")
     text = (
         f"👤 <b>{name or 'Игрок'}</b>\n"
         f"🆔 <code>{uid2}</code>\n\n"
         f"📊 Статус:        {status_icon}\n"
         f"⭐ Очков:          <b>{total}</b>\n"
-        f"📖 Глав пройдено: <b>{completed}/4</b>\n"
+        f"📖 Глав пройдено: <b>{completed}/6</b>\n"
         f"📌 Последняя гл.: <b>{chapter}</b> ({chap_score} оч)\n"
         f"💔 Провалена:      {'Да' if failed else 'Нет'}\n"
         f"📅 Последнее обновление: {upd_str}\n"
