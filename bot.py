@@ -2633,10 +2633,8 @@ async def menu_game(query, context):
         }
 
     open_chapters = await asyncio.to_thread(db.get_open_chapters)
-    sync_url = f"{BOT_PUBLIC_URL}/game_sync" if BOT_PUBLIC_URL else ""
     payload = urllib.parse.quote(json.dumps(
-        {'lb': lb_data, 'me': my_data, 'open': sorted(list(open_chapters)),
-         'sync_url': sync_url},
+        {'lb': lb_data, 'me': my_data, 'open': sorted(list(open_chapters))},
         ensure_ascii=False
     ))
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
