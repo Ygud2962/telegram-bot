@@ -1669,7 +1669,10 @@ function renderLeaderboardTab() {
     const pct    = Math.round((e.completed / 6) * 100);
     const done   = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
     const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
-    const roleIcon = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
+    const roleIcon  = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
+    const roleTag   = e.role === 'admin' ? ' <span style="font-size:9px;color:var(--accent);opacity:.7;letter-spacing:.04em">(АДМИН)</span>'
+                    : e.role === 'tester' ? ' <span style="font-size:9px;color:var(--muted);letter-spacing:.04em">(ТЕСТ)</span>'
+                    : '';
     const roleLabel = e.role === 'admin' ? 'Администратор' : e.role === 'tester' ? 'Тестировщик' : '';
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
         border-bottom:1px solid rgba(255,255,255,.04);
@@ -1682,7 +1685,7 @@ function renderLeaderboardTab() {
         <div style="font-family:var(--head);font-size:var(--fs-base);
           color:${isMe?'var(--accent)':'#fdfaf0'};
           white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-          ${e.name}${roleIcon}${isMe?' 👈':''}
+          ${e.name}${roleIcon}${roleTag}${isMe?' 👈':''}
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em;display:flex;gap:6px">
           <span>${done}</span>
@@ -1879,11 +1882,14 @@ function showSyncModal(mode) {
           СИНХРОНИЗАЦИЯ
         </div>
         <div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:8px">
-          Текущий прогресс будет отправлен боту:<br>
+          Прогресс будет сохранён в базу данных бота:<br>
           <b style="color:var(--accent)">⭐ ${state.totalScore} очков · ${Object.keys(state.completedChapters).length}/6 глав</b>
         </div>
-        <div style="font-size:10px;color:rgba(255,255,255,.3);margin-bottom:20px">
-          ⚠️ Приложение закроется после отправки
+        <div style="font-size:var(--fs-xs);color:rgba(255,255,255,.25);margin-bottom:4px">
+          После отправки приложение закроется.
+        </div>
+        <div style="font-size:var(--fs-xs);color:rgba(255,255,255,.25);margin-bottom:20px">
+          При следующем открытии прогресс подтянется на все устройства.
         </div>
         <button onclick="doSync()"
           style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
@@ -1912,22 +1918,46 @@ function doSync() {
   const data = {
     type:        completed > 0 ? 'chapter_complete' : 'sync',
     chapter:     chapters.length > 0 ? Math.max(...chapters) : 0,
-    score:       state.chapterScore || 0,
+    score:       0,
     total_score: state.totalScore,
     completed:   completed,
     game_over:   state.gameOver || false,
     user_id:     getTgUserId(),
     user_name:   getTgUserName(),
   };
-  // Закрываем модал
+
+  // Обновляем модал — показываем отправку
   const modal = document.getElementById('sync-modal');
-  if (modal) modal.remove();
-  // Отправляем — приложение закроется
-  try {
-    tg.sendData(JSON.stringify(data));
-  } catch(e) {
-    alert('Ошибка отправки: ' + e.message);
+  if (modal) {
+    modal.querySelector('div').innerHTML = `
+      <div style="font-size:40px;margin-bottom:12px">⏳</div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:12px">
+        ОТПРАВКА...
+      </div>
+      <div style="font-size:var(--fs-sm);color:var(--muted)">
+        Приложение закроется автоматически
+      </div>`;
   }
+
+  // Небольшая задержка чтобы UI обновился
+  setTimeout(() => {
+    try {
+      tg.sendData(JSON.stringify(data));
+      // sendData закрывает приложение — пользователь увидит результат в боте
+    } catch(e) {
+      if (modal) modal.remove();
+      // Показываем ошибку
+      const errModal = document.createElement('div');
+      errModal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px';
+      errModal.innerHTML = `<div style="background:#141108;border:1px solid rgba(255,58,58,.3);border-radius:10px;padding:24px;max-width:320px;text-align:center">
+        <div style="font-size:32px;margin-bottom:8px">❌</div>
+        <div style="font-family:var(--head);color:var(--accent2);margin-bottom:12px">ОШИБКА ОТПРАВКИ</div>
+        <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:16px">${e.message}</div>
+        <button onclick="this.closest('div[style]').remove()" style="background:var(--accent);color:#0a0a08;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;font-family:var(--head)">ОК</button>
+      </div>`;
+      document.body.appendChild(errModal);
+    }
+  }, 300);
 }
 
 // ═══════════════════════════════════════════════════════
