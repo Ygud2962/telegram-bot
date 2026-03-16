@@ -2718,10 +2718,16 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
         user.id, user_name, chapter, score, total_score,
         completed, game_over, failed
     )
-    # Автоматически назначаем роль при первом результате
+    logger.info(f"game_result saved: user={user.id} ({user_name}), type={event_type}, "
+                f"chapter={chapter}, score={score}, total={total_score}, completed={completed}")
+
+    # Автоматически назначаем роль
     current_role = await asyncio.to_thread(db.get_game_role, user.id)
-    if current_role == 'player' and user.id in ADMIN_IDS:
-        await asyncio.to_thread(db.set_game_role, user.id, 'admin')
+    if not current_role or current_role == 'player':
+        if user.id in ADMIN_IDS:
+            await asyncio.to_thread(db.set_game_role, user.id, 'admin')
+        else:
+            await asyncio.to_thread(db.set_game_role, user.id, 'player')
 
     if event_type == 'chapter_complete':
         ch_title = data.get('chapter_title', f'Глава {chapter}')
