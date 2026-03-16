@@ -1909,8 +1909,7 @@ function showSyncModal(mode) {
   document.body.appendChild(modal);
 }
 
-async function doSync() {
-  const syncUrl = window._syncUrl || '';
+function doSync() {
   const completed = Object.keys(state.completedChapters).length;
   const chapters  = Object.keys(state.completedChapters).map(Number);
   const data = {
@@ -1924,72 +1923,75 @@ async function doSync() {
     user_name:   getTgUserName(),
   };
 
-  // Показываем статус отправки
   const modal = document.getElementById('sync-modal');
-  const setModalContent = (icon, title, subtitle, extra='') => {
-    if (modal) modal.querySelector('div').innerHTML = `
-      <div style="font-size:40px;margin-bottom:12px">${icon}</div>
-      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">${title}</div>
-      <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:${extra?'8px':'20px'}">${subtitle}</div>
-      ${extra}`;
+  const setContent = (html) => {
+    if (modal) modal.querySelector('div').innerHTML = html;
   };
 
-  setModalContent('⏳', 'ОТПРАВКА...', 'Подождите несколько секунд');
+  if (!tg) {
+    setContent(`
+      <div style="font-size:32px;margin-bottom:12px">💡</div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:12px">ТОЛЬКО В TELEGRAM</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:20px">
+        Открой игру через бота чтобы сохранить прогресс.
+      </div>
+      <button onclick="document.getElementById('sync-modal').remove()"
+        style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+        border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">ОК</button>`);
+    return;
+  }
 
-  // Если есть sync_url — используем fetch (не закрывает приложение)
-  if (syncUrl) {
-    try {
-      const resp = await fetch(syncUrl, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data),
-        signal: AbortSignal.timeout(10000)
-      });
-      const result = await resp.json();
-      if (result.ok) {
-        // Успех — обновляем tgInitMe локально
-        if (!tgInitMe) tgInitMe = {};
-        tgInitMe.score     = state.totalScore;
-        tgInitMe.completed = completed;
-        tgInitMe.game_over = state.gameOver;
-        setModalContent('✅', 'СОХРАНЕНО!',
-          `⭐ ${state.totalScore} очков · ${completed}/6 глав`,
-          `<button onclick="document.getElementById('sync-modal').remove()"
-            style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
-            border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">
-            ЗАКРЫТЬ
-          </button>`);
-      } else {
-        throw new Error(result.error || 'Ошибка сервера');
-      }
-    } catch(e) {
-      const isTimeout = e.name === 'TimeoutError' || e.message.includes('timeout');
-      setModalContent('❌', 'НЕ УДАЛОСЬ',
-        isTimeout ? 'Сервер не отвечает. Попробуй позже.' : e.message,
-        `<button onclick="document.getElementById('sync-modal').remove()"
-          style="background:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);
-          padding:8px 24px;border-radius:4px;cursor:pointer;font-family:var(--head);
-          font-size:var(--fs-xs);width:100%">ОТМЕНА</button>`);
-    }
-  } else {
-    // Нет sync_url — fallback на sendData (закроет приложение)
-    if (!tg) {
-      setModalContent('❌', 'НЕДОСТУПНО', 'Откройте игру через Telegram-бота',
-        `<button onclick="document.getElementById('sync-modal').remove()"
-          style="background:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);
-          padding:8px 24px;border-radius:4px;cursor:pointer;font-family:var(--head);
-          font-size:var(--fs-xs);width:100%">ОК</button>`);
-      return;
-    }
-    try {
-      tg.sendData(JSON.stringify(data));
-    } catch(e) {
-      setModalContent('❌', 'ОШИБКА', e.message,
-        `<button onclick="document.getElementById('sync-modal').remove()"
-          style="background:none;border:1px solid rgba(255,255,255,.2);color:var(--muted);
-          padding:8px 24px;border-radius:4px;cursor:pointer;font-family:var(--head);
-          font-size:var(--fs-xs);width:100%">ОТМЕНА</button>`);
-    }
+  // Сохраняем данные локально — при следующем открытии бот подхватит
+  saveState();
+  try {
+    const key = 'pending_' + (getTgUserId() || 'guest');
+    localStorage.setItem(key, JSON.stringify({...data, saved_at: Date.now()}));
+  } catch(e) {}
+
+  // Показываем подтверждение с кнопкой отправки
+  setContent(`
+    <div style="font-size:40px;margin-bottom:12px">💾</div>
+    <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">ГОТОВО К ОТПРАВКЕ</div>
+    <div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:4px">
+      ⭐ ${state.totalScore} очков · ${completed}/6 глав
+    </div>
+    <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:20px;line-height:1.6">
+      Прогресс сохранён на устройстве.<br>
+      Нажми <b style="color:var(--accent)">«Отправить боту»</b> — приложение<br>
+      закроется и данные уйдут в систему.
+    </div>
+    <button onclick="doSendToBotAndClose()"
+      style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px;
+      font-family:var(--head);font-size:var(--fs-base);font-weight:700;
+      border-radius:4px;cursor:pointer;width:100%;margin-bottom:8px;letter-spacing:.06em">
+      📤 ОТПРАВИТЬ БОТУ И ЗАКРЫТЬ
+    </button>
+    <button onclick="document.getElementById('sync-modal').remove()"
+      style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);
+      padding:10px 24px;font-family:var(--head);font-size:var(--fs-xs);
+      border-radius:4px;cursor:pointer;width:100%;letter-spacing:.06em">
+      ЗАКРЫТЬ БЕЗ ОТПРАВКИ
+    </button>`);
+}
+
+function doSendToBotAndClose() {
+  const completed = Object.keys(state.completedChapters).length;
+  const chapters  = Object.keys(state.completedChapters).map(Number);
+  const data = {
+    type:        completed > 0 ? 'chapter_complete' : 'sync',
+    chapter:     chapters.length > 0 ? Math.max(...chapters) : 0,
+    score:       0,
+    total_score: state.totalScore,
+    completed:   completed,
+    game_over:   state.gameOver || false,
+    user_id:     getTgUserId(),
+    user_name:   getTgUserName(),
+  };
+  try {
+    tg.sendData(JSON.stringify(data));
+    // Приложение закроется автоматически
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
   }
 }
 
