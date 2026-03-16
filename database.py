@@ -1160,7 +1160,7 @@ def save_game_result(user_id, user_name, chapter, score, total_score,
 
 
 def register_game_player(user_id, user_name=None):
-    """Регистрирует игрока при первом открытии — НЕ перезаписывает существующий прогресс."""
+    """Регистрирует игрока при первом открытии — НИКОГДА не трогает очки/прогресс."""
     conn = None
     try:
         conn = get_connection()
@@ -1169,9 +1169,7 @@ def register_game_player(user_id, user_name=None):
             INSERT INTO game_results (user_id, user_name, chapter, score, total_score, completed, updated_at)
             VALUES (%s, %s, 0, 0, 0, 0, NOW())
             ON CONFLICT (user_id) DO UPDATE
-                SET user_name = EXCLUDED.user_name,
-                    updated_at = NOW()
-                WHERE game_results.total_score = 0
+                SET user_name = EXCLUDED.user_name
         ''', (user_id, user_name))
         conn.commit()
     except Exception as e:
