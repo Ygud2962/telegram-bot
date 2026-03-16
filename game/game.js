@@ -339,11 +339,15 @@ function saveState() {
 // ═══════════════════════════════════════════════════════
 let currentChapter = 0;
 function showScreen(id) {
-  // Показываем/скрываем нижнее меню
-  const tabScreens = ['s-chapters','s-leaderboard-tab','s-profile-tab'];
+  // Таб-экраны управляются только через switchTab — не трогаем их здесь
+  const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab'];
+  if (TAB_SCREENS.includes(id)) return; // таб-экраны через switchTab
+
   if (id === 's-chapters') {
     showBottomNav();
-  } else if (!tabScreens.includes(id)) {
+    switchTab('chapters');
+    return;
+  } else {
     hideBottomNav();
   }
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -1500,28 +1504,32 @@ function hideBottomNav() {
 
 function switchTab(tab) {
   currentTab = tab;
-  // Скрываем все таб-экраны
-  ['s-chapters','s-leaderboard-tab','s-profile-tab'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
+
+  // Скрываем ВСЕ экраны
+  document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+
   // Сбрасываем активный таб
   document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
+
+  showBottomNav();
 
   if (tab === 'chapters') {
     const el = document.getElementById('s-chapters');
     if (el) el.style.display = '';
-    document.getElementById('bn-chapters').classList.add('active');
+    const btn = document.getElementById('bn-chapters');
+    if (btn) btn.classList.add('active');
     renderChapters();
   } else if (tab === 'leaderboard') {
     const el = document.getElementById('s-leaderboard-tab');
     if (el) el.style.display = '';
-    document.getElementById('bn-leaderboard').classList.add('active');
+    const btn = document.getElementById('bn-leaderboard');
+    if (btn) btn.classList.add('active');
     renderLeaderboardTab();
   } else if (tab === 'profile') {
     const el = document.getElementById('s-profile-tab');
     if (el) el.style.display = '';
-    document.getElementById('bn-profile').classList.add('active');
+    const btn = document.getElementById('bn-profile');
+    if (btn) btn.classList.add('active');
     renderProfileTab();
   }
 }
