@@ -2,6 +2,8 @@ import re
 import logging
 import asyncio
 import json as _json
+import json
+import urllib.parse
 from datetime import datetime, timedelta
 from aiohttp import web as aiohttp_web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -919,8 +921,15 @@ async def safe_edit(query, text: str, keyboard=None, parse_mode='HTML'):
     try:
         await query.edit_message_text(text, reply_markup=markup, parse_mode=parse_mode)
     except BadRequest as e:
-        if "Message is not modified" not in str(e):
-            raise
+        err_str = str(e)
+        # Игнорируем "не изменилось" и "сообщение не найдено" — не краш
+        if any(x in err_str for x in ("Message is not modified",
+                                       "message to edit not found",
+                                       "MESSAGE_ID_INVALID")):
+            return
+        logger.warning(f"safe_edit BadRequest: {e}")
+    except Exception as e:
+        logger.warning(f"safe_edit error: {e}")
 
 
 async def safe_send(context, chat_id, text: str, keyboard=None, parse_mode='HTML'):
@@ -1325,7 +1334,6 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
     """Возвращает клавиатуру главного меню с учётом профиля."""
     role_row = []
     if teacher_name:
-        # Учитель — показываем имя (как у учеников)
         label = f"👨‍🏫 {teacher_name}"
         role_row = [btn(label, 'menu_profile')]
     elif profile:
@@ -1340,14 +1348,14 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
             label = "👤 Мой профиль"
         role_row = [btn(label, 'menu_profile')]
     else:
-        role_row = [btn("👤 Зарегистрироваться", 'menu_register')]
+        role_row = [btn("📝 Зарегистрироваться", 'menu_register')]
 
     kb = [
-        [btn("⏰ Сейчас", 'menu_now'),     btn("📚 Классы", 'menu_schedule')],
-        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
-        [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
-        [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
-        [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
+        [btn("⏰ Сейчас", 'menu_now'),      btn("📚 Расписание", 'menu_schedule')],
+        [btn("👨‍🏫 Учителя", 'menu_teacher'),  btn("🔍 Поиск", 'menu_search_teacher')],
+        [btn("🕐 Звонки", 'menu_bells'),    btn("🔄 Замены", 'menu_substitutions')],
+        [btn("📣 Новости", 'menu_news'),    btn("⭐ Избранное", 'menu_my')],
+        [btn("🤖 ИИ-помощник", 'menu_ai'),  btn("🆘 Помощь", 'menu_help')],
         [btn("🎮 Шифровальщик", 'menu_game')],
         role_row,
     ]
@@ -1644,6 +1652,7 @@ async def reg_delete_confirm(query, context):
     kb = [
         [btn("✅ Да, удалить", 'reg_delete_do')],
         [btn("❌ Отмена", 'menu_profile')],
+        [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query,
         "⚠️ <b>Удалить профиль?</b>\n\n"
@@ -2086,7 +2095,7 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 async def menu_bells(query, context):
     """Расписание звонков."""
-    kb = [[btn("↩️ Назад", 'back_to_main'), btn("🏠 Главное меню", 'back_to_main')]]
+    kb = [[btn("🏠 Главное меню", 'back_to_main')]]
     await safe_edit(query, BELLS_TEXT, kb)
 
 
@@ -2644,7 +2653,6 @@ async def menu_game(query, context):
         return
 
     from telegram import InlineKeyboardButton, WebAppInfo
-    import json, urllib.parse
 
     # Параллельные запросы к БД
     lb_rows, my_result, open_chapters = await asyncio.gather(
@@ -2652,8 +2660,6 @@ async def menu_game(query, context):
         asyncio.to_thread(db.get_game_result, user.id),
         asyncio.to_thread(db.get_open_chapters),
     )
-
-    import json, urllib.parse
     # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role)
     lb_data = [
         {'uid': str(r[0]), 'name': r[1] or 'Игрок', 'score': r[2],
@@ -2797,14 +2803,18 @@ async def game_leaderboard(query, context):
 
 async def handle_web_app_data(update: Update, context: CallbackContext):
     """Обрабатывает данные из Mini App игры."""
-    import json
+    if not update.message or not update.message.web_app_data:
+        return
     data_str = update.message.web_app_data.data
     try:
         data = json.loads(data_str)
     except Exception:
+        logger.warning(f"handle_web_app_data: bad JSON: {data_str[:100]}")
         return
 
-    user        = update.effective_user
+    user = update.effective_user
+    if not user:
+        return
     event_type  = data.get('type', '')
     # 'sync' — синхронизация из профиля, обрабатываем как chapter_complete
     if event_type == 'sync':
@@ -2910,7 +2920,7 @@ async def menu_ai(query, context):
             f"<i>Просто напишите сообщение в чат — отвечу!</i>")
     kb = [
         [btn("🗑 Очистить историю", 'ai_clear_history')],
-        [btn("↩️ Назад", 'back_to_main'), btn("🏠 Главное меню", 'back_to_main')],
+        [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
     context.user_data['awaiting_ai'] = True
@@ -2931,14 +2941,16 @@ async def menu_help(query, context):
         "<b>Часы ответа:</b> Пн–Пт 9:00–18:00\n\n"
         "<i>Укажите имя, класс и время ошибки.</i>"
     )
-    await safe_edit(query, text, [[btn("🏠 Главное меню", 'back_to_main')]])
+    await safe_edit(query, text, [
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ])
 
 
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ПОИСК УЧИТЕЛЯ
 # ══════════════════════════════════════════════════════════
 async def menu_search_teacher(query, context):
-    kb = [[btn("↩️ Назад", 'back_to_main'), btn("🏠 Главное меню", 'back_to_main')]]
+    kb = [[btn("🏠 Главное меню", 'back_to_main')]]
     await safe_edit(query,
         "🔍 <b>ПОИСК УЧИТЕЛЯ</b>\n\n"
         "Введите фамилию (или её часть):\n"
@@ -2955,7 +2967,7 @@ async def admin_enable_maintenance(query, context):
         [btn("🕐 1 час", 'maint_1h'), btn("🕐 3 часа", 'maint_3h')],
         [btn("🕐 5 часов", 'maint_5h'), btn("🌙 До завтра 08:00", 'maint_tomorrow')],
         [btn("♾️ Бессрочно", 'maint_forever')],
-        [btn("❌ Отмена", 'admin_panel')],
+        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, "🔧 <b>ВКЛЮЧЕНИЕ ТЕХРЕЖИМА</b>\nВыберите длительность:", kb)
 
@@ -3142,7 +3154,7 @@ async def admin_roles_panel(query, context):
     if not players:
         await safe_edit(query,
             "🎭 <b>РОЛИ ИГРОКОВ</b>\n\nПока никто не играл.",
-            [[btn("↩️ Назад", 'admin_game_panel')]])
+            [[btn("↩️ Назад", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
         return
 
     role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
@@ -3153,7 +3165,7 @@ async def admin_roles_panel(query, context):
         lines.append(f"{icon} <b>{name or 'Игрок'}</b> — {score} оч ({completed}/6 гл)")
         kb.append([btn(f"{icon} {name or uid} → сменить роль", f"arole_pick_{uid}")])
 
-    kb.append([btn("↩️ Управление игрой", 'admin_game_panel')])
+    kb.append([btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')])
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -3198,7 +3210,7 @@ async def admin_role_set(query, context, uid, role):
     await safe_edit(query,
         f"{'✅' if ok else '❌'} Роль игрока <b>{name}</b> {'изменена на' if ok else 'не изменена'}:\n"
         f"{role_icon.get(role, '🎮')} <b>{role}</b>",
-        [[btn("↩️ Список игроков", 'admin_roles_panel')]])
+        [[btn("↩️ Список игроков", 'admin_roles_panel'), btn("🏠 Меню", 'back_to_main')]])
 
 # ══════════════════════════════════════════════════════════
 #  АДМИН: УПРАВЛЕНИЕ ГЛАВАМИ ИГРЫ
@@ -3220,7 +3232,6 @@ async def admin_chapters_panel(query, context):
     await query.answer()
 
     chapters = await asyncio.to_thread(db.get_chapters_status)
-    import pytz
     tz = pytz.timezone('Europe/Minsk')
 
     lines = ["📖 <b>УПРАВЛЕНИЕ ГЛАВАМИ</b>\n"]
@@ -3246,7 +3257,7 @@ async def admin_chapters_panel(query, context):
             kb.append(row)
 
     kb.append([btn("🌐 Открыть ВСЕ главы", 'admin_chapters_open_all')])
-    kb.append([btn("↩️ Управление игрой",  'admin_game_panel')])
+    kb.append([btn("↩️ Управление игрой",  'admin_game_panel'), btn("🏠 Меню", 'back_to_main')])
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -3258,7 +3269,7 @@ async def admin_chapters_open_all(query, context):
     ok = await asyncio.to_thread(db.open_all_chapters)
     await safe_edit(query,
         "✅ Все 6 глав открыты для всех игроков!",
-        [[btn("↩️ Управление главами", 'admin_chapters_panel')]])
+        [[btn("↩️ Управление главами", 'admin_chapters_panel'), btn("🏠 Меню", 'back_to_main')]])
 
 
 async def handle_chapter_action(query, context, data):
@@ -3273,7 +3284,7 @@ async def handle_chapter_action(query, context, data):
         name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
         await safe_edit(query,
             f"✅ Глава {ch_id} «{name}» открыта для всех игроков!",
-            [[btn("↩️ Управление главами", 'admin_chapters_panel')]])
+            [[btn("↩️ Управление главами", 'admin_chapters_panel'), btn("🏠 Меню", 'back_to_main')]])
 
     elif data.startswith('ach_close_'):
         ch_id = int(data.replace('ach_close_', ''))
@@ -3281,7 +3292,7 @@ async def handle_chapter_action(query, context, data):
         name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
         await safe_edit(query,
             f"🔒 Глава {ch_id} «{name}» закрыта.",
-            [[btn("↩️ Управление главами", 'admin_chapters_panel')]])
+            [[btn("↩️ Управление главами", 'admin_chapters_panel'), btn("🏠 Меню", 'back_to_main')]])
 
     elif data.startswith('ach_sched_'):
         ch_id = int(data.replace('ach_sched_', ''))
@@ -3302,7 +3313,6 @@ async def handle_schedule_input(update, context, text):
     if not ch_id:
         return
     from datetime import datetime
-    import pytz
     tz = pytz.timezone('Europe/Minsk')
     try:
         dt_naive = datetime.strptime(text.strip(), '%d.%m.%Y %H:%M')
@@ -3399,10 +3409,9 @@ async def admin_beta_panel(query, context):
                          + (f" — {note}" if note else ""))
 
     kb = [
-        [btn("➕ Добавить тестера",    'admin_beta_add')],
-        [btn("➖ Убрать тестера",      'admin_beta_remove')],
+        [btn("➕ Добавить тестера",    'admin_beta_add'),    btn("➖ Убрать тестера", 'admin_beta_remove')],
         [btn("🌐 Открыть для ВСЕХ",   'admin_beta_clear_confirm')],
-        [btn("↩️ Управление игрой",   'admin_game_panel')],
+        [btn("↩️ Управление игрой",   'admin_game_panel'),  btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, "\n".join(lines), kb)
 
@@ -3468,7 +3477,7 @@ async def admin_beta_clear_do(query, context):
     await safe_edit(query,
         f"✅ Белый список очищен ({deleted} тестеров удалено).\n"
         f"Игра теперь <b>доступна всем</b>.",
-        [[btn("↩️ Управление игрой", 'admin_game_panel')]])
+        [[btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
 
 
 async def handle_beta_add_input(update, context, text):
@@ -3554,7 +3563,7 @@ async def admin_game_leaderboard(query, context):
     if not rows:
         await safe_edit(query,
             "🎮 <b>Игроков пока нет</b>\n\nНикто не начал игру.",
-            [[btn("↩️ Управление игрой", 'admin_game_panel')]])
+            [[btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
         return
 
     lines = ["🎮 <b>ИГРОКИ (нажми для управления)</b>\n"]
@@ -3567,7 +3576,7 @@ async def admin_game_leaderboard(query, context):
         lines.append(f"{m} <b>{name or 'Игрок'}</b> — {score} оч {status}")
         kb.append([btn(f"{'🚫 ' if banned else ''}{name or 'Игрок'} ({score}оч)", f'agame_view_{uid}')])
 
-    kb.append([btn("↩️ Управление игрой", 'admin_game_panel')])
+    kb.append([btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')])
     await safe_edit(query, '\n'.join(lines), kb)
 
 
@@ -3580,10 +3589,9 @@ async def admin_game_view_player(query, context, uid):
     r = await asyncio.to_thread(db.get_game_result_detail, uid)
     if not r:
         await safe_edit(query, "❌ Игрок не найден.",
-            [[btn("↩️ Список", 'admin_game_leaderboard')]]); return
+            [[btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')]]); return
 
     uid2, name, total, completed, game_over, chapter, chap_score, failed, banned, upd = r
-    import pytz
     upd_str = upd.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M') if upd else '—'
 
     status_icon = "🚫 ЗАБАНЕН" if banned else ("✅ ЗАВЕРШИЛ" if game_over else f"▶ В ПРОЦЕССЕ ({completed}/6 глав)")
@@ -3604,7 +3612,7 @@ async def admin_game_view_player(query, context, uid):
     else:
         kb.append([btn("🚫 Забанить в игре", f'agame_ban_{uid}')])
     kb.append([btn("🗑 Сбросить прогресс", f'agame_reset_{uid}')])
-    kb.append([btn("↩️ Список", 'admin_game_leaderboard')])
+    kb.append([btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')])
     await safe_edit(query, text, kb)
 
 
@@ -3621,7 +3629,7 @@ async def admin_game_reset_player(query, context, uid):
     text = (
         f"{'✅ Прогресс игрока <b>' + (name or 'Игрок') + '</b> сброшен.' if ok else '❌ Не удалось сбросить — игрок не найден.'}"
     )
-    kb = [[btn("↩️ Список", 'admin_game_leaderboard')]]
+    kb = [[btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')]]
     await safe_edit(query, text, kb)
 
 
@@ -3640,7 +3648,7 @@ async def admin_game_ban_player(query, context, uid):
     )
     kb = [
         [btn("✅ Разбанить", f'agame_unban_{uid}')],
-        [btn("↩️ Список",  'admin_game_leaderboard')],
+        [btn("↩️ Список",  'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -3687,7 +3695,7 @@ async def admin_game_reset_all_confirm(query, context):
     deleted = await asyncio.to_thread(db.reset_all_game_results)
     await safe_edit(query,
         f"✅ Сброшено игроков: <b>{deleted}</b>",
-        [[btn("↩️ Управление игрой", 'admin_game_panel')]])
+        [[btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
 
 
 # ══════════════════════════════════════════════════════════
@@ -3709,18 +3717,13 @@ async def show_admin_panel(query):
 
     kb = [
         [maint_btn],
-        [btn("📣 Опубликовать новость", 'admin_publish_news')],
-        [btn("🗑 Управление новостями", 'admin_manage_news')],
-        [btn("➕ Добавить замену (вручную)", 'admin_add_sub')],
-        [btn("📸 Добавить замены из фото", 'admin_photo_subs')],
-        [btn("📋 Все замены", 'admin_view_subs')],
-        [btn("🗑 Удалить замену (по ID)", 'admin_del_sub')],
-        [btn("🧹 Очистить все замены", 'admin_clear_subs')],
-        [btn("📊 Аналитика", 'admin_analytics')],
-        [btn("👥 Пользователи", 'admin_users')],
-        [btn("📢 Рассылка", 'admin_broadcast')],
-        [btn("🎮 Управление игрой", 'admin_game_panel')],
-        [btn("🏠 Главное меню", 'back_to_main')],
+        [btn("📣 Новость",        'admin_publish_news'),   btn("🗑 Новости",     'admin_manage_news')],
+        [btn("➕ Замена вручную", 'admin_add_sub'),         btn("📸 Замена фото", 'admin_photo_subs')],
+        [btn("📋 Все замены",     'admin_view_subs'),       btn("🧹 Очистить",    'admin_clear_subs')],
+        [btn("🗑 Удалить замену (ID)", 'admin_del_sub')],
+        [btn("📊 Аналитика",     'admin_analytics'),        btn("👥 Пользователи",'admin_users')],
+        [btn("📢 Рассылка",      'admin_broadcast'),        btn("🎮 Игра",         'admin_game_panel')],
+        [btn("🏠 Главное меню",  'back_to_main')],
     ]
     await safe_edit(query, "👑 <b>АДМИН-ПАНЕЛЬ</b>\nВыберите действие:", kb)
 
@@ -3735,14 +3738,16 @@ async def admin_view_subs(query, context):
             lines.append(f"ID:<code>{s[0]}</code> | {s[1]} {s[8].upper()} ур.{s[3]}")
             lines.append(f"   {s[6]} → {s[7]}  ({s[4]}→{s[5]})\n")
         text = "\n".join(lines)
-    kb = [[btn("↩️ Админка", 'admin_panel')]]
+    kb = [
+        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')],
+    ]
     await safe_edit(query, text, kb)
 
 
 async def admin_manage_news(query, context):
     news_list = await asyncio.to_thread(db.get_recent_news, 15)
     if not news_list:
-        kb = [[btn("↩️ Админка", 'admin_panel')]]
+        kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
         await safe_edit(query, "📭 Новостей нет.", kb)
         return
 
@@ -3758,7 +3763,7 @@ async def admin_manage_news(query, context):
             btn(f"✏️ #{nid}", f'edit_news_{nid}'),
             btn(f"🗑 #{nid}", f'del_news_{nid}'),
         ])
-    kb.append([btn("↩️ Админка", 'admin_panel')])
+    kb.append([btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')])
     await safe_edit(query, text, kb)
 
 
@@ -3800,7 +3805,7 @@ async def admin_do_clear_subs(query, context):
     subs = await asyncio.to_thread(db.get_all_substitutions)
     cnt = len(subs)
     await asyncio.to_thread(db.clear_all_substitutions)
-    kb = [[btn("↩️ Админка", 'admin_panel')]]
+    kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
     await safe_edit(query, f"✅ Удалено замен: {cnt}", kb)
 
 
@@ -3824,7 +3829,7 @@ async def show_analytics(query, context):
     kb = [
         [btn("🔄 Обновить", 'admin_analytics')],
         [btn("👥 Список пользователей", 'admin_users')],
-        [btn("↩️ Админка", 'admin_panel')],
+        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -3841,7 +3846,7 @@ async def show_users_stats(query, context):
     if total > 20:
         lines.append(f"\n<i>Показаны первые 20 из {total}</i>")
 
-    kb = [[btn("↩️ Админка", 'admin_panel')]]
+    kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -3923,6 +3928,8 @@ async def do_broadcast(query, context):
 # ══════════════════════════════════════════════════════════
 async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
+    if not query or not query.data:
+        return
     if not isinstance(context.user_data, dict):
         context.user_data = {}
     user = query.from_user
@@ -4329,6 +4336,8 @@ async def handle_message(update: Update, context: CallbackContext):
     if not update.message or not update.message.text:
         return
     user = update.effective_user
+    if not user:
+        return
     asyncio.create_task(asyncio.to_thread(
         db.update_user_and_log, user.id, 'message', None,
         user.username, user.first_name, user.last_name, user.language_code
@@ -4385,7 +4394,7 @@ async def handle_message(update: Update, context: CallbackContext):
         try:
             sub_id = int(text)
             await asyncio.to_thread(db.delete_substitution, sub_id)
-            kb = [[btn("↩️ Админка", 'admin_panel')]]
+            kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
             await update.message.reply_text(
                 f"✅ Замена ID {sub_id} удалена.",
                 reply_markup=InlineKeyboardMarkup(kb)
