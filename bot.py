@@ -2193,7 +2193,7 @@ async def menu_class_days(query, context):
     context.user_data['sel_class'] = cls
     kb = [[btn(day, f'day_{day.lower()}')] for day in DAYS_OF_WEEK]
     kb.append([btn("📅 Вся неделя", f'week_{cls}')])
-    kb.append([btn("↩️ К классам", 'menu_schedule'), btn("🏠 Меню", 'back_to_main')])
+    kb.append([btn("↩️ К классам", 'menu_schedule'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query,
         f"📚 <b>{cls.upper()}</b> — выберите день или всю неделю:", kb)
 
@@ -3154,7 +3154,7 @@ async def admin_roles_panel(query, context):
     if not players:
         await safe_edit(query,
             "🎭 <b>РОЛИ ИГРОКОВ</b>\n\nПока никто не играл.",
-            [[btn("↩️ Назад", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
+            [[btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Главное меню", 'back_to_main')]])
         return
 
     role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
@@ -3165,7 +3165,7 @@ async def admin_roles_panel(query, context):
         lines.append(f"{icon} <b>{name or 'Игрок'}</b> — {score} оч ({completed}/6 гл)")
         kb.append([btn(f"{icon} {name or uid} → сменить роль", f"arole_pick_{uid}")])
 
-    kb.append([btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')])
+    kb.append([btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -3257,7 +3257,7 @@ async def admin_chapters_panel(query, context):
             kb.append(row)
 
     kb.append([btn("🌐 Открыть ВСЕ главы", 'admin_chapters_open_all')])
-    kb.append([btn("↩️ Управление игрой",  'admin_game_panel'), btn("🏠 Меню", 'back_to_main')])
+    kb.append([btn("↩️ Управление игрой",  'admin_game_panel'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -3477,7 +3477,7 @@ async def admin_beta_clear_do(query, context):
     await safe_edit(query,
         f"✅ Белый список очищен ({deleted} тестеров удалено).\n"
         f"Игра теперь <b>доступна всем</b>.",
-        [[btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
+        [[btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
 
 
 async def handle_beta_add_input(update, context, text):
@@ -3548,7 +3548,7 @@ async def admin_game_panel(query, context):
         [btn("📖 Управление главами",    'admin_chapters_panel')],
         [btn("🎭 Роли игроков",          'admin_roles_panel')],
         [btn("🗑 Сбросить ВСЕХ",       'admin_game_reset_all')],
-        [btn("↩️ Админка",             'admin_panel')],
+        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -3563,7 +3563,7 @@ async def admin_game_leaderboard(query, context):
     if not rows:
         await safe_edit(query,
             "🎮 <b>Игроков пока нет</b>\n\nНикто не начал игру.",
-            [[btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
+            [[btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
         return
 
     lines = ["🎮 <b>ИГРОКИ (нажми для управления)</b>\n"]
@@ -3576,7 +3576,7 @@ async def admin_game_leaderboard(query, context):
         lines.append(f"{m} <b>{name or 'Игрок'}</b> — {score} оч {status}")
         kb.append([btn(f"{'🚫 ' if banned else ''}{name or 'Игрок'} ({score}оч)", f'agame_view_{uid}')])
 
-    kb.append([btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')])
+    kb.append([btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, '\n'.join(lines), kb)
 
 
@@ -3612,7 +3612,7 @@ async def admin_game_view_player(query, context, uid):
     else:
         kb.append([btn("🚫 Забанить в игре", f'agame_ban_{uid}')])
     kb.append([btn("🗑 Сбросить прогресс", f'agame_reset_{uid}')])
-    kb.append([btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')])
+    kb.append([btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, text, kb)
 
 
@@ -3695,7 +3695,7 @@ async def admin_game_reset_all_confirm(query, context):
     deleted = await asyncio.to_thread(db.reset_all_game_results)
     await safe_edit(query,
         f"✅ Сброшено игроков: <b>{deleted}</b>",
-        [[btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
+        [[btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
 
 
 # ══════════════════════════════════════════════════════════
@@ -3763,7 +3763,7 @@ async def admin_manage_news(query, context):
             btn(f"✏️ #{nid}", f'edit_news_{nid}'),
             btn(f"🗑 #{nid}", f'del_news_{nid}'),
         ])
-    kb.append([btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')])
+    kb.append([btn("↩️ Админка", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, text, kb)
 
 
