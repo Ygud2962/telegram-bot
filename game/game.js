@@ -254,8 +254,26 @@ try {
         tgInitMe = parsed.me || null;
         if (parsed.open) tgOpenChapters = new Set(parsed.open);
         if (parsed.sync_url) window._syncUrl = parsed.sync_url;
-      } catch(e) {}
+      } catch(e) { console.warn('startParam parse error:', e); }
     }
+
+    // Фоллбэк: читаем из URL query параметров (если start_param пустой)
+    if (!window._syncUrl) {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const rawParam = urlParams.get('tgWebAppStartParam');
+        if (rawParam) {
+          const parsed2 = JSON.parse(decodeURIComponent(rawParam));
+          if (parsed2.sync_url) window._syncUrl = parsed2.sync_url;
+          if (!tgInitLB.length && parsed2.lb) tgInitLB = parsed2.lb;
+          if (!tgInitMe && parsed2.me) tgInitMe = parsed2.me;
+          if (!tgOpenChapters && parsed2.open) tgOpenChapters = new Set(parsed2.open);
+        }
+      } catch(e) { console.warn('URL param parse error:', e); }
+    }
+
+    console.log('🔗 sync_url:', window._syncUrl || 'НЕ ПОЛУЧЕН');
+    console.log('👤 user:', tgUser?.id, tgUser?.first_name);
   }
 } catch(e) {}
 
@@ -274,6 +292,9 @@ async function sendResultToBot(data) {
   data.user_name  = tgUser
     ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim()
     : 'Игрок';
+
+  console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score,
+    'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО', 'userId:', data.user_id);
 
   // Способ 1: HTTP POST к /game_sync (основной — работает всегда)
   const syncUrl = window._syncUrl;
