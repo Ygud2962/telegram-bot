@@ -275,32 +275,71 @@ async function sendResultToBot(data) {
     ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim()
     : 'Игрок';
 
-  // Способ 1: tg.sendData (работает только когда открыто через кнопку бота)
-  if (tg && tg.sendData) {
+  // Способ 1: HTTP POST к /game_sync (основной — работает всегда)
+  const syncUrl = window._syncUrl;
+  if (syncUrl && data.user_id) {
+    try {
+      const resp = await fetch(syncUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      });
+      if (resp.ok) {
+        console.log('✅ game_sync: HTTP POST OK');
+        return; // успешно
+      }
+      console.warn('game_sync HTTP error:', resp.status);
+    } catch(e) {
+      console.warn('game_sync fetch error:', e);
+    }
+  }
+
+  // Способ 2: tg.sendData (работает только из KeyboardButton, НЕ из InlineKeyboardButton)
+  if (tg && tg.sendData && tg.initData) {
     try {
       tg.sendData(JSON.stringify(data));
-      return; // успешно
+      return;
     } catch(e) {
       console.warn('tg.sendData failed:', e);
     }
   }
 
-  // Способ 2: localStorage — бот прочитает при следующем открытии
+  // Способ 3: localStorage — бот прочитает при следующем открытии
   try {
     const pending = JSON.parse(localStorage.getItem('pending_results') || '[]');
     pending.push({ ...data, ts: Date.now() });
-    // Храним не более 10 последних
     localStorage.setItem('pending_results', JSON.stringify(pending.slice(-10)));
   } catch(e) {}
 }
 
-// Отправляем накопленные результаты при открытии через бот
-function flushPendingResults() {
+// Отправляем накопленные результаты при открытии
+async function flushPendingResults() {
+  const syncUrl = window._syncUrl;
+  // Пробуем HTTP POST для ранее не отправленных
+  if (syncUrl && getTgUserId()) {
+    try {
+      const pending = JSON.parse(localStorage.getItem('pending_results') || '[]');
+      if (!pending.length) return;
+      const last = pending[pending.length - 1];
+      last.user_id = getTgUserId();
+      last.user_name = getTgUserName();
+      const resp = await fetch(syncUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(last)
+      });
+      if (resp.ok) {
+        localStorage.removeItem('pending_results');
+        console.log('✅ flushPendingResults: HTTP POST OK');
+        return;
+      }
+    } catch(e) {}
+  }
+  // Фоллбэк: sendData
   if (!tg || !tg.sendData) return;
   try {
     const pending = JSON.parse(localStorage.getItem('pending_results') || '[]');
     if (!pending.length) return;
-    // Берём самый актуальный результат
     const last = pending[pending.length - 1];
     tg.sendData(JSON.stringify(last));
     localStorage.removeItem('pending_results');
@@ -1941,15 +1980,56 @@ function doSync() {
     return;
   }
 
-  // Сохраняем данные локально — при следующем открытии бот подхватит
   saveState();
   try {
     const key = 'pending_' + (getTgUserId() || 'guest');
     localStorage.setItem(key, JSON.stringify({...data, saved_at: Date.now()}));
   } catch(e) {}
 
-  // Показываем подтверждение с кнопкой отправки
-  setContent(`
+  // Пробуем HTTP POST сначала
+  const syncUrl = window._syncUrl;
+  if (syncUrl && data.user_id) {
+    setContent(`
+      <div style="font-size:40px;margin-bottom:12px">📡</div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:12px">ОТПРАВКА...</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted)">Подождите...</div>`);
+
+    fetch(syncUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    }).then(resp => {
+      if (resp.ok) {
+        setContent(`
+          <div style="font-size:40px;margin-bottom:12px">✅</div>
+          <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:12px">СОХРАНЕНО!</div>
+          <div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:4px">
+            ⭐ ${state.totalScore} очков · ${completed}/6 глав
+          </div>
+          <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:20px">
+            Прогресс отправлен в базу бота.<br>Можно продолжить играть!
+          </div>
+          <button onclick="document.getElementById('sync-modal').remove()"
+            style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+            border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">ОТЛИЧНО!</button>`);
+      } else {
+        throw new Error('HTTP ' + resp.status);
+      }
+    }).catch(e => {
+      // HTTP не сработал — предлагаем sendData (закроет приложение)
+      showSendDataFallback(data, completed);
+    });
+    return;
+  }
+
+  // Нет sync_url — показываем sendData вариант
+  showSendDataFallback(data, completed);
+}
+
+function showSendDataFallback(data, completed) {
+  const modal = document.getElementById('sync-modal');
+  if (!modal) return;
+  modal.querySelector('div').innerHTML = `
     <div style="font-size:40px;margin-bottom:12px">💾</div>
     <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">ГОТОВО К ОТПРАВКЕ</div>
     <div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:4px">
@@ -1971,7 +2051,7 @@ function doSync() {
       padding:10px 24px;font-family:var(--head);font-size:var(--fs-xs);
       border-radius:4px;cursor:pointer;width:100%;letter-spacing:.06em">
       ЗАКРЫТЬ БЕЗ ОТПРАВКИ
-    </button>`);
+    </button>`;
 }
 
 function doSendToBotAndClose() {
@@ -1987,26 +2067,6 @@ function doSendToBotAndClose() {
         border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">ОК</button>`;
   };
 
-  // Проверка 1: есть ли tg объект
-  if (!tg) {
-    showMsg('⚠️', 'НЕТ TELEGRAM', 'tg объект недоступен. Открой игру через кнопку в боте.');
-    return;
-  }
-
-  // Проверка 2: есть ли sendData
-  if (typeof tg.sendData !== 'function') {
-    showMsg('⚠️', 'НЕТ sendData', 'Метод tg.sendData недоступен. Версия: ' + (tg.version || '?'));
-    return;
-  }
-
-  // Проверка 3: есть ли initData (признак что открыто через бота)
-  if (!tg.initData) {
-    showMsg('⚠️', 'НЕТ initData',
-      'Игра открыта не через кнопку бота — sendData недоступен.<br>' +
-      'Нажми кнопку 🎮 ОТКРЫТЬ ИГРУ прямо в чате с ботом.');
-    return;
-  }
-
   const completed = Object.keys(state.completedChapters).length;
   const chapters  = Object.keys(state.completedChapters).map(Number);
   const data = {
@@ -2020,11 +2080,50 @@ function doSendToBotAndClose() {
     user_name:   getTgUserName(),
   };
 
+  // Пробуем HTTP POST сначала
+  const syncUrl = window._syncUrl;
+  if (syncUrl && data.user_id) {
+    fetch(syncUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    }).then(resp => {
+      if (resp.ok) {
+        showMsg('✅', 'СОХРАНЕНО!',
+          `⭐ ${state.totalScore} очков · ${completed}/6 глав<br>Прогресс отправлен!`);
+      } else {
+        throw new Error('HTTP ' + resp.status);
+      }
+    }).catch(e => {
+      // HTTP не сработал — пробуем sendData
+      _trySendData(data, showMsg);
+    });
+    return;
+  }
+
+  // Нет sync_url — пробуем sendData
+  _trySendData(data, showMsg);
+}
+
+function _trySendData(data, showMsg) {
+  if (!tg) {
+    showMsg('⚠️', 'НЕТ TELEGRAM', 'tg объект недоступен. Открой игру через кнопку в боте.');
+    return;
+  }
+  if (typeof tg.sendData !== 'function') {
+    showMsg('⚠️', 'НЕТ sendData', 'Метод tg.sendData недоступен. Версия: ' + (tg.version || '?'));
+    return;
+  }
+  if (!tg.initData) {
+    showMsg('⚠️', 'НЕТ initData',
+      'Игра открыта не через кнопку бота — sendData недоступен.<br>' +
+      'Нажми кнопку 🎮 ОТКРЫТЬ ИГРУ прямо в чате с ботом.');
+    return;
+  }
   try {
     tg.sendData(JSON.stringify(data));
-    // Telegram автоматически закроет Mini App и пришлёт данные боту
   } catch(e) {
-    showMsg('❌', 'ОШИБКА: ' + e.name, e.message + '<br><br>Score: ' + state.totalScore + ', completed: ' + completed);
+    showMsg('❌', 'ОШИБКА: ' + e.name, e.message);
   }
 }
 
