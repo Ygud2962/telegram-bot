@@ -1872,9 +1872,7 @@ function renderLeaderboardTab() {
     const done   = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
     const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
     const roleIcon  = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
-    const roleTag   = e.role === 'admin' ? ' <span style="font-size:9px;color:var(--accent);opacity:.7;letter-spacing:.04em">(АДМИН)</span>'
-                    : e.role === 'tester' ? ' <span style="font-size:9px;color:var(--muted);letter-spacing:.04em">(ТЕСТ)</span>'
-                    : '';
+    const roleTag   = '';
     const roleLabel = e.role === 'admin' ? 'Администратор' : e.role === 'tester' ? 'Тестировщик' : '';
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
         border-bottom:1px solid rgba(255,255,255,.04);
@@ -1891,7 +1889,7 @@ function renderLeaderboardTab() {
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em;display:flex;gap:6px">
           <span>${done}</span>
-          ${roleLabel ? `<span style="color:rgba(255,224,51,.4)">${roleLabel}</span>` : ''}
+
         </div>
       </div>
       <div style="font-family:var(--head);font-size:var(--fs-xl);
@@ -1971,7 +1969,6 @@ function renderProfileTab() {
       <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
       ${roleDisplay ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);
         color:var(--accent);letter-spacing:.06em">${roleDisplay}</div>` : ''}
-      ${roleBadge ? `<div style="margin-top:6px;font-size:var(--fs-sm);color:var(--accent);font-weight:700;letter-spacing:.06em">${roleBadge}</div>` : ''}
       <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
         background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
         border-radius:20px;padding:5px 14px">
