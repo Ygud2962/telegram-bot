@@ -1928,7 +1928,7 @@ function renderAboutTab() {
           <div style="display:flex;gap:12px;align-items:center">
             <div style="font-size:28px">👨‍🎓</div>
             <div>
-              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">Гудь Юрий Петрович</div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">Гуд Юрий Петрович</div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px">Разработчик · Учитель информатики</div>
             </div>
           </div>
