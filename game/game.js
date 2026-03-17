@@ -2041,7 +2041,7 @@ function renderLeaderboardTab() {
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em;display:flex;gap:6px">
           <span>${done}</span>
-
+          ${roleLabel ? `<span style="color:rgba(255,224,51,.25)">${roleLabel}</span>` : ''}
         </div>
       </div>
       <div style="font-family:var(--head);font-size:var(--fs-xl);
