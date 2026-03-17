@@ -513,18 +513,14 @@ function mergeBotLeaderboard() {
     const dbCompleted = tgInitMe.completed || 0;
     const dbGameOver  = tgInitMe.game_over || false;
 
-    // Берём максимум из БД и localStorage (защита от потери прогресса)
-    if (dbScore >= state.totalScore) {
-      state.totalScore = dbScore;
-      // Восстанавливаем пройденные главы из БД
-      if (dbCompleted > Object.keys(state.completedChapters).length) {
-        state.completedChapters = {};
-        for (let i = 1; i <= dbCompleted; i++) {
-          state.completedChapters[i] = true;
-        }
-      }
-      if (dbGameOver) state.gameOver = true;
+    // БД всегда приоритетнее localStorage.
+    // Если админ сбросил прогресс — dbScore будет 0 и мы очищаем state.
+    state.totalScore = dbScore;
+    state.completedChapters = {};
+    for (let i = 1; i <= dbCompleted; i++) {
+      state.completedChapters[i] = true;
     }
+    state.gameOver = dbGameOver;
     saveState();
   }
 }
