@@ -1991,7 +1991,7 @@ function renderLeaderboardTab() {
       <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">РЕЙТИНГ</div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} участников</div>
     </div>
-    <button onclick="switchTab('leaderboard')"
+    <button onclick="renderLeaderboardTab()"
       style="background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
       color:var(--accent);padding:6px 12px;border-radius:4px;font-family:var(--head);
       font-size:var(--fs-xs);cursor:pointer;letter-spacing:.06em">🔄 ОБНОВИТЬ</button>
