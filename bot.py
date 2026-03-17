@@ -2654,12 +2654,24 @@ async def menu_game(query, context):
 
     from telegram import InlineKeyboardButton, WebAppInfo
 
-    # Параллельные запросы к БД
-    lb_rows, my_result, open_chapters = await asyncio.gather(
+    # Загружаем leaderboard и открытые главы параллельно
+    lb_rows, open_chapters = await asyncio.gather(
         asyncio.to_thread(db.get_game_leaderboard, 20),
-        asyncio.to_thread(db.get_game_result, user.id),
         asyncio.to_thread(db.get_open_chapters),
     )
+
+    # Регистрируем при первом открытии + назначаем роль
+    reg_task = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
+    role_task = asyncio.to_thread(db.get_game_role, user.id)
+    _, current_role = await asyncio.gather(reg_task, role_task)
+    if not current_role:
+        role = 'admin' if user.id in ADMIN_IDS else 'player'
+        await asyncio.to_thread(db.set_game_role, user.id, role)
+        current_role = role
+
+    # Читаем свежие данные игрока ПОСЛЕ регистрации — включая banned
+    my_result = await asyncio.to_thread(db.get_game_result, user.id)
+
     # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role)
     lb_data = [
         {'uid': str(r[0]), 'name': r[1] or 'Игрок', 'score': r[2],
@@ -2668,11 +2680,12 @@ async def menu_game(query, context):
     ]
     my_data = None
     if my_result:
-        my_role = await asyncio.to_thread(db.get_game_role, user.id)
+        # my_result: (uid, name, total_score, completed, game_over, updated_at, banned)
         my_data = {
             'uid': str(my_result[0]), 'name': my_result[1] or 'Игрок',
             'score': my_result[2], 'completed': my_result[3],
-            'game_over': my_result[4], 'role': my_role or 'player'
+            'game_over': my_result[4], 'role': current_role or 'player',
+            'banned': bool(my_result[6]) if len(my_result) > 6 else False,
         }
 
     # Формируем данные для передачи в игру
@@ -2698,21 +2711,9 @@ async def menu_game(query, context):
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2048 else GAME_URL
     logger.info(f"game payload size: {len(payload)} chars, sync_url: {sync_url_val[:50]}")
 
-    # Регистрируем при первом открытии + назначаем роль (параллельно)
-    reg_task = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
-    role_task = asyncio.to_thread(db.get_game_role, user.id)
-    _, current_role = await asyncio.gather(reg_task, role_task)
-    if not current_role:
-        role = 'admin' if user.id in ADMIN_IDS else 'player'
-        await asyncio.to_thread(db.set_game_role, user.id, role)
-        current_role = role
-
-    # Перечитываем my_result — берём свежие данные из БД
-    my_result = await asyncio.to_thread(db.get_game_result, user.id)
-
     # Формируем описание результата игрока
     if my_result:
-        uid, uname, total, comp, game_over, updated = my_result
+        uid, uname, total, comp, game_over, updated, *_ = my_result
         updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y') if updated else '—'
         pct = round((comp / 6) * 100)
         status = " ✅ <b>ВСЕ ГЛАВЫ!</b>" if game_over else ""
@@ -4900,9 +4901,15 @@ async def handle_game_sync(request):
         if not current_role:
             role = 'admin' if user_id in ADMIN_IDS else 'player'
             await asyncio.to_thread(db.set_game_role, user_id, role)
-        logger.info(f"game_sync OK: user={user_id}, score={total_score}, completed={completed}")
+        # Проверяем бан — игра должна знать об этом сразу
+        result = await asyncio.to_thread(db.get_game_result, user_id)
+        banned = bool(result[6]) if result and len(result) > 6 else False
+        db_score = result[2] if result else 0
+        db_completed = result[3] if result else 0
+        logger.info(f"game_sync OK: user={user_id}, score={total_score}, completed={completed}, banned={banned}")
         return aiohttp_web.json_response(
-            {'ok': True, 'saved': {'score': total_score, 'completed': completed}},
+            {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
+             'banned': banned, 'db_score': db_score, 'db_completed': db_completed},
             headers=headers)
     except Exception as e:
         logger.error(f"game_sync error: {e}")

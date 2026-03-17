@@ -306,7 +306,36 @@ async function sendResultToBot(data) {
         body: JSON.stringify(data)
       });
       if (resp.ok) {
-        console.log('✅ game_sync: HTTP POST OK');
+        const result = await resp.json().catch(() => ({}));
+        console.log('✅ game_sync: HTTP POST OK', result);
+
+        // Если игрок забанен — показываем заглушку немедленно
+        if (result.banned) {
+          document.body.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
+              <div style="font-size:64px;margin-bottom:16px">🚫</div>
+              <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
+              <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
+                Ваш аккаунт заблокирован администратором.<br><br>
+                По вопросам обратитесь к администратору бота.
+              </div>
+            </div>`;
+          try { localStorage.removeItem(storageKey()); } catch(e) {}
+          return;
+        }
+
+        // Если сервер вернул score меньше нашего — был сброс, обнуляем
+        if (typeof result.db_score === 'number' && result.db_score < state.totalScore) {
+          state.totalScore = result.db_score;
+          state.completedChapters = {};
+          state.chapterScores = {};
+          state.gameOver = false;
+          try { localStorage.removeItem(storageKey()); } catch(e) {}
+          saveState();
+          showToast('🔄 Прогресс обновлён администратором');
+        }
+
         _lastSyncedScore = data.total_score;
         _lastSyncedCompleted = data.completed;
         showToast('✅ Прогресс сохранён');
@@ -512,6 +541,22 @@ function mergeBotLeaderboard() {
     const dbScore     = tgInitMe.score     || 0;
     const dbCompleted = tgInitMe.completed || 0;
     const dbGameOver  = tgInitMe.game_over || false;
+    const dbBanned    = tgInitMe.banned    || false;
+
+    // Проверяем бан — заблокированный игрок видит заглушку
+    if (dbBanned) {
+      document.body.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+          height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
+          <div style="font-size:64px;margin-bottom:16px">🚫</div>
+          <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
+          <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
+            Ваш аккаунт заблокирован администратором.<br><br>
+            По вопросам обратитесь к администратору бота.
+          </div>
+        </div>`;
+      return;
+    }
 
     // БД всегда приоритетнее localStorage.
     // Если админ сбросил прогресс — dbScore будет 0 и мы очищаем state.
@@ -520,7 +565,10 @@ function mergeBotLeaderboard() {
     for (let i = 1; i <= dbCompleted; i++) {
       state.completedChapters[i] = true;
     }
+    state.chapterScores = {};
     state.gameOver = dbGameOver;
+    // Очищаем localStorage чтобы старый прогресс не всплыл при перезапуске
+    try { localStorage.removeItem(storageKey()); } catch(e) {}
     saveState();
   }
 }
@@ -1871,13 +1919,10 @@ function renderProfileTab() {
   if (!el) return;
   const uid = getTgUserId();
   const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-  // Берём максимум из localStorage и данных БД (tgInitMe)
+  // БД всегда приоритетнее — берём данные только из state (уже синхронизирован с БД)
   const dbCompleted = tgInitMe?.completed || 0;
   const dbScore     = tgInitMe?.score     || 0;
-  const localCompleted = Object.keys(state.completedChapters).length;
-  const completed = Math.max(localCompleted, dbCompleted);
-  // Обновляем state если БД даёт больше
-  if (dbScore > state.totalScore) state.totalScore = dbScore;
+  const completed   = Object.keys(state.completedChapters).length;
   const pct = Math.round((completed / CHAPTERS.length) * 100);
 
   // Роль из БД (передаётся через tgInitMe)

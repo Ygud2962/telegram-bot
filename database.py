@@ -1256,7 +1256,8 @@ def get_game_result(user_id):
         conn = get_connection()
         cur = conn.cursor()
         cur.execute('''
-            SELECT user_id, user_name, total_score, completed, game_over, updated_at
+            SELECT user_id, user_name, total_score, completed, game_over, updated_at,
+                   COALESCE(banned, FALSE) as banned
             FROM game_results
             WHERE user_id = %s
         ''', (user_id,))
@@ -1269,15 +1270,22 @@ def get_game_result(user_id):
 
 
 def reset_game_result(user_id):
-    """Сбрасывает прогресс конкретного игрока."""
+    """Сбрасывает прогресс конкретного игрока (обнуляет, не удаляет)."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('DELETE FROM game_results WHERE user_id = %s', (user_id,))
-        deleted = cur.rowcount
+        # Обнуляем прогресс но сохраняем запись — иначе игра не получит
+        # сигнал о сбросе и возьмёт старый прогресс из localStorage
+        cur.execute("""
+            UPDATE game_results
+            SET chapter=0, score=0, total_score=0, completed=0,
+                game_over=FALSE, failed=FALSE, updated_at=NOW()
+            WHERE user_id=%s
+        """, (user_id,))
+        updated = cur.rowcount
         conn.commit()
-        return deleted > 0
+        return updated > 0
     except Exception as e:
         logger.error(f"reset_game_result error {user_id}: {e}")
         _safe_rollback(conn)
@@ -1287,15 +1295,19 @@ def reset_game_result(user_id):
 
 
 def reset_all_game_results():
-    """Сбрасывает прогресс всех игроков."""
+    """Сбрасывает прогресс всех игроков (обнуляет, не удаляет)."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('DELETE FROM game_results')
-        deleted = cur.rowcount
+        cur.execute("""
+            UPDATE game_results
+            SET chapter=0, score=0, total_score=0, completed=0,
+                game_over=FALSE, failed=FALSE, updated_at=NOW()
+        """)
+        updated = cur.rowcount
         conn.commit()
-        return deleted
+        return updated
     except Exception as e:
         logger.error(f"reset_all_game_results error: {e}")
         _safe_rollback(conn)
