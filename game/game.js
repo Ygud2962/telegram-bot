@@ -666,6 +666,7 @@ function renderChapters() {
   // Обновляем шапку
   const total = CHAPTERS.length;
   const pct = Math.round((completedCount / total) * 100);
+  // Старые id (на случай если есть)
   const pbEl = document.getElementById('ch-progress-bar');
   if (pbEl) pbEl.style.width = pct + '%';
   const clEl = document.getElementById('stat-completed-label');
@@ -675,6 +676,16 @@ function renderChapters() {
   const plEl = document.getElementById('stat-players-label');
   const plCount = tgInitLB.length || state.leaderboard.length;
   if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
+  // Новые id
+  const newPbEl = document.getElementById('chapters-progress-bar');
+  if (newPbEl) newPbEl.style.width = pct + '%';
+  const newPlEl = document.getElementById('chapters-progress-label');
+  if (newPlEl) newPlEl.textContent = completedCount + ' / ' + total + ' глав';
+  const newScEl = document.getElementById('chapters-score-display');
+  if (newScEl) newScEl.textContent = state.totalScore;
+  const newPlayersEl = document.getElementById('chapters-players-label');
+  const newPlCount = tgInitLB.length || state.leaderboard.length;
+  if (newPlayersEl && newPlCount) newPlayersEl.textContent = '👥 ' + newPlCount + ' игроков';
 
   // Если игра окончена — показываем кнопку финала
   if (state.gameOver) {
