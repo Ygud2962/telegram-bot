@@ -1807,11 +1807,13 @@ function switchTab(tab) {
     'chapters':    's-chapters',
     'leaderboard': 's-leaderboard-tab',
     'profile':     's-profile-tab',
+    'about':       's-about-tab',
   };
   const tabMap = {
     'chapters':    'bn-chapters',
     'leaderboard': 'bn-leaderboard',
     'profile':     'bn-profile',
+    'about':       'bn-about',
   };
 
   const screenEl = document.getElementById(screenMap[tab]);
@@ -1822,6 +1824,156 @@ function switchTab(tab) {
   if (tab === 'chapters')    renderChapters();
   if (tab === 'leaderboard') renderLeaderboardTab();
   if (tab === 'profile')     renderProfileTab();
+  if (tab === 'about')       renderAboutTab();
+}
+
+
+function renderAboutTab() {
+  const el = document.getElementById('about-tab-content');
+  if (!el) return;
+
+  el.innerHTML = `
+    <!-- ШАПКА -->
+    <div style="background:linear-gradient(180deg,#1a1508 0%,#0d0b08 100%);
+      padding:32px 20px 24px;text-align:center;border-bottom:1px solid rgba(255,224,51,.1)">
+      <div style="font-size:56px;margin-bottom:12px;
+        filter:drop-shadow(0 0 24px rgba(255,224,51,.5))">🔐</div>
+      <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);
+        letter-spacing:.08em;margin-bottom:4px">ШИФРОВАЛЬЩИК</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);letter-spacing:.06em">
+        ВЕРСИЯ 1.0  ·  2025
+      </div>
+    </div>
+
+    <!-- О ИГРЕ -->
+    <div style="padding:20px 16px">
+
+      <div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:10px">📖 О ИГРЕ</div>
+        <div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7">
+          <b style="color:#fdfaf0">Шифровальщик</b> — образовательная игра о событиях
+          Великой Отечественной войны на территории Беларуси.<br><br>
+          Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций
+          и приблизьте День Победы. Каждая глава основана на реальных исторических событиях.
+        </div>
+      </div>
+
+      <!-- КАК ИГРАТЬ -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${[
+            ['🗺', 'Выберите операцию', 'Откройте главу и прочитайте брифинг'],
+            ['🔐', 'Расшифруйте послание', '6 типов шифров: Цезарь, Морзе, Атбаш, Числовой, Анаграмма, Математика'],
+            ['❤️', '5 жизней на главу', 'Каждая ошибка — минус жизнь. Берегите их!'],
+            ['⚡', 'Скорость = очки', 'Чем быстрее ответ — тем больше очков'],
+            ['🏆', 'Таблица лидеров', 'Соревнуйтесь с другими учениками школы'],
+          ].map(([icon, title, desc]) => `
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="font-size:22px;min-width:32px;text-align:center">${icon}</div>
+              <div>
+                <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">${title}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5">${desc}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- ГЛАВЫ -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">📚 ОПЕРАЦИИ</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${[
+            ['I',   '🏙', 'Подполье Минска',     'Минск · Июль 1942'],
+            ['II',  '💣', 'Рельсовая война',      'Витебск · Август 1943'],
+            ['III', '⚔️', 'Операция Багратион',   'Беларусь · Июнь 1944'],
+            ['IV',  '🚩', 'Последний шифр',       'Берлин · Май 1945'],
+            ['V',   '🌍', 'Знай свою землю',      'Беларусь · История'],
+            ['VI',  '🎖', 'Дорога к Победе',      'Беларусь · 1941–1945'],
+          ].map(([num, icon, title, place]) => `
+            <div style="display:flex;align-items:center;gap:10px;
+              padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+              <div style="font-size:18px">${icon}</div>
+              <div style="flex:1">
+                <div style="font-size:var(--fs-sm);color:#fdfaf0">
+                  <span style="color:var(--muted);font-size:10px">ГЛАВА ${num} · </span>${title}
+                </div>
+                <div style="font-size:10px;color:var(--muted);margin-top:1px">${place}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- СОЗДАТЕЛЬ -->
+      <div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">👨‍💻 РАЗРАБОТКА</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:28px">🏫</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">СШ №3 г. Хойники</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Государственное учреждение образования</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:28px">👨‍🎓</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">Гудь Юрий Петрович</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Разработчик · Учитель информатики</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ПОДДЕРЖКА -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">🆘 ПОДДЕРЖКА</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:22px">💬</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0">Telegram</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">@Yury_hud</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:22px">📧</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0">Email</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">uragud.2020@gmail.com</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:22px">🕐</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0">Время ответа</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Пн–Пт, 9:00–18:00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ВЕРСИЯ -->
+      <div style="text-align:center;padding:16px 0 8px;
+        color:var(--muted);font-size:10px;letter-spacing:.06em">
+        ШИФРОВАЛЬЩИК v1.0  ·  © 2025 СШ №3 г. Хойники<br>
+        <span style="color:rgba(255,255,255,.2)">Сделано с ❤️ для учеников школы</span>
+      </div>
+
+    </div>
+  `;
 }
 
 function renderLeaderboardTab() {

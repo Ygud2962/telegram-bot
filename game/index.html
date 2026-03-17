@@ -1128,6 +1128,11 @@ body::before{
   <div id="profile-tab-content" style="padding:16px"></div>
 </div>
 
+<!-- ════════ О ИГРЕ ════════ -->
+<div id="s-about-tab" class="screen" style="overflow-y:auto;padding-bottom:80px">
+  <div id="about-tab-content"></div>
+</div>
+
 <!-- ════════ НИЖНЕЕ МЕНЮ ════════ -->
 <nav class="bottom-nav" id="bottom-nav" style="display:none">
   <button class="bn-tab active" id="bn-chapters" onclick="switchTab('chapters')">
@@ -1138,6 +1143,9 @@ body::before{
   </button>
   <button class="bn-tab" id="bn-profile" onclick="switchTab('profile')">
     <span class="bn-icon">👤</span>ПРОФИЛЬ
+  </button>
+  <button class="bn-tab" id="bn-about" onclick="switchTab('about')">
+    <span class="bn-icon">ℹ️</span>О ИГРЕ
   </button>
 </nav>
 
