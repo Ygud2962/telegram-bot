@@ -2663,7 +2663,8 @@ async def menu_game(query, context):
         }
 
     payload = urllib.parse.quote(json.dumps(
-        {'lb': lb_data, 'me': my_data, 'open': sorted(list(open_chapters))},
+        {'lb': lb_data, 'me': my_data, 'open': sorted(list(open_chapters)),
+         'sync_url': f"{BOT_PUBLIC_URL}/game_sync" if BOT_PUBLIC_URL else ''},
         ensure_ascii=False
     ))
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
