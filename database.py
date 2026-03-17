@@ -70,7 +70,7 @@ def _safe_rollback(conn):
         return
     try:
         if not conn.closed:
-            _safe_rollback(conn)
+            conn.rollback()
     except Exception:
         pass
 
@@ -369,6 +369,28 @@ def get_user_role(user_id):
     except Exception as e:
         logger.error(f"get_user_role: {e}")
         return 'user'
+    finally:
+        release_connection(conn)
+
+
+def get_user_info(user_id):
+    """Возвращает информацию о пользователе: dict или None."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT user_id, username, first_name, last_name FROM users WHERE user_id=%s',
+            (user_id,)
+        )
+        row = cur.fetchone()
+        if row:
+            return {'user_id': row[0], 'username': row[1],
+                    'first_name': row[2], 'last_name': row[3]}
+        return None
+    except Exception as e:
+        logger.error(f"get_user_info: {e}")
+        return None
     finally:
         release_connection(conn)
 
@@ -734,6 +756,7 @@ def get_news_detail(news_id):
 
 
 def get_news_by_id(news_id):
+    """Возвращает кортеж (id, title, content, published_at) или None."""
     conn = None
     try:
         conn = get_connection()
@@ -745,11 +768,6 @@ def get_news_by_id(news_id):
         return None
     finally:
         release_connection(conn)
-
-
-def get_news_by_id(news_id):
-    """Алиас для get_news_detail — обратная совместимость."""
-    return get_news_detail(news_id)
 
 
 def increment_news_views(news_id, user_id):
