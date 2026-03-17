@@ -2016,13 +2016,52 @@ function doSync() {
         throw new Error('HTTP ' + resp.status);
       }
     }).catch(e => {
-      // HTTP не сработал — предлагаем sendData (закроет приложение)
-      showSendDataFallback(data, completed);
+      // HTTP не сработал — показываем ошибку + фоллбэк
+      console.error('sync error:', e);
+      setContent(`
+        <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+        <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">ОШИБКА СОЕДИНЕНИЯ</div>
+        <div style="font-size:var(--fs-xs);color:var(--muted);line-height:1.6;margin-bottom:12px">
+          Не удалось подключиться к серверу бота.<br>
+          <span style="color:rgba(255,255,255,.3)">URL: ${syncUrl}<br>Ошибка: ${e.message}</span>
+        </div>
+        <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:16px">
+          Прогресс сохранён на устройстве.<br>
+          Попробуйте позже или напишите админу.
+        </div>
+        <button onclick="doSync()"
+          style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+          border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%;margin-bottom:8px">
+          🔄 ПОПРОБОВАТЬ СНОВА
+        </button>
+        <button onclick="document.getElementById('sync-modal').remove()"
+          style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--muted);
+          padding:8px 24px;font-family:var(--head);font-size:var(--fs-xs);
+          border-radius:4px;cursor:pointer;width:100%">ЗАКРЫТЬ</button>`);
     });
     return;
   }
 
-  // Нет sync_url — показываем sendData вариант
+  // Нет sync_url — показываем информацию для пользователя
+  if (!syncUrl) {
+    setContent(`
+      <div style="font-size:32px;margin-bottom:12px">⚙️</div>
+      <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);margin-bottom:8px">НАСТРОЙКА НЕ ЗАВЕРШЕНА</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted);line-height:1.6;margin-bottom:12px">
+        Сервер синхронизации не настроен.<br>
+        <b style="color:#fdfaf0">Админу</b>: задай <code style="background:rgba(255,255,255,.1);padding:2px 4px;border-radius:3px">BOT_PUBLIC_URL</code> в Railway → Variables.<br>
+        <span style="color:rgba(255,255,255,.3)">Пример: https://your-bot.up.railway.app</span>
+      </div>
+      <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:16px">
+        Прогресс сохранён на устройстве и не потеряется.
+      </div>
+      <button onclick="document.getElementById('sync-modal').remove()"
+        style="background:var(--accent);color:#0a0a08;border:none;padding:10px 24px;
+        border-radius:4px;cursor:pointer;font-family:var(--head);font-size:var(--fs-sm);width:100%">ПОНЯТНО</button>`);
+    return;
+  }
+
+  // Нет user_id — показываем sendData вариант
   showSendDataFallback(data, completed);
 }
 
