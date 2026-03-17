@@ -816,6 +816,30 @@ def btn(text: str, data: str) -> InlineKeyboardButton:
 
 BACK_TO_MAIN = [[btn("🏠 Главное меню", 'back_to_main')]]
 
+# Ключи, которые относятся к текущему «флоу» и могут быть безопасно сброшены
+_FLOW_KEYS = (
+    'adding_sub', 'sub_step', 'sub_data', 'sub_date', 'sub_day',
+    'sub_class', 'sub_lesson', 'sub_subject', 'sub_old_teacher',
+    'sub_teacher_names',
+    'reg_role', 'reg_name', 'awaiting_reg_name', 'reg_teacher_page',
+    'reg_teacher_names',
+    'pub_news', 'pub_step', 'pub_title', 'pub_content',
+    'edit_news_id', 'edit_step', 'edit_old_title', 'edit_old_content',
+    'edit_new_title',
+    'photo_subs_pending', 'pending_subs', 'pending_subs_saved',
+    'chname_page',
+    'broadcasting', 'broadcast_step', 'broadcast_text',
+    'deleting_sub', 'searching_teacher', 'found_teachers',
+    'awaiting_ai', 'registering_teacher',
+    'schedule_chapter', 'beta_action',
+)
+
+
+def _clear_flow(context):
+    """Сбрасывает только ключи текущего флоу, сохраняя кэши профиля и пр."""
+    for k in _FLOW_KEYS:
+        context.user_data.pop(k, None)
+
 
 def lesson_time_str(num: int) -> str:
     if num in LESSON_TIMES:
@@ -1399,7 +1423,7 @@ async def reg_role_teacher(query, context):
         nav.append(btn("▶️", f'reg_tch_page_{page+1}'))
     if nav:
         kb.append(nav)
-    kb.append([btn("↩️ Назад", 'menu_register'), BACK_TO_MAIN[0][0]])
+    kb.append([btn("↩️ Назад", 'menu_register'), btn('🏠 Меню', 'back_to_main')])
 
     free = len(available)
     total = len(ALL_TEACHERS)
@@ -1479,7 +1503,7 @@ async def reg_select_class(query, context):
     for i in range(0, len(ALL_CLASSES), 4):
         row = [btn(c.upper(), f'reg_class_{c}') for c in ALL_CLASSES[i:i+4]]
         kb.append(row)
-    kb.append([btn("↩️ Назад", f'reg_role_{role}'), BACK_TO_MAIN[0][0]])
+    kb.append([btn("↩️ Назад", f'reg_role_{role}'), btn('🏠 Меню', 'back_to_main')])
 
     await safe_edit(query,
         f"📚 <b>ВЫБОР КЛАССА</b>\n\n"
@@ -1674,7 +1698,7 @@ async def teacher_change_name(query, context):
         nav.append(btn("▶️", f'chname_page_{page+1}'))
     if nav:
         kb.append(nav)
-    kb.append([btn("↩️ Назад", 'menu_profile'), BACK_TO_MAIN[0][0]])
+    kb.append([btn("↩️ Назад", 'menu_profile'), btn('🏠 Меню', 'back_to_main')])
 
     await safe_edit(query,
         f"🔄 <b>СМЕНА ИМЕНИ</b>\n\n"
@@ -1824,17 +1848,25 @@ async def teacher_unlink_do(query, context):
 
 
 
+def _fmt_minutes(m: int) -> str:
+    """Форматирует минуты в человекочитаемый вид: '2ч 15мин' или '45 мин'."""
+    if m >= 60:
+        h, mins = divmod(m, 60)
+        return f"{h}ч {mins}мин" if mins else f"{h}ч"
+    return f"{m} мин"
+
+
 async def show_main_menu_msg(update: Update, context: CallbackContext):
     """Отправляет главное меню новым сообщением."""
     user = update.effective_user
     now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
     if info['status'] == 'lesson':
-        status_line = f"🔔 Сейчас {info['number']} урок, осталось {info['time_left']} мин"
+        status_line = f"🔔 Сейчас {info['number']} урок, осталось {_fmt_minutes(info['time_left'])}"
     elif info['status'] == 'before_school':
-        status_line = f"🌅 До первого урока: {info['minutes_until']} мин (начало {info['start']})"
+        status_line = f"🌅 До первого урока: {_fmt_minutes(info['minutes_until'])} (начало {info['start']})"
     elif info['status'] == 'break':
-        status_line = f"⏸️ Перемена, следующий урок через {info['minutes_until']} мин"
+        status_line = f"⏸️ Перемена, следующий урок через {_fmt_minutes(info['minutes_until'])}"
     else:
         status_line = "✅ Уроки закончились на сегодня"
 
@@ -1874,11 +1906,11 @@ async def show_main_menu_edit(query, context=None):
     now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
     if info['status'] == 'lesson':
-        status_line = f"🔔 Сейчас {info['number']} урок, осталось {info['time_left']} мин"
+        status_line = f"🔔 Сейчас {info['number']} урок, осталось {_fmt_minutes(info['time_left'])}"
     elif info['status'] == 'before_school':
-        status_line = f"🌅 До первого урока: {info['minutes_until']} мин (начало {info['start']})"
+        status_line = f"🌅 До первого урока: {_fmt_minutes(info['minutes_until'])} (начало {info['start']})"
     elif info['status'] == 'break':
-        status_line = f"⏸️ Перемена, следующий урок через {info['minutes_until']} мин"
+        status_line = f"⏸️ Перемена, следующий урок через {_fmt_minutes(info['minutes_until'])}"
     else:
         status_line = "✅ Уроки закончились на сегодня"
 
@@ -1911,17 +1943,8 @@ async def show_main_menu_edit(query, context=None):
 # ══════════════════════════════════════════════════════════
 async def cmd_cancel(update: Update, context: CallbackContext):
     """Сбрасывает любое активное состояние. Работает всегда."""
-    keys_to_clear = [
-        'adding_sub', 'sub_step', 'sub_data',
-        'reg_role', 'reg_name', 'awaiting_reg_name',
-        'pub_news', 'pub_step', 'pub_title',
-        'edit_news_id', 'edit_step',
-        'photo_subs_pending', 'chname_page',
-        'profile_cache', 'profile_cache_id', 'teacher_name_cache',
-    ]
-    cleared = any(k in context.user_data for k in keys_to_clear)
-    for k in keys_to_clear:
-        context.user_data.pop(k, None)
+    cleared = any(k in context.user_data for k in _FLOW_KEYS)
+    _clear_flow(context)
 
     msg = "✅ Действие отменено." if cleared else "ℹ️ Нечего отменять."
     await update.message.reply_text(msg)
@@ -1987,11 +2010,10 @@ async def cmd_start(update: Update, context: CallbackContext):
         return
 
     # Сбрасываем любой активный флоу — /start всегда возвращает в начало
-    for key in ('adding_sub','sub_step','sub_data','reg_role','reg_name',
-                'awaiting_reg_name','pub_news','pub_step','pub_title',
-                'edit_news_id','edit_step','photo_subs_pending','chname_page',
-                'profile_cache','profile_cache_id','teacher_name_cache'):
-        context.user_data.pop(key, None)
+    _clear_flow(context)
+    # Также сбрасываем кэши профиля при /start
+    for k in ('profile_cache', 'profile_cache_id', 'teacher_name_cache', 'news_shown'):
+        context.user_data.pop(k, None)
 
     # Уведомление о новых новостях
     new_cnt = await asyncio.to_thread(db.count_new_news_since, user.id)
@@ -2057,7 +2079,8 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 async def menu_bells(query, context):
     """Расписание звонков."""
-    await safe_edit(query, BELLS_TEXT, [BACK_TO_MAIN[0]])
+    kb = [[btn("↩️ Назад", 'back_to_main'), btn("🏠 Главное меню", 'back_to_main')]]
+    await safe_edit(query, BELLS_TEXT, kb)
 
 
 async def menu_now(query, context):
@@ -2082,7 +2105,7 @@ async def show_current_lesson(query, context):
         kb = [
             [btn("🔄 Обновить", f'now_{class_name}')],
             [btn("↩️ К выбору класса", 'menu_now')],
-            BACK_TO_MAIN[0],
+            [btn("🏠 Главное меню", 'back_to_main')],
         ]
         await safe_edit(query,
             f"📅 <b>{day_str}</b>\n🏖️ Сегодня нет уроков.",
@@ -2101,7 +2124,7 @@ async def show_current_lesson(query, context):
         nxt = info['next_number']
         text = (f"⏸️ <b>ПЕРЕМЕНА</b>\n"
                 f"📅 {day_name}\n"
-                f"⏱️ Следующий урок <b>({nxt})</b> через <b>{info['minutes_until']} мин</b>\n"
+                f"⏱️ Следующий урок <b>({nxt})</b> через <b>{_fmt_minutes(info['minutes_until'])}</b>\n"
                 f"🕐 Начало: {info['start']}\n")
         lessons = SCHEDULE_STRUCTURED.get(class_name, {}).get(day_name, [])
         nxt_lesson = next((l for l in lessons if l[0] == nxt), None)
@@ -2117,7 +2140,7 @@ async def show_current_lesson(query, context):
         num = info['number']
         text = (f"🔔 <b>ИДЁТ УРОК №{num}</b>\n"
                 f"📅 {day_name}\n"
-                f"⏱️ Осталось <b>{info['time_left']} мин</b>  ({info['start']}–{info['end']})\n")
+                f"⏱️ Осталось <b>{_fmt_minutes(info['time_left'])}</b>  ({info['start']}–{info['end']})\n")
         lessons = SCHEDULE_STRUCTURED.get(class_name, {}).get(day_name, [])
         cur_lesson = next((l for l in lessons if l[0] == num), None)
         if cur_lesson:
@@ -2132,7 +2155,7 @@ async def show_current_lesson(query, context):
     kb = [
         [btn("🔄 Обновить", f'now_{class_name}')],
         [btn("↩️ К выбору класса", 'menu_now')],
-        BACK_TO_MAIN[0],
+        [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -2145,7 +2168,7 @@ async def menu_schedule(query, context):
     for i in range(0, len(ALL_CLASSES), 3):
         row = [btn(c.upper(), f'cls_{c}') for c in ALL_CLASSES[i:i+3]]
         kb.append(row)
-    kb.append(BACK_TO_MAIN[0])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, "📚 <b>РАСПИСАНИЕ УРОКОВ</b>\nВыберите класс:", kb)
 
 
@@ -2154,7 +2177,7 @@ async def menu_class_days(query, context):
     context.user_data['sel_class'] = cls
     kb = [[btn(day, f'day_{day.lower()}')] for day in DAYS_OF_WEEK]
     kb.append([btn("📅 Вся неделя", f'week_{cls}')])
-    kb.append([btn("↩️ К классам", 'menu_schedule'), BACK_TO_MAIN[0][0]])
+    kb.append([btn("↩️ К классам", 'menu_schedule'), btn("🏠 Меню", 'back_to_main')])
     await safe_edit(query,
         f"📚 <b>{cls.upper()}</b> — выберите день или всю неделю:", kb)
 
@@ -2180,7 +2203,7 @@ async def menu_day_schedule(query, context):
     kb = [
         [btn(fav_text, f'fav_cls_{cls}')],
         [btn("📅 Вся неделя", f'week_{cls}')],
-        [btn("↩️ К дням", f'cls_{cls}'), BACK_TO_MAIN[0][0]],
+        [btn("↩️ К дням", f'cls_{cls}'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -2195,7 +2218,7 @@ async def menu_week_schedule(query, context):
 
     kb = [
         [btn(fav_text, f'fav_cls_{cls}')],
-        [btn("↩️ К дням", f'cls_{cls}'), BACK_TO_MAIN[0][0]],
+        [btn("↩️ К дням", f'cls_{cls}'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -2225,7 +2248,7 @@ async def menu_teacher(query, context, page=0):
         nav.append(btn("▶️", f'tch_page_{page+1}'))
     if nav:
         kb.append(nav)
-    kb.append(BACK_TO_MAIN[0])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
 
     await safe_edit(query,
         f"👨‍🏫 <b>УЧИТЕЛЯ</b>  ({len(ALL_TEACHERS)} чел.)\n"
@@ -2242,7 +2265,7 @@ async def show_teacher(query, context, teacher_name: str):
 
     kb = [
         [btn(fav_text, f'fav_tch_{idx}')],
-        [btn("↩️ К учителям", 'menu_teacher'), BACK_TO_MAIN[0][0]],
+        [btn("↩️ К учителям", 'menu_teacher'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -2256,7 +2279,7 @@ async def menu_my(query, context):
     if not favs:
         kb = [
             [btn("📚 Классы", 'menu_schedule'), btn("👨‍🏫 Учителя", 'menu_teacher')],
-            BACK_TO_MAIN[0],
+            [btn("🏠 Главное меню", 'back_to_main')],
         ]
         await safe_edit(query,
             "🌟 <b>МОЁ</b>\n\nИзбранного нет.\n"
@@ -2284,7 +2307,7 @@ async def menu_my(query, context):
             kb.append([btn(f"👨‍🏫 {t}", f'tch_{idx}'),
                        btn("🗑", f'del_fav_tch_{idx}')])
 
-    kb.append(BACK_TO_MAIN[0])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, text, kb)
 
 
@@ -2297,7 +2320,7 @@ async def menu_substitutions(query, context):
          btn("📋 Сегодня", 'subs_today'),
          btn("📋 Завтра", 'subs_tomorrow')],
         [btn("📋 Все замены", 'subs_all')],
-        BACK_TO_MAIN[0],
+        [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, "🔄 <b>ЗАМЕНЫ УРОКОВ</b>\nВыберите день:", kb)
 
@@ -2321,7 +2344,8 @@ async def show_subs_for_date(query, context):
         text = f"<b>На {target.strftime('%d.%m.%Y')} ({day_name}) замен нет.</b>"
 
     kb = [
-        [btn("↩️ К заменам", 'menu_substitutions'), BACK_TO_MAIN[0][0]],
+        [btn("↩️ К заменам", 'menu_substitutions')],
+        [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -2346,7 +2370,8 @@ async def show_all_subs(query, context):
         text = "\n".join(lines)
 
     kb = [
-        [btn("↩️ К заменам", 'menu_substitutions'), BACK_TO_MAIN[0][0]],
+        [btn("↩️ К заменам", 'menu_substitutions')],
+        [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -2432,7 +2457,8 @@ async def show_news_full(query, context, news_id: int):
                    btn("🗑 Удалить",        f"del_news_{news_id}")])
 
     page = context.user_data.get('news_page', 0)
-    kb.append([btn("📋 Новости", f'news_page_{page}'), BACK_TO_MAIN[0][0]])
+    kb.append([btn("↩️ К новостям", f'news_page_{page}')])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
 
     await safe_edit(query, text, kb)
 
@@ -2492,11 +2518,11 @@ async def do_publish_news(query, context, send_to_all: bool):
     content = context.user_data.get('pub_content', '').strip()
     if not title or not content:
         await safe_edit(query, "❌ Нет данных для публикации.", BACK_TO_MAIN)
-        context.user_data.clear()
+        _clear_flow(context)
         return
 
     news_id = await asyncio.to_thread(db.add_news, title, content)
-    context.user_data.clear()
+    _clear_flow(context)
 
     result_text = f"✅ <b>Новость опубликована (ID {news_id})</b>"
     if send_to_all:
@@ -2557,7 +2583,7 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
             return
         new_title = context.user_data['edit_new_title']
         success = await asyncio.to_thread(db.update_news, news_id, new_title, text)
-        context.user_data.clear()
+        _clear_flow(context)
         if success:
             kb = [[btn("📰 К новостям", 'menu_news')]]
             await update.message.reply_text(
@@ -2611,10 +2637,14 @@ async def menu_game(query, context):
         return
 
     from telegram import InlineKeyboardButton, WebAppInfo
+    import json, urllib.parse
 
-    # Передаём leaderboard в игру через start_param URL
-    lb_rows = await asyncio.to_thread(db.get_game_leaderboard, 20)
-    my_result = await asyncio.to_thread(db.get_game_result, user.id)
+    # Параллельные запросы к БД
+    lb_rows, my_result, open_chapters = await asyncio.gather(
+        asyncio.to_thread(db.get_game_leaderboard, 20),
+        asyncio.to_thread(db.get_game_result, user.id),
+        asyncio.to_thread(db.get_open_chapters),
+    )
 
     import json, urllib.parse
     # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role)
@@ -2632,18 +2662,16 @@ async def menu_game(query, context):
             'game_over': my_result[4], 'role': my_role or 'player'
         }
 
-    open_chapters = await asyncio.to_thread(db.get_open_chapters)
     payload = urllib.parse.quote(json.dumps(
         {'lb': lb_data, 'me': my_data, 'open': sorted(list(open_chapters))},
         ensure_ascii=False
     ))
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
 
-    # Регистрируем при первом открытии (не трогает существующий прогресс)
-    await asyncio.to_thread(db.register_game_player, user.id, user.first_name)
-
-    # Назначаем роль если нет
-    current_role = await asyncio.to_thread(db.get_game_role, user.id)
+    # Регистрируем при первом открытии + назначаем роль (параллельно)
+    reg_task = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
+    role_task = asyncio.to_thread(db.get_game_role, user.id)
+    _, current_role = await asyncio.gather(reg_task, role_task)
     if not current_role:
         role = 'admin' if user.id in ADMIN_IDS else 'player'
         await asyncio.to_thread(db.set_game_role, user.id, role)
@@ -2690,8 +2718,10 @@ async def menu_game(query, context):
 async def game_leaderboard(query, context):
     """Таблица лидеров из БД — актуальные данные."""
     await query.answer()
-    lb    = await asyncio.to_thread(db.get_game_leaderboard_with_roles, 20)
-    total = await asyncio.to_thread(db.get_game_players_count)
+    lb, total = await asyncio.gather(
+        asyncio.to_thread(db.get_game_leaderboard_with_roles, 20),
+        asyncio.to_thread(db.get_game_players_count),
+    )
     uid_me = query.from_user.id
 
     if not lb:
@@ -2763,17 +2793,19 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
     game_over   = data.get('game_over', False)
     failed      = (event_type == 'chapter_failed')
 
-    # Сохраняем в БД
-    await asyncio.to_thread(
-        db.save_game_result,
-        user.id, user_name, chapter, score, total_score,
-        completed, game_over, failed
+    # Сохраняем в БД + проверяем роль параллельно
+    _, current_role = await asyncio.gather(
+        asyncio.to_thread(
+            db.save_game_result,
+            user.id, user_name, chapter, score, total_score,
+            completed, game_over, failed
+        ),
+        asyncio.to_thread(db.get_game_role, user.id),
     )
     logger.info(f"game_result saved: user={user.id} ({user_name}), type={event_type}, "
                 f"chapter={chapter}, score={score}, total={total_score}, completed={completed}")
 
     # Автоматически назначаем роль
-    current_role = await asyncio.to_thread(db.get_game_role, user.id)
     if not current_role or current_role == 'player':
         if user.id in ADMIN_IDS:
             await asyncio.to_thread(db.set_game_role, user.id, 'admin')
@@ -2854,7 +2886,7 @@ async def menu_ai(query, context):
             f"<i>Просто напишите сообщение в чат — отвечу!</i>")
     kb = [
         [btn("🗑 Очистить историю", 'ai_clear_history')],
-        BACK_TO_MAIN[0],
+        [btn("↩️ Назад", 'back_to_main'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
     context.user_data['awaiting_ai'] = True
@@ -2875,18 +2907,19 @@ async def menu_help(query, context):
         "<b>Часы ответа:</b> Пн–Пт 9:00–18:00\n\n"
         "<i>Укажите имя, класс и время ошибки.</i>"
     )
-    await safe_edit(query, text, BACK_TO_MAIN)
+    await safe_edit(query, text, [[btn("🏠 Главное меню", 'back_to_main')]])
 
 
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ПОИСК УЧИТЕЛЯ
 # ══════════════════════════════════════════════════════════
 async def menu_search_teacher(query, context):
+    kb = [[btn("↩️ Назад", 'back_to_main'), btn("🏠 Главное меню", 'back_to_main')]]
     await safe_edit(query,
         "🔍 <b>ПОИСК УЧИТЕЛЯ</b>\n\n"
         "Введите фамилию (или её часть):\n"
         "<i>Пример: Коротч или Гуд</i>",
-        BACK_TO_MAIN)
+        kb)
     context.user_data['searching_teacher'] = True
 
 
@@ -2958,7 +2991,7 @@ async def handle_sub_flow(query, context):
     data = query.data
 
     if data == 'cancel_adding' or data == 'admin_panel':
-        context.user_data.clear()
+        _clear_flow(context)
         await show_admin_panel(query)
         return
 
@@ -3454,11 +3487,14 @@ async def admin_game_panel(query, context):
         await query.answer("⛔ Доступ запрещён"); return
     await query.answer()
 
-    rows     = await asyncio.to_thread(db.get_game_leaderboard_admin, 50)
+    rows, beta_on_raw, beta_users = await asyncio.gather(
+        asyncio.to_thread(db.get_game_leaderboard_admin, 50),
+        asyncio.to_thread(db.is_beta_enabled),
+        asyncio.to_thread(db.get_beta_users),
+    )
     total    = len(rows)
     finished = sum(1 for r in rows if r[4])
     banned   = sum(1 for r in rows if r[6])
-    # Игроки с реальным прогрессом (score > 0)
     active   = sum(1 for r in rows if r[2] > 0)
 
     text = (
@@ -3469,8 +3505,8 @@ async def admin_game_panel(query, context):
         f"🚫 Забанено:               <b>{banned}</b>\n\n"
         "Выберите действие:"
     )
-    beta_on = await asyncio.to_thread(db.is_beta_enabled)
-    beta_count = len(await asyncio.to_thread(db.get_beta_users))
+    beta_on = beta_on_raw
+    beta_count = len(beta_users)
     beta_label = f"🔒 Бета: {beta_count} тестеров" if beta_on else "🌐 Бета: ВЫКЛ (игра для всех)"
 
     kb = [
@@ -3660,7 +3696,7 @@ async def show_admin_panel(query):
         [btn("👥 Пользователи", 'admin_users')],
         [btn("📢 Рассылка", 'admin_broadcast')],
         [btn("🎮 Управление игрой", 'admin_game_panel')],
-        BACK_TO_MAIN[0],
+        [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, "👑 <b>АДМИН-ПАНЕЛЬ</b>\nВыберите действие:", kb)
 
@@ -3745,11 +3781,13 @@ async def admin_do_clear_subs(query, context):
 
 
 async def show_analytics(query, context):
-    active_24h    = await asyncio.to_thread(db.get_active_users_24h)
-    total_users   = await asyncio.to_thread(db.get_user_count)
-    pop_classes   = await asyncio.to_thread(db.get_popular_classes)
-    peak_hours    = await asyncio.to_thread(db.get_peak_hours)
-    total_subs_list = await asyncio.to_thread(db.get_all_substitutions)
+    active_24h, total_users, pop_classes, peak_hours, total_subs_list = await asyncio.gather(
+        asyncio.to_thread(db.get_active_users_24h),
+        asyncio.to_thread(db.get_user_count),
+        asyncio.to_thread(db.get_popular_classes),
+        asyncio.to_thread(db.get_peak_hours),
+        asyncio.to_thread(db.get_all_substitutions),
+    )
 
     text = (
         "<b>📊 АНАЛИТИКА БОТА</b>\n\n"
@@ -3813,7 +3851,7 @@ async def do_broadcast(query, context):
     text = context.user_data.get('broadcast_text', '')
     if not text:
         await safe_edit(query, "❌ Текст пустой.", BACK_TO_MAIN)
-        context.user_data.clear()
+        _clear_flow(context)
         return
 
     users = await asyncio.to_thread(db.get_all_users)
@@ -3843,7 +3881,7 @@ async def do_broadcast(query, context):
             except Exception:
                 pass
 
-    context.user_data.clear()
+    _clear_flow(context)
     kb = [[btn("↩️ Админка", 'admin_panel')]]
     await status_msg.edit_text(
         f"✅ <b>Рассылка завершена</b>\n\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}",
@@ -3951,7 +3989,7 @@ async def button_handler(update: Update, context: CallbackContext):
                 f"❌ Не удалось зарегистрировать «{name}».\n"
                 f"Возможно, этот учитель уже зарегистрирован или имя не найдено.",
                 BACK_TO_MAIN)
-        context.user_data.clear()
+        _clear_flow(context)
         return
 
     # ── Избранное ──
@@ -4080,7 +4118,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await do_delete_news(query, context, news_id)
         return
     if d == 'cancel_edit_news':
-        context.user_data.clear()
+        _clear_flow(context)
         await show_admin_panel(query)
         return
     if d == 'pub_news_all' and user.id in ADMIN_IDS:
@@ -4090,7 +4128,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await do_publish_news(query, context, send_to_all=False)
         return
     if d == 'cancel_pub_news':
-        context.user_data.clear()
+        _clear_flow(context)
         await show_admin_panel(query)
         return
 
@@ -4140,11 +4178,8 @@ async def button_handler(update: Update, context: CallbackContext):
         return
 
     # ── Текущий урок ──
-    if d.startswith('now_') and d != 'now_class':
-        if '_' in d[4:]:  # now_5а и т.п.
-            await show_current_lesson(query, context)
-        else:
-            await show_current_lesson(query, context)
+    if d.startswith('now_'):
+        await show_current_lesson(query, context)
         return
 
     # ── Поиск (результат) ──
@@ -4190,7 +4225,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await do_broadcast(query, context)
         return
     if d == 'cancel_broadcast':
-        context.user_data.clear()
+        _clear_flow(context)
         await show_admin_panel(query)
         return
 
@@ -4353,7 +4388,7 @@ async def handle_message(update: Update, context: CallbackContext):
             for i, t in enumerate(found[:10]):
                 kb.append([btn(t, f'search_tch_{i}')])
             context.user_data['found_teachers'] = found[:10]
-            kb.append([btn("🔍 Новый поиск", 'menu_search_teacher'), BACK_TO_MAIN[0][0]])
+            kb.append([btn("🔍 Новый поиск", 'menu_search_teacher'), btn('🏠 Меню', 'back_to_main')])
             await update.message.reply_text(
                 f"🔍 Найдено: <b>{len(found)}</b>\nВыберите учителя:",
                 parse_mode='HTML',
@@ -4914,6 +4949,9 @@ def main():
     print(f"👑 Администраторы: {ADMIN_IDS}")
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
     print(f"👥 Пользователей: {db.get_user_count()}")
+
+    # Запускаем HTTP-сервер для синхронизации игры
+    start_http_server_thread()
 
     try:
         app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
