@@ -4309,7 +4309,7 @@ async def button_handler(update: Update, context: CallbackContext):
         'admin_game_reset_all':   admin_game_reset_all,
         'game_leaderboard':       game_leaderboard,
         'admin_users':            show_users_stats,
-        'noop':                   lambda q, c: None,
+        'noop':                   lambda q, c: asyncio.sleep(0),
     }
 
     handler = routes.get(d)
