@@ -55,6 +55,8 @@ GPT_AVAILABLE = bool(GROQ_API_KEY)
 
 # URL Mini App игры (задайте в Railway как переменную окружения GAME_URL)
 GAME_URL      = os.environ.get('GAME_URL', '')
+if GAME_URL and not GAME_URL.startswith('http'):
+    GAME_URL = 'https://' + GAME_URL
 # Public URL бота на Railway (для приёма sync запросов из игры)
 # Приоритет: BOT_PUBLIC_URL (ручная) > RAILWAY_PUBLIC_DOMAIN (авто)
 BOT_PUBLIC_URL = (
@@ -2667,12 +2669,28 @@ async def menu_game(query, context):
             'game_over': my_result[4], 'role': my_role or 'player'
         }
 
-    payload = urllib.parse.quote(json.dumps(
-        {'lb': lb_data, 'me': my_data, 'open': sorted(list(open_chapters)),
-         'sync_url': f"{BOT_PUBLIC_URL}/game_sync" if BOT_PUBLIC_URL else ''},
-        ensure_ascii=False
-    ))
-    game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2000 else GAME_URL
+    # Формируем данные для передачи в игру
+    sync_url_val = f"{BOT_PUBLIC_URL}/game_sync" if BOT_PUBLIC_URL else ''
+    game_payload = {
+        'lb': lb_data, 'me': my_data,
+        'open': sorted(list(open_chapters)),
+        'sync_url': sync_url_val,
+    }
+
+    payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
+
+    # Если payload слишком большой — сокращаем leaderboard, но ВСЕГДА оставляем sync_url
+    if len(payload) >= 2000:
+        game_payload['lb'] = lb_data[:5]  # топ-5 вместо 20
+        payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
+
+    if len(payload) >= 2000:
+        # Совсем минимальный — только sync_url и открытые главы
+        game_payload = {'sync_url': sync_url_val, 'open': sorted(list(open_chapters))}
+        payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
+
+    game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2048 else GAME_URL
+    logger.info(f"game payload size: {len(payload)} chars, sync_url: {sync_url_val[:50]}")
 
     # Регистрируем при первом открытии + назначаем роль (параллельно)
     reg_task = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
@@ -4886,17 +4904,59 @@ async def handle_game_sync(request):
 def start_http_server_thread():
     """Запускает aiohttp в отдельном потоке чтобы не конфликтовать с event loop бота."""
     import threading
+    import pathlib
+
+    GAME_DIR = pathlib.Path(__file__).parent / 'game'
+
+    async def serve_game_index(request):
+        """Отдаёт index.html игры."""
+        fpath = GAME_DIR / 'index.html'
+        if fpath.exists():
+            return aiohttp_web.FileResponse(fpath, headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            })
+        return aiohttp_web.Response(text='Game not found', status=404)
+
+    async def serve_game_file(request):
+        """Отдаёт файлы игры (game.js и пр.)."""
+        filename = request.match_info.get('filename', '')
+        # Защита от path traversal
+        if '..' in filename or '/' in filename:
+            return aiohttp_web.Response(text='Forbidden', status=403)
+        fpath = GAME_DIR / filename
+        if fpath.exists() and fpath.is_file():
+            content_types = {
+                '.js': 'application/javascript; charset=utf-8',
+                '.css': 'text/css; charset=utf-8',
+                '.html': 'text/html; charset=utf-8',
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.svg': 'image/svg+xml',
+            }
+            ct = content_types.get(fpath.suffix, 'application/octet-stream')
+            return aiohttp_web.FileResponse(fpath, headers={
+                'Content-Type': ct,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            })
+        return aiohttp_web.Response(text='Not found', status=404)
 
     async def _run():
         app_http = aiohttp_web.Application()
+        # API
         app_http.router.add_post('/game_sync', handle_game_sync)
         app_http.router.add_options('/game_sync', handle_game_sync)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
+        # Файлы игры
+        app_http.router.add_get('/', serve_game_index)
+        app_http.router.add_get('/index.html', serve_game_index)
+        app_http.router.add_get('/game/{filename}', serve_game_file)
+        app_http.router.add_get('/{filename}', serve_game_file)
         runner = aiohttp_web.AppRunner(app_http)
         await runner.setup()
         site = aiohttp_web.TCPSite(runner, '0.0.0.0', PORT)
         await site.start()
         logger.info(f"✅ HTTP server started on port {PORT}")
+        logger.info(f"📁 Game dir: {GAME_DIR} (exists: {GAME_DIR.exists()})")
         # Держим сервер запущенным
         await asyncio.Event().wait()
 
