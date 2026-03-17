@@ -56,7 +56,12 @@ GPT_AVAILABLE = bool(GROQ_API_KEY)
 # URL Mini App игры (задайте в Railway как переменную окружения GAME_URL)
 GAME_URL      = os.environ.get('GAME_URL', '')
 # Public URL бота на Railway (для приёма sync запросов из игры)
-BOT_PUBLIC_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
+# Приоритет: BOT_PUBLIC_URL (ручная) > RAILWAY_PUBLIC_DOMAIN (авто)
+BOT_PUBLIC_URL = (
+    os.environ.get('BOT_PUBLIC_URL', '')
+    or os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
+    or os.environ.get('RAILWAY_STATIC_URL', '')
+)
 if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
 PORT = int(os.environ.get('PORT', 8080))
@@ -4950,6 +4955,12 @@ def main():
     print(f"👑 Администраторы: {ADMIN_IDS}")
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
     print(f"👥 Пользователей: {db.get_user_count()}")
+    print(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
+    print(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
+    print(f"🔌 HTTP-порт: {PORT}")
+    if not BOT_PUBLIC_URL:
+        print("⚠️  ВНИМАНИЕ: Задайте BOT_PUBLIC_URL в Railway → Variables!")
+        print("⚠️  Пример: BOT_PUBLIC_URL=https://ваш-домен.up.railway.app")
 
     # Запускаем HTTP-сервер для синхронизации игры
     start_http_server_thread()
