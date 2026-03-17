@@ -316,7 +316,13 @@ def log_user_activity(user_id, action, class_name=None):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('UPDATE users SET last_active=NOW() WHERE user_id=%s', (user_id,))
+        # Гарантируем существование пользователя перед записью активности,
+        # чтобы не нарушать FK-ограничение user_activity_user_id_fkey
+        cur.execute(
+            'INSERT INTO users (user_id, last_active) VALUES (%s, NOW()) '
+            'ON CONFLICT (user_id) DO UPDATE SET last_active = NOW()',
+            (user_id,)
+        )
         cur.execute(
             'INSERT INTO user_activity (user_id, action, class_name) VALUES (%s,%s,%s)',
             (user_id, action, class_name)
