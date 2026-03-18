@@ -1974,9 +1974,12 @@ async def global_error_handler(update: object, context: CallbackContext):
 
     err = context.error
 
-    # Conflict — два экземпляра при редеплое Railway, не баг кода — молча логируем
+    # Conflict — два экземпляра при редеплое Railway
+    # Это нормально: старый контейнер ещё жив пока новый стартует
     if isinstance(err, Conflict):
         logger.warning(f"Конфликт getUpdates (редеплой): {err}")
+        # Ждём немного и пробуем продолжить — новый экземпляр победит
+        await asyncio.sleep(2)
         return
 
     # Сетевые таймауты — тоже не спамим админу
@@ -5073,7 +5076,11 @@ def main():
     start_http_server_thread()
 
     try:
-        app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            close_loop=False,
+        )
     except KeyboardInterrupt:
         print("\n🛑 Бот остановлен")
     except Exception as e:

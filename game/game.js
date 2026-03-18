@@ -514,6 +514,7 @@ const DEFAULT_STATE = () => ({
   lives: 5, chapter: 0, cipherIdx: 0, startTime: 0,
   chapterScore: 0, totalScore: 0,
   completedChapters: {}, chapterScores: {},
+  streak: 0, retryPenalty: false,
   gameOver: false, leaderboard: []
 });
 
@@ -717,8 +718,10 @@ function showBriefing(idx) {
 function startChapter(idx) {
   state.chapter    = idx;
   state.cipherIdx  = 0;
-  state.lives      = 5;           // 5 жизней на главу
+  state.lives      = 5;
   state.chapterScore = 0;
+  state.streak     = 0;
+  // retryPenalty устанавливается через retryChapter, не сбрасываем здесь
   saveState();
   loadCipher();
   showScreen('s-cipher');
@@ -739,6 +742,9 @@ function loadCipher() {
   ).join('');
 
   document.getElementById('cipher-chapter-label').textContent = ch.subtitle + ' · ' + ch.place;
+  // Обновляем счётчик очков
+  const scoreEl = document.getElementById('cipher-score-display');
+  if (scoreEl) scoreEl.textContent = state.chapterScore + ' оч';
   document.getElementById('cipher-type-label').textContent    = cipher.typeLabel;
   document.getElementById('cipher-task').textContent          = cipher.task;
 
@@ -786,6 +792,8 @@ function loadCipher() {
 
   // Жизни
   renderLives();
+  // Таймер
+  startTimer();
 
   // Сброс ввода
   const inp = document.getElementById('cipher-input');
@@ -808,9 +816,55 @@ function loadCipher() {
 
 function renderLives() {
   const n = state.lives;
-  let hearts = '';
-  for(let i=0;i<5;i++) hearts += i < n ? '❤️' : '🖤';
-  document.getElementById('cipher-attempts-label').textContent = hearts;
+  // Первый ряд: 3 сердца, второй ряд: 2 сердца
+  let row1 = '', row2 = '';
+  for(let i=0;i<3;i++) row1 += i < n ? '❤️' : '🖤';
+  for(let i=3;i<5;i++) row2 += i < n ? '❤️' : '🖤';
+  const el = document.getElementById('cipher-attempts-label');
+  el.innerHTML = `<div style="line-height:1.2;text-align:center">
+    <div>${row1}</div>
+    <div>${row2}</div>
+  </div>`;
+}
+
+function animateLifeLoss() {
+  const el = document.getElementById('cipher-attempts-label');
+  if (!el) return;
+  el.style.transition = 'transform .15s,filter .15s';
+  el.style.transform = 'scale(1.3)';
+  el.style.filter = 'drop-shadow(0 0 8px rgba(255,58,58,.9))';
+  setTimeout(() => {
+    el.style.transform = 'scale(1)';
+    el.style.filter = '';
+    renderLives();
+  }, 200);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ТАЙМЕР
+// ═══════════════════════════════════════════════════════
+let _timerInterval = null;
+
+function startTimer() {
+  if (_timerInterval) clearInterval(_timerInterval);
+  const el = document.getElementById('cipher-timer');
+  if (!el) return;
+  const start = Date.now();
+  el.textContent = '0с';
+  el.style.color = 'var(--muted)';
+  _timerInterval = setInterval(() => {
+    const sec = Math.round((Date.now() - start) / 1000);
+    el.textContent = sec + 'с';
+    // Цвет по времени
+    if (sec <= 10) { el.style.color = 'var(--green)'; }
+    else if (sec <= 30) { el.style.color = 'var(--accent)'; }
+    else if (sec <= 60) { el.style.color = 'var(--accent2)'; }
+    else { el.style.color = 'var(--red)'; }
+  }, 1000);
+}
+
+function stopTimer() {
+  if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
 }
 
 function animateMorse(el, text) {
@@ -864,10 +918,13 @@ function renderRef(type, shift) {
 function calcPoints(cipher, elapsed) {
   const max   = cipher.points;
   const secs  = Math.max(0, elapsed);
-  // За первые 10 сек — полные очки
-  // После каждые 10 сек — теряем 8%, минимум 20%
   const penalty = Math.floor(Math.max(0, secs - 10) / 10) * 0.08;
-  const factor  = Math.max(0.20, 1 - penalty);
+  let factor  = Math.max(0.20, 1 - penalty);
+  // Штраф за повторное прохождение главы (+10с к каждому заданию)
+  if (state.retryPenalty) factor = Math.max(0.10, factor * 0.7);
+  // Стрик-бонус: +5% за каждый правильный ответ подряд (макс +30%)
+  const streakBonus = Math.min(0.30, state.streak * 0.05);
+  factor = Math.min(1.30, factor + streakBonus);
   return Math.round(max * factor);
 }
 
@@ -897,17 +954,22 @@ async function checkAnswer() {
     // ── ПРАВИЛЬНО ──
     inp.className  = 'cipher-input correct';
     inp.disabled   = true;
+    state.streak = (state.streak || 0) + 1;
     const pts      = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
+    stopTimer();
     setTimeout(() => showSuccess(cipher, pts, elapsed), 400);
 
   } else {
     // ── НЕПРАВИЛЬНО ──
     inp.className = 'cipher-input wrong';
     setTimeout(() => inp.className = 'cipher-input', 500);
+    state.streak = 0; // сброс стрика при ошибке
     state.lives--;
     saveState();
+    // Анимация потери жизни
+    animateLifeLoss();
 
     if (state.lives <= 0) {
       if (tgUser && tgUser.id === 516406248) {
@@ -922,6 +984,7 @@ async function checkAnswer() {
         // Жизни кончились — сразу завершаем главу с провалом
         inp.disabled = true;
         renderLives();
+        stopTimer();
         setTimeout(() => failChapter(), 1200);
       }
     } else {
@@ -981,22 +1044,33 @@ function showHint() {
 function showSuccess(cipher, pts, elapsed) {
   document.getElementById('succ-answer').textContent = ANSWER_MAP[cipher.answer] || cipher.answer;
   document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
-  document.getElementById('succ-fact').textContent       = cipher.fact;
+  // Исторический факт с иконкой
+  const factEl = document.getElementById('succ-fact');
+  if (factEl && cipher.fact) {
+    factEl.innerHTML = `<span style="color:var(--accent3);margin-right:4px">📜</span>${cipher.fact}`;
+  } else if (factEl) {
+    factEl.textContent = '';
+  }
   document.getElementById('succ-pts').textContent        = pts > 0 ? '+' + pts : '0';
   document.getElementById('succ-time').textContent       = typeof elapsed === 'number' ? elapsed + 'с' : elapsed;
 
-  // Показываем скоростной бонус
+  // Скоростной бонус + стрик
   const speedEl = document.getElementById('succ-speed');
-  if (pts > 0 && elapsed <= 10) {
-    speedEl.textContent = '⚡ Быстро!';
-    speedEl.style.color = 'var(--green)';
-  } else if (pts === 0) {
-    speedEl.textContent = '💀 Жизни кончились';
-    speedEl.style.color = 'var(--red)';
-  } else {
-    speedEl.textContent = elapsed > 60 ? '🐢 Долго...' : '⏱ ' + elapsed + 'с';
-    speedEl.style.color = 'var(--muted)';
+  const streak = state.streak || 0;
+  let speedText = '';
+  let speedColor = 'var(--muted)';
+  if (elapsed <= 10) { speedText = '⚡ Молниеносно!'; speedColor = 'var(--green)'; }
+  else if (elapsed <= 20) { speedText = '🔥 Быстро!'; speedColor = 'var(--accent)'; }
+  else if (elapsed > 60) { speedText = '🐢 Медленно...'; speedColor = 'var(--muted)'; }
+  else { speedText = '⏱ ' + elapsed + 'с'; speedColor = 'var(--muted)'; }
+  // Стрик
+  if (streak >= 2) {
+    const bonus = Math.min(30, streak * 5);
+    speedText += `  🔥 Стрик ×${streak} (+${bonus}%)`;
+    speedColor = streak >= 4 ? 'var(--green)' : 'var(--accent)';
   }
+  speedEl.textContent = speedText;
+  speedEl.style.color = speedColor;
 
   const ch     = CHAPTERS[state.chapter];
   const isLast = state.cipherIdx === ch.ciphers.length - 1;
@@ -1069,6 +1143,13 @@ async function finishChapter() {
     nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); };
   }
 
+  // Кнопка поделиться
+  const shareBtn = document.getElementById('chend-share-btn');
+  if (shareBtn) {
+    shareBtn.style.display = 'block';
+    shareBtn.onclick = () => shareResult(ch.title, state.chapterScore, maxPossible);
+  }
+
   showScreen('s-chapter-end');
 }
 
@@ -1117,7 +1198,53 @@ async function failChapter() {
     nextBtn.style.display = 'none';
   }
 
+  // Кнопка повторной попытки
+  const retryBtn = document.getElementById('fail-retry-btn');
+  const retryInfo = document.getElementById('fail-retry-info');
+  if (retryBtn) {
+    retryBtn.style.display = 'block';
+    retryBtn.onclick = () => retryChapter(state.chapter);
+  }
+  if (retryInfo) retryInfo.style.display = 'block';
+
   showScreen('s-chapter-fail');
+}
+
+// ═══════════════════════════════════════════════════════
+//  ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ
+// ═══════════════════════════════════════════════════════
+function shareResult(chapterTitle, score, maxScore) {
+  const pct = Math.round(score / maxScore * 100);
+  const medals = pct >= 85 ? '🥇' : pct >= 60 ? '🥈' : '🥉';
+  const text = `${medals} Прошёл главу «${chapterTitle}» в игре ШИФРОВАЛЬЩИК!
+⭐ ${score} из ${maxScore} очков (${pct}%)
+
+🔐 СШ №3 г. Хойники`;
+  if (tg && tg.switchInlineQuery) {
+    tg.switchInlineQuery(text);
+  } else if (navigator.share) {
+    navigator.share({ text });
+  } else {
+    // Копируем в буфер
+    navigator.clipboard?.writeText(text).then(() => showToast('📋 Скопировано!'));
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  ПОВТОРНАЯ ПОПЫТКА ГЛАВЫ
+// ═══════════════════════════════════════════════════════
+function retryChapter(idx) {
+  const ch = CHAPTERS[idx];
+  // Убираем главу из пройденных чтобы не считалась завершённой дважды
+  delete state.completedChapters[ch.id];
+  // Вычитаем очки этой главы из общего счёта
+  state.totalScore = Math.max(0, state.totalScore - (state.chapterScores[ch.id] || 0));
+  delete state.chapterScores[ch.id];
+  // Включаем штраф: +10с к каждому заданию
+  state.retryPenalty = true;
+  state.streak = 0;
+  saveState();
+  showBriefing(idx);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2029,7 +2156,10 @@ function renderLeaderboardTab() {
   }
 
   const medals = ['🥇','🥈','🥉'];
-  const rows = lb.slice(0,20).map((e,i) => {
+  const myRole = tgInitMe?.role || '';
+  const isAdmin = myRole === 'admin' || tgUser?.id === 516406248;
+  const visibleLb = isAdmin ? lb : lb.slice(0, 10);
+  const rows = visibleLb.map((e,i) => {
     const isMe   = e.uid === myUid;
     const pct    = Math.round((e.completed / 6) * 100);
     const done   = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
@@ -2064,12 +2194,12 @@ function renderLeaderboardTab() {
   }).join('');
 
   // Моя позиция если не в топ-20
-  const myInTop = lb.some(e => e.uid === myUid);
+  const myInTop = visibleLb.some(e => e.uid === myUid);
   const myPos   = myInTop ? '' : `
     <div style="margin:12px 16px;padding:12px;
       background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;
       font-size:var(--fs-sm);color:var(--muted);text-align:center">
-      📍 Вы ещё не в топ-20. Играйте чтобы попасть в рейтинг!
+      📍 Вы не в топ-10. Играйте чтобы попасть в рейтинг!
     </div>`;
 
   list.innerHTML = header + rows + myPos;
@@ -2122,6 +2252,18 @@ function renderProfileTab() {
   }).join('');
 
   const roleLabel = roleLabels[myRole] || '';
+  // Очки до следующего звания
+  const rankThresholds = [
+    [0,   'Новобранец'],
+    [35,  'Сержант связи'],
+    [55,  'Капитан подполья'],
+    [75,  'Полковник разведки'],
+    [90,  'Маршал Победы'],
+  ];
+  const nextRankData = rankThresholds.find(([t]) => scorePct < t);
+  const nextRankScore = nextRankData ? Math.ceil(nextRankData[0] / 100 * maxScore) : null;
+  const toNextRank = nextRankScore ? Math.max(0, nextRankScore - state.totalScore) : 0;
+  const nextRankName = nextRankData ? nextRankData[1] : null;
 
   el.innerHTML = `
     <!-- Шапка профиля -->
@@ -2159,6 +2301,9 @@ function renderProfileTab() {
         <div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
           <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
         </div>
+        ${nextRankName ? `<div style="margin-top:8px;font-size:10px;color:var(--muted);text-align:center;letter-spacing:.04em">
+          До звания <span style="color:var(--accent)">${nextRankName}</span>: ещё <b style="color:var(--accent)">${toNextRank}</b> оч
+        </div>` : '<div style="margin-top:8px;font-size:10px;color:var(--green);text-align:center">🏆 Максимальное звание достигнуто!</div>'}
       </div>
 
       <!-- Звания -->

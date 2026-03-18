@@ -1178,10 +1178,12 @@ body::before{
     <div class="cipher-progress" id="cipher-progress"></div>
     <div style="text-align:center">
       <div style="font-size:var(--fs-base);color:var(--accent);letter-spacing:.1em" id="cipher-chapter-label"></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px" id="cipher-score-display">0 оч</div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span id="cipher-timer" style="font-family:var(--mono);font-size:var(--fs-xs);color:var(--muted);min-width:28px;text-align:right">0с</span>
       <div class="cipher-attempts" id="cipher-attempts-label"></div>
-      <button onclick="pauseGame()" style="background:none;border:none;font-size:18px;cursor:pointer;opacity:.6;padding:4px" title="Выйти (прогресс сохранится)">⏸</button>
+      <button onclick="pauseGame()" style="background:none;border:none;font-size:18px;cursor:pointer;opacity:.6;padding:4px" title="Пауза">⏸</button>
     </div>
   </div>
   <div class="cipher-body">
@@ -1248,6 +1250,12 @@ body::before{
   </div>
   <div class="chend-buttons">
     <button class="btn-primary" id="chend-next-btn">← К ЗАДАНИЯМ</button>
+    <button id="chend-share-btn" style="display:none;width:100%;margin-top:8px;
+      background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.25);color:var(--accent);
+      padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;
+      border-radius:4px;cursor:pointer;letter-spacing:.08em">
+      📤 ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ
+    </button>
   </div>
 </div>
 
@@ -1277,6 +1285,10 @@ body::before{
   </div>
   <div style="font-size:17px;color:var(--muted);text-align:center;margin-bottom:32px;letter-spacing:.1em" id="fail-score-line"></div>
   <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px">
+    <button class="btn-primary" id="fail-retry-btn" style="display:none;margin-bottom:6px;background:var(--accent2);box-shadow:0 0 20px rgba(255,58,58,.3)">🔄 ПОПРОБОВАТЬ СНОВА</button>
+    <div id="fail-retry-info" style="font-size:11px;color:rgba(255,255,255,.35);text-align:center;margin-bottom:12px;line-height:1.6;display:none">
+      ⚠️ Условие повтора:<br>+10 сек к каждому заданию · очки снижены на ~30%
+    </div>
     <button class="btn-primary" id="fail-next-btn">СЛЕДУЮЩАЯ ГЛАВА →</button>
     <button class="btn-secondary" onclick="showScreen('s-chapters');renderChapters()">← К ЗАДАНИЯМ</button>
     <button class="btn-back" onclick="exitToMain()" style="margin-top:8px">🏠 Главное меню</button>
