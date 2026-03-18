@@ -4863,6 +4863,36 @@ async def save_photo_subs(query, context):
 #  HTTP ENDPOINT ДЛЯ СИНХРОНИЗАЦИИ ИЗ ИГРЫ
 # ══════════════════════════════════════════════════════════
 
+async def handle_game_state(request):
+    """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД."""
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    }
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = int(user_id)
+        result = await asyncio.to_thread(db.get_game_result, user_id)
+        if not result:
+            return aiohttp_web.json_response(
+                {'ok': True, 'score': 0, 'completed': 0, 'game_over': False, 'banned': False},
+                headers=headers)
+        uid, uname, score, completed, game_over, updated, banned = result
+        return aiohttp_web.json_response({
+            'ok': True,
+            'score': score or 0,
+            'completed': completed or 0,
+            'game_over': bool(game_over),
+            'banned': bool(banned),
+        }, headers=headers)
+    except Exception as e:
+        logger.error(f"handle_game_state error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
+
+
 async def handle_game_sync(request):
     """Принимает POST /game_sync от игры и сохраняет результат в БД."""
     headers = {
@@ -4959,6 +4989,7 @@ def start_http_server_thread():
     async def _run():
         app_http = aiohttp_web.Application()
         # API
+        app_http.router.add_get('/game_state', handle_game_state)
         app_http.router.add_post('/game_sync', handle_game_sync)
         app_http.router.add_options('/game_sync', handle_game_sync)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))

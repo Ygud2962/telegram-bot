@@ -2405,6 +2405,55 @@ async function checkMapAnswer(clicked, target) {
 // ═══════════════════════════════════════════════════════
 loadState();
 mergeBotLeaderboard();   // подгружаем данные из бота
+
+// Если tgInitMe пустой (нет startParam) — запрашиваем состояние с сервера
+// Это гарантирует что сброс/бан применится даже при перезаходе без данных бота
+async function fetchAndApplyState() {
+  const uid = getTgUserId();
+  const syncUrl = window._syncUrl;
+  if (!uid || !syncUrl) return;
+  if (tgInitMe) return; // данные уже есть из startParam
+
+  try {
+    const base = syncUrl.replace('/game_sync', '');
+    const resp = await fetch(`${base}/game_state?user_id=${uid}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.ok) return;
+
+    // Применяем бан
+    if (data.banned) {
+      document.body.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+          height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
+          <div style="font-size:64px;margin-bottom:16px">🚫</div>
+          <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
+          <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
+            Ваш аккаунт заблокирован администратором.
+          </div>
+        </div>`;
+      try { localStorage.removeItem(storageKey()); } catch(e) {}
+      return;
+    }
+
+    // Если данные с сервера отличаются — применяем их (сброс прогресса)
+    if (data.score !== state.totalScore || data.completed !== Object.keys(state.completedChapters).length) {
+      state.totalScore = data.score;
+      state.completedChapters = {};
+      for (let i = 1; i <= data.completed; i++) state.completedChapters[i] = true;
+      state.chapterScores = {};
+      state.gameOver = data.game_over;
+      try { localStorage.removeItem(storageKey()); } catch(e) {}
+      saveState();
+      renderChapters();
+      console.log('🔄 Состояние синхронизировано с сервером:', data.score, 'оч,', data.completed, 'глав');
+    }
+  } catch(e) {
+    console.warn('fetchAndApplyState error:', e);
+  }
+}
+
 renderChapters();
+fetchAndApplyState(); // асинхронно подтягиваем состояние с сервера
 try {
 } catch(e) {}
