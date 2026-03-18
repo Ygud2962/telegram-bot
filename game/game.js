@@ -306,7 +306,36 @@ async function sendResultToBot(data) {
         body: JSON.stringify(data)
       });
       if (resp.ok) {
-        console.log('✅ game_sync: HTTP POST OK');
+        const result = await resp.json().catch(() => ({}));
+        console.log('✅ game_sync: HTTP POST OK', result);
+
+        // Если игрок забанен — показываем заглушку немедленно
+        if (result.banned) {
+          document.body.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
+              <div style="font-size:64px;margin-bottom:16px">🚫</div>
+              <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
+              <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
+                Ваш аккаунт заблокирован администратором.<br><br>
+                По вопросам обратитесь к администратору бота.
+              </div>
+            </div>`;
+          try { localStorage.removeItem(storageKey()); } catch(e) {}
+          return;
+        }
+
+        // Если сервер вернул score меньше нашего — был сброс, обнуляем
+        if (typeof result.db_score === 'number' && result.db_score < state.totalScore) {
+          state.totalScore = result.db_score;
+          state.completedChapters = {};
+          state.chapterScores = {};
+          state.gameOver = false;
+          try { localStorage.removeItem(storageKey()); } catch(e) {}
+          saveState();
+          showToast('🔄 Прогресс обновлён администратором');
+        }
+
         _lastSyncedScore = data.total_score;
         _lastSyncedCompleted = data.completed;
         showToast('✅ Прогресс сохранён');
@@ -512,19 +541,34 @@ function mergeBotLeaderboard() {
     const dbScore     = tgInitMe.score     || 0;
     const dbCompleted = tgInitMe.completed || 0;
     const dbGameOver  = tgInitMe.game_over || false;
+    const dbBanned    = tgInitMe.banned    || false;
 
-    // Берём максимум из БД и localStorage (защита от потери прогресса)
-    if (dbScore >= state.totalScore) {
-      state.totalScore = dbScore;
-      // Восстанавливаем пройденные главы из БД
-      if (dbCompleted > Object.keys(state.completedChapters).length) {
-        state.completedChapters = {};
-        for (let i = 1; i <= dbCompleted; i++) {
-          state.completedChapters[i] = true;
-        }
-      }
-      if (dbGameOver) state.gameOver = true;
+    // Проверяем бан — заблокированный игрок видит заглушку
+    if (dbBanned) {
+      document.body.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+          height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
+          <div style="font-size:64px;margin-bottom:16px">🚫</div>
+          <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
+          <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
+            Ваш аккаунт заблокирован администратором.<br><br>
+            По вопросам обратитесь к администратору бота.
+          </div>
+        </div>`;
+      return;
     }
+
+    // БД всегда приоритетнее localStorage.
+    // Если админ сбросил прогресс — dbScore будет 0 и мы очищаем state.
+    state.totalScore = dbScore;
+    state.completedChapters = {};
+    for (let i = 1; i <= dbCompleted; i++) {
+      state.completedChapters[i] = true;
+    }
+    state.chapterScores = {};
+    state.gameOver = dbGameOver;
+    // Очищаем localStorage чтобы старый прогресс не всплыл при перезапуске
+    try { localStorage.removeItem(storageKey()); } catch(e) {}
     saveState();
   }
 }
@@ -545,7 +589,7 @@ function saveState() {
 // ═══════════════════════════════════════════════════════
 let currentChapter = 0;
 function showScreen(id) {
-  const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab'];
+  const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
   if (TAB_SCREENS.includes(id)) return; // только через switchTab
 
   if (id === 's-chapters') {
@@ -622,6 +666,7 @@ function renderChapters() {
   // Обновляем шапку
   const total = CHAPTERS.length;
   const pct = Math.round((completedCount / total) * 100);
+  // Старые id (на случай если есть)
   const pbEl = document.getElementById('ch-progress-bar');
   if (pbEl) pbEl.style.width = pct + '%';
   const clEl = document.getElementById('stat-completed-label');
@@ -631,6 +676,16 @@ function renderChapters() {
   const plEl = document.getElementById('stat-players-label');
   const plCount = tgInitLB.length || state.leaderboard.length;
   if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
+  // Новые id
+  const newPbEl = document.getElementById('chapters-progress-bar');
+  if (newPbEl) newPbEl.style.width = pct + '%';
+  const newPlEl = document.getElementById('chapters-progress-label');
+  if (newPlEl) newPlEl.textContent = completedCount + ' / ' + total + ' глав';
+  const newScEl = document.getElementById('chapters-score-display');
+  if (newScEl) newScEl.textContent = state.totalScore;
+  const newPlayersEl = document.getElementById('chapters-players-label');
+  const newPlCount = tgInitLB.length || state.leaderboard.length;
+  if (newPlayersEl && newPlCount) newPlayersEl.textContent = '👥 ' + newPlCount + ' игроков';
 
   // Если игра окончена — показываем кнопку финала
   if (state.gameOver) {
@@ -1763,11 +1818,13 @@ function switchTab(tab) {
     'chapters':    's-chapters',
     'leaderboard': 's-leaderboard-tab',
     'profile':     's-profile-tab',
+    'about':       's-about-tab',
   };
   const tabMap = {
     'chapters':    'bn-chapters',
     'leaderboard': 'bn-leaderboard',
     'profile':     'bn-profile',
+    'about':       'bn-about',
   };
 
   const screenEl = document.getElementById(screenMap[tab]);
@@ -1778,6 +1835,156 @@ function switchTab(tab) {
   if (tab === 'chapters')    renderChapters();
   if (tab === 'leaderboard') renderLeaderboardTab();
   if (tab === 'profile')     renderProfileTab();
+  if (tab === 'about')       renderAboutTab();
+}
+
+
+function renderAboutTab() {
+  const el = document.getElementById('about-tab-content');
+  if (!el) return;
+
+  el.innerHTML = `
+    <!-- ШАПКА -->
+    <div style="background:linear-gradient(180deg,#1a1508 0%,#0d0b08 100%);
+      padding:32px 20px 24px;text-align:center;border-bottom:1px solid rgba(255,224,51,.1)">
+      <div style="font-size:56px;margin-bottom:12px;
+        filter:drop-shadow(0 0 24px rgba(255,224,51,.5))">🔐</div>
+      <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);
+        letter-spacing:.08em;margin-bottom:4px">ШИФРОВАЛЬЩИК</div>
+      <div style="font-size:var(--fs-sm);color:var(--muted);letter-spacing:.06em">
+        ВЕРСИЯ 1.0  ·  2025
+      </div>
+    </div>
+
+    <!-- О ИГРЕ -->
+    <div style="padding:20px 16px">
+
+      <div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:10px">📖 О ИГРЕ</div>
+        <div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7">
+          <b style="color:#fdfaf0">Шифровальщик</b> — образовательная игра о событиях
+          Великой Отечественной войны на территории Беларуси.<br><br>
+          Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций
+          и приблизьте День Победы. Каждая глава основана на реальных исторических событиях.
+        </div>
+      </div>
+
+      <!-- КАК ИГРАТЬ -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${[
+            ['🗺', 'Выберите операцию', 'Откройте главу и прочитайте брифинг'],
+            ['🔐', 'Расшифруйте послание', '6 типов шифров: Цезарь, Морзе, Атбаш, Числовой, Анаграмма, Математика'],
+            ['❤️', '5 жизней на главу', 'Каждая ошибка — минус жизнь. Берегите их!'],
+            ['⚡', 'Скорость = очки', 'Чем быстрее ответ — тем больше очков'],
+            ['🏆', 'Таблица лидеров', 'Соревнуйтесь с другими учениками школы'],
+          ].map(([icon, title, desc]) => `
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="font-size:22px;min-width:32px;text-align:center">${icon}</div>
+              <div>
+                <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">${title}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5">${desc}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- ГЛАВЫ -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">📚 ОПЕРАЦИИ</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${[
+            ['I',   '🏙', 'Подполье Минска',     'Минск · Июль 1942'],
+            ['II',  '💣', 'Рельсовая война',      'Витебск · Август 1943'],
+            ['III', '⚔️', 'Операция Багратион',   'Беларусь · Июнь 1944'],
+            ['IV',  '🚩', 'Последний шифр',       'Берлин · Май 1945'],
+            ['V',   '🌍', 'Знай свою землю',      'Беларусь · История'],
+            ['VI',  '🎖', 'Дорога к Победе',      'Беларусь · 1941–1945'],
+          ].map(([num, icon, title, place]) => `
+            <div style="display:flex;align-items:center;gap:10px;
+              padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+              <div style="font-size:18px">${icon}</div>
+              <div style="flex:1">
+                <div style="font-size:var(--fs-sm);color:#fdfaf0">
+                  <span style="color:var(--muted);font-size:10px">ГЛАВА ${num} · </span>${title}
+                </div>
+                <div style="font-size:10px;color:var(--muted);margin-top:1px">${place}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- СОЗДАТЕЛЬ -->
+      <div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">👨‍💻 РАЗРАБОТКА</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:28px">🏫</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">СШ №3 г. Хойники</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Государственное учреждение образования</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:28px">👨‍🎓</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">Гуд Юрий Петрович</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Разработчик · Учитель информатики</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ПОДДЕРЖКА -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+        border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
+          letter-spacing:.06em;margin-bottom:12px">🆘 ПОДДЕРЖКА</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:22px">💬</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0">Telegram</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">@Yury_hud</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:22px">📧</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0">Email</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">uragud.2020@gmail.com</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-size:22px">🕐</div>
+            <div>
+              <div style="font-size:var(--fs-sm);color:#fdfaf0">Время ответа</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Пн–Пт, 9:00–18:00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ВЕРСИЯ -->
+      <div style="text-align:center;padding:16px 0 8px;
+        color:var(--muted);font-size:10px;letter-spacing:.06em">
+        ШИФРОВАЛЬЩИК v1.0  ·  © 2025 СШ №3 г. Хойники<br>
+        <span style="color:rgba(255,255,255,.2)">Сделано с ❤️ для учеников школы</span>
+      </div>
+
+    </div>
+  `;
 }
 
 function renderLeaderboardTab() {
@@ -1795,7 +2002,7 @@ function renderLeaderboardTab() {
       <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">РЕЙТИНГ</div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} участников</div>
     </div>
-    <button onclick="switchTab('leaderboard')"
+    <button onclick="renderLeaderboardTab()"
       style="background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
       color:var(--accent);padding:6px 12px;border-radius:4px;font-family:var(--head);
       font-size:var(--fs-xs);cursor:pointer;letter-spacing:.06em">🔄 ОБНОВИТЬ</button>
@@ -1828,9 +2035,7 @@ function renderLeaderboardTab() {
     const done   = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
     const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
     const roleIcon  = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
-    const roleTag   = e.role === 'admin' ? ' <span style="font-size:9px;color:var(--accent);opacity:.7;letter-spacing:.04em">(АДМИН)</span>'
-                    : e.role === 'tester' ? ' <span style="font-size:9px;color:var(--muted);letter-spacing:.04em">(ТЕСТ)</span>'
-                    : '';
+    const roleTag   = ''; // скобки убраны, используем только roleLabel
     const roleLabel = e.role === 'admin' ? 'Администратор' : e.role === 'tester' ? 'Тестировщик' : '';
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
         border-bottom:1px solid rgba(255,255,255,.04);
@@ -1847,7 +2052,7 @@ function renderLeaderboardTab() {
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em;display:flex;gap:6px">
           <span>${done}</span>
-          ${roleLabel ? `<span style="color:rgba(255,224,51,.4)">${roleLabel}</span>` : ''}
+          ${roleLabel ? `<span style="color:rgba(255,224,51,.25)">${roleLabel}</span>` : ''}
         </div>
       </div>
       <div style="font-family:var(--head);font-size:var(--fs-xl);
@@ -1875,19 +2080,15 @@ function renderProfileTab() {
   if (!el) return;
   const uid = getTgUserId();
   const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-  // Берём максимум из localStorage и данных БД (tgInitMe)
+  // БД всегда приоритетнее — берём данные только из state (уже синхронизирован с БД)
   const dbCompleted = tgInitMe?.completed || 0;
   const dbScore     = tgInitMe?.score     || 0;
-  const localCompleted = Object.keys(state.completedChapters).length;
-  const completed = Math.max(localCompleted, dbCompleted);
-  // Обновляем state если БД даёт больше
-  if (dbScore > state.totalScore) state.totalScore = dbScore;
+  const completed   = Object.keys(state.completedChapters).length;
   const pct = Math.round((completed / CHAPTERS.length) * 100);
 
   // Роль из БД (передаётся через tgInitMe)
   const myRole = tgInitMe?.role || (tgUser?.id === 516406248 ? 'admin' : 'player');
   const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
-  const roleBadge  = roleLabels[myRole] || '';
 
   // Звание по очкам
   const titles = [
@@ -1900,9 +2101,6 @@ function renderProfileTab() {
   const maxScore = 5330;
   const scorePct = Math.round((state.totalScore / maxScore) * 100);
   const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
-
-  // Роль игрока из БД
-  const roleDisplay = roleLabels[myRole] || '';
 
   // Строим историю глав
   const chapterHistory = CHAPTERS.map(ch => {
@@ -1930,7 +2128,6 @@ function renderProfileTab() {
       <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
       ${roleDisplay ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);
         color:var(--accent);letter-spacing:.06em">${roleDisplay}</div>` : ''}
-      ${roleBadge ? `<div style="margin-top:6px;font-size:var(--fs-sm);color:var(--accent);font-weight:700;letter-spacing:.06em">${roleBadge}</div>` : ''}
       <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
         background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
         border-radius:20px;padding:5px 14px">
