@@ -2318,14 +2318,15 @@ function renderProfileTab() {
         ].map(([threshold, icon, title, pctLabel]) => {
           const isActive = scorePct >= threshold;
           const isCurrent = rank[1] === title;
-          return \`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;
-            border-bottom:1px solid rgba(255,255,255,.04);
-            opacity:\${isActive ? '1' : '0.35'}">
-            <div style="font-size:18px">\${icon}</div>
-            <div style="flex:1;font-size:var(--fs-sm);color:\${isCurrent ? 'var(--accent)' : '#fdfaf0'}">\${title}</div>
-            <div style="font-size:10px;color:var(--muted)">\${pctLabel}+</div>
-            \${isCurrent ? '<div style="font-size:9px;color:var(--accent);letter-spacing:.06em">◀ ВЫ</div>' : ''}
-          </div>\`;
+          const opacity = isActive ? '1' : '0.35';
+          const nameColor = isCurrent ? 'var(--accent)' : '#fdfaf0';
+          const youTag = isCurrent ? '<div style="font-size:9px;color:var(--accent);letter-spacing:.06em">◀ ВЫ</div>' : '';
+          return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);opacity:' + opacity + '">'
+            + '<div style="font-size:18px">' + icon + '</div>'
+            + '<div style="flex:1;font-size:var(--fs-sm);color:' + nameColor + '">' + title + '</div>'
+            + '<div style="font-size:10px;color:var(--muted)">' + pctLabel + '+</div>'
+            + youTag
+            + '</div>';
         }).join('')}
       </div>
 
