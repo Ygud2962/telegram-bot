@@ -2121,13 +2121,15 @@ function renderProfileTab() {
     </div>`;
   }).join('');
 
+  const roleLabel = roleLabels[myRole] || '';
+
   el.innerHTML = `
-    <div style="text-align:center;margin-bottom:20px">
+    <!-- Шапка профиля -->
+    <div style="text-align:center;padding:20px 16px;border-bottom:1px solid rgba(255,224,51,.08)">
       <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div>
       <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div>
       <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
-      ${roleDisplay ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);
-        color:var(--accent);letter-spacing:.06em">${roleDisplay}</div>` : ''}
+      ${roleLabel ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);letter-spacing:.06em;opacity:.8">${roleLabel}</div>` : ''}
       <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
         background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
         border-radius:20px;padding:5px 14px">
@@ -2135,41 +2137,71 @@ function renderProfileTab() {
         <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span>
       </div>
     </div>
-    <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px">
-      <div style="display:flex;justify-content:space-around;text-align:center">
-        <div>
-          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div>
-          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div>
+
+    <!-- Статистика -->
+    <div style="padding:16px">
+      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:10px">// МОЯ СТАТИСТИКА</div>
+      <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-around;text-align:center">
+          <div>
+            <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div>
+            <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div>
+          </div>
+          <div>
+            <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div>
+            <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div>
+          </div>
+          <div>
+            <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div>
+            <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div>
+          </div>
         </div>
-        <div>
-          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div>
-          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div>
-        </div>
-        <div>
-          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div>
-          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div>
+        <div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
+          <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
         </div>
       </div>
-      <!-- Прогресс-бар -->
-      <div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
-        <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
+
+      <!-- Звания -->
+      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:10px">// СИСТЕМА ЗВАНИЙ</div>
+      <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:12px;margin-bottom:12px">
+        ${[
+          [0,   '🎖', 'Новобранец',        '0%'],
+          [35,  '🏅', 'Сержант связи',     '35%'],
+          [55,  '🎖', 'Капитан подполья',  '55%'],
+          [75,  '⭐', 'Полковник разведки', '75%'],
+          [90,  '🌟', 'Маршал Победы',     '90%'],
+        ].map(([threshold, icon, title, pctLabel]) => {
+          const isActive = scorePct >= threshold;
+          const isCurrent = rank[1] === title;
+          return \`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;
+            border-bottom:1px solid rgba(255,255,255,.04);
+            opacity:\${isActive ? '1' : '0.35'}">
+            <div style="font-size:18px">\${icon}</div>
+            <div style="flex:1;font-size:var(--fs-sm);color:\${isCurrent ? 'var(--accent)' : '#fdfaf0'}">\${title}</div>
+            <div style="font-size:10px;color:var(--muted)">\${pctLabel}+</div>
+            \${isCurrent ? '<div style="font-size:9px;color:var(--accent);letter-spacing:.06em">◀ ВЫ</div>' : ''}
+          </div>\`;
+        }).join('')}
       </div>
+
+      <!-- Главы -->
+      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:10px">// МОИ ГЛАВЫ</div>
+      <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:12px;margin-bottom:16px">
+        ${chapterHistory}
+      </div>
+
+      <button onclick="switchTab('chapters')"
+        style="width:100%;margin-bottom:10px;background:var(--accent);color:#0a0a08;
+        border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base);
+        font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em">
+        ▶ ПРОДОЛЖИТЬ ИГРУ
+      </button>
+      <div style="text-align:center;margin-bottom:8px;font-size:10px;color:var(--muted);letter-spacing:.04em">
+        💾 Прогресс сохраняется автоматически
+      </div>
+      <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.35;margin-bottom:8px">🗑 Сбросить прогресс</button>
     </div>
-    <div style="margin-top:16px">
-      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);
-        letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>
-      ${chapterHistory}
-    </div>
-    <button onclick="switchTab('chapters')"
-      style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08;
-      border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base);
-      font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em">
-      ▶ ПРОДОЛЖИТЬ ИГРУ
-    </button>
-    <div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">
-      💾 Прогресс сохраняется автоматически
-    </div>
-    <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.4;margin-top:8px">🗑 Сбросить прогресс</button>`;
+  `;
 }
 
 
