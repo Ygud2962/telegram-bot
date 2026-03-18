@@ -1216,17 +1216,35 @@ async function failChapter() {
 function shareResult(chapterTitle, score, maxScore) {
   const pct = Math.round(score / maxScore * 100);
   const medals = pct >= 85 ? '🥇' : pct >= 60 ? '🥈' : '🥉';
-  const text = `${medals} Прошёл главу «${chapterTitle}» в игре ШИФРОВАЛЬЩИК!
-⭐ ${score} из ${maxScore} очков (${pct}%)
+  const text = medals + ' Прошёл ' + chapterTitle + ' - ШИФРОВАЛЬЩИК! ' + score + '/' + maxScore + ' (' + pct + '%) - СШ 3 г. Хойники';
 
-🔐 СШ №3 г. Хойники`;
-  if (tg && tg.switchInlineQuery) {
-    tg.switchInlineQuery(text);
-  } else if (navigator.share) {
-    navigator.share({ text });
+  // Telegram Web App — копируем в буфер и показываем уведомление
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+
+  // Пробуем скопировать в буфер обмена
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('📋 Результат скопирован! Вставьте в чат'))
+      .catch(() => fallbackCopy(text));
   } else {
-    // Копируем в буфер
-    navigator.clipboard?.writeText(text).then(() => showToast('📋 Скопировано!'));
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  // Фоллбэк через textarea для старых браузеров
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('📋 Результат скопирован! Вставьте в чат');
+  } catch(e) {
+    showToast('❌ Не удалось скопировать');
   }
 }
 
