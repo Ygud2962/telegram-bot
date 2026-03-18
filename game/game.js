@@ -306,36 +306,7 @@ async function sendResultToBot(data) {
         body: JSON.stringify(data)
       });
       if (resp.ok) {
-        const result = await resp.json().catch(() => ({}));
-        console.log('✅ game_sync: HTTP POST OK', result);
-
-        // Если игрок забанен — показываем заглушку немедленно
-        if (result.banned) {
-          document.body.innerHTML = `
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-              height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
-              <div style="font-size:64px;margin-bottom:16px">🚫</div>
-              <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
-              <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
-                Ваш аккаунт заблокирован администратором.<br><br>
-                По вопросам обратитесь к администратору бота.
-              </div>
-            </div>`;
-          try { localStorage.removeItem(storageKey()); } catch(e) {}
-          return;
-        }
-
-        // Если сервер вернул score меньше нашего — был сброс, обнуляем
-        if (typeof result.db_score === 'number' && result.db_score < state.totalScore) {
-          state.totalScore = result.db_score;
-          state.completedChapters = {};
-          state.chapterScores = {};
-          state.gameOver = false;
-          try { localStorage.removeItem(storageKey()); } catch(e) {}
-          saveState();
-          showToast('🔄 Прогресс обновлён администратором');
-        }
-
+        console.log('✅ game_sync: HTTP POST OK');
         _lastSyncedScore = data.total_score;
         _lastSyncedCompleted = data.completed;
         showToast('✅ Прогресс сохранён');
@@ -515,6 +486,7 @@ const DEFAULT_STATE = () => ({
   chapterScore: 0, totalScore: 0,
   completedChapters: {}, chapterScores: {},
   streak: 0, retryPenalty: false,
+  chapterStats: {},
   gameOver: false, leaderboard: []
 });
 
@@ -542,34 +514,19 @@ function mergeBotLeaderboard() {
     const dbScore     = tgInitMe.score     || 0;
     const dbCompleted = tgInitMe.completed || 0;
     const dbGameOver  = tgInitMe.game_over || false;
-    const dbBanned    = tgInitMe.banned    || false;
 
-    // Проверяем бан — заблокированный игрок видит заглушку
-    if (dbBanned) {
-      document.body.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-          height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
-          <div style="font-size:64px;margin-bottom:16px">🚫</div>
-          <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
-          <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
-            Ваш аккаунт заблокирован администратором.<br><br>
-            По вопросам обратитесь к администратору бота.
-          </div>
-        </div>`;
-      return;
+    // Берём максимум из БД и localStorage (защита от потери прогресса)
+    if (dbScore >= state.totalScore) {
+      state.totalScore = dbScore;
+      // Восстанавливаем пройденные главы из БД
+      if (dbCompleted > Object.keys(state.completedChapters).length) {
+        state.completedChapters = {};
+        for (let i = 1; i <= dbCompleted; i++) {
+          state.completedChapters[i] = true;
+        }
+      }
+      if (dbGameOver) state.gameOver = true;
     }
-
-    // БД всегда приоритетнее localStorage.
-    // Если админ сбросил прогресс — dbScore будет 0 и мы очищаем state.
-    state.totalScore = dbScore;
-    state.completedChapters = {};
-    for (let i = 1; i <= dbCompleted; i++) {
-      state.completedChapters[i] = true;
-    }
-    state.chapterScores = {};
-    state.gameOver = dbGameOver;
-    // Очищаем localStorage чтобы старый прогресс не всплыл при перезапуске
-    try { localStorage.removeItem(storageKey()); } catch(e) {}
     saveState();
   }
 }
@@ -667,7 +624,6 @@ function renderChapters() {
   // Обновляем шапку
   const total = CHAPTERS.length;
   const pct = Math.round((completedCount / total) * 100);
-  // Старые id (на случай если есть)
   const pbEl = document.getElementById('ch-progress-bar');
   if (pbEl) pbEl.style.width = pct + '%';
   const clEl = document.getElementById('stat-completed-label');
@@ -677,16 +633,6 @@ function renderChapters() {
   const plEl = document.getElementById('stat-players-label');
   const plCount = tgInitLB.length || state.leaderboard.length;
   if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
-  // Новые id
-  const newPbEl = document.getElementById('chapters-progress-bar');
-  if (newPbEl) newPbEl.style.width = pct + '%';
-  const newPlEl = document.getElementById('chapters-progress-label');
-  if (newPlEl) newPlEl.textContent = completedCount + ' / ' + total + ' глав';
-  const newScEl = document.getElementById('chapters-score-display');
-  if (newScEl) newScEl.textContent = state.totalScore;
-  const newPlayersEl = document.getElementById('chapters-players-label');
-  const newPlCount = tgInitLB.length || state.leaderboard.length;
-  if (newPlayersEl && newPlCount) newPlayersEl.textContent = '👥 ' + newPlCount + ' игроков';
 
   // Если игра окончена — показываем кнопку финала
   if (state.gameOver) {
@@ -716,12 +662,14 @@ function showBriefing(idx) {
 //  СТАРТ ГЛАВЫ
 // ═══════════════════════════════════════════════════════
 function startChapter(idx) {
-  state.chapter    = idx;
-  state.cipherIdx  = 0;
-  state.lives      = 5;
+  state.chapter      = idx;
+  state.cipherIdx    = 0;
+  state.lives        = 5;
   state.chapterScore = 0;
-  state.streak     = 0;
-  // retryPenalty устанавливается через retryChapter, не сбрасываем здесь
+  state.streak       = 0;
+  state._chapterStartTime = Date.now();
+  state._chapterErrors    = 0;
+  state._chapterHints     = 0;
   saveState();
   loadCipher();
   showScreen('s-cipher');
@@ -742,7 +690,6 @@ function loadCipher() {
   ).join('');
 
   document.getElementById('cipher-chapter-label').textContent = ch.subtitle + ' · ' + ch.place;
-  // Обновляем счётчик очков
   const scoreEl = document.getElementById('cipher-score-display');
   if (scoreEl) scoreEl.textContent = state.chapterScore + ' оч';
   document.getElementById('cipher-type-label').textContent    = cipher.typeLabel;
@@ -792,7 +739,6 @@ function loadCipher() {
 
   // Жизни
   renderLives();
-  // Таймер
   startTimer();
 
   // Сброс ввода
@@ -816,15 +762,11 @@ function loadCipher() {
 
 function renderLives() {
   const n = state.lives;
-  // Первый ряд: 3 сердца, второй ряд: 2 сердца
   let row1 = '', row2 = '';
   for(let i=0;i<3;i++) row1 += i < n ? '❤️' : '🖤';
   for(let i=3;i<5;i++) row2 += i < n ? '❤️' : '🖤';
   const el = document.getElementById('cipher-attempts-label');
-  el.innerHTML = `<div style="line-height:1.2;text-align:center">
-    <div>${row1}</div>
-    <div>${row2}</div>
-  </div>`;
+  if(el) el.innerHTML = '<div style="line-height:1.2;text-align:center"><div>' + row1 + '</div><div>' + row2 + '</div></div>';
 }
 
 function animateLifeLoss() {
@@ -833,16 +775,9 @@ function animateLifeLoss() {
   el.style.transition = 'transform .15s,filter .15s';
   el.style.transform = 'scale(1.3)';
   el.style.filter = 'drop-shadow(0 0 8px rgba(255,58,58,.9))';
-  setTimeout(() => {
-    el.style.transform = 'scale(1)';
-    el.style.filter = '';
-    renderLives();
-  }, 200);
+  setTimeout(() => { el.style.transform = ''; el.style.filter = ''; renderLives(); }, 200);
 }
 
-// ═══════════════════════════════════════════════════════
-//  ТАЙМЕР
-// ═══════════════════════════════════════════════════════
 let _timerInterval = null;
 
 function startTimer() {
@@ -855,16 +790,17 @@ function startTimer() {
   _timerInterval = setInterval(() => {
     const sec = Math.round((Date.now() - start) / 1000);
     el.textContent = sec + 'с';
-    // Цвет по времени
-    if (sec <= 10) { el.style.color = 'var(--green)'; }
-    else if (sec <= 30) { el.style.color = 'var(--accent)'; }
-    else if (sec <= 60) { el.style.color = 'var(--accent2)'; }
-    else { el.style.color = 'var(--red)'; }
+    if (sec <= 10) el.style.color = 'var(--green)';
+    else if (sec <= 30) el.style.color = 'var(--accent)';
+    else if (sec <= 60) el.style.color = 'var(--accent2)';
+    else el.style.color = 'var(--red)';
   }, 1000);
 }
 
 function stopTimer() {
   if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+  const el = document.getElementById('cipher-timer');
+  if (el) el.style.color = 'var(--muted)';
 }
 
 function animateMorse(el, text) {
@@ -920,10 +856,8 @@ function calcPoints(cipher, elapsed) {
   const secs  = Math.max(0, elapsed);
   const penalty = Math.floor(Math.max(0, secs - 10) / 10) * 0.08;
   let factor  = Math.max(0.20, 1 - penalty);
-  // Штраф за повторное прохождение главы (+10с к каждому заданию)
   if (state.retryPenalty) factor = Math.max(0.10, factor * 0.7);
-  // Стрик-бонус: +5% за каждый правильный ответ подряд (макс +30%)
-  const streakBonus = Math.min(0.30, state.streak * 0.05);
+  const streakBonus = Math.min(0.30, (state.streak || 0) * 0.05);
   factor = Math.min(1.30, factor + streakBonus);
   return Math.round(max * factor);
 }
@@ -965,10 +899,10 @@ async function checkAnswer() {
     // ── НЕПРАВИЛЬНО ──
     inp.className = 'cipher-input wrong';
     setTimeout(() => inp.className = 'cipher-input', 500);
-    state.streak = 0; // сброс стрика при ошибке
+    state.streak = 0;
+    state._chapterErrors = (state._chapterErrors || 0) + 1;
     state.lives--;
     saveState();
-    // Анимация потери жизни
     animateLifeLoss();
 
     if (state.lives <= 0) {
@@ -1033,6 +967,7 @@ function showHint() {
   const isAdmin = tgUser && tgUser.id === 516406248;
   if (!isAdmin && state.lives > 1) {
     state.lives--;
+    state._chapterHints = (state._chapterHints || 0) + 1;
     saveState();
     renderLives();
   }
@@ -1044,29 +979,20 @@ function showHint() {
 function showSuccess(cipher, pts, elapsed) {
   document.getElementById('succ-answer').textContent = ANSWER_MAP[cipher.answer] || cipher.answer;
   document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
-  // Исторический факт с иконкой
   const factEl = document.getElementById('succ-fact');
-  if (factEl && cipher.fact) {
-    factEl.innerHTML = `<span style="color:var(--accent3);margin-right:4px">📜</span>${cipher.fact}`;
-  } else if (factEl) {
-    factEl.textContent = '';
-  }
-  document.getElementById('succ-pts').textContent        = pts > 0 ? '+' + pts : '0';
-  document.getElementById('succ-time').textContent       = typeof elapsed === 'number' ? elapsed + 'с' : elapsed;
-
-  // Скоростной бонус + стрик
+  if (factEl) factEl.innerHTML = cipher.fact ? '<span style="color:var(--accent3);margin-right:4px">📜</span>' + cipher.fact : '';
+  document.getElementById('succ-pts').textContent  = pts > 0 ? '+' + pts : '0';
+  document.getElementById('succ-time').textContent = typeof elapsed === 'number' ? elapsed + 'с' : elapsed;
   const speedEl = document.getElementById('succ-speed');
   const streak = state.streak || 0;
-  let speedText = '';
-  let speedColor = 'var(--muted)';
+  let speedText = '', speedColor = 'var(--muted)';
   if (elapsed <= 10) { speedText = '⚡ Молниеносно!'; speedColor = 'var(--green)'; }
   else if (elapsed <= 20) { speedText = '🔥 Быстро!'; speedColor = 'var(--accent)'; }
-  else if (elapsed > 60) { speedText = '🐢 Медленно...'; speedColor = 'var(--muted)'; }
-  else { speedText = '⏱ ' + elapsed + 'с'; speedColor = 'var(--muted)'; }
-  // Стрик
+  else if (elapsed > 60) { speedText = '🐢 Медленно...'; }
+  else { speedText = '⏱ ' + elapsed + 'с'; }
   if (streak >= 2) {
     const bonus = Math.min(30, streak * 5);
-    speedText += `  🔥 Стрик ×${streak} (+${bonus}%)`;
+    speedText += '  🔥 Стрик x' + streak + ' (+' + bonus + '%)';
     speedColor = streak >= 4 ? 'var(--green)' : 'var(--accent)';
   }
   speedEl.textContent = speedText;
@@ -1097,9 +1023,20 @@ function nextCipher() {
 // ═══════════════════════════════════════════════════════
 async function finishChapter() {
   const ch = CHAPTERS[state.chapter];
+  const alreadyDone = !!state.completedChapters[ch.id];
+  const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
+  if (!state.chapterStats) state.chapterStats = {};
+  state.chapterStats[ch.id] = {
+    time: chTime, errors: state._chapterErrors || 0,
+    hints: state._chapterHints || 0, score: state.chapterScore,
+    max: ch.ciphers.reduce((s,c) => s+c.points, 0)
+  };
   state.completedChapters[ch.id] = true;
-  state.chapterScores[ch.id]     = state.chapterScore;
-  state.totalScore               += state.chapterScore;
+  if (!alreadyDone) {
+    state.chapterScores[ch.id] = state.chapterScore;
+    state.totalScore          += state.chapterScore;
+    if (state.retryPenalty) state.retryPenalty = false;
+  }
 
   // Медали
   const maxPossible = ch.ciphers.reduce((s,c)=>s+c.points, 0);
@@ -1143,13 +1080,6 @@ async function finishChapter() {
     nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); };
   }
 
-  // Кнопка поделиться
-  const shareBtn = document.getElementById('chend-share-btn');
-  if (shareBtn) {
-    shareBtn.style.display = 'block';
-    shareBtn.onclick = () => shareResult(ch.title, state.chapterScore, maxPossible);
-  }
-
   showScreen('s-chapter-end');
 }
 
@@ -1159,10 +1089,19 @@ async function finishChapter() {
 // ═══════════════════════════════════════════════════════
 async function failChapter() {
   const ch = CHAPTERS[state.chapter];
-  // Глава считается пройденной (с 0 баллов за неотвеченные)
+  const alreadyDone = !!state.completedChapters[ch.id];
+  const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
+  if (!state.chapterStats) state.chapterStats = {};
+  state.chapterStats[ch.id] = {
+    time: chTime, errors: state._chapterErrors || 0,
+    hints: state._chapterHints || 0, score: state.chapterScore,
+    max: ch.ciphers.reduce((s,c) => s+c.points, 0), failed: true
+  };
   state.completedChapters[ch.id] = true;
-  state.chapterScores[ch.id]     = state.chapterScore;
-  state.totalScore               += state.chapterScore;
+  if (!alreadyDone) {
+    state.chapterScores[ch.id] = state.chapterScore;
+    state.totalScore          += state.chapterScore;
+  }
 
   const allDone = CHAPTERS.every(c => state.completedChapters[c.id]);
   if (allDone) state.gameOver = true;
@@ -1187,7 +1126,7 @@ async function failChapter() {
   const nextBtn = document.getElementById('fail-next-btn');
   if (nextIdx < CHAPTERS.length && !allDone) {
     const nextCh = CHAPTERS[nextIdx];
-    nextBtn.textContent = `СЛЕДУЮЩАЯ ГЛАВА: ${nextCh.title} →`;
+    nextBtn.textContent = 'СЛЕДУЮЩАЯ ГЛАВА: ' + nextCh.title + ' →';
     nextBtn.onclick = () => showBriefing(nextIdx);
     nextBtn.style.display = 'block';
   } else if (allDone) {
@@ -1197,72 +1136,117 @@ async function failChapter() {
   } else {
     nextBtn.style.display = 'none';
   }
-
-  // Кнопка повторной попытки
   const retryBtn = document.getElementById('fail-retry-btn');
   const retryInfo = document.getElementById('fail-retry-info');
-  if (retryBtn) {
-    retryBtn.style.display = 'block';
-    retryBtn.onclick = () => retryChapter(state.chapter);
-  }
+  if (retryBtn) { retryBtn.style.display = 'block'; retryBtn.onclick = () => retryChapter(state.chapter); }
   if (retryInfo) retryInfo.style.display = 'block';
-
   showScreen('s-chapter-fail');
 }
 
 // ═══════════════════════════════════════════════════════
-//  ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ
+//  ПОВТОРНАЯ ПОПЫТКА
 // ═══════════════════════════════════════════════════════
-function shareResult(chapterTitle, score, maxScore) {
-  const pct = Math.round(score / maxScore * 100);
-  const medals = pct >= 85 ? '🥇' : pct >= 60 ? '🥈' : '🥉';
-  const text = medals + ' Прошёл ' + chapterTitle + ' - ШИФРОВАЛЬЩИК! ' + score + '/' + maxScore + ' (' + pct + '%) - СШ 3 г. Хойники';
+function retryChapter(idx) {
+  const ch = CHAPTERS[idx];
+  delete state.completedChapters[ch.id];
+  state.totalScore = Math.max(0, state.totalScore - (state.chapterScores[ch.id] || 0));
+  delete state.chapterScores[ch.id];
+  state.retryPenalty = true;
+  state.streak = 0;
+  saveState();
+  showBriefing(idx);
+}
 
-  // Telegram Web App — копируем в буфер и показываем уведомление
+// ═══════════════════════════════════════════════════════
+//  ДЕТАЛЬНАЯ СТАТИСТИКА + ПОДЕЛИТЬСЯ
+// ═══════════════════════════════════════════════════════
+function showMyStats() {
+  const name  = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
+  const stats = state.chapterStats || {};
+  const total = state.totalScore;
+  const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
+  const pct   = Math.round(total / maxAll * 100);
+
+  const rows = CHAPTERS.map(ch => {
+    const s     = stats[ch.id];
+    const score = state.chapterScores[ch.id] || 0;
+    const maxCh = ch.ciphers.reduce((a,c2) => a+c2.points, 0);
+    if (!state.completedChapters[ch.id]) {
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);opacity:.35">'
+        + '<div style="font-size:16px">🔒</div>'
+        + '<div style="flex:1;font-size:var(--fs-sm);color:var(--muted)">' + ch.title + '</div>'
+        + '<div style="font-size:11px;color:var(--muted)">не пройдена</div></div>';
+    }
+    const sp = Math.round(score / maxCh * 100);
+    const medal = sp >= 85 ? '🥇' : sp >= 60 ? '🥈' : '🥉';
+    const timeTxt = s ? (s.time >= 60 ? Math.floor(s.time/60) + 'м ' + (s.time%60) + 'с' : s.time + 'с') : '—';
+    const failTag = s && s.failed ? ' <span style="color:var(--accent2);font-size:9px">ПРОВАЛ</span>' : '';
+    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      + '<div style="font-size:16px">' + medal + '</div>'
+      + '<div style="flex:1;font-family:var(--head);font-size:var(--fs-sm);color:#fdfaf0">' + ch.title + failTag + '</div>'
+      + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent)">' + score + '</div></div>'
+      + '<div style="display:flex;gap:10px;font-size:10px;color:var(--muted);padding-left:24px">'
+      + '<span>⏱ ' + timeTxt + '</span>'
+      + (s ? '<span>❌ ' + s.errors + ' ош.</span>' : '')
+      + (s ? '<span>💡 ' + s.hints + ' подск.</span>' : '')
+      + '<span>' + sp + '%</span></div></div>';
+  }).join('');
+
+  let modal = document.getElementById('stats-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'stats-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);display:flex;align-items:flex-end;justify-content:center';
+    modal.onclick = (e) => { if (e.target === modal) closeMyStats(); };
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = '<div style="background:#161612;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px 16px 32px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'
+    + '<div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em">МОЯ СТАТИСТИКА</div>'
+    + '<button onclick="closeMyStats()" style="background:rgba(255,255,255,.08);border:none;color:var(--muted);font-size:18px;width:32px;height:32px;border-radius:50%;cursor:pointer">✕</button></div>'
+    + '<div style="background:#242418;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:14px;margin-bottom:14px;display:flex;justify-content:space-around;text-align:center">'
+    + '<div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">' + total + '</div><div style="font-size:10px;color:var(--muted)">ОЧКОВ</div></div>'
+    + '<div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">' + Object.keys(state.completedChapters).length + '/6</div><div style="font-size:10px;color:var(--muted)">ГЛАВ</div></div>'
+    + '<div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">' + pct + '%</div><div style="font-size:10px;color:var(--muted)">РЕЗУЛЬТАТ</div></div></div>'
+    + '<div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:8px">// ПО ГЛАВАМ</div>'
+    + rows
+    + '<button onclick="shareMyTotal()" style="width:100%;margin-top:16px;background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.25);color:var(--accent);padding:12px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">📤 ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ</button>'
+    + '</div>';
+
+  modal.style.display = 'flex';
+}
+
+function closeMyStats() {
+  const modal = document.getElementById('stats-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function shareMyTotal() {
+  const total  = state.totalScore;
+  const done   = Object.keys(state.completedChapters).length;
+  const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
+  const pct    = Math.round(total / maxAll * 100);
+  const medal  = pct >= 90 ? '🌟' : pct >= 75 ? '⭐' : pct >= 55 ? '🎖' : '🏅';
+  const text   = medal + ' ШИФРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
   if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-
-  // Пробуем скопировать в буфер обмена
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text)
-      .then(() => showToast('📋 Результат скопирован! Вставьте в чат'))
-      .catch(() => fallbackCopy(text));
+    navigator.clipboard.writeText(text).then(() => showToast('📋 Скопировано! Вставьте в чат'));
   } else {
     fallbackCopy(text);
   }
 }
 
 function fallbackCopy(text) {
-  // Фоллбэк через textarea для старых браузеров
   try {
     const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
+    ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-    showToast('📋 Результат скопирован! Вставьте в чат');
-  } catch(e) {
-    showToast('❌ Не удалось скопировать');
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-//  ПОВТОРНАЯ ПОПЫТКА ГЛАВЫ
-// ═══════════════════════════════════════════════════════
-function retryChapter(idx) {
-  const ch = CHAPTERS[idx];
-  // Убираем главу из пройденных чтобы не считалась завершённой дважды
-  delete state.completedChapters[ch.id];
-  // Вычитаем очки этой главы из общего счёта
-  state.totalScore = Math.max(0, state.totalScore - (state.chapterScores[ch.id] || 0));
-  delete state.chapterScores[ch.id];
-  // Включаем штраф: +10с к каждому заданию
-  state.retryPenalty = true;
-  state.streak = 0;
-  saveState();
-  showBriefing(idx);
+    showToast('📋 Скопировано! Вставьте в чат');
+  } catch(e) { showToast('Не удалось скопировать'); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1983,153 +1967,57 @@ function switchTab(tab) {
   if (tab === 'about')       renderAboutTab();
 }
 
-
 function renderAboutTab() {
   const el = document.getElementById('about-tab-content');
   if (!el) return;
-
-  el.innerHTML = `
-    <!-- ШАПКА -->
-    <div style="background:linear-gradient(180deg,#1a1508 0%,#0d0b08 100%);
-      padding:32px 20px 24px;text-align:center;border-bottom:1px solid rgba(255,224,51,.1)">
-      <div style="font-size:56px;margin-bottom:12px;
-        filter:drop-shadow(0 0 24px rgba(255,224,51,.5))">🔐</div>
-      <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);
-        letter-spacing:.08em;margin-bottom:4px">ШИФРОВАЛЬЩИК</div>
-      <div style="font-size:var(--fs-sm);color:var(--muted);letter-spacing:.06em">
-        ВЕРСИЯ 1.0  ·  2025
-      </div>
-    </div>
-
-    <!-- О ИГРЕ -->
-    <div style="padding:20px 16px">
-
-      <div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);
-        border-radius:8px;padding:16px;margin-bottom:16px">
-        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
-          letter-spacing:.06em;margin-bottom:10px">📖 О ИГРЕ</div>
-        <div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7">
-          <b style="color:#fdfaf0">Шифровальщик</b> — образовательная игра о событиях
-          Великой Отечественной войны на территории Беларуси.<br><br>
-          Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций
-          и приблизьте День Победы. Каждая глава основана на реальных исторических событиях.
-        </div>
-      </div>
-
-      <!-- КАК ИГРАТЬ -->
-      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
-        border-radius:8px;padding:16px;margin-bottom:16px">
-        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
-          letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          ${[
-            ['🗺', 'Выберите операцию', 'Откройте главу и прочитайте брифинг'],
-            ['🔐', 'Расшифруйте послание', '6 типов шифров: Цезарь, Морзе, Атбаш, Числовой, Анаграмма, Математика'],
-            ['❤️', '5 жизней на главу', 'Каждая ошибка — минус жизнь. Берегите их!'],
-            ['⚡', 'Скорость = очки', 'Чем быстрее ответ — тем больше очков'],
-            ['🏆', 'Таблица лидеров', 'Соревнуйтесь с другими учениками школы'],
-          ].map(([icon, title, desc]) => `
-            <div style="display:flex;gap:12px;align-items:flex-start">
-              <div style="font-size:22px;min-width:32px;text-align:center">${icon}</div>
-              <div>
-                <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">${title}</div>
-                <div style="font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5">${desc}</div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-
-      <!-- ГЛАВЫ -->
-      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
-        border-radius:8px;padding:16px;margin-bottom:16px">
-        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
-          letter-spacing:.06em;margin-bottom:12px">📚 ОПЕРАЦИИ</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          ${[
-            ['I',   '🏙', 'Подполье Минска',     'Минск · Июль 1942'],
-            ['II',  '💣', 'Рельсовая война',      'Витебск · Август 1943'],
-            ['III', '⚔️', 'Операция Багратион',   'Беларусь · Июнь 1944'],
-            ['IV',  '🚩', 'Последний шифр',       'Берлин · Май 1945'],
-            ['V',   '🌍', 'Знай свою землю',      'Беларусь · История'],
-            ['VI',  '🎖', 'Дорога к Победе',      'Беларусь · 1941–1945'],
-          ].map(([num, icon, title, place]) => `
-            <div style="display:flex;align-items:center;gap:10px;
-              padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)">
-              <div style="font-size:18px">${icon}</div>
-              <div style="flex:1">
-                <div style="font-size:var(--fs-sm);color:#fdfaf0">
-                  <span style="color:var(--muted);font-size:10px">ГЛАВА ${num} · </span>${title}
-                </div>
-                <div style="font-size:10px;color:var(--muted);margin-top:1px">${place}</div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-
-      <!-- СОЗДАТЕЛЬ -->
-      <div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);
-        border-radius:8px;padding:16px;margin-bottom:16px">
-        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
-          letter-spacing:.06em;margin-bottom:12px">👨‍💻 РАЗРАБОТКА</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div style="display:flex;gap:12px;align-items:center">
-            <div style="font-size:28px">🏫</div>
-            <div>
-              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">СШ №3 г. Хойники</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">Государственное учреждение образования</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:12px;align-items:center">
-            <div style="font-size:28px">👨‍🎓</div>
-            <div>
-              <div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">Гуд Юрий Петрович</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">Разработчик · Учитель информатики</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ПОДДЕРЖКА -->
-      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
-        border-radius:8px;padding:16px;margin-bottom:16px">
-        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);
-          letter-spacing:.06em;margin-bottom:12px">🆘 ПОДДЕРЖКА</div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div style="display:flex;gap:12px;align-items:center">
-            <div style="font-size:22px">💬</div>
-            <div>
-              <div style="font-size:var(--fs-sm);color:#fdfaf0">Telegram</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">@Yury_hud</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:12px;align-items:center">
-            <div style="font-size:22px">📧</div>
-            <div>
-              <div style="font-size:var(--fs-sm);color:#fdfaf0">Email</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">uragud.2020@gmail.com</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:12px;align-items:center">
-            <div style="font-size:22px">🕐</div>
-            <div>
-              <div style="font-size:var(--fs-sm);color:#fdfaf0">Время ответа</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">Пн–Пт, 9:00–18:00</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ВЕРСИЯ -->
-      <div style="text-align:center;padding:16px 0 8px;
-        color:var(--muted);font-size:10px;letter-spacing:.06em">
-        ШИФРОВАЛЬЩИК v1.0  ·  © 2025 СШ №3 г. Хойники<br>
-        <span style="color:rgba(255,255,255,.2)">Сделано с ❤️ для учеников школы</span>
-      </div>
-
-    </div>
-  `;
+  el.innerHTML = '<div style="background:linear-gradient(180deg,#1a1508 0%,#0d0b08 100%);padding:32px 20px 24px;text-align:center;border-bottom:1px solid rgba(255,224,51,.1)">'
+    + '<div style="font-size:56px;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(255,224,51,.5))">🔐</div>'
+    + '<div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.08em;margin-bottom:4px">ШИФРОВАЛЬЩИК</div>'
+    + '<div style="font-size:var(--fs-sm);color:var(--muted);letter-spacing:.06em">ВЕРСИЯ 1.0  ·  2025</div></div>'
+    + '<div style="padding:20px 16px">'
+    // О игре
+    + '<div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);border-radius:8px;padding:16px;margin-bottom:14px">'
+    + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:8px">📖 О ИГРЕ</div>'
+    + '<div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7"><b style="color:#fdfaf0">Шифровальщик</b> — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div>'
+    // Как играть
+    + '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:16px;margin-bottom:14px">'
+    + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:10px">🎮 КАК ИГРАТЬ</div>'
+    + ['🗺 Выберите операцию — откройте главу и прочитайте брифинг',
+       '🔐 Расшифруйте послание — 6 типов шифров',
+       '❤️ 5 жизней на главу — каждая ошибка минус жизнь',
+       '⚡ Скорость = очки — чем быстрее, тем больше',
+       '🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый',
+       '🏆 Таблица лидеров — соревнуйтесь с другими учениками'
+      ].map(t => '<div style="font-size:var(--fs-sm);color:rgba(255,255,255,.75);padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)">' + t + '</div>').join('')
+    + '</div>'
+    // Операции
+    + '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:16px;margin-bottom:14px">'
+    + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:10px">📚 ОПЕРАЦИИ</div>'
+    + [['I','🏙','Подполье Минска','Минск · Июль 1942'],
+       ['II','💣','Рельсовая война','Витебск · Август 1943'],
+       ['III','⚔️','Операция Багратион','Беларусь · Июнь 1944'],
+       ['IV','🚩','Последний шифр','Берлин · Май 1945'],
+       ['V','🌍','Знай свою землю','Беларусь · История'],
+       ['VI','🎖','Дорога к Победе','Беларусь · 1941–1945']
+      ].map(([n,ic,t,p]) => '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)">'
+        + '<div style="font-size:18px">' + ic + '</div>'
+        + '<div><div style="font-size:var(--fs-sm);color:#fdfaf0"><span style="color:var(--muted);font-size:10px">ГЛАВА ' + n + ' · </span>' + t + '</div>'
+        + '<div style="font-size:10px;color:var(--muted)">' + p + '</div></div></div>'
+      ).join('')
+    + '</div>'
+    // Разработка
+    + '<div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);border-radius:8px;padding:16px;margin-bottom:14px">'
+    + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:10px">👨‍💻 РАЗРАБОТКА</div>'
+    + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:10px"><div style="font-size:28px">🏫</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">СШ №3 г. Хойники</div><div style="font-size:11px;color:var(--muted)">Государственное учреждение образования</div></div></div>'
+    + '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:28px">👨‍🎓</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0;font-weight:600">Гуд Юрий Петрович</div><div style="font-size:11px;color:var(--muted)">Разработчик · Учитель информатики</div></div></div></div>'
+    // Поддержка
+    + '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:16px;margin-bottom:14px">'
+    + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:10px">🆘 ПОДДЕРЖКА</div>'
+    + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:8px"><div style="font-size:22px">💬</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Telegram</div><div style="font-size:11px;color:var(--muted)">@Yury_hud</div></div></div>'
+    + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:8px"><div style="font-size:22px">📧</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Email</div><div style="font-size:11px;color:var(--muted)">uragud.2020@gmail.com</div></div></div>'
+    + '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:22px">🕐</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Время ответа</div><div style="font-size:11px;color:var(--muted)">Пн–Пт, 9:00–18:00</div></div></div></div>'
+    + '<div style="text-align:center;padding:12px 0;color:var(--muted);font-size:10px;letter-spacing:.06em">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>'
+    + '</div>';
 }
 
 function renderLeaderboardTab() {
@@ -2147,7 +2035,7 @@ function renderLeaderboardTab() {
       <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">РЕЙТИНГ</div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} участников</div>
     </div>
-    <button onclick="renderLeaderboardTab()"
+    <button onclick="switchTab('leaderboard')"
       style="background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
       color:var(--accent);padding:6px 12px;border-radius:4px;font-family:var(--head);
       font-size:var(--fs-xs);cursor:pointer;letter-spacing:.06em">🔄 ОБНОВИТЬ</button>
@@ -2163,7 +2051,8 @@ function renderLeaderboardTab() {
         Никто ещё не прошёл ни одной главы.<br>
         <b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b>
       </div>
-      <button onclick="switchTab('chapters')"
+      <button onclick="showMyStats()" style="width:100%;margin-bottom:10px;background:rgba(255,224,51,.08);border:1px solid rgba(255,224,51,.2);color:var(--accent);padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">📊 ДЕТАЛЬНАЯ СТАТИСТИКА</button>
+    <button onclick="switchTab('chapters')"
         style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px;
         font-family:var(--head);font-size:var(--fs-base);font-weight:700;
         border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%">
@@ -2174,21 +2063,21 @@ function renderLeaderboardTab() {
   }
 
   const medals = ['🥇','🥈','🥉'];
-  const myRole = tgInitMe?.role || '';
-  const isAdmin = myRole === 'admin' || tgUser?.id === 516406248;
-  const visibleLb = isAdmin ? lb : lb.slice(0, 10);
+  const myRole2 = tgInitMe?.role || '';
+  const isAdminUser = myRole2 === 'admin' || (tgUser && tgUser.id === 516406248);
+  const visibleLb = isAdminUser ? lb : lb.slice(0, 10);
   const rows = visibleLb.map((e,i) => {
     const isMe   = e.uid === myUid;
     const pct    = Math.round((e.completed / 6) * 100);
     const done   = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
     const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
     const roleIcon  = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
-    const roleTag   = ''; // скобки убраны, используем только roleLabel
+    const roleTag   = e.role === 'admin' ? ' <span style="font-size:9px;color:var(--accent);opacity:.7;letter-spacing:.04em">(АДМИН)</span>'
+                    : e.role === 'tester' ? ' <span style="font-size:9px;color:var(--muted);letter-spacing:.04em">(ТЕСТ)</span>'
+                    : '';
     const roleLabel = e.role === 'admin' ? 'Администратор' : e.role === 'tester' ? 'Тестировщик' : '';
-    return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
-        border-bottom:1px solid rgba(255,255,255,.04);
-        background:${isMe?'rgba(255,224,51,.06)':rankBg};
-        ${isMe?'border-left:3px solid var(--accent)':''}">
+    const clickAttr = isMe ? ' onclick="showMyStats()" ' : '';
+    return `<div ${clickAttr}style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);background:${isMe?'rgba(255,224,51,.06)':rankBg};${isMe?'border-left:3px solid var(--accent);cursor:pointer':''}">
       <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">
         ${medals[i] || '<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">'+(i+1)+'</span>'}
       </div>
@@ -2200,7 +2089,7 @@ function renderLeaderboardTab() {
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em;display:flex;gap:6px">
           <span>${done}</span>
-          ${roleLabel ? `<span style="color:rgba(255,224,51,.25)">${roleLabel}</span>` : ''}
+          ${roleLabel ? `<span style="color:rgba(255,224,51,.4)">${roleLabel}</span>` : ''}
         </div>
       </div>
       <div style="font-family:var(--head);font-size:var(--fs-xl);
@@ -2217,7 +2106,7 @@ function renderLeaderboardTab() {
     <div style="margin:12px 16px;padding:12px;
       background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;
       font-size:var(--fs-sm);color:var(--muted);text-align:center">
-      📍 Вы не в топ-10. Играйте чтобы попасть в рейтинг!
+      📍 Вы не в топ-10. Нажмите на своё имя в рейтинге для статистики.
     </div>`;
 
   list.innerHTML = header + rows + myPos;
@@ -2228,15 +2117,19 @@ function renderProfileTab() {
   if (!el) return;
   const uid = getTgUserId();
   const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-  // БД всегда приоритетнее — берём данные только из state (уже синхронизирован с БД)
+  // Берём максимум из localStorage и данных БД (tgInitMe)
   const dbCompleted = tgInitMe?.completed || 0;
   const dbScore     = tgInitMe?.score     || 0;
-  const completed   = Object.keys(state.completedChapters).length;
+  const localCompleted = Object.keys(state.completedChapters).length;
+  const completed = Math.max(localCompleted, dbCompleted);
+  // Обновляем state если БД даёт больше
+  if (dbScore > state.totalScore) state.totalScore = dbScore;
   const pct = Math.round((completed / CHAPTERS.length) * 100);
 
   // Роль из БД (передаётся через tgInitMe)
   const myRole = tgInitMe?.role || (tgUser?.id === 516406248 ? 'admin' : 'player');
   const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
+  const roleBadge  = roleLabels[myRole] || '';
 
   // Звание по очкам
   const titles = [
@@ -2249,6 +2142,11 @@ function renderProfileTab() {
   const maxScore = 5330;
   const scorePct = Math.round((state.totalScore / maxScore) * 100);
   const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
+
+  const roleLabel2 = roleLabels[myRole] || '';
+  const nextRankData = titles.find(([t]) => scorePct < t);
+  const toNextRank = nextRankData ? Math.max(0, Math.ceil(nextRankData[0] / 100 * maxScore) - state.totalScore) : 0;
+  const nextRankName2 = nextRankData ? nextRankData[1] : null;
 
   // Строим историю глав
   const chapterHistory = CHAPTERS.map(ch => {
@@ -2269,27 +2167,13 @@ function renderProfileTab() {
     </div>`;
   }).join('');
 
-  const roleLabel = roleLabels[myRole] || '';
-  // Очки до следующего звания
-  const rankThresholds = [
-    [0,   'Новобранец'],
-    [35,  'Сержант связи'],
-    [55,  'Капитан подполья'],
-    [75,  'Полковник разведки'],
-    [90,  'Маршал Победы'],
-  ];
-  const nextRankData = rankThresholds.find(([t]) => scorePct < t);
-  const nextRankScore = nextRankData ? Math.ceil(nextRankData[0] / 100 * maxScore) : null;
-  const toNextRank = nextRankScore ? Math.max(0, nextRankScore - state.totalScore) : 0;
-  const nextRankName = nextRankData ? nextRankData[1] : null;
-
   el.innerHTML = `
-    <!-- Шапка профиля -->
-    <div style="text-align:center;padding:20px 16px;border-bottom:1px solid rgba(255,224,51,.08)">
+    <div style="text-align:center;margin-bottom:20px">
       <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div>
       <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div>
       <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
-      ${roleLabel ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);letter-spacing:.06em;opacity:.8">${roleLabel}</div>` : ''}
+      ${roleLabel2 ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);letter-spacing:.06em;opacity:.8">${roleLabel2}</div>` : ''}
+      ${roleBadge ? `<div style="margin-top:6px;font-size:var(--fs-sm);color:var(--accent);font-weight:700;letter-spacing:.06em">${roleBadge}</div>` : ''}
       <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
         background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
         border-radius:20px;padding:5px 14px">
@@ -2297,75 +2181,41 @@ function renderProfileTab() {
         <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span>
       </div>
     </div>
-
-    <!-- Статистика -->
-    <div style="padding:16px">
-      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:10px">// МОЯ СТАТИСТИКА</div>
-      <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px">
-        <div style="display:flex;justify-content:space-around;text-align:center">
-          <div>
-            <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div>
-            <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div>
-          </div>
-          <div>
-            <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div>
-            <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div>
-          </div>
-          <div>
-            <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div>
-            <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div>
-          </div>
+    <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-around;text-align:center">
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div>
         </div>
-        <div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
-          <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div>
         </div>
-        ${nextRankName ? `<div style="margin-top:8px;font-size:10px;color:var(--muted);text-align:center;letter-spacing:.04em">
-          До звания <span style="color:var(--accent)">${nextRankName}</span>: ещё <b style="color:var(--accent)">${toNextRank}</b> оч
-        </div>` : '<div style="margin-top:8px;font-size:10px;color:var(--green);text-align:center">🏆 Максимальное звание достигнуто!</div>'}
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div>
+        </div>
       </div>
-
-      <!-- Звания -->
-      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:10px">// СИСТЕМА ЗВАНИЙ</div>
-      <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:12px;margin-bottom:12px">
-        ${[
-          [0,   '🎖', 'Новобранец',        '0%'],
-          [35,  '🏅', 'Сержант связи',     '35%'],
-          [55,  '🎖', 'Капитан подполья',  '55%'],
-          [75,  '⭐', 'Полковник разведки', '75%'],
-          [90,  '🌟', 'Маршал Победы',     '90%'],
-        ].map(([threshold, icon, title, pctLabel]) => {
-          const isActive = scorePct >= threshold;
-          const isCurrent = rank[1] === title;
-          const opacity = isActive ? '1' : '0.35';
-          const nameColor = isCurrent ? 'var(--accent)' : '#fdfaf0';
-          const youTag = isCurrent ? '<div style="font-size:9px;color:var(--accent);letter-spacing:.06em">◀ ВЫ</div>' : '';
-          return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);opacity:' + opacity + '">'
-            + '<div style="font-size:18px">' + icon + '</div>'
-            + '<div style="flex:1;font-size:var(--fs-sm);color:' + nameColor + '">' + title + '</div>'
-            + '<div style="font-size:10px;color:var(--muted)">' + pctLabel + '+</div>'
-            + youTag
-            + '</div>';
-        }).join('')}
+      <!-- Прогресс-бар -->
+      <div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
+        <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
       </div>
-
-      <!-- Главы -->
-      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:10px">// МОИ ГЛАВЫ</div>
-      <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:12px;margin-bottom:16px">
-        ${chapterHistory}
-      </div>
-
-      <button onclick="switchTab('chapters')"
-        style="width:100%;margin-bottom:10px;background:var(--accent);color:#0a0a08;
-        border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base);
-        font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em">
-        ▶ ПРОДОЛЖИТЬ ИГРУ
-      </button>
-      <div style="text-align:center;margin-bottom:8px;font-size:10px;color:var(--muted);letter-spacing:.04em">
-        💾 Прогресс сохраняется автоматически
-      </div>
-      <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.35;margin-bottom:8px">🗑 Сбросить прогресс</button>
     </div>
-  `;
+    <div style="margin-top:16px">
+      <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);
+        letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>
+      ${chapterHistory}
+    </div>
+    <button onclick="switchTab('chapters')"
+      style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08;
+      border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base);
+      font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em">
+      ▶ ПРОДОЛЖИТЬ ИГРУ
+    </button>
+    <div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">
+      💾 Прогресс сохраняется автоматически
+    </div>
+    <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.4;margin-top:8px">🗑 Сбросить прогресс</button>`;
 }
 
 
@@ -2600,54 +2450,37 @@ async function checkMapAnswer(clicked, target) {
 //  INIT
 // ═══════════════════════════════════════════════════════
 loadState();
-mergeBotLeaderboard();   // подгружаем данные из бота
+mergeBotLeaderboard();
 
-// Если tgInitMe пустой (нет startParam) — запрашиваем состояние с сервера
-// Это гарантирует что сброс/бан применится даже при перезаходе без данных бота
 async function fetchAndApplyState() {
   const uid = getTgUserId();
   const syncUrl = window._syncUrl;
   if (!uid || !syncUrl) return;
   try {
     const base = syncUrl.replace('/game_sync', '');
-    const resp = await fetch(`${base}/game_state?user_id=${uid}`);
+    const resp = await fetch(base + '/game_state?user_id=' + uid);
     if (!resp.ok) return;
     const data = await resp.json();
     if (!data.ok) return;
-
-    // Применяем бан
     if (data.banned) {
-      document.body.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-          height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif">
-          <div style="font-size:64px;margin-bottom:16px">🚫</div>
-          <div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div>
-          <div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">
-            Ваш аккаунт заблокирован администратором.
-          </div>
-        </div>`;
-      try { localStorage.removeItem(storageKey()); } catch(e) {}
+      document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div><div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">Ваш аккаунт заблокирован администратором.</div></div>';
+      try { localStorage.removeItem(storageKey()); } catch(e2) {}
       return;
     }
-
-    // Если данные с сервера отличаются — применяем их (сброс прогресса)
-    if (data.score !== state.totalScore || data.completed !== Object.keys(state.completedChapters).length) {
+    if (typeof data.score === 'number' && data.score < state.totalScore) {
       state.totalScore = data.score;
       state.completedChapters = {};
-      for (let i = 1; i <= data.completed; i++) state.completedChapters[i] = true;
+      for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
       state.chapterScores = {};
-      state.gameOver = data.game_over;
-      try { localStorage.removeItem(storageKey()); } catch(e) {}
+      state.gameOver = data.game_over || false;
+      try { localStorage.removeItem(storageKey()); } catch(e2) {}
       saveState();
       renderChapters();
-      console.log('🔄 Состояние синхронизировано с сервером:', data.score, 'оч,', data.completed, 'глав');
     }
-  } catch(e) {
-    console.warn('fetchAndApplyState error:', e);
-  }
+  } catch(e) { console.warn('fetchAndApplyState:', e); }
 }
 
 renderChapters();
-fetchAndApplyState(); // асинхронно подтягиваем состояние с сервера
+fetchAndApplyState();
 try {
 } catch(e) {}
