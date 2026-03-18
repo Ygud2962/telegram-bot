@@ -1832,7 +1832,7 @@ function switchTab(tab) {
   if (screenEl) screenEl.classList.add('active');
   if (tabEl)    tabEl.classList.add('active');
 
-  if (tab === 'chapters')    renderChapters();
+  if (tab === 'chapters')    { renderChapters(); fetchAndApplyState(); }
   if (tab === 'leaderboard') renderLeaderboardTab();
   if (tab === 'profile')     renderProfileTab();
   if (tab === 'about')       renderAboutTab();
@@ -2412,8 +2412,6 @@ async function fetchAndApplyState() {
   const uid = getTgUserId();
   const syncUrl = window._syncUrl;
   if (!uid || !syncUrl) return;
-  if (tgInitMe) return; // данные уже есть из startParam
-
   try {
     const base = syncUrl.replace('/game_sync', '');
     const resp = await fetch(`${base}/game_state?user_id=${uid}`);
