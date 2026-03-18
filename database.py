@@ -1,6 +1,7 @@
 import psycopg2
 from psycopg2 import pool
 import os
+import time
 from datetime import datetime, timedelta
 import pytz
 import logging
@@ -14,35 +15,79 @@ if not DATABASE_URL:
 
 db_pool = None
 
+# Параметры retry при потере связи с БД
+_DB_RETRY_ATTEMPTS = 5        # попыток переподключения
+_DB_RETRY_DELAYS   = [1, 2, 4, 8, 15]  # секунды между попытками
+
 
 def init_pool():
+    """Инициализирует пул соединений с retry."""
     global db_pool
-    if db_pool is None:
-        db_pool = pool.SimpleConnectionPool(
-            minconn=1, maxconn=5,
-            dsn=DATABASE_URL, sslmode='require'
-        )
-        logger.info("✅ Пул соединений PostgreSQL инициализирован (maxconn=5)")
+    last_err = None
+    for attempt, delay in enumerate(_DB_RETRY_DELAYS, 1):
+        try:
+            if db_pool is not None:
+                try:
+                    db_pool.closeall()
+                except Exception:
+                    pass
+            db_pool = pool.SimpleConnectionPool(
+                minconn=1, maxconn=5,
+                dsn=DATABASE_URL, sslmode='require',
+                connect_timeout=10,
+            )
+            logger.info(f"✅ Пул PostgreSQL инициализирован (попытка {attempt})")
+            return
+        except Exception as e:
+            last_err = e
+            if attempt < _DB_RETRY_ATTEMPTS:
+                logger.warning(f"⚠️  БД недоступна (попытка {attempt}/{_DB_RETRY_ATTEMPTS}), жду {delay}с: {e}")
+                time.sleep(delay)
+    logger.error(f"❌ Не удалось подключиться к БД после {_DB_RETRY_ATTEMPTS} попыток: {last_err}")
+    raise last_err
+
+
+def _try_new_connection():
+    """Создаёт новое прямое соединение с retry."""
+    last_err = None
+    for attempt, delay in enumerate(_DB_RETRY_DELAYS[:3], 1):  # макс 3 попытки для одного запроса
+        try:
+            conn = psycopg2.connect(
+                DATABASE_URL, sslmode='require', connect_timeout=10
+            )
+            return conn
+        except Exception as e:
+            last_err = e
+            if attempt < 3:
+                logger.warning(f"⚠️  Переподключение к БД (попытка {attempt}/3), жду {delay}с")
+                time.sleep(delay)
+    raise last_err
 
 
 def get_connection():
-    """Возвращает живое соединение из пула. При обрыве SSL — пересоздаёт."""
+    """Возвращает живое соединение из пула. При обрыве — пересоздаёт с retry."""
     global db_pool
     if db_pool is None:
         init_pool()
-    conn = db_pool.getconn()
+    try:
+        conn = db_pool.getconn()
+    except Exception:
+        # Пул сломан — пересоздаём
+        logger.warning("⚠️  Пул соединений сломан, пересоздаём...")
+        init_pool()
+        conn = db_pool.getconn()
     try:
         # Проверяем что соединение живое
         conn.cursor().execute("SELECT 1")
         return conn
     except Exception:
-        # Соединение мёртвое — закрываем и создаём новое напрямую
+        # Соединение мёртвое — закрываем и создаём новое
         try:
             db_pool.putconn(conn, close=True)
         except Exception:
             pass
         try:
-            new_conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+            new_conn = _try_new_connection()
             db_pool.putconn(new_conn)
             return db_pool.getconn()
         except Exception as e:

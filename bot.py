@@ -1987,6 +1987,22 @@ async def global_error_handler(update: object, context: CallbackContext):
         logger.warning(f"Сетевая ошибка: {err}")
         return
 
+    # Ошибки БД — логируем, не спамим админу при каждом запросе
+    import psycopg2
+    if isinstance(err, (psycopg2.OperationalError, psycopg2.InterfaceError)):
+        logger.error(f"❌ Ошибка БД: {err}")
+        # Сообщаем пользователю
+        try:
+            if isinstance(update, Update):
+                msg = "🔧 База данных временно недоступна. Попробуйте через 30 секунд."
+                if update.callback_query:
+                    await update.callback_query.answer(msg[:200])
+                elif update.message:
+                    await update.message.reply_text(msg)
+        except Exception:
+            pass
+        return
+
     tb = ''.join(traceback.format_exception(type(err), err, err.__traceback__))
     logger.error(f"Необработанная ошибка:\n{tb}")
 
@@ -5023,14 +5039,23 @@ def start_http_server_thread():
     logger.info(f"HTTP server thread started (port {PORT})")
 
 def main():
-    try:
-        db.init_db()
-        db.init_pool()
-        # Заполняем таблицу учителей при первом запуске
-        db.seed_teachers(ALL_TEACHERS)
-    except Exception as e:
-        logger.critical(f"Ошибка инициализации БД: {e}")
-        raise SystemExit(1)
+    # Ждём БД при старте (Railway PostgreSQL стартует чуть позже бота)
+    max_wait = 60  # секунд
+    interval = 5
+    for attempt in range(max_wait // interval):
+        try:
+            db.init_db()
+            db.init_pool()
+            db.seed_teachers(ALL_TEACHERS)
+            logger.info("✅ БД инициализирована успешно")
+            break
+        except Exception as e:
+            if attempt < (max_wait // interval) - 1:
+                logger.warning(f"⏳ Жду БД (попытка {attempt+1}/{max_wait//interval}): {e}")
+                import time; time.sleep(interval)
+            else:
+                logger.critical(f"❌ БД недоступна после {max_wait}с: {e}")
+                raise SystemExit(1)
 
     async def post_init(application):
         await application.bot.set_my_commands([
