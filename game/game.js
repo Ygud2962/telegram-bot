@@ -306,11 +306,24 @@ async function sendResultToBot(data) {
         body: JSON.stringify(data)
       });
       if (resp.ok) {
-        console.log('✅ game_sync: HTTP POST OK');
+        const result = await resp.json().catch(() => ({}));
+        if (result.banned) {
+          document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div><div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">Ваш аккаунт заблокирован администратором.</div></div>';
+          try { localStorage.removeItem(storageKey()); } catch(e2) {}
+          return;
+        }
+        if (typeof result.db_score === 'number' && result.db_score < state.totalScore) {
+          state.totalScore = result.db_score;
+          state.completedChapters = {};
+          for (let i = 1; i <= (result.db_completed||0); i++) state.completedChapters[i] = true;
+          state.chapterScores = {};
+          try { localStorage.removeItem(storageKey()); } catch(e2) {}
+          saveState();
+        }
         _lastSyncedScore = data.total_score;
         _lastSyncedCompleted = data.completed;
         showToast('✅ Прогресс сохранён');
-        return; // успешно
+        return;
       }
       console.warn('game_sync HTTP error:', resp.status);
     } catch(e) {
@@ -646,6 +659,7 @@ function renderChapters() {
 //  БРИФИНГ
 // ═══════════════════════════════════════════════════════
 function showBriefing(idx) {
+  if (idx < 0 || idx >= CHAPTERS.length) { showScreen('s-chapters'); renderChapters(); return; }
   currentChapter = idx;
   const ch = CHAPTERS[idx];
   document.getElementById('brief-num').textContent   = ch.subtitle + ' — ' + ch.place;
@@ -662,14 +676,16 @@ function showBriefing(idx) {
 //  СТАРТ ГЛАВЫ
 // ═══════════════════════════════════════════════════════
 function startChapter(idx) {
-  state.chapter      = idx;
-  state.cipherIdx    = 0;
-  state.lives        = 5;
-  state.chapterScore = 0;
-  state.streak       = 0;
+  state.chapter           = idx;
+  state.cipherIdx         = 0;
+  state.lives             = 5;
+  state.chapterScore      = 0;
+  state.streak            = 0;
   state._chapterStartTime = Date.now();
   state._chapterErrors    = 0;
   state._chapterHints     = 0;
+  // retryPenalty сбрасывается только если НЕ был установлен через retryChapter
+  // (retryChapter вызывает showBriefing → startChapter — флаг уже true)
   saveState();
   loadCipher();
   showScreen('s-cipher');
@@ -679,8 +695,10 @@ function startChapter(idx) {
 //  ЗАГРУЗКА ШИФРА
 // ═══════════════════════════════════════════════════════
 function loadCipher() {
-  const ch     = CHAPTERS[state.chapter];
+  const ch = CHAPTERS[state.chapter];
+  if (!ch) { showScreen('s-chapters'); renderChapters(); return; }
   const cipher = ch.ciphers[state.cipherIdx];
+  if (!cipher) { finishChapter(); return; }
   state.startTime = Date.now();
 
   // Прогресс-точки (5 штук)
@@ -2033,7 +2051,7 @@ function renderLeaderboardTab() {
   const header = `<div style="padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between">
     <div>
       <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">РЕЙТИНГ</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} участников</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} участников · <span style="color:rgba(255,224,51,.5)">👆 нажми на себя для статистики</span></div>
     </div>
     <button onclick="switchTab('leaderboard')"
       style="background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
@@ -2129,7 +2147,6 @@ function renderProfileTab() {
   // Роль из БД (передаётся через tgInitMe)
   const myRole = tgInitMe?.role || (tgUser?.id === 516406248 ? 'admin' : 'player');
   const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
-  const roleBadge  = roleLabels[myRole] || '';
 
   // Звание по очкам
   const titles = [
@@ -2139,7 +2156,7 @@ function renderProfileTab() {
     [75,  'Полковник разведки', '⭐'],
     [90,  'Маршал Победы', '🌟'],
   ];
-  const maxScore = 5330;
+  const maxScore = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
   const scorePct = Math.round((state.totalScore / maxScore) * 100);
   const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
 
@@ -2173,7 +2190,6 @@ function renderProfileTab() {
       <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div>
       <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>
       ${roleLabel2 ? `<div style="margin-top:6px;font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);letter-spacing:.06em;opacity:.8">${roleLabel2}</div>` : ''}
-      ${roleBadge ? `<div style="margin-top:6px;font-size:var(--fs-sm);color:var(--accent);font-weight:700;letter-spacing:.06em">${roleBadge}</div>` : ''}
       <div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;
         background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
         border-radius:20px;padding:5px 14px">
@@ -2229,15 +2245,14 @@ let pausedFromScreen = null;
 
 function pauseGame() {
   saveState();
-  autoSync(false); // тихая синхронизация при паузе
+  stopTimer();
+  autoSync(false);
   pausedFromScreen = 's-cipher';
   hideBottomNav();
-  // Показываем инфо о текущей главе
   const ch  = CHAPTERS[state.chapter];
   const el  = document.getElementById('pause-chapter-info');
   if (el && ch) {
-    el.textContent = ch.subtitle + ' · ' + ch.title
-      + ' · Задание ' + (state.cipherIdx + 1) + '/5';
+    el.textContent = ch.subtitle + ' · ' + ch.title + ' · Задание ' + (state.cipherIdx + 1) + '/' + ch.ciphers.length;
   }
   showScreen('s-pause');
 }
@@ -2247,6 +2262,7 @@ function resumeGame() {
   pausedFromScreen = null;
   hideBottomNav();
   showScreen(target);
+  if (target === 's-cipher') startTimer();
 }
 
 function goToChapters() {
