@@ -1262,8 +1262,8 @@ def get_game_players_count():
         release_connection(conn)
 
 def get_game_leaderboard(limit=20):
-    """Возвращает топ: [(user_id, user_name, total_score, completed, game_over, role), ...]
-    Сортировка: сначала admin, потом tester, потом player — внутри каждой группы по очкам."""
+    """Возвращает публичный топ игроков.
+    Админы и тестировщики НЕ включаются — только обычные игроки."""
     conn = None
     try:
         conn = get_connection()
@@ -1276,14 +1276,8 @@ def get_game_leaderboard(limit=20):
             FROM game_results gr
             LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
             WHERE NOT COALESCE(gr.banned, FALSE)
-            ORDER BY
-                CASE COALESCE(rol.role, 'player')
-                    WHEN 'admin'  THEN 1
-                    WHEN 'tester' THEN 2
-                    ELSE 3
-                END,
-                gr.total_score DESC,
-                gr.updated_at ASC
+              AND COALESCE(rol.role, 'player') NOT IN ('admin', 'tester')
+            ORDER BY gr.total_score DESC, gr.updated_at ASC
             LIMIT %s
         ''', (limit,))
         return cur.fetchall()
@@ -1335,6 +1329,71 @@ def reset_game_result(user_id):
         logger.error(f"reset_game_result error {user_id}: {e}")
         _safe_rollback(conn)
         return False
+    finally:
+        release_connection(conn)
+
+
+def reset_game_result_soft(user_id, mode='penalty'):
+    """Мягкий сброс — сохраняет очки, только снимает game_over.
+    mode='penalty': game_over=FALSE, restart_mode='penalty' (+10с к заданиям)
+    mode='nopts':   game_over=FALSE, restart_mode='nopts'   (без очков)
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # Добавляем колонку если нет
+        cur.execute("""
+            ALTER TABLE game_results
+            ADD COLUMN IF NOT EXISTS restart_mode VARCHAR(20) DEFAULT NULL
+        """)
+        cur.execute("""
+            UPDATE game_results
+            SET game_over=FALSE, restart_mode=%s, updated_at=NOW()
+            WHERE user_id=%s
+        """, (mode, user_id))
+        updated = cur.rowcount
+        conn.commit()
+        return updated > 0
+    except Exception as e:
+        logger.error(f"reset_game_result_soft error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_restart_mode(user_id):
+    """Возвращает режим перезапуска для игрока или None."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT restart_mode FROM game_results WHERE user_id=%s
+        """, (user_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"get_restart_mode error {user_id}: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+
+def clear_restart_mode(user_id):
+    """Сбрасывает restart_mode после того как игрок начал заново."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE game_results SET restart_mode=NULL WHERE user_id=%s
+        """, (user_id,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"clear_restart_mode error {user_id}: {e}")
+        _safe_rollback(conn)
     finally:
         release_connection(conn)
 
@@ -1656,6 +1715,7 @@ def get_game_leaderboard_with_roles(limit=20):
             FROM game_results gr
             LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
             WHERE NOT COALESCE(gr.banned, FALSE)
+              AND COALESCE(rol.role, 'player') = 'player'
             ORDER BY
                 CASE COALESCE(rol.role, 'player')
                     WHEN 'admin'  THEN 1
