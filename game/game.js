@@ -529,12 +529,10 @@ function mergeBotLeaderboard() {
     const dbCompleted   = tgInitMe.completed    || 0;
     const dbGameOver    = tgInitMe.game_over    || false;
     const dbRestartMode = tgInitMe.restart_mode || null;
-    const dbAdminMode   = tgInitMe.admin_mode   || false;
-
-    // Режим администратора — все главы доступны
-    if (dbAdminMode) {
-      state.adminMode = true;
-    }
+    // admin_mode: true = режим администратора, false или отсутствует = режим игрока
+    // ВАЖНО: явно устанавливаем, не берём из localStorage
+    const dbAdminMode = tgInitMe.admin_mode === true;
+    state.adminMode = dbAdminMode;
 
     // Режим перезапуска после game_over
     if (dbRestartMode === 'penalty') {
@@ -572,7 +570,12 @@ function mergeBotLeaderboard() {
 function loadState() {
   try {
     const s = localStorage.getItem(storageKey());
-    if (s) Object.assign(state, JSON.parse(s));
+    if (s) {
+      Object.assign(state, JSON.parse(s));
+      // adminMode и _noptsMode всегда приходят из бота, не из кэша
+      state.adminMode  = false;
+      state._noptsMode = false;
+    }
   } catch(e) {}
 }
 
