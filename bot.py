@@ -2698,11 +2698,13 @@ async def menu_game(query, context):
     my_data = None
     if my_result:
         # my_result: (uid, name, total_score, completed, game_over, updated_at, banned)
+        restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id)
         my_data = {
             'uid': str(my_result[0]), 'name': my_result[1] or 'Игрок',
             'score': my_result[2], 'completed': my_result[3],
             'game_over': my_result[4], 'role': current_role or 'player',
             'banned': bool(my_result[6]) if len(my_result) > 6 else False,
+            'restart_mode': restart_mode,  # 'penalty'|'nopts'|None
         }
 
     # Формируем данные для передачи в игру
@@ -2742,11 +2744,45 @@ async def menu_game(query, context):
     else:
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
 
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎮 ОТКРЫТЬ ИГРУ", web_app=WebAppInfo(url=game_url))],
-        [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
-        [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
-    ])
+    # Для админа — предлагаем выбор режима
+    is_admin_user = user.id in ADMIN_IDS
+    if is_admin_user:
+        # Строим URL для режима админа (все главы открыты, в рейтинге не участвует)
+        admin_payload_data = dict(game_payload)
+        admin_payload_data['admin_mode'] = True
+        admin_payload_str = urllib.parse.quote(json.dumps(admin_payload_data, ensure_ascii=False))
+        admin_game_url = f"{GAME_URL}?tgWebAppStartParam={admin_payload_str}" if len(admin_payload_str) < 2048 else game_url
+
+        # URL для режима обычного игрока (участвует в рейтинге, без читов)
+        player_payload_data = dict(game_payload)
+        player_payload_data['admin_mode'] = False
+        player_payload_str = urllib.parse.quote(json.dumps(player_payload_data, ensure_ascii=False))
+        player_game_url = f"{GAME_URL}?tgWebAppStartParam={player_payload_str}" if len(player_payload_str) < 2048 else game_url
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👑 РЕЖИМ АДМИНИСТРАТОРА", web_app=WebAppInfo(url=admin_game_url))],
+            [InlineKeyboardButton("🎮 РЕЖИМ ИГРОКА",         web_app=WebAppInfo(url=player_game_url))],
+            [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
+            [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
+        ])
+    else:
+        # Если игрок завершил всю игру — предлагаем варианты перезапуска
+        game_completed = my_result and my_result[4]  # game_over=True
+        restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id) if my_result else None
+        if game_completed and not restart_mode:
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔥 Пройти снова (+10с, с очками)", callback_data=f'game_restart_penalty_{user.id}')],
+                [InlineKeyboardButton("👁 Пройти снова (без очков)",      callback_data=f'game_restart_nopts_{user.id}')],
+                [InlineKeyboardButton("🎮 Открыть игру (смотреть)",       web_app=WebAppInfo(url=game_url))],
+                [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
+                [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
+            ])
+        else:
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 ОТКРЫТЬ ИГРУ", web_app=WebAppInfo(url=game_url))],
+                [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
+                [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
+            ])
     await query.message.edit_text(
         "🔐 <b>ШИФРОВАЛЬЩИК</b>\n"
         "<i>1941–1945 · Беларусь</i>\n\n"
@@ -2761,6 +2797,22 @@ async def menu_game(query, context):
         + my_info,
         parse_mode='HTML', reply_markup=kb
     )
+
+
+async def game_restart_select(query, context, uid, mode):
+    """Игрок сам выбирает режим перезапуска."""
+    if query.from_user.id != uid:
+        await query.answer("⛔ Это не ваша кнопка"); return
+    await query.answer()
+    ok = await asyncio.to_thread(db.reset_game_result_soft, uid, mode)
+    if ok:
+        label = "🔥 Режим +10 сек установлен" if mode == 'penalty' else "👁 Режим без очков установлен"
+        await safe_edit(query,
+            f"✅ <b>{label}</b>\n\nОткройте игру — все главы будут доступны заново.",
+            [[btn("🎮 Открыть игру", 'menu_game')], [btn("🏠 Главное меню", 'back_to_main')]])
+    else:
+        await safe_edit(query, "❌ Ошибка. Попробуйте ещё раз.",
+            [[btn("🏠 Главное меню", 'back_to_main')]])
 
 
 async def game_leaderboard(query, context):
@@ -3635,17 +3687,87 @@ async def admin_game_view_player(query, context, uid):
 
 
 async def admin_game_reset_player(query, context, uid):
-    """Сброс прогресса конкретного игрока."""
+    """Сброс прогресса конкретного игрока — сначала выбор типа сброса."""
     if query.from_user.id not in ADMIN_IDS:
         await query.answer("⛔"); return
     await query.answer()
 
     r = await asyncio.to_thread(db.get_game_result_detail, uid)
-    name = r[1] if r else str(uid)
-    ok = await asyncio.to_thread(db.reset_game_result, uid)
+    name = (r[1] if r else str(uid)) or str(uid)
+    game_over = r[4] if r and len(r) > 4 else False
 
+    # Если игра завершена — показываем выбор типа перезапуска
+    if game_over:
+        text = (
+            f"♻️ <b>Перезапуск игры для {name}</b>\n\n"
+            "Игрок прошёл все главы. Выберите режим перезапуска:\n\n"
+            "🔥 <b>С штрафом</b> — +10 сек к заданию, очки считаются (но меньше)\n"
+            "👁 <b>Без очков</b> — повтор без начисления очков, только для практики"
+        )
+        kb = [
+            [btn("🔥 С штрафом (+10с)", f'agame_restart_penalty_{uid}')],
+            [btn("👁 Без очков",         f'agame_restart_nopts_{uid}')],
+            [btn("❌ Полный сброс",       f'agame_reset_confirm_{uid}')],
+            [btn("↩️ Назад", f'agame_player_{uid}'), btn("🏠 Меню", 'back_to_main')],
+        ]
+    else:
+        text = (
+            f"⚠️ Сбросить прогресс игрока <b>{name}</b>?\n\nВсе очки и главы будут обнулены."
+            f"Все очки и главы будут обнулены."
+        )
+        kb = [
+            [btn("✅ Да, сбросить", f'agame_reset_confirm_{uid}')],
+            [btn("↩️ Назад", f'agame_player_{uid}'), btn("🏠 Меню", 'back_to_main')],
+        ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_restart_penalty(query, context, uid):
+    """Перезапуск с штрафом +10с — очки считаются но меньше."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    r = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name = (r[1] if r else str(uid)) or str(uid)
+    # Сбрасываем game_over но оставляем флаг retry_penalty в БД
+    ok = await asyncio.to_thread(db.reset_game_result_soft, uid, 'penalty')
     text = (
-        f"{'✅ Прогресс игрока <b>' + (name or 'Игрок') + '</b> сброшен.' if ok else '❌ Не удалось сбросить — игрок не найден.'}"
+        f"✅ Игрок <b>{name}</b> может начать заново.\n"
+        f"Режим: 🔥 <b>+10 сек к каждому заданию</b>, очки считаются."
+        if ok else "❌ Не удалось."
+    )
+    kb = [[btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')]]
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_restart_nopts(query, context, uid):
+    """Перезапуск без очков — только для практики."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    r = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name = (r[1] if r else str(uid)) or str(uid)
+    ok = await asyncio.to_thread(db.reset_game_result_soft, uid, 'nopts')
+    text = (
+        f"✅ Игрок <b>{name}</b> может пройти заново.\n"
+        f"Режим: 👁 <b>Без очков</b> — только практика."
+        if ok else "❌ Не удалось."
+    )
+    kb = [[btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')]]
+    await safe_edit(query, text, kb)
+
+
+async def admin_game_reset_confirm(query, context, uid):
+    """Полный сброс прогресса — очки обнуляются."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    r = await asyncio.to_thread(db.get_game_result_detail, uid)
+    name = (r[1] if r else str(uid)) or str(uid)
+    ok = await asyncio.to_thread(db.reset_game_result, uid)
+    text = (
+        f"✅ Прогресс игрока <b>{name}</b> полностью сброшен."
+        if ok else "❌ Не удалось сбросить."
     )
     kb = [[btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')]]
     await safe_edit(query, text, kb)
@@ -4136,6 +4258,30 @@ async def button_handler(update: Update, context: CallbackContext):
 
         if d.startswith('agame_view_'):
             uid = int(d.replace('agame_view_', ''))
+            await admin_game_view_player(query, context, uid)
+            return
+        if d.startswith('game_restart_penalty_'):
+            uid = int(d.replace('game_restart_penalty_', ''))
+            await game_restart_select(query, context, uid, 'penalty')
+            return
+        if d.startswith('game_restart_nopts_'):
+            uid = int(d.replace('game_restart_nopts_', ''))
+            await game_restart_select(query, context, uid, 'nopts')
+            return
+        if d.startswith('agame_restart_penalty_'):
+            uid = int(d.replace('agame_restart_penalty_', ''))
+            await admin_game_restart_penalty(query, context, uid)
+            return
+        if d.startswith('agame_restart_nopts_'):
+            uid = int(d.replace('agame_restart_nopts_', ''))
+            await admin_game_restart_nopts(query, context, uid)
+            return
+        if d.startswith('agame_reset_confirm_'):
+            uid = int(d.replace('agame_reset_confirm_', ''))
+            await admin_game_reset_confirm(query, context, uid)
+            return
+        if d.startswith('agame_player_'):
+            uid = int(d.replace('agame_player_', ''))
             await admin_game_view_player(query, context, uid)
             return
         if d.startswith('agame_reset_') and not d.startswith('agame_reset_all'):
