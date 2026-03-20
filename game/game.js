@@ -611,11 +611,10 @@ function renderChapters() {
   let completedCount = 0;
 
   CHAPTERS.forEach((ch, i) => {
-    const isAdmin = tgUser && tgUser.id === 516406248;
     const isDone  = !!state.completedChapters[ch.id];
     const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
     const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id] || state.adminMode;
-    const isLocked = !isAdmin && !(serverAllows && prevDone);
+    const isLocked = !state.adminMode && !(serverAllows && prevDone);
     if (isDone) completedCount++;
 
     const card = document.createElement('div');
@@ -651,17 +650,8 @@ function renderChapters() {
 
     // adminMode / retryPenalty / noptsMode — можно переигрывать
     const canRepeat = state.adminMode || state.retryPenalty || state._noptsMode;
-    const canPlay = !isLocked && (!isDone || isAdmin || canRepeat);
+    const canPlay = !isLocked && (!isDone || state.adminMode || canRepeat);
     if (canPlay) card.onclick = () => {
-      if (isDone && !state.adminMode) {
-        // Перепрохождение — очищаем только если явный режим или it is admin
-        if (isAdmin) {
-          delete state.completedChapters[ch.id];
-          delete state.chapterScores[ch.id];
-          saveState();
-        }
-        // retryPenalty и noptsMode — finishChapter сам не начислит очки
-      }
       showBriefing(i);
     };
     else if (isDone) card.style.cursor = 'default';
@@ -833,8 +823,7 @@ function loadCipher() {
 function renderLives() {
   const el = document.getElementById('cipher-attempts-label');
   if (!el) return;
-  const isAdmin = tgUser && tgUser.id === 516406248;
-  if (state.adminMode || isAdmin) {
+  if (state.adminMode) {
     el.innerHTML = '<div style="line-height:1.2;text-align:center;color:gold">♾️ АДМИН</div>';
     return;
   }
@@ -982,8 +971,8 @@ async function checkAnswer() {
     animateLifeLoss();
 
     if (state.lives <= 0) {
-      if ((tgUser && tgUser.id === 516406248) || state.adminMode) {
-        // Админ — восстанавливаем жизни
+      if (state.adminMode) {
+        // Режим администратора — восстанавливаем жизни
         state.lives = 5; saveState(); renderLives();
         const hb = document.getElementById('cipher-hint-box');
         const ht = document.getElementById('cipher-hint-text');
@@ -1040,8 +1029,7 @@ function showHint() {
   }
 
   // Подсказка стоит жизнь (но не для админа)
-  const isAdmin = (tgUser && tgUser.id === 516406248) || state.adminMode;
-  if (!isAdmin && state.lives > 1) {
+  if (!state.adminMode && state.lives > 1) {
     state.lives--;
     state._chapterHints = (state._chapterHints || 0) + 1;
     saveState();
@@ -1430,7 +1418,7 @@ function renderLeaderboard() {
 //  СБРОС (только для гостей без tg-аккаунта)
 // ═══════════════════════════════════════════════════════
 function confirmReset() {
-  const isAdmin = tgUser && tgUser.id === 516406248;
+  const isAdmin = state.adminMode;
   if (isAdmin) {
     // Для админа — сброс своего прогресса разрешён
     if (confirm('Сбросить свой прогресс? (для повторного тестирования)')) {
@@ -2435,7 +2423,7 @@ async function checkAnagram() {
     state.lives--;
     saveState();
     if (state.lives <= 0) {
-      if (tgUser && tgUser.id === 516406248) {
+      if (state.adminMode) {
         state.lives = 5; saveState(); renderLives();
         setTimeout(resetAnagram, 500);
       } else { setTimeout(() => failChapter(), 1200); }
@@ -2521,7 +2509,7 @@ async function checkMapAnswer(clicked, target) {
     state.lives--;
     saveState();
     if (state.lives <= 0) {
-      if (tgUser && tgUser.id === 516406248) {
+      if (state.adminMode) {
         state.lives = 5; saveState(); renderLives();
         document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
       } else { setTimeout(() => failChapter(), 1200); }
