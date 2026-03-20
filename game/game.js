@@ -616,13 +616,21 @@ function renderChapters() {
 
   CHAPTERS.forEach((ch, i) => {
     const isDone  = !!state.completedChapters[ch.id];
-    const serverAllows = state.adminMode || !tgOpenChapters || tgOpenChapters.has(ch.id);
-    const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id] || state.adminMode;
-    const isLocked = !state.adminMode && !(serverAllows && prevDone);
     if (isDone) completedCount++;
 
+    // В режиме администратора — всё всегда открыто
+    let isLocked, visuallyLocked;
+    if (state.adminMode) {
+      isLocked = false;
+      visuallyLocked = false;
+    } else {
+      const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
+      const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
+      isLocked = !(serverAllows && prevDone);
+      visuallyLocked = isLocked;
+    }
+
     const card = document.createElement('div');
-    const visuallyLocked = isLocked && !state.adminMode;
     card.className = 'chapter-card' + (visuallyLocked?' locked':'') + (isDone?' completed':'');
 
     // Иконки типов заданий
@@ -657,10 +665,12 @@ function renderChapters() {
     // adminMode / retryPenalty / noptsMode — можно переигрывать
     const canRepeat = state.retryPenalty || state._noptsMode;
     const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
-    if (canPlay) card.onclick = () => {
-      showBriefing(i);
-    };
-    else if (isDone) card.style.cursor = 'default';
+    if (canPlay) {
+      card.onclick = () => { showBriefing(i); };
+      card.style.cursor = 'pointer';
+    } else {
+      card.style.cursor = isDone ? 'default' : 'not-allowed';
+    }
     list.appendChild(card);
   });
 
