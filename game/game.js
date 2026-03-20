@@ -616,7 +616,7 @@ function renderChapters() {
 
   CHAPTERS.forEach((ch, i) => {
     const isDone  = !!state.completedChapters[ch.id];
-    const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
+    const serverAllows = state.adminMode || !tgOpenChapters || tgOpenChapters.has(ch.id);
     const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id] || state.adminMode;
     const isLocked = !state.adminMode && !(serverAllows && prevDone);
     if (isDone) completedCount++;
