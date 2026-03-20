@@ -2746,24 +2746,16 @@ async def menu_game(query, context):
     else:
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
 
-    # Для админа — предлагаем выбор режима
+    # Для админа — всегда режим администратора (всё открыто, рейтинг не учитывается)
     is_admin_user = user.id in ADMIN_IDS
     if is_admin_user:
-        # Строим URL для режима админа (все главы открыты, в рейтинге не участвует)
         admin_payload_data = dict(game_payload)
         admin_payload_data['admin_mode'] = True
         admin_payload_str = urllib.parse.quote(json.dumps(admin_payload_data, ensure_ascii=False))
         admin_game_url = f"{GAME_URL}?tgWebAppStartParam={admin_payload_str}" if len(admin_payload_str) < 2048 else game_url
 
-        # URL для режима обычного игрока (участвует в рейтинге, без читов)
-        player_payload_data = dict(game_payload)
-        player_payload_data['admin_mode'] = False
-        player_payload_str = urllib.parse.quote(json.dumps(player_payload_data, ensure_ascii=False))
-        player_game_url = f"{GAME_URL}?tgWebAppStartParam={player_payload_str}" if len(player_payload_str) < 2048 else game_url
-
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("👑 РЕЖИМ АДМИНИСТРАТОРА", web_app=WebAppInfo(url=admin_game_url))],
-            [InlineKeyboardButton("🎮 РЕЖИМ ИГРОКА",         web_app=WebAppInfo(url=player_game_url))],
+            [InlineKeyboardButton("👑 ОТКРЫТЬ ИГРУ (АДМИН)", web_app=WebAppInfo(url=admin_game_url))],
             [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
             [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
         ])
