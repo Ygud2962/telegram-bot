@@ -573,8 +573,8 @@ function loadState() {
     if (s) {
       Object.assign(state, JSON.parse(s));
       // adminMode и _noptsMode всегда приходят из бота, не из кэша
-      state.adminMode  = false;
-      state._noptsMode = false;
+      state.adminMode  = false;  // всегда берётся из бота
+      state._noptsMode = false;  // всегда берётся из бота
     }
   } catch(e) {}
 }
@@ -618,7 +618,8 @@ function renderChapters() {
     if (isDone) completedCount++;
 
     const card = document.createElement('div');
-    card.className = 'chapter-card' + (isLocked?' locked':'') + (isDone?' completed':'');
+    const visuallyLocked = isLocked && !state.adminMode;
+    card.className = 'chapter-card' + (visuallyLocked?' locked':'') + (isDone?' completed':'');
 
     // Иконки типов заданий
     const typeIcons = {'caesar':'🔐','morse':'📡','atbash':'🪞','num':'🔢','anagram':'🔤','math':'➗','photo':'🖼','map':'🗺'};
@@ -629,6 +630,7 @@ function renderChapters() {
     let statusText, badgeIcon;
     if (isDone && state.chapterScores[ch.id] > 0) { statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅'; }
     else if (isDone) { statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔'; }
+    else if (state.adminMode) { statusText='👑 ОТКРЫТО'; badgeIcon='▶'; }
     else if (!serverAllows) { statusText='🔒 НЕ ОТКРЫТА'; badgeIcon='🔒'; }
     else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
     else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
@@ -649,8 +651,8 @@ function renderChapters() {
       </div>`;
 
     // adminMode / retryPenalty / noptsMode — можно переигрывать
-    const canRepeat = state.adminMode || state.retryPenalty || state._noptsMode;
-    const canPlay = !isLocked && (!isDone || state.adminMode || canRepeat);
+    const canRepeat = state.retryPenalty || state._noptsMode;
+    const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
     if (canPlay) card.onclick = () => {
       showBriefing(i);
     };
