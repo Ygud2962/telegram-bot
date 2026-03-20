@@ -254,6 +254,8 @@ try {
         tgInitMe = parsed.me || null;
         if (parsed.open) tgOpenChapters = new Set(parsed.open);
         if (parsed.sync_url) window._syncUrl = parsed.sync_url;
+        // admin_mode может быть в корне payload (не в me)
+        if (parsed.admin_mode === true) window._adminMode = true;
       } catch(e) { console.warn('startParam parse error:', e); }
     }
 
@@ -268,6 +270,7 @@ try {
           if (!tgInitLB.length && parsed2.lb) tgInitLB = parsed2.lb;
           if (!tgInitMe && parsed2.me) tgInitMe = parsed2.me;
           if (!tgOpenChapters && parsed2.open) tgOpenChapters = new Set(parsed2.open);
+          if (parsed2.admin_mode === true) window._adminMode = true;
         }
       } catch(e) { console.warn('URL param parse error:', e); }
     }
@@ -529,10 +532,11 @@ function mergeBotLeaderboard() {
     const dbCompleted   = tgInitMe.completed    || 0;
     const dbGameOver    = tgInitMe.game_over    || false;
     const dbRestartMode = tgInitMe.restart_mode || null;
-    // admin_mode: true = режим администратора, false или отсутствует = режим игрока
+    // admin_mode: может быть в tgInitMe.admin_mode или в window._adminMode
     // ВАЖНО: явно устанавливаем, не берём из localStorage
-    const dbAdminMode = tgInitMe.admin_mode === true;
+    const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
     state.adminMode = dbAdminMode;
+    if (dbAdminMode) console.log('👑 adminMode=true установлен');
 
     // Режим перезапуска после game_over
     if (dbRestartMode === 'penalty') {
@@ -2543,7 +2547,7 @@ mergeBotLeaderboard();
 
 async function fetchAndApplyState() {
   // В режиме администратора не синхронизируем — state уже правильный
-  if (state.adminMode) return;
+  if (state.adminMode || window._adminMode) return;
   const uid = getTgUserId();
   const syncUrl = window._syncUrl;
   if (!uid || !syncUrl) return;
