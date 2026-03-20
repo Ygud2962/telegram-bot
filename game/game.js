@@ -705,6 +705,9 @@ function renderChapters() {
   if (clEl) clEl.textContent = completedCount + ' / ' + total + ' глав';
   const scEl = document.getElementById('stat-score');
   if (scEl) scEl.textContent = state.totalScore;
+  // Кнопка сброса — только для админа
+  const resetBtn = document.getElementById('btn-reset-header');
+  if (resetBtn) resetBtn.style.display = (state.adminMode || window._adminMode) ? 'inline-block' : 'none';
   const plEl = document.getElementById('stat-players-label');
   const plCount = tgInitLB.length || state.leaderboard.length;
   if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
@@ -1440,7 +1443,7 @@ function renderLeaderboard() {
 //  СБРОС (только для гостей без tg-аккаунта)
 // ═══════════════════════════════════════════════════════
 function confirmReset() {
-  const isAdmin = state.adminMode;
+  const isAdmin = state.adminMode || window._adminMode === true;
   if (isAdmin) {
     // Для админа — сброс своего прогресса разрешён
     if (confirm('Сбросить свой прогресс? (для повторного тестирования)')) {
@@ -2308,7 +2311,7 @@ function renderProfileTab() {
     <div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">
       💾 Прогресс сохраняется автоматически
     </div>
-    <button class="btn-back" onclick="confirmReset()" style="width:100%;opacity:.4;margin-top:8px">🗑 Сбросить прогресс</button>`;
+    ${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
 }
 
 
