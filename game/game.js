@@ -1465,22 +1465,17 @@ function confirmReset() {
   state = DEFAULT_STATE();
   state.adminMode = true; // сохраняем режим!
 
-  // 2. Отправляем сброс в БД через syncUrl
+  // 2. Отправляем сброс в БД через /game_reset (полный сброс, игнорирует GREATEST)
   const syncUrl = window._syncUrl;
   const uid = getTgUserId();
   if (syncUrl && uid) {
-    fetch(syncUrl, {
+    const resetUrl = syncUrl.replace('/game_sync', '/game_reset');
+    fetch(resetUrl, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        type: 'reset',
-        user_id: uid,
-        total_score: 0,
-        completed: 0,
-        game_over: false,
-        score: 0,
-      })
-    }).then(() => console.log('✅ Прогресс сброшен в БД'))
+      body: JSON.stringify({ user_id: uid })
+    }).then(r => r.json())
+      .then(d => console.log('✅ Прогресс сброшен в БД:', d))
       .catch(e => console.warn('reset sync error:', e));
   }
 
