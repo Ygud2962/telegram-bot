@@ -2749,10 +2749,23 @@ async def menu_game(query, context):
     # Для админа — всегда режим администратора (всё открыто, рейтинг не учитывается)
     is_admin_user = user.id in ADMIN_IDS
     if is_admin_user:
-        admin_payload_data = dict(game_payload)
-        admin_payload_data['admin_mode'] = True
+        # Делаем минимальный payload — только то что нужно админу
+        # Убираем leaderboard чтобы не превышать лимит 2048 символов
+        admin_payload_data = {
+            'me': my_data,
+            'open': sorted(list(open_chapters)),
+            'sync_url': sync_url_val,
+            'admin_mode': True,
+        }
         admin_payload_str = urllib.parse.quote(json.dumps(admin_payload_data, ensure_ascii=False))
-        admin_game_url = f"{GAME_URL}?tgWebAppStartParam={admin_payload_str}" if len(admin_payload_str) < 2048 else game_url
+        # Если всё равно большой — убираем me (возьмёт из БД через fetchAndApplyState)
+        if len(admin_payload_str) >= 2048:
+            admin_payload_data = {
+                'sync_url': sync_url_val,
+                'admin_mode': True,
+            }
+            admin_payload_str = urllib.parse.quote(json.dumps(admin_payload_data, ensure_ascii=False))
+        admin_game_url = f"{GAME_URL}?tgWebAppStartParam={admin_payload_str}"
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("👑 ОТКРЫТЬ ИГРУ (АДМИН)", web_app=WebAppInfo(url=admin_game_url))],
