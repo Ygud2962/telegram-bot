@@ -580,7 +580,11 @@ function loadState() {
 }
 
 function saveState() {
-  try { localStorage.setItem(storageKey(), JSON.stringify(state)); } catch(e) {}
+  try {
+    // adminMode не сохраняем — он всегда приходит от бота
+    const toSave = Object.assign({}, state, { adminMode: false, _noptsMode: false });
+    localStorage.setItem(storageKey(), JSON.stringify(toSave));
+  } catch(e) {}
 }
 
 // ═══════════════════════════════════════════════════════
@@ -968,9 +972,11 @@ async function checkAnswer() {
     setTimeout(() => inp.className = 'cipher-input', 500);
     state.streak = 0;
     state._chapterErrors = (state._chapterErrors || 0) + 1;
-    state.lives--;
+    if (!state.adminMode) {
+      state.lives--;
+      animateLifeLoss();
+    }
     saveState();
-    animateLifeLoss();
 
     if (state.lives <= 0) {
       if (state.adminMode) {
@@ -2032,7 +2038,7 @@ function switchTab(tab) {
   if (screenEl) screenEl.classList.add('active');
   if (tabEl)    tabEl.classList.add('active');
 
-  if (tab === 'chapters')    { renderChapters(); fetchAndApplyState(); }
+  if (tab === 'chapters')    { renderChapters(); if (!state.adminMode) fetchAndApplyState(); }
   if (tab === 'leaderboard') renderLeaderboardTab();
   if (tab === 'profile')     renderProfileTab();
   if (tab === 'about')       renderAboutTab();
@@ -2526,6 +2532,8 @@ loadState();
 mergeBotLeaderboard();
 
 async function fetchAndApplyState() {
+  // В режиме администратора не синхронизируем — state уже правильный
+  if (state.adminMode) return;
   const uid = getTgUserId();
   const syncUrl = window._syncUrl;
   if (!uid || !syncUrl) return;
@@ -2541,11 +2549,13 @@ async function fetchAndApplyState() {
       return;
     }
     if (typeof data.score === 'number' && data.score < state.totalScore) {
+      const savedAdminMode = state.adminMode; // сохраняем перед перезаписью
       state.totalScore = data.score;
       state.completedChapters = {};
       for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
       state.chapterScores = {};
       state.gameOver = data.game_over || false;
+      state.adminMode = savedAdminMode; // восстанавливаем
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
       saveState();
       renderChapters();
