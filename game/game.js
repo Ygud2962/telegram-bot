@@ -532,11 +532,14 @@ function mergeBotLeaderboard() {
     const dbCompleted   = tgInitMe.completed    || 0;
     const dbGameOver    = tgInitMe.game_over    || false;
     const dbRestartMode = tgInitMe.restart_mode || null;
-    // admin_mode: может быть в tgInitMe.admin_mode или в window._adminMode
-    // ВАЖНО: явно устанавливаем, не берём из localStorage
+    // admin_mode: из tgInitMe или window._adminMode (установлен при парсинге startParam)
+    // После confirmReset adminMode уже в state — не перезаписываем если нет данных от бота
     const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
-    state.adminMode = dbAdminMode;
-    if (dbAdminMode) console.log('👑 adminMode=true установлен');
+    if (dbAdminMode) {
+      state.adminMode = true;
+      console.log('👑 adminMode=true установлен от бота');
+    }
+    // Если dbAdminMode=false, не сбрасываем — мог быть установлен через localStorage
 
     // Режим перезапуска после game_over
     if (dbRestartMode === 'penalty') {
@@ -577,16 +580,18 @@ function loadState() {
     if (s) {
       Object.assign(state, JSON.parse(s));
       // adminMode и _noptsMode всегда приходят из бота, не из кэша
-      state.adminMode  = false;  // всегда берётся из бота
-      state._noptsMode = false;  // всегда берётся из бота
+      // adminMode из localStorage оставляем (нужен после confirmReset)
+      // _noptsMode всегда берётся из бота
+      state._noptsMode = false;
     }
   } catch(e) {}
 }
 
 function saveState() {
   try {
-    // adminMode не сохраняем — он всегда приходит от бота
-    const toSave = Object.assign({}, state, { adminMode: false, _noptsMode: false });
+    // _noptsMode не сохраняем — приходит от бота
+    // adminMode сохраняем ТОЛЬКО если он true (нужен после confirmReset)
+    const toSave = Object.assign({}, state, { _noptsMode: false });
     localStorage.setItem(storageKey(), JSON.stringify(toSave));
   } catch(e) {}
 }
@@ -1444,27 +1449,44 @@ function renderLeaderboard() {
 // ═══════════════════════════════════════════════════════
 function confirmReset() {
   const isAdmin = state.adminMode || window._adminMode === true;
-  if (isAdmin) {
-    // Для админа — сброс своего прогресса разрешён
-    if (confirm('Сбросить свой прогресс? (для повторного тестирования)')) {
-      try { localStorage.removeItem(storageKey()); } catch(e) {}
-      state = DEFAULT_STATE();
-      saveState();
-      switchTab('chapters');
+  if (!isAdmin) {
+    // Обычный пользователь — сброс запрещён
+    if (getTgUserId()) {
+      alert('Прогресс сохранён в системе и не может быть удалён.');
     }
     return;
   }
-  if (getTgUserId()) {
-    // Обычный пользователь — сброс запрещён
-    alert('Прогресс сохранён в системе и не может быть удалён.');
-    return;
+
+  // Для админа — сброс тестового прогресса
+  if (!confirm('Сбросить тестовый прогресс к нулю? Все главы останутся открытыми.')) return;
+
+  // 1. Сбрасываем state но сохраняем adminMode
+  try { localStorage.removeItem(storageKey()); } catch(e) {}
+  state = DEFAULT_STATE();
+  state.adminMode = true; // сохраняем режим!
+
+  // 2. Отправляем сброс в БД через syncUrl
+  const syncUrl = window._syncUrl;
+  const uid = getTgUserId();
+  if (syncUrl && uid) {
+    fetch(syncUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        type: 'reset',
+        user_id: uid,
+        total_score: 0,
+        completed: 0,
+        game_over: false,
+        score: 0,
+      })
+    }).then(() => console.log('✅ Прогресс сброшен в БД'))
+      .catch(e => console.warn('reset sync error:', e));
   }
-  // Гость
-  if (confirm('Сбросить прогресс?')) {
-    try { localStorage.removeItem(storageKey()); } catch(e) {}
-    state = DEFAULT_STATE();
-    switchTab('chapters');
-  }
+
+  // 3. Перерендеривем — в adminMode все главы открыты
+  renderChapters();
+  showToast('🗑 Прогресс сброшен');
 }
 
 // ══════════════════════════════════════════════
