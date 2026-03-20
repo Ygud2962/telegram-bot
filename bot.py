@@ -5033,6 +5033,32 @@ async def save_photo_subs(query, context):
 #  HTTP ENDPOINT ДЛЯ СИНХРОНИЗАЦИИ ИЗ ИГРЫ
 # ══════════════════════════════════════════════════════════
 
+async def handle_game_reset(request):
+    """POST /game_reset — полный сброс прогресса игрока (только для своего аккаунта)."""
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    }
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+    try:
+        data = await request.json()
+    except Exception:
+        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
+    user_id = data.get('user_id')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = int(user_id)
+        ok = await asyncio.to_thread(db.reset_game_result, user_id)
+        logger.info(f"game_reset: user={user_id}, ok={ok}")
+        return aiohttp_web.json_response({'ok': ok}, headers=headers)
+    except Exception as e:
+        logger.error(f"handle_game_reset error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
+
+
 async def handle_game_state(request):
     """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД."""
     headers = {
@@ -5159,6 +5185,8 @@ def start_http_server_thread():
     async def _run():
         app_http = aiohttp_web.Application()
         # API
+        app_http.router.add_post('/game_reset', handle_game_reset)
+        app_http.router.add_options('/game_reset', handle_game_reset)
         app_http.router.add_get('/game_state', handle_game_state)
         app_http.router.add_post('/game_sync', handle_game_sync)
         app_http.router.add_options('/game_sync', handle_game_sync)
