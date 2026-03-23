@@ -289,8 +289,10 @@ function getTgUserName() {
   return 'Разведчик';
 }
 async function sendResultToBot(data) {
-  data.completed  = Object.keys(state.completedChapters).length;
-  data.total_score = state.totalScore;
+  data.completed        = Object.keys(state.completedChapters).length;
+  data.total_score      = state.totalScore;
+  data.achievement_count = Object.keys(state.achievements || {}).length;
+  data.achievement_pts   = state.achievementPts || 0;
   data.user_id    = getTgUserId();
   data.user_name  = tgUser
     ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim()
@@ -996,21 +998,30 @@ async function checkAnswer() {
     inp.className  = 'cipher-input correct';
     inp.disabled   = true;
     state.streak = (state.streak || 0) + 1;
+    playSound('correct');
     const pts      = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
     stopTimer();
+    // Отслеживаем быстрые ответы
+    if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+    // Первая попытка без ошибок
+    const isFirstTry = (state._chapterErrors || 0) === 0;
+    checkAchievements({ elapsed, firstTry: isFirstTry });
     setTimeout(() => showSuccess(cipher, pts, elapsed), 400);
 
   } else {
     // ── НЕПРАВИЛЬНО ──
     inp.className = 'cipher-input wrong';
+    playSound('wrong');
     setTimeout(() => inp.className = 'cipher-input', 500);
     state.streak = 0;
     state._chapterErrors = (state._chapterErrors || 0) + 1;
     if (!state.adminMode) {
       state.lives--;
       animateLifeLoss();
+      screenPulseRed();
+      playSound('life_lost');
     }
     saveState();
 
@@ -1057,6 +1068,7 @@ function showHint() {
   state.hintsUsed = true;
 
   // Показываем подсказку в hint-box
+  playSound('hint');
   const hintBox  = document.getElementById('cipher-hint-box');
   const hintText = document.getElementById('cipher-hint-text');
   if (hintBox && hintText) {
@@ -1191,6 +1203,24 @@ async function finishChapter() {
     nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); };
   }
 
+  // Comeback — прошёл главу после повторной попытки
+  if (state._isRetryAttempt) {
+    state._isRetryAttempt = false;
+    checkAchievements({ retryWin: true, comeback: true });
+  }
+  // Проверяем достижения главы
+  const chNoErrors = (state._chapterErrors || 0) === 0;
+  const chNoHints  = (state._chapterHints  || 0) === 0;
+  if (chNoErrors) state._perfectChapters = (state._perfectChapters || 0) + 1;
+  if (chNoHints)  state._noHintChapters  = (state._noHintChapters  || 0) + 1;
+  const survived1Life = state.lives === 1;
+  checkAchievements({
+    chapterDoneNoErrors: chNoErrors,
+    chapterDoneNoHints: chNoHints,
+    survived1: survived1Life,
+  });
+  playSound('chapter_win');
+  launchConfetti(2000, 60);
   showScreen('s-chapter-end');
 }
 
@@ -1265,7 +1295,10 @@ async function failChapter() {
   if (retryBtn) {
     retryBtn.style.display = 'block';
     retryBtn.textContent = '🔄 ПОПРОБОВАТЬ СНОВА';
-    retryBtn.onclick = () => retryChapterWithPenalty(state.chapter);
+    retryBtn.onclick = () => {
+      state._isRetryAttempt = true;
+      retryChapterWithPenalty(state.chapter);
+    };
   }
   if (retryInfo) {
     retryInfo.style.display = 'block';
@@ -1373,6 +1406,31 @@ function showMyStats() {
   modal.style.display = 'flex';
 }
 
+function closeAchModal() {
+  const m = document.getElementById('ach-modal');
+  if (m) m.style.display = 'none';
+}
+
+function showMyAchievements() {
+  let modal = document.getElementById('ach-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'ach-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);display:flex;align-items:flex-end;justify-content:center';
+    modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+    document.body.appendChild(modal);
+  }
+  const inner = document.createElement('div');
+  inner.style.cssText = 'background:#161612;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:0 0 32px';
+  inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 8px;position:sticky;top:0;background:#161612;z-index:1">'
+    + '<div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">МОИ ДОСТИЖЕНИЯ</div>'
+    + '<button onclick="closeAchModal()" style="background:rgba(255,255,255,.08);border:none;color:var(--muted);font-size:18px;width:32px;height:32px;border-radius:50%;cursor:pointer">✕</button></div>';
+  renderAchievementsTab(inner);
+  modal.innerHTML = '';
+  modal.appendChild(inner);
+  modal.style.display = 'flex';
+}
+
 function closeMyStats() {
   const modal = document.getElementById('stats-modal');
   if (modal) modal.style.display = 'none';
@@ -1442,6 +1500,8 @@ async function showFinal() {
   document.getElementById('final-chapter-scores').innerHTML = rows;
 
   setTimeout(() => document.getElementById('final-stars').classList.add('show'), 800);
+  setTimeout(() => playSound('game_win'), 300);
+  setTimeout(() => launchConfetti(5000, 120), 500);
 
   sendResultToBot({
     type: 'game_complete',
@@ -2197,15 +2257,29 @@ function renderLeaderboardTab() {
   const total = tgInitLB.length || lb.length;
 
   // Шапка
-  const header = `<div style="padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between">
-    <div>
-      <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">РЕЙТИНГ</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} участников · <span style="color:rgba(255,224,51,.5)">👆 нажми на себя для статистики</span></div>
+  const header = `<div style="padding:12px 16px 8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">РЕЙТИНГ</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">👥 ${total || 0} уч. · <span style="color:rgba(255,224,51,.5)">👆 нажми на себя</span></div>
+      </div>
+      <button onclick="switchTab('leaderboard')"
+        style="background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
+        color:var(--accent);padding:6px 10px;border-radius:4px;font-family:var(--head);
+        font-size:var(--fs-xs);cursor:pointer">🔄</button>
     </div>
-    <button onclick="switchTab('leaderboard')"
-      style="background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
-      color:var(--accent);padding:6px 12px;border-radius:4px;font-family:var(--head);
-      font-size:var(--fs-xs);cursor:pointer;letter-spacing:.06em">🔄 ОБНОВИТЬ</button>
+    <div style="display:flex;gap:6px">
+      <button onclick="window._ratingTab='score';renderLeaderboardTab()"
+        style="flex:1;padding:7px;border-radius:6px;font-family:var(--head);font-size:10px;
+        cursor:pointer;letter-spacing:.05em;border:1px solid rgba(255,224,51,.2);
+        background:${currentRatingTab==='score'?'rgba(255,224,51,.15)':'transparent'};
+        color:${currentRatingTab==='score'?'var(--accent)':'var(--muted)'}">⭐ ОЧКИ</button>
+      <button onclick="window._ratingTab='achievements';renderLeaderboardTab()"
+        style="flex:1;padding:7px;border-radius:6px;font-family:var(--head);font-size:10px;
+        cursor:pointer;letter-spacing:.05em;border:1px solid rgba(255,224,51,.2);
+        background:${currentRatingTab==='achievements'?'rgba(255,224,51,.15)':'transparent'};
+        color:${currentRatingTab==='achievements'?'var(--accent)':'var(--muted)'}">🏅 ДОСТИЖЕНИЯ</button>
+    </div>
   </div>`;
 
   if (!lb.length) {
@@ -2218,7 +2292,8 @@ function renderLeaderboardTab() {
         Никто ещё не прошёл ни одной главы.<br>
         <b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b>
       </div>
-      <button onclick="showMyStats()" style="width:100%;margin-bottom:10px;background:rgba(255,224,51,.08);border:1px solid rgba(255,224,51,.2);color:var(--accent);padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">📊 ДЕТАЛЬНАЯ СТАТИСТИКА</button>
+      <button onclick="showMyStats()" style="width:100%;margin-bottom:8px;background:rgba(255,224,51,.08);border:1px solid rgba(255,224,51,.2);color:var(--accent);padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">📊 ДЕТАЛЬНАЯ СТАТИСТИКА</button>
+    <button onclick="showMyAchievements()" style="width:100%;margin-bottom:10px;background:rgba(255,180,0,.06);border:1px solid rgba(255,180,0,.2);color:#ffb400;padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">🏅 МОИ ДОСТИЖЕНИЯ · ${Object.keys(state.achievements||{}).length}/${ACHIEVEMENTS.length}</button>
     <button onclick="switchTab('chapters')"
         style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px;
         font-family:var(--head);font-size:var(--fs-base);font-weight:700;
@@ -2236,6 +2311,9 @@ function renderLeaderboardTab() {
   const filteredLb = isAdminUser
     ? lb  // Админ видит всех
     : lb.filter(e => e.role !== 'admin' && e.role !== 'tester');
+
+  // Переключатель вкладок рейтинга
+  const currentRatingTab = window._ratingTab || 'score';
   const visibleLb = isAdminUser ? filteredLb : filteredLb.slice(0, 10);
   const rows = visibleLb.map((e,i) => {
     const isMe   = e.uid === myUid;
@@ -2280,7 +2358,28 @@ function renderLeaderboardTab() {
       📍 Вы не в топ-10. Нажмите на своё имя в рейтинге для статистики.
     </div>`;
 
-  list.innerHTML = header + rows + myPos;
+  if (currentRatingTab === 'achievements') {
+    // Рейтинг достижений
+    const achLb = visibleLb.map((e, i) => {
+      const isMe = e.uid === myUid;
+      const achCount = e.achievementCount || 0;
+      const achPts   = e.achievementPts   || 0;
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">${i+1}</span>`;
+      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;
+        border-bottom:1px solid rgba(255,255,255,.04);
+        background:${isMe?'rgba(255,224,51,.06)':''}">
+        <div style="font-size:20px;min-width:28px;text-align:center">${medal}</div>
+        <div style="flex:1">
+          <div style="font-family:var(--head);font-size:var(--fs-sm);color:${isMe?'var(--accent)':'#fdfaf0'}">${e.name}${isMe?' 👈':''}</div>
+          <div style="font-size:10px;color:var(--muted)">${achCount} достижений</div>
+        </div>
+        <div style="font-family:var(--head);font-size:var(--fs-md);color:var(--accent)">+${achPts}⭐</div>
+      </div>`;
+    }).join('');
+    list.innerHTML = header + (achLb || '<div style="padding:40px;text-align:center;color:var(--muted);font-style:italic">Данные загружаются...</div>');
+  } else {
+    list.innerHTML = header + rows + myPos;
+  }
 }
 
 function renderProfileTab() {
@@ -2615,9 +2714,431 @@ async function checkMapAnswer(clicked, target) {
   }
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  ЗВУКОВЫЕ ЭФФЕКТЫ (Web Audio API — без файлов)
+// ═══════════════════════════════════════════════════════
+let _audioCtx = null;
+function getAudio() {
+  if (!_audioCtx) {
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  }
+  return _audioCtx;
+}
+
+function playSound(type) {
+  const ctx = getAudio();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    const now = ctx.currentTime;
+
+    if (type === 'correct') {
+      // Победный звук — два тона вверх
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523, now);
+      osc.frequency.setValueAtTime(784, now + 0.1);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      osc.start(now); osc.stop(now + 0.4);
+    } else if (type === 'wrong') {
+      // Ошибка — низкий дребезжащий звук
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, now);
+      osc.frequency.setValueAtTime(100, now + 0.15);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.start(now); osc.stop(now + 0.3);
+    } else if (type === 'chapter_win') {
+      // Победная фанфара
+      const freqs = [523, 659, 784, 1047];
+      freqs.forEach((f, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'sine';
+        o.frequency.setValueAtTime(f, now + i * 0.1);
+        g.gain.setValueAtTime(0.25, now + i * 0.1);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.3);
+        o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.3);
+      });
+    } else if (type === 'life_lost') {
+      // Потеря жизни — тревожный звук
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(200, now);
+      osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.start(now); osc.stop(now + 0.3);
+    } else if (type === 'hint') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      osc.start(now); osc.stop(now + 0.2);
+    } else if (type === 'game_win') {
+      // Финальная победа — торжественный аккорд
+      [523,659,784,880,1047].forEach((f, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = i % 2 === 0 ? 'sine' : 'triangle';
+        o.frequency.setValueAtTime(f, now + i * 0.08);
+        g.gain.setValueAtTime(0.2, now + i * 0.08);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+        o.start(now + i * 0.08); o.stop(now + 1.5);
+      });
+    }
+  } catch(e) {}
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  КОНФЕТТИ (улучшенное)
+// ═══════════════════════════════════════════════════════
+function launchConfetti(duration = 3000, intensity = 80) {
+  const colors = ['#ffe033','#ff4455','#55ee66','#4488ff','#ff88ff','#ffaa33'];
+  const shapes = ['■','●','▲','★','♦'];
+  const end = Date.now() + duration;
+
+  function frame() {
+    if (Date.now() > end) return;
+    const count = Math.floor(intensity / 10);
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.textContent = shapes[Math.floor(Math.random() * shapes.length)];
+      el.style.cssText = [
+        `left:${Math.random() * 100}vw`,
+        `top:-20px`,
+        `color:${colors[Math.floor(Math.random() * colors.length)]}`,
+        `font-size:${8 + Math.random() * 14}px`,
+        `animation:confettiFall ${1.5 + Math.random() * 2}s linear forwards`,
+        `animation-delay:${Math.random() * 0.5}s`,
+        `transform:rotate(${Math.random() * 360}deg)`,
+      ].join(';');
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 3500);
+    }
+    requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+// ═══════════════════════════════════════════════════════
+//  ЭКРАН ЗАГРУЗКИ
+// ═══════════════════════════════════════════════════════
+function showSplash() {
+  const splash = document.createElement('div');
+  splash.id = 'splash-screen';
+  splash.style.cssText = `position:fixed;inset:0;z-index:9000;background:#0a0a08;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    transition:opacity .5s ease`;
+
+  splash.innerHTML = `
+    <div style="font-size:72px;margin-bottom:16px;animation:popIn .6s ease both">🔐</div>
+    <div style="font-family:var(--head);font-size:var(--fs-hero);color:var(--accent);
+      letter-spacing:.06em;text-align:center;line-height:.9;
+      text-shadow:0 0 40px rgba(255,224,51,.6)">ШИФРО<br>ВАЛЬЩИК</div>
+    <div style="margin-top:24px;width:200px;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden">
+      <div id="splash-bar" style="height:100%;width:0%;background:var(--accent);border-radius:2px;
+        transition:width .05s linear;box-shadow:0 0 8px var(--accent)"></div>
+    </div>
+    <div style="margin-top:10px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em">ЗАГРУЗКА...</div>
+  `;
+  document.body.appendChild(splash);
+
+  // Анимируем прогресс-бар
+  let pct = 0;
+  const bar = splash.querySelector('#splash-bar');
+  const interval = setInterval(() => {
+    pct += Math.random() * 15;
+    if (pct >= 100) { pct = 100; clearInterval(interval); }
+    bar.style.width = pct + '%';
+    if (pct >= 100) {
+      setTimeout(() => {
+        splash.style.opacity = '0';
+        setTimeout(() => splash.remove(), 500);
+      }, 200);
+    }
+  }, 80);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ПУЛЬСАЦИЯ ЭКРАНА ПРИ ПОТЕРЕ ЖИЗНИ
+// ═══════════════════════════════════════════════════════
+function screenPulseRed() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `position:fixed;inset:0;z-index:9998;pointer-events:none;
+    background:rgba(255,50,50,0);transition:background .1s ease`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => {
+    overlay.style.background = 'rgba(255,50,50,0.18)';
+    setTimeout(() => {
+      overlay.style.background = 'rgba(255,50,50,0)';
+      setTimeout(() => overlay.remove(), 200);
+    }, 150);
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  СИСТЕМА ДОСТИЖЕНИЙ (50 штук)
+// ═══════════════════════════════════════════════════════
+const ACHIEVEMENTS = [
+  // Скорость
+  {id:'speed_1',    icon:'⚡', name:'Молния',          desc:'Ответил за 5 секунд',           pts:10},
+  {id:'speed_5',    icon:'🚀', name:'Реактивный',       desc:'5 ответов быстрее 5 секунд',    pts:25},
+  {id:'speed_10',   icon:'🌪', name:'Вихрь',            desc:'10 ответов быстрее 10 секунд',  pts:50},
+  {id:'speed_all',  icon:'🏎', name:'Формула-1',         desc:'Вся глава за 3 минуты',         pts:75},
+  // Точность
+  {id:'perfect_1',  icon:'🎯', name:'Снайпер',          desc:'Глава без единой ошибки',       pts:50},
+  {id:'perfect_3',  icon:'💎', name:'Бриллиант',        desc:'3 главы без ошибок',            pts:100},
+  {id:'perfect_all',icon:'👑', name:'Безупречный',      desc:'Все главы без ошибок',          pts:200},
+  {id:'no_hints_1', icon:'🧠', name:'Умник',            desc:'Глава без подсказок',           pts:30},
+  {id:'no_hints_all',icon:'🎓',name:'Мастер шифров',    desc:'Все главы без подсказок',       pts:150},
+  // Стрик
+  {id:'streak_3',   icon:'🔥', name:'На волне',         desc:'Стрик 3 правильных ответа',     pts:15},
+  {id:'streak_5',   icon:'💥', name:'Огонь!',           desc:'Стрик 5 правильных ответа',     pts:30},
+  {id:'streak_10',  icon:'🌋', name:'Вулкан',           desc:'Стрик 10 правильных ответов',   pts:60},
+  {id:'streak_all', icon:'☄️', name:'Метеор',           desc:'Вся глава одним стриком',       pts:100},
+  // Прогресс
+  {id:'ch1_done',   icon:'🏅', name:'Первый шаг',       desc:'Пройдена глава I',              pts:20},
+  {id:'ch3_done',   icon:'🥈', name:'Полпути',          desc:'Пройдено 3 главы',              pts:40},
+  {id:'ch6_done',   icon:'🥇', name:'Победитель',       desc:'Пройдена вся игра',             pts:100},
+  {id:'ch1_gold',   icon:'🌟', name:'Золото главы I',   desc:'80%+ очков в главе I',          pts:30},
+  {id:'ch2_gold',   icon:'🌟', name:'Золото главы II',  desc:'80%+ очков в главе II',         pts:30},
+  {id:'ch3_gold',   icon:'🌟', name:'Золото главы III', desc:'80%+ очков в главе III',        pts:30},
+  {id:'ch4_gold',   icon:'🌟', name:'Золото главы IV',  desc:'80%+ очков в главе IV',         pts:30},
+  {id:'ch5_gold',   icon:'🌟', name:'Золото главы V',   desc:'80%+ очков в главе V',          pts:30},
+  {id:'ch6_gold',   icon:'🌟', name:'Золото главы VI',  desc:'80%+ очков в главе VI',         pts:30},
+  {id:'all_gold',   icon:'👸', name:'Чемпион',          desc:'80%+ во всех главах',           pts:200},
+  // Очки
+  {id:'score_100',  icon:'💫', name:'Первые очки',      desc:'Набрал 100 очков',              pts:5},
+  {id:'score_500',  icon:'⭐', name:'Набирает обороты', desc:'Набрал 500 очков',              pts:10},
+  {id:'score_1000', icon:'🌠', name:'Тысячник',         desc:'Набрал 1000 очков',             pts:20},
+  {id:'score_2500', icon:'💎', name:'Эксперт',          desc:'Набрал 2500 очков',             pts:40},
+  {id:'score_5000', icon:'🏆', name:'Легенда',          desc:'Набрал 5000+ очков',            pts:80},
+  // Шифры
+  {id:'morse_1',    icon:'📡', name:'Морзист',          desc:'Решил задание на азбуке Морзе', pts:10},
+  {id:'morse_5',    icon:'📻', name:'Радист',           desc:'5 заданий на Морзе',            pts:25},
+  {id:'caesar_5',   icon:'🔐', name:'Цезарь',           desc:'5 заданий шифром Цезаря',       pts:20},
+  {id:'atbash_3',   icon:'🪞', name:'Зеркало',          desc:'3 задания шифром Атбаш',        pts:15},
+  {id:'math_3',     icon:'➗', name:'Математик',        desc:'3 математических задания',      pts:20},
+  {id:'anagram_3',  icon:'🔤', name:'Буквоед',          desc:'3 анаграммы',                   pts:20},
+  {id:'map_1',      icon:'🗺', name:'Картограф',        desc:'Нашёл город на карте',          pts:15},
+  // Особые
+  {id:'first_try',  icon:'🎊', name:'С первого раза',   desc:'Правильный ответ без ошибок',   pts:5},
+  {id:'comeback',   icon:'💪', name:'Возвращение',      desc:'Прошёл главу после провала',    pts:30},
+  {id:'night_owl',  icon:'🦉', name:'Полуночник',       desc:'Играл после 23:00',             pts:15},
+  {id:'early_bird', icon:'🐦', name:'Ранняя пташка',    desc:'Играл до 8:00',                 pts:15},
+  {id:'dedicated',  icon:'📚', name:'Усердный',         desc:'Прошёл 10+ заданий',            pts:20},
+  {id:'veteran',    icon:'🎖', name:'Ветеран',          desc:'Прошёл 30 заданий',             pts:50},
+  {id:'collector',  icon:'🗃', name:'Коллекционер',     desc:'Получил 10 достижений',         pts:30},
+  {id:'explorer',   icon:'🧭', name:'Исследователь',   desc:'Открыл все 6 глав',             pts:25},
+  {id:'historian',  icon:'📜', name:'Историк',          desc:'Прочитал 10 исторических фактов',pts:20},
+  {id:'survivor',   icon:'🛡', name:'Выживший',         desc:'Остался с 1 жизнью и победил',  pts:40},
+  {id:'comeback_ch',icon:'🔄', name:'Несломленный',     desc:'Повторил главу и победил',      pts:35},
+  {id:'top3',       icon:'🏅', name:'Призёр',           desc:'Попал в топ-3 рейтинга',        pts:50},
+  {id:'top1',       icon:'🥇', name:'Чемпион школы',    desc:'Первое место в рейтинге',       pts:100},
+  {id:'all_types',  icon:'🎭', name:'Универсал',        desc:'Решил все типы шифров',         pts:60},
+  {id:'full_game',  icon:'🎮', name:'Настоящий разведчик', desc:'Прошёл игру полностью',      pts:150},
+];
+
+// Состояние достижений
+if (!state.achievements) state.achievements = {};
+if (!state.achievementPts) state.achievementPts = 0;
+
+function unlockAchievement(id) {
+  if (!state.achievements) state.achievements = {};
+  if (state.achievements[id]) return; // уже есть
+  const ach = ACHIEVEMENTS.find(a => a.id === id);
+  if (!ach) return;
+  state.achievements[id] = Date.now();
+  state.achievementPts = (state.achievementPts || 0) + ach.pts;
+  saveState();
+  // Показываем уведомление
+  showAchievementToast(ach);
+  // Синхронизируем
+  setTimeout(() => autoSync(false), 500);
+}
+
+function showAchievementToast(ach) {
+  const old = document.getElementById('ach-toast');
+  if (old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'ach-toast';
+  el.style.cssText = `position:fixed;top:80px;left:50%;transform:translateX(-50%);
+    z-index:9997;background:linear-gradient(135deg,#1a1508,#2a2010);
+    border:1px solid rgba(255,224,51,.4);border-radius:12px;
+    padding:12px 18px;display:flex;align-items:center;gap:12px;
+    box-shadow:0 8px 32px rgba(0,0,0,.6),0 0 20px rgba(255,224,51,.15);
+    animation:slideDown .4s cubic-bezier(.34,1.56,.64,1) both;
+    max-width:280px`;
+  el.innerHTML = `
+    <div style="font-size:28px;flex-shrink:0">${ach.icon}</div>
+    <div>
+      <div style="font-size:9px;color:rgba(255,224,51,.6);letter-spacing:.1em;margin-bottom:2px">ДОСТИЖЕНИЕ</div>
+      <div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent)">${ach.name}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">${ach.desc} · +${ach.pts}⭐</div>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity .3s,transform .3s';
+    el.style.opacity = '0';
+    el.style.transform = 'translateX(-50%) translateY(-10px)';
+    setTimeout(() => el.remove(), 300);
+  }, 3000);
+}
+
+function checkAchievements(context = {}) {
+  const done = Object.keys(state.completedChapters).length;
+  const score = state.totalScore;
+  const achs = state.achievements || {};
+  const stats = state.chapterStats || {};
+  const typesUsed = new Set();
+
+  // Считаем типы шифров и задания
+  let totalCiphers = 0;
+  let morseCount = 0, caesarCount = 0, atbashCount = 0, mathCount = 0, anagramCount = 0, mapCount = 0;
+  CHAPTERS.forEach(ch => {
+    if (state.completedChapters[ch.id]) {
+      ch.ciphers.forEach(c => {
+        totalCiphers++;
+        typesUsed.add(c.type);
+        if (c.type === 'morse') morseCount++;
+        if (c.type === 'caesar') caesarCount++;
+        if (c.type === 'atbash') atbashCount++;
+        if (c.type === 'math') mathCount++;
+        if (c.type === 'anagram') anagramCount++;
+        if (c.type === 'map') mapCount++;
+      });
+    }
+  });
+
+  // Скорость
+  if (context.elapsed <= 5) unlockAchievement('speed_1');
+  if ((state._fastAnswers || 0) >= 5) unlockAchievement('speed_5');
+  if ((state._fastAnswers || 0) >= 10) unlockAchievement('speed_10');
+
+  // Точность
+  if (context.chapterDoneNoErrors) unlockAchievement('perfect_1');
+  if ((state._perfectChapters || 0) >= 3) unlockAchievement('perfect_3');
+  if ((state._perfectChapters || 0) >= 6) unlockAchievement('perfect_all');
+  if (context.chapterDoneNoHints) unlockAchievement('no_hints_1');
+  if ((state._noHintChapters || 0) >= 6) unlockAchievement('no_hints_all');
+
+  // Стрик
+  if ((state.streak || 0) >= 3) unlockAchievement('streak_3');
+  if ((state.streak || 0) >= 5) unlockAchievement('streak_5');
+  if ((state.streak || 0) >= 10) unlockAchievement('streak_10');
+
+  // Прогресс
+  if (done >= 1) unlockAchievement('ch1_done');
+  if (done >= 3) unlockAchievement('ch3_done');
+  if (done >= 6) { unlockAchievement('ch6_done'); unlockAchievement('full_game'); }
+  if (done >= 6) unlockAchievement('explorer');
+
+  // Золото за главы
+  CHAPTERS.forEach((ch, i) => {
+    if (!state.completedChapters[ch.id]) return;
+    const s = state.chapterStats && state.chapterStats[ch.id];
+    const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0);
+    const chScore = state.chapterScores[ch.id] || 0;
+    if (chScore >= maxCh * 0.8) {
+      unlockAchievement('ch' + (i+1) + '_gold');
+    }
+  });
+  // Все золото
+  const goldCount = CHAPTERS.filter((ch,i) => {
+    const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0);
+    return (state.chapterScores[ch.id] || 0) >= maxCh * 0.8;
+  }).length;
+  if (goldCount >= 6) unlockAchievement('all_gold');
+  if (goldCount >= 6) unlockAchievement('champion');
+
+  // Очки
+  if (score >= 100)  unlockAchievement('score_100');
+  if (score >= 500)  unlockAchievement('score_500');
+  if (score >= 1000) unlockAchievement('score_1000');
+  if (score >= 2500) unlockAchievement('score_2500');
+  if (score >= 5000) unlockAchievement('score_5000');
+
+  // Шифры
+  if (morseCount >= 1)   unlockAchievement('morse_1');
+  if (morseCount >= 5)   unlockAchievement('morse_5');
+  if (caesarCount >= 5)  unlockAchievement('caesar_5');
+  if (atbashCount >= 3)  unlockAchievement('atbash_3');
+  if (mathCount >= 3)    unlockAchievement('math_3');
+  if (anagramCount >= 3) unlockAchievement('anagram_3');
+  if (mapCount >= 1)     unlockAchievement('map_1');
+  if (typesUsed.size >= 6) unlockAchievement('all_types');
+
+  // Задания
+  if (totalCiphers >= 10) unlockAchievement('dedicated');
+  if (totalCiphers >= 30) unlockAchievement('veteran');
+
+  // Особые
+  const h = new Date().getHours();
+  if (h >= 23 || h < 6)  unlockAchievement('night_owl');
+  if (h >= 5 && h < 8)   unlockAchievement('early_bird');
+  if (context.firstTry)  unlockAchievement('first_try');
+  if (context.survived1) unlockAchievement('survivor');
+  if (context.comeback)  unlockAchievement('comeback');
+  if (context.retryWin)  unlockAchievement('comeback_ch');
+
+  // Коллекционер
+  const achCount = Object.keys(state.achievements || {}).length;
+  if (achCount >= 10) unlockAchievement('collector');
+}
+
+function renderAchievementsTab(container) {
+  const myAchs = state.achievements || {};
+  const total = ACHIEVEMENTS.length;
+  const earned = Object.keys(myAchs).length;
+  const earnedPts = state.achievementPts || 0;
+
+  let html = `<div style="padding:16px">
+    <div style="background:#141108;border:1px solid rgba(255,224,51,.12);
+      border-radius:8px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-around;text-align:center">
+      <div>
+        <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earned}</div>
+        <div style="font-size:10px;color:var(--muted)">ПОЛУЧЕНО</div>
+      </div>
+      <div>
+        <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${total}</div>
+        <div style="font-size:10px;color:var(--muted)">ВСЕГО</div>
+      </div>
+      <div>
+        <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earnedPts}</div>
+        <div style="font-size:10px;color:var(--muted)">ОЧКОВ</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">`;
+
+  ACHIEVEMENTS.forEach(ach => {
+    const has = !!myAchs[ach.id];
+    html += `<div style="background:${has ? 'linear-gradient(145deg,#1a1808,#141208)' : '#0e0c08'};
+      border:1px solid ${has ? 'rgba(255,224,51,.25)' : 'rgba(255,255,255,.05)'};
+      border-radius:8px;padding:10px;opacity:${has ? '1' : '0.35'}">
+      <div style="font-size:22px;margin-bottom:4px">${ach.icon}</div>
+      <div style="font-family:var(--head);font-size:11px;color:${has ? 'var(--accent)' : '#fdfaf0'};
+        letter-spacing:.04em">${ach.name}</div>
+      <div style="font-size:9px;color:var(--muted);margin-top:2px;line-height:1.4">${ach.desc}</div>
+      <div style="font-size:9px;color:${has ? 'var(--accent)' : 'rgba(255,255,255,.2)'};margin-top:4px">+${ach.pts}⭐</div>
+    </div>`;
+  });
+  html += '</div></div>';
+  container.innerHTML = html;
+}
+
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
+if (document.readyState === "loading") { showSplash(); } else { showSplash(); }
 loadState();
 mergeBotLeaderboard();
 
