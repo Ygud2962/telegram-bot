@@ -934,15 +934,31 @@ function loadCipher() {
   const cipher = ch.ciphers[state.cipherIdx];
   if (!cipher) { finishChapter(); return; }
 
-  // Сбрасываем quiz-container для НЕ-quiz заданий
+  // Сбрасываем quiz-container
   const qc = document.getElementById('quiz-container');
   if (qc) qc.style.display = 'none';
-  // Восстанавливаем input и кнопку для НЕ-quiz
-  const inp = document.getElementById('cipher-input');
+
+  // Элементы ввода
+  const inp      = document.getElementById('cipher-input');
+  const inpWrap  = document.getElementById('cipher-input-wrap');
   const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
+  const hintBtn  = document.getElementById('btn-hint');
+  const boxEl    = document.getElementById('cipher-box');
+
   if (cipher.type !== 'quiz') {
-    if (inp) { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; }
+    // Обычные задания — показываем всё
+    if (inp)      { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; }
+    if (inpWrap)  inpWrap.style.display  = '';
     if (checkBtn) checkBtn.style.display = '';
+    if (hintBtn)  { hintBtn.style.display = ''; hintBtn.disabled = false; hintBtn.textContent = '💡 ПОДСКАЗКА'; }
+    if (boxEl)    boxEl.style.display    = '';
+  } else {
+    // Quiz — скрываем input, показываем только quiz-container
+    if (inp)      inp.style.display      = 'none';
+    if (inpWrap)  inpWrap.style.display  = 'none';
+    if (checkBtn) checkBtn.style.display = 'none';
+    // hint оставляем видимым для quiz тоже
+    if (boxEl)    boxEl.style.display    = 'none';
   }
   state.startTime = Date.now();
 
@@ -2726,11 +2742,7 @@ let _quizState = { cipher: null, startTime: 0, selected: null, answered: false }
 function renderQuiz(cipher) {
   _quizState = { cipher, startTime: Date.now(), selected: null, answered: false };
 
-  // Прячем стандартные элементы ввода
-  ['cipher-input','cipher-input-wrap','btn-check','btn-hint','cipher-box'].forEach(id => {
-    const el = document.getElementById(id) || document.querySelector('.' + id);
-    if (el) el.style.display = 'none';
-  });
+  // Элементы уже скрыты в loadCipher для типа quiz
 
   let container = document.getElementById('quiz-container');
   if (!container) {
@@ -2867,7 +2879,15 @@ function quizSubmit() {
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
     const cipherTypeCtx = { quizCorrect: true, elapsed };
     checkAchievements({ elapsed, firstTry: (state._chapterErrors || 0) === 0, ...cipherTypeCtx });
-    setTimeout(() => showSuccess(cipher, pts, elapsed), 900);
+    setTimeout(() => {
+      // Скрываем quiz-container перед показом экрана успеха
+      const qc = document.getElementById('quiz-container');
+      if (qc) qc.style.display = 'none';
+      // Восстанавливаем cipher-input-wrap для следующего задания
+      const ciw = document.getElementById('cipher-input-wrap');
+      if (ciw) ciw.style.display = '';
+      showSuccess(cipher, pts, elapsed);
+    }, 900);
   } else {
     playSound('wrong');
     screenPulseRed();
