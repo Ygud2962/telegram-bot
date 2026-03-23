@@ -2705,109 +2705,165 @@ function exitToMain() {
 
 
 // ═══════════════════════════════════════════════════════
-//  ВИКТОРИНА (QUIZ) — вопрос с вариантами ответов
+//  ВИКТОРИНА (QUIZ) — надёжная реализация
 // ═══════════════════════════════════════════════════════
+let _quizState = { cipher: null, startTime: 0, selected: null, answered: false };
+
 function renderQuiz(cipher) {
-  const startTime = Date.now();
+  _quizState = { cipher, startTime: Date.now(), selected: null, answered: false };
 
-  // Прячем стандартный input и кнопку проверки
-  const inp  = document.getElementById('cipher-input');
-  const wrap = document.getElementById('cipher-input-wrap') || inp?.parentElement;
-  const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
-  if (inp)      inp.style.display      = 'none';
-  if (checkBtn) checkBtn.style.display = 'none';
-  if (wrap && wrap.id !== 's-cipher') wrap.style.display = 'none';
+  // Прячем стандартные элементы ввода
+  ['cipher-input','cipher-input-wrap','btn-check','btn-hint','cipher-box'].forEach(id => {
+    const el = document.getElementById(id) || document.querySelector('.' + id);
+    if (el) el.style.display = 'none';
+  });
 
-  // Скрываем cipher-box (иконка/эмодзи уже в task)
-  const box = document.getElementById('cipher-box');
-  if (box) {
-    box.style.display = 'none';
-  }
-
-  // Используем quiz-container — отдельный блок
   let container = document.getElementById('quiz-container');
   if (!container) {
     container = document.createElement('div');
     container.id = 'quiz-container';
-    // Вставляем после cipher-box
-    if (box && box.parentNode) {
-      box.parentNode.insertBefore(container, box.nextSibling);
-    }
+    const refEl = document.getElementById('cipher-hint-box');
+    if (refEl && refEl.parentNode) refEl.parentNode.insertBefore(container, refEl);
+    else document.getElementById('cipher-body') && document.getElementById('cipher-body').appendChild(container);
   }
-  container.style.display = 'block';
-  container.style.cssText = 'display:block;width:100%;padding:0 4px;margin-top:4px';
+  container.style.cssText = 'display:block;width:100%;padding:0 2px;margin-bottom:12px';
 
-  const btns = cipher.options.map((opt, i) => {
-    const letter = String.fromCharCode(65 + i);
-    return `<button id="quiz-btn-${i}" onclick="checkQuizAnswer(${i})"
-      style="width:100%;padding:14px 16px;margin-bottom:10px;text-align:left;
-      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
-      border-radius:8px;color:#fdfaf0;font-size:15px;cursor:pointer;display:flex;
-      align-items:center;gap:12px;transition:background .15s,border .15s,transform .1s;
-      font-family:inherit;line-height:1.5">
-      <span style="flex-shrink:0;width:28px;height:28px;border-radius:50%;
-        background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
+  // Строим варианты ответов
+  const letters = ['А', 'Б', 'В', 'Г', 'Д'];
+  const optionsHtml = cipher.options.map((opt, i) => `
+    <div id="quiz-opt-${i}" onclick="quizSelect(${i})"
+      style="width:100%;padding:14px 16px;margin-bottom:8px;
+      background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.1);
+      border-radius:10px;color:#fdfaf0;font-size:14px;cursor:pointer;
+      display:flex;align-items:center;gap:12px;
+      transition:all .15s ease;box-sizing:border-box;user-select:none">
+      <div id="quiz-letter-${i}" style="flex-shrink:0;width:30px;height:30px;border-radius:50%;
+        background:rgba(255,224,51,.08);border:1.5px solid rgba(255,224,51,.2);
         display:flex;align-items:center;justify-content:center;
-        font-family:var(--head);font-size:12px;color:var(--accent)">${letter}</span>
-      <span style="flex:1">${opt}</span>
-    </button>`;
-  }).join('');
+        font-family:var(--head);font-size:13px;color:var(--accent);
+        transition:all .15s">${letters[i] || String.fromCharCode(65+i)}</div>
+      <span style="flex:1;line-height:1.5">${opt}</span>
+    </div>`).join('');
 
   container.innerHTML = `
-    <div style="font-size:11px;color:rgba(255,224,51,.6);letter-spacing:.1em;
-      text-align:center;margin-bottom:12px;font-family:var(--head)">
-      ❓ ВЫБЕРИТЕ ПРАВИЛЬНЫЙ ОТВЕТ
+    <div style="font-size:10px;color:rgba(255,224,51,.5);letter-spacing:.12em;
+      text-align:center;margin-bottom:10px;font-family:var(--head)">
+      👆 ВЫБЕРИТЕ ВАРИАНТ И НАЖМИТЕ ОТВЕТИТЬ
     </div>
-    <div id="quiz-options">${btns}</div>
-    <div id="quiz-result" style="display:none;margin-top:10px;padding:12px;
-      border-radius:8px;text-align:center;font-size:13px;font-family:var(--head)"></div>`;
-
-  // Сохраняем состояние на контейнере
-  container._quizStart    = startTime;
-  container._quizCipher   = cipher;
-  container._quizAnswered = false;
+    <div id="quiz-options-list">${optionsHtml}</div>
+    <div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px;
+      margin-top:4px;margin-bottom:8px;font-size:13px;text-align:center;
+      font-family:var(--head);letter-spacing:.04em"></div>
+    <button id="quiz-submit-btn" onclick="quizSubmit()"
+      style="width:100%;padding:14px;margin-top:4px;
+      background:rgba(255,224,51,.12);border:1.5px solid rgba(255,224,51,.2);
+      color:rgba(255,224,51,.5);font-family:var(--head);font-size:var(--fs-sm);
+      font-weight:700;border-radius:8px;cursor:not-allowed;letter-spacing:.08em;
+      transition:all .2s;pointer-events:none" disabled>
+      ✓ ОТВЕТИТЬ
+    </button>`;
 }
 
-function checkQuizAnswer(selectedIdx) {
-  const container = document.getElementById('quiz-container');
-  if (!container || container._quizAnswered) return;
-  container._quizAnswered = true;
+function quizSelect(idx) {
+  if (_quizState.answered) return;
+  _quizState.selected = idx;
 
-  const cipher = container._quizCipher;
-  const correct = cipher.correctIndex;
-  const elapsed = Math.round((Date.now() - (container._quizStart || Date.now())) / 1000);
-  const isCorrect = selectedIdx === correct;
-
-  // Подсвечиваем варианты
-  cipher.options.forEach((_, i) => {
-    const btn = document.getElementById('quiz-btn-' + i);
-    if (!btn) return;
-    btn.style.cursor = 'default';
-    btn.onclick = null;
-    if (i === correct) {
-      btn.style.background = 'rgba(50,200,80,.2)';
-      btn.style.borderColor = 'rgba(50,200,80,.5)';
-      btn.style.color = '#40ee60';
-    } else if (i === selectedIdx && !isCorrect) {
-      btn.style.background = 'rgba(255,50,50,.15)';
-      btn.style.borderColor = 'rgba(255,50,50,.4)';
-      btn.style.color = '#ff6060';
+  // Сбрасываем все варианты
+  _quizState.cipher.options.forEach((_, i) => {
+    const opt = document.getElementById('quiz-opt-' + i);
+    const let_ = document.getElementById('quiz-letter-' + i);
+    if (!opt) return;
+    if (i === idx) {
+      opt.style.background = 'rgba(255,224,51,.12)';
+      opt.style.borderColor = 'rgba(255,224,51,.45)';
+      opt.style.color = '#fdfaf0';
+      if (let_) { let_.style.background = 'rgba(255,224,51,.25)'; let_.style.borderColor = 'rgba(255,224,51,.6)'; let_.style.color = '#ffe033'; }
+    } else {
+      opt.style.background = 'rgba(255,255,255,.04)';
+      opt.style.borderColor = 'rgba(255,255,255,.1)';
+      opt.style.color = '#fdfaf0';
+      if (let_) { let_.style.background = 'rgba(255,224,51,.08)'; let_.style.borderColor = 'rgba(255,224,51,.2)'; let_.style.color = 'var(--accent)'; }
     }
   });
 
+  // Активируем кнопку
+  const submitBtn = document.getElementById('quiz-submit-btn');
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.style.background = 'rgba(255,224,51,.2)';
+    submitBtn.style.borderColor = 'rgba(255,224,51,.5)';
+    submitBtn.style.color = '#ffe033';
+    submitBtn.style.cursor = 'pointer';
+    submitBtn.style.pointerEvents = 'auto';
+    submitBtn.style.boxShadow = '0 0 12px rgba(255,224,51,.15)';
+  }
+}
+
+function quizSubmit() {
+  if (_quizState.answered || _quizState.selected === null) return;
+  _quizState.answered = true;
+
+  const cipher   = _quizState.cipher;
+  const correct  = cipher.correctIndex;
+  const selected = _quizState.selected;
+  const elapsed  = Math.round((Date.now() - _quizState.startTime) / 1000);
+  const isCorrect = selected === correct;
+
+  // Блокируем кнопку ответить
+  const submitBtn = document.getElementById('quiz-submit-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.style.pointerEvents = 'none'; }
+
+  // Подсвечиваем правильный/неправильный
+  cipher.options.forEach((_, i) => {
+    const opt  = document.getElementById('quiz-opt-' + i);
+    const let_ = document.getElementById('quiz-letter-' + i);
+    if (!opt) return;
+    opt.style.cursor = 'default';
+    if (i === correct) {
+      opt.style.background = 'rgba(40,200,80,.15)';
+      opt.style.borderColor = 'rgba(40,200,80,.5)';
+      opt.style.color = '#50ee80';
+      if (let_) { let_.style.background = 'rgba(40,200,80,.25)'; let_.style.borderColor = 'rgba(40,200,80,.6)'; let_.style.color = '#50ee80'; }
+    } else if (i === selected && !isCorrect) {
+      opt.style.background = 'rgba(255,50,50,.12)';
+      opt.style.borderColor = 'rgba(255,50,50,.45)';
+      opt.style.color = '#ff7070';
+      if (let_) { let_.style.background = 'rgba(255,50,50,.2)'; let_.style.borderColor = 'rgba(255,50,50,.5)'; let_.style.color = '#ff7070'; }
+    } else {
+      opt.style.opacity = '0.4';
+    }
+  });
+
+  const feedback = document.getElementById('quiz-feedback');
+
   if (isCorrect) {
     playSound('correct');
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(40,200,80,.1)';
+      feedback.style.border = '1px solid rgba(40,200,80,.3)';
+      feedback.style.color = '#50ee80';
+      feedback.textContent = '✅ Верно!';
+    }
     state.streak = (state.streak || 0) + 1;
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
-    checkAchievements({ elapsed, firstTry: (state._chapterErrors || 0) === 0 });
-    setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
+    const cipherTypeCtx = { quizCorrect: true, elapsed };
+    checkAchievements({ elapsed, firstTry: (state._chapterErrors || 0) === 0, ...cipherTypeCtx });
+    setTimeout(() => showSuccess(cipher, pts, elapsed), 900);
   } else {
     playSound('wrong');
     screenPulseRed();
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(255,50,50,.1)';
+      feedback.style.border = '1px solid rgba(255,50,50,.3)';
+      feedback.style.color = '#ff8080';
+      feedback.textContent = '❌ Неверно — правильный ответ выделен зелёным';
+    }
     state.streak = 0;
     state._chapterErrors = (state._chapterErrors || 0) + 1;
     if (!state.adminMode) {
@@ -2817,37 +2873,43 @@ function checkQuizAnswer(selectedIdx) {
     }
     saveState();
     renderLives();
-    const result = document.getElementById('quiz-result');
-    if (result) {
-      result.style.display = 'block';
-      result.style.background = 'rgba(255,50,50,.1)';
-      result.style.border = '1px solid rgba(255,50,50,.3)';
-      result.style.color = '#ff8080';
-      result.textContent = '❌ Неверно. Правильный ответ выделен зелёным.';
-    }
+
     if (state.lives <= 0) {
       stopTimer();
-      setTimeout(() => failChapter(), 1200);
+      setTimeout(() => failChapter(), 1400);
     } else {
-      // Разблокируем через 2 сек для повторной попытки
+      // Через 2 секунды разрешаем выбрать снова (кроме правильного)
       setTimeout(() => {
-        container._quizAnswered = false;
+        _quizState.answered = false;
+        _quizState.selected = null;
         cipher.options.forEach((_, i) => {
-          const btn2 = document.getElementById('quiz-btn-' + i);
-          if (!btn2) return;
-          if (i !== correct) {
-            btn2.style.background = 'rgba(255,255,255,.05)';
-            btn2.style.borderColor = 'rgba(255,255,255,.12)';
-            btn2.style.color = '#fdfaf0';
-            btn2.onclick = () => checkQuizAnswer(i);
-            btn2.style.cursor = 'pointer';
-          }
+          const opt2 = document.getElementById('quiz-opt-' + i);
+          const let2 = document.getElementById('quiz-letter-' + i);
+          if (!opt2 || i === correct) return;
+          opt2.style.background = 'rgba(255,255,255,.04)';
+          opt2.style.borderColor = 'rgba(255,255,255,.1)';
+          opt2.style.color = '#fdfaf0';
+          opt2.style.opacity = '1';
+          opt2.style.cursor = 'pointer';
+          if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
         });
-        if (result) result.style.display = 'none';
+        if (feedback) feedback.style.display = 'none';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.style.background = 'rgba(255,224,51,.08)';
+          submitBtn.style.borderColor = 'rgba(255,224,51,.15)';
+          submitBtn.style.color = 'rgba(255,224,51,.4)';
+          submitBtn.style.cursor = 'not-allowed';
+          submitBtn.style.pointerEvents = 'none';
+          submitBtn.style.boxShadow = 'none';
+        }
       }, 2000);
     }
   }
 }
+
+// Совместимость — старый checkQuizAnswer больше не используется
+function checkQuizAnswer(idx) { quizSelect(idx); }
 // ═══════════════════════════════════════════════════════
 //  АНАГРАММА
 // ═══════════════════════════════════════════════════════
