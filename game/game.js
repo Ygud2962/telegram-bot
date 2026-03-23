@@ -2256,6 +2256,9 @@ function renderLeaderboardTab() {
   const myUid = getTgUserId() || 'guest';
   const total = tgInitLB.length || lb.length;
 
+  // Переключатель вкладок — объявляем ДО header чтобы использовать в шаблоне
+  const currentRatingTab = window._ratingTab || 'score';
+
   // Шапка
   const header = `<div style="padding:12px 16px 8px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -2312,8 +2315,6 @@ function renderLeaderboardTab() {
     ? lb  // Админ видит всех
     : lb.filter(e => e.role !== 'admin' && e.role !== 'tester');
 
-  // Переключатель вкладок рейтинга
-  const currentRatingTab = window._ratingTab || 'score';
   const visibleLb = isAdminUser ? filteredLb : filteredLb.slice(0, 10);
   const rows = visibleLb.map((e,i) => {
     const isMe   = e.uid === myUid;
