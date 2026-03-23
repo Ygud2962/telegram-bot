@@ -560,15 +560,17 @@ function mergeBotLeaderboard() {
       state.retryPenalty = false;
       state._noptsMode = true;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
-    } else if (dbScore >= state.totalScore) {
+    } else {
+      // БД всегда приоритетнее localStorage
+      // Даже если dbScore < state.totalScore — значит был сброс через админку
       state.totalScore = dbScore;
-      if (dbCompleted > Object.keys(state.completedChapters).length) {
-        state.completedChapters = {};
-        for (let i = 1; i <= dbCompleted; i++) {
-          state.completedChapters[i] = true;
-        }
+      state.completedChapters = {};
+      for (let i = 1; i <= dbCompleted; i++) {
+        state.completedChapters[i] = true;
       }
-      if (dbGameOver) state.gameOver = true;
+      state.chapterScores = {};
+      state.gameOver = dbGameOver;
+      try { localStorage.removeItem(storageKey()); } catch(e2) {}
     }
     saveState();
   }
