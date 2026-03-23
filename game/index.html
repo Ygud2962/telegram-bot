@@ -908,6 +908,16 @@ body::before{
 
 @keyframes slideDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* Quiz buttons */
+#quiz-container button:hover {
+  background: rgba(255,224,51,.1) !important;
+  border-color: rgba(255,224,51,.3) !important;
+  transform: translateX(2px);
+}
+#quiz-container button:active {
+  transform: translateX(0) scale(.98);
+}
 </style>
 </head>
 <body>
@@ -1193,11 +1203,13 @@ body::before{
     <div class="cipher-type-label" id="cipher-type-label"></div>
     <div class="cipher-task" id="cipher-task"></div>
     <div class="cipher-box" id="cipher-box" data-num=""></div>
+    <!-- Контейнер для вариантов ответов викторины -->
+    <div id="quiz-container" style="display:none;width:100%;padding:0 4px;margin-top:8px"></div>
     <div class="cipher-hint-box" id="cipher-hint-box">
       <div class="cipher-hint-title">// ПОДСКАЗКА</div>
       <div id="cipher-hint-text"></div>
     </div>
-    <div class="cipher-input-wrap">
+    <div class="cipher-input-wrap" id="cipher-input-wrap">
       <input class="cipher-input" id="cipher-input" type="text" placeholder="ВВЕДИТЕ ОТВЕТ..."
         autocomplete="off" autocorrect="off" spellcheck="false"
         onkeydown="if(event.key==='Enter')checkAnswer()">

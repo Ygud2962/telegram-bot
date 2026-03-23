@@ -924,6 +924,17 @@ function loadCipher() {
   if (!ch) { showScreen('s-chapters'); renderChapters(); return; }
   const cipher = ch.ciphers[state.cipherIdx];
   if (!cipher) { finishChapter(); return; }
+
+  // Сбрасываем quiz-container для НЕ-quiz заданий
+  const qc = document.getElementById('quiz-container');
+  if (qc) qc.style.display = 'none';
+  // Восстанавливаем input и кнопку для НЕ-quiz
+  const inp = document.getElementById('cipher-input');
+  const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
+  if (cipher.type !== 'quiz') {
+    if (inp) { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; }
+    if (checkBtn) checkBtn.style.display = '';
+  }
   state.startTime = Date.now();
 
   // Прогресс-точки (5 штук)
@@ -940,6 +951,7 @@ function loadCipher() {
 
   // Шифрованный текст / задание
   const box = document.getElementById('cipher-box');
+  if (box) { if (cipher.type !== 'quiz') box.style.display = ''; }
   box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
   box.style.position = 'relative';
 
@@ -987,9 +999,9 @@ function loadCipher() {
   renderLives();
   startTimer();
 
-  // Сброс ввода
-  const inp = document.getElementById('cipher-input');
-  inp.value = ''; inp.className = 'cipher-input'; inp.disabled = false;
+  // Сброс ввода (inp уже объявлен выше)
+  const inpReset = document.getElementById('cipher-input');
+  if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; }
   state.hintsUsed = false;
   const hb = document.getElementById('cipher-hint-box');
   const ht = document.getElementById('cipher-hint-text');
@@ -2696,49 +2708,74 @@ function exitToMain() {
 //  ВИКТОРИНА (QUIZ) — вопрос с вариантами ответов
 // ═══════════════════════════════════════════════════════
 function renderQuiz(cipher) {
-  const box = document.getElementById('cipher-box');
-  if (!box) return;
   const startTime = Date.now();
 
+  // Прячем стандартный input и кнопку проверки
+  const inp  = document.getElementById('cipher-input');
+  const wrap = document.getElementById('cipher-input-wrap') || inp?.parentElement;
+  const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
+  if (inp)      inp.style.display      = 'none';
+  if (checkBtn) checkBtn.style.display = 'none';
+  if (wrap && wrap.id !== 's-cipher') wrap.style.display = 'none';
+
+  // Скрываем cipher-box (иконка/эмодзи уже в task)
+  const box = document.getElementById('cipher-box');
+  if (box) {
+    box.style.display = 'none';
+  }
+
+  // Используем quiz-container — отдельный блок
+  let container = document.getElementById('quiz-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'quiz-container';
+    // Вставляем после cipher-box
+    if (box && box.parentNode) {
+      box.parentNode.insertBefore(container, box.nextSibling);
+    }
+  }
+  container.style.display = 'block';
+  container.style.cssText = 'display:block;width:100%;padding:0 4px;margin-top:4px';
+
   const btns = cipher.options.map((opt, i) => {
+    const letter = String.fromCharCode(65 + i);
     return `<button id="quiz-btn-${i}" onclick="checkQuizAnswer(${i})"
-      style="width:100%;padding:14px 16px;margin-bottom:8px;text-align:left;
-      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
-      border-radius:6px;color:#fdfaf0;font-size:var(--fs-sm);cursor:pointer;
-      font-family:var(--body);line-height:1.4;transition:background .15s,border .15s">
-      <span style="font-family:var(--head);color:var(--muted);margin-right:8px;font-size:var(--fs-xs)">${String.fromCharCode(65+i)}.</span>
-      ${opt}
+      style="width:100%;padding:14px 16px;margin-bottom:10px;text-align:left;
+      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+      border-radius:8px;color:#fdfaf0;font-size:15px;cursor:pointer;display:flex;
+      align-items:center;gap:12px;transition:background .15s,border .15s,transform .1s;
+      font-family:inherit;line-height:1.5">
+      <span style="flex-shrink:0;width:28px;height:28px;border-radius:50%;
+        background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
+        display:flex;align-items:center;justify-content:center;
+        font-family:var(--head);font-size:12px;color:var(--accent)">${letter}</span>
+      <span style="flex:1">${opt}</span>
     </button>`;
   }).join('');
 
-  box.innerHTML = `<div style="width:100%">
-    <div style="font-size:var(--fs-sm);color:var(--muted);letter-spacing:.06em;margin-bottom:12px;text-align:center">
+  container.innerHTML = `
+    <div style="font-size:11px;color:rgba(255,224,51,.6);letter-spacing:.1em;
+      text-align:center;margin-bottom:12px;font-family:var(--head)">
       ❓ ВЫБЕРИТЕ ПРАВИЛЬНЫЙ ОТВЕТ
     </div>
     <div id="quiz-options">${btns}</div>
-    <div id="quiz-result" style="display:none;margin-top:12px;padding:12px;border-radius:6px;text-align:center;font-family:var(--head);font-size:var(--fs-sm)"></div>
-  </div>`;
+    <div id="quiz-result" style="display:none;margin-top:10px;padding:12px;
+      border-radius:8px;text-align:center;font-size:13px;font-family:var(--head)"></div>`;
 
-  // Прячем стандартный input
-  const inp = document.getElementById('cipher-input');
-  if (inp) inp.style.display = 'none';
-  const btn = document.getElementById('btn-check');
-  if (btn) btn.style.display = 'none';
-
-  // Сохраняем startTime
-  box._quizStart = startTime;
-  box._quizCipher = cipher;
-  box._quizAnswered = false;
+  // Сохраняем состояние на контейнере
+  container._quizStart    = startTime;
+  container._quizCipher   = cipher;
+  container._quizAnswered = false;
 }
 
 function checkQuizAnswer(selectedIdx) {
-  const box = document.getElementById('cipher-box');
-  if (!box || box._quizAnswered) return;
-  box._quizAnswered = true;
+  const container = document.getElementById('quiz-container');
+  if (!container || container._quizAnswered) return;
+  container._quizAnswered = true;
 
-  const cipher = box._quizCipher;
+  const cipher = container._quizCipher;
   const correct = cipher.correctIndex;
-  const elapsed = Math.round((Date.now() - (box._quizStart || Date.now())) / 1000);
+  const elapsed = Math.round((Date.now() - (container._quizStart || Date.now())) / 1000);
   const isCorrect = selectedIdx === correct;
 
   // Подсвечиваем варианты
@@ -2794,7 +2831,7 @@ function checkQuizAnswer(selectedIdx) {
     } else {
       // Разблокируем через 2 сек для повторной попытки
       setTimeout(() => {
-        box._quizAnswered = false;
+        container._quizAnswered = false;
         cipher.options.forEach((_, i) => {
           const btn2 = document.getElementById('quiz-btn-' + i);
           if (!btn2) return;
