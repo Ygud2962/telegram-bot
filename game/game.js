@@ -502,6 +502,7 @@ const DEFAULT_STATE = () => ({
   chapterScore: 0, totalScore: 0,
   completedChapters: {}, chapterScores: {},
   streak: 0, retryPenalty: false,
+  chapterFailCounts: {}, // {chapterId: количество провалов}
   chapterStats: {},
   gameOver: false, leaderboard: [],
   adminMode: false
@@ -562,13 +563,18 @@ function mergeBotLeaderboard() {
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     } else {
       // БД всегда приоритетнее localStorage
-      // Даже если dbScore < state.totalScore — значит был сброс через админку
+      // Если dbScore < state.totalScore — был сброс через админку, берём БД
       state.totalScore = dbScore;
       state.completedChapters = {};
       for (let i = 1; i <= dbCompleted; i++) {
         state.completedChapters[i] = true;
       }
-      state.chapterScores = {};
+      // chapterScores — если db_completed < local, очищаем лишние
+      const newScores = {};
+      for (let i = 1; i <= dbCompleted; i++) {
+        if (state.chapterScores[i]) newScores[i] = state.chapterScores[i];
+      }
+      state.chapterScores = newScores;
       state.gameOver = dbGameOver;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     }
@@ -951,7 +957,13 @@ function calcPoints(cipher, elapsed) {
   const secs  = Math.max(0, elapsed);
   const penalty = Math.floor(Math.max(0, secs - 10) / 10) * 0.08;
   let factor  = Math.max(0.20, 1 - penalty);
-  if (state.retryPenalty) factor = Math.max(0.10, factor * 0.7);
+  // Штраф за повтор: -5% за каждый провал главы (5%, 10%, 15%...)
+  if (state.retryPenalty) {
+    const ch = CHAPTERS[state.chapter];
+    const fails = ch && state.chapterFailCounts ? (state.chapterFailCounts[ch.id] || 1) : 1;
+    const penaltyFactor = Math.max(0.50, 1 - fails * 0.05);
+    factor = Math.max(0.10, factor * penaltyFactor);
+  }
   const streakBonus = Math.min(0.30, (state.streak || 0) * 0.05);
   factor = Math.min(1.30, factor + streakBonus);
   return Math.round(max * factor);
@@ -1153,7 +1165,7 @@ async function finishChapter() {
   saveState();
 
   // Отправляем в бот
-  if (!state.adminMode) sendResultToBot({
+  sendResultToBot({
     type: 'chapter_complete',
     chapter: ch.id,
     chapter_title: ch.title,
@@ -1194,9 +1206,17 @@ async function failChapter() {
   state.chapterStats[ch.id] = {
     time: chTime, errors: state._chapterErrors || 0,
     hints: state._chapterHints || 0, score: state.chapterScore,
-    max: ch.ciphers.reduce((s,c) => s+c.points, 0), failed: true
+    max: ch.ciphers.reduce((s,c2) => s+c2.points, 0), failed: true
   };
-  state.completedChapters[ch.id] = true;
+
+  // Считаем сколько раз провалил эту главу
+  if (!state.chapterFailCounts) state.chapterFailCounts = {};
+  const failCount = (state.chapterFailCounts[ch.id] || 0) + 1;
+  state.chapterFailCounts[ch.id] = failCount;
+
+  // Штраф за провал: 5% * количество провалов (макс 50%)
+  const penaltyPct = Math.min(0.50, failCount * 0.05);
+
   if (!alreadyDone && !state._noptsMode) {
     state.chapterScores[ch.id] = state.chapterScore;
     state.totalScore          += state.chapterScore;
@@ -1209,7 +1229,7 @@ async function failChapter() {
   updateLeaderboard();
   saveState();
 
-  if (!state.adminMode) sendResultToBot({
+  sendResultToBot({
     type: 'chapter_failed',
     chapter: ch.id,
     chapter_title: ch.title,
@@ -1237,25 +1257,59 @@ async function failChapter() {
   } else {
     nextBtn.style.display = 'none';
   }
+  // Показываем кнопку повторной попытки с информацией о штрафе
   const retryBtn = document.getElementById('fail-retry-btn');
   const retryInfo = document.getElementById('fail-retry-info');
-  if (retryBtn) { retryBtn.style.display = 'block'; retryBtn.onclick = () => retryChapter(state.chapter); }
-  if (retryInfo) retryInfo.style.display = 'block';
+  const currentFailCount = state.chapterFailCounts[ch.id] || 1;
+  const currentPenalty = Math.min(50, currentFailCount * 5);
+  if (retryBtn) {
+    retryBtn.style.display = 'block';
+    retryBtn.textContent = '🔄 ПОПРОБОВАТЬ СНОВА';
+    retryBtn.onclick = () => retryChapterWithPenalty(state.chapter);
+  }
+  if (retryInfo) {
+    retryInfo.style.display = 'block';
+    retryInfo.innerHTML = currentFailCount === 1
+      ? `⚠️ Повтор: штраф <b>-${currentPenalty}%</b> от набранных очков<br>Жизни восстановятся`
+      : `⚠️ Повтор #${currentFailCount}: штраф <b>-${currentPenalty}%</b> от очков<br>Жизни восстановятся`;
+  }
   showScreen('s-chapter-fail');
 }
 
 // ═══════════════════════════════════════════════════════
-//  ПОВТОРНАЯ ПОПЫТКА
+//  ПОВТОРНАЯ ПОПЫТКА С ШТРАФОМ
 // ═══════════════════════════════════════════════════════
-function retryChapter(idx) {
+function retryChapterWithPenalty(idx) {
   const ch = CHAPTERS[idx];
+  // Сколько раз уже проваливал эту главу
+  if (!state.chapterFailCounts) state.chapterFailCounts = {};
+  const failCount = state.chapterFailCounts[ch.id] || 1;
+  const penaltyPct = Math.min(0.50, failCount * 0.05); // 5%, 10%, ..., 50%
+
+  // Вычитаем штраф из ОБЩЕГО счёта
+  const penalty = Math.round(state.totalScore * penaltyPct);
+  state.totalScore = Math.max(0, state.totalScore - penalty);
+
+  // Убираем главу из завершённых чтобы можно было пройти снова
   delete state.completedChapters[ch.id];
-  state.totalScore = Math.max(0, state.totalScore - (state.chapterScores[ch.id] || 0));
   delete state.chapterScores[ch.id];
-  state.retryPenalty = true;
+
+  // Сбрасываем жизни и счётчики
+  state.lives = 5;
+  state.chapterScore = 0;
   state.streak = 0;
+  state._chapterErrors = 0;
+  state._chapterHints = 0;
+
   saveState();
+  // Синхронизируем с БД сразу — фиксируем штраф
+  autoSync(false);
   showBriefing(idx);
+}
+
+function retryChapter(idx) {
+  // Старая функция — оставляем для совместимости
+  retryChapterWithPenalty(idx);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2074,7 +2128,7 @@ function switchTab(tab) {
   if (screenEl) screenEl.classList.add('active');
   if (tabEl)    tabEl.classList.add('active');
 
-  if (tab === 'chapters')    { renderChapters(); if (!state.adminMode) fetchAndApplyState(); }
+  if (tab === 'chapters')    { renderChapters(); fetchAndApplyState(); }
   if (tab === 'leaderboard') renderLeaderboardTab();
   if (tab === 'profile')     renderProfileTab();
   if (tab === 'about')       renderAboutTab();
@@ -2568,8 +2622,7 @@ loadState();
 mergeBotLeaderboard();
 
 async function fetchAndApplyState() {
-  // В режиме администратора не синхронизируем — state уже правильный
-  if (state.adminMode || window._adminMode) return;
+  // Синхронизируем всегда — включая режим администратора (для сохранения очков)
   const uid = getTgUserId();
   const syncUrl = window._syncUrl;
   if (!uid || !syncUrl) return;

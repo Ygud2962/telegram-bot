@@ -1196,7 +1196,7 @@ def get_peak_hours():
 
 def save_game_result(user_id, user_name, chapter, score, total_score,
                      completed, game_over=False, failed=False):
-    """Сохраняет/обновляет результат игрока. Один ряд на user_id."""
+    """Сохраняет/обновляет результат игрока. БД всегда принимает новое значение."""
     conn = None
     try:
         conn = get_connection()
@@ -1209,9 +1209,9 @@ def save_game_result(user_id, user_name, chapter, score, total_score,
                 user_name   = EXCLUDED.user_name,
                 chapter     = EXCLUDED.chapter,
                 score       = EXCLUDED.score,
-                total_score = GREATEST(game_results.total_score, EXCLUDED.total_score),
-                completed   = GREATEST(game_results.completed,   EXCLUDED.completed),
-                game_over   = game_results.game_over OR EXCLUDED.game_over,
+                total_score = EXCLUDED.total_score,
+                completed   = EXCLUDED.completed,
+                game_over   = EXCLUDED.game_over,
                 failed      = EXCLUDED.failed,
                 updated_at  = NOW()
         ''', (user_id, user_name, chapter, score, total_score,
