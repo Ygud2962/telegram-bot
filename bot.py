@@ -2691,10 +2691,12 @@ async def menu_game(query, context):
     # Читаем свежие данные игрока ПОСЛЕ регистрации — включая banned
     my_result = await asyncio.to_thread(db.get_game_result, user.id)
 
-    # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role)
+    # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role, ach_count, ach_pts)
     lb_data = [
         {'uid': str(r[0]), 'name': r[1] or 'Игрок', 'score': r[2],
-         'completed': r[3], 'role': r[5] if len(r) > 5 else 'player'}
+         'completed': r[3], 'role': r[5] if len(r) > 5 else 'player',
+         'achievementCount': r[6] if len(r) > 6 else 0,
+         'achievementPts':   r[7] if len(r) > 7 else 0}
         for r in lb_rows
     ]
     my_data = None
@@ -5104,13 +5106,15 @@ async def handle_game_sync(request):
         return aiohttp_web.json_response(
             {'ok': False, 'error': 'invalid json'}, status=400, headers=headers)
 
-    user_id     = data.get('user_id')
-    user_name   = data.get('user_name', 'Игрок')
-    total_score = int(data.get('total_score', 0))
-    completed   = int(data.get('completed', 0))
-    chapter     = int(data.get('chapter', 0))
-    score       = int(data.get('score', 0))
-    game_over   = bool(data.get('game_over', False))
+    user_id         = data.get('user_id')
+    user_name       = data.get('user_name', 'Игрок')
+    total_score     = int(data.get('total_score', 0))
+    completed       = int(data.get('completed', 0))
+    chapter         = int(data.get('chapter', 0))
+    score           = int(data.get('score', 0))
+    game_over       = bool(data.get('game_over', False))
+    achievement_count = int(data.get('achievement_count', 0))
+    achievement_pts   = int(data.get('achievement_pts', 0))
 
     if not user_id:
         return aiohttp_web.json_response(
@@ -5123,6 +5127,11 @@ async def handle_game_sync(request):
             user_id, user_name, chapter, score, total_score,
             completed, game_over, False
         )
+        # Сохраняем достижения если есть
+        if achievement_count > 0 or achievement_pts > 0:
+            await asyncio.to_thread(
+                db.update_achievement_stats, user_id, achievement_count, achievement_pts
+            )
         current_role = await asyncio.to_thread(db.get_game_role, user_id)
         if not current_role:
             role = 'admin' if user_id in ADMIN_IDS else 'player'

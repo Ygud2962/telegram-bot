@@ -274,6 +274,9 @@ def init_db():
         cur.execute('CREATE INDEX IF NOT EXISTS idx_game_score ON game_results(total_score DESC)')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_game_user  ON game_results(user_id)')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT FALSE')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS achievement_count INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS achievement_pts INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS restart_mode VARCHAR(20) DEFAULT NULL')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS failed BOOLEAN DEFAULT FALSE')
         # Таблица управления главами игры
         cur.execute('''
@@ -1272,7 +1275,9 @@ def get_game_leaderboard(limit=20):
             SELECT
                 gr.user_id, gr.user_name, gr.total_score, gr.completed,
                 gr.game_over,
-                COALESCE(rol.role, 'player') AS role
+                COALESCE(rol.role, 'player') AS role,
+                COALESCE(gr.achievement_count, 0) AS achievement_count,
+                COALESCE(gr.achievement_pts,   0) AS achievement_pts
             FROM game_results gr
             LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
             WHERE NOT COALESCE(gr.banned, FALSE)
@@ -1329,6 +1334,27 @@ def reset_game_result(user_id):
         logger.error(f"reset_game_result error {user_id}: {e}")
         _safe_rollback(conn)
         return False
+    finally:
+        release_connection(conn)
+
+
+def update_achievement_stats(user_id, achievement_count, achievement_pts):
+    """Обновляет статистику достижений игрока."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE game_results
+            SET achievement_count = GREATEST(COALESCE(achievement_count,0), %s),
+                achievement_pts   = GREATEST(COALESCE(achievement_pts,0),   %s),
+                updated_at        = NOW()
+            WHERE user_id = %s
+        ''', (achievement_count, achievement_pts, user_id))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"update_achievement_stats error {user_id}: {e}")
+        _safe_rollback(conn)
     finally:
         release_connection(conn)
 
