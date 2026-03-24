@@ -25,15 +25,46 @@
             --fs-hero: 42px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+        }
         body {
             background: var(--bg);
             color: #fdfaf0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            overflow-x: hidden;
-            min-height: 100vh;
         }
-        .screen { display: none; min-height: 100vh; padding: 16px; padding-bottom: 80px; }
-        .screen.active { display: block; }
+        
+        /* Screen transitions */
+        .screen {
+            display: none;
+            width: 100%;
+            height: 100vh;
+            padding: 16px;
+            padding-bottom: 80px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .screen.active {
+            display: block;
+            opacity: 1;
+            transform: scale(1);
+            z-index: 10;
+        }
+        .screen.exiting {
+            opacity: 0;
+            transform: scale(1.05);
+            pointer-events: none;
+        }
+        
         .btn {
             background: rgba(255,224,51,.1);
             border: 1px solid rgba(255,224,51,.3);
@@ -186,7 +217,7 @@
             margin-top: 16px;
             font-size: var(--fs-xs);
             color: var(--muted);
-            max-height: 200px;
+            max-height: 150px;
             overflow-y: auto;
         }
         .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
@@ -358,7 +389,25 @@
         @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
         
         /* Content wrapper */
-        .content-wrapper { position: relative; z-index: 10; }
+        .content-wrapper { position: relative; z-index: 10; width: 100%; height: 100%; }
+        
+        /* Page transition overlay */
+        #page-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0a08;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #page-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
     </style>
 </head>
 <body>
@@ -367,6 +416,9 @@
     <canvas id="petals-canvas"></canvas>
     <canvas id="particles-canvas"></canvas>
     <canvas id="map-canvas"></canvas>
+    
+    <!-- Page transition overlay -->
+    <div id="page-overlay"></div>
     
     <div class="content-wrapper">
         <!-- INTRO -->
@@ -1083,18 +1135,36 @@ localStorage.setItem(storageKey(), JSON.stringify(toSave));
 }
 
 // ═══════════════════════════════════════════════════════
-//  НАВИГАЦИЯ
+//  НАВИГАЦИЯ С АНИМАЦИЕЙ ПЕРЕХОДА
 // ═══════════════════════════════════════════════════════
 let currentChapter = 0;
 
-function showScreen(id) {
+async function showScreen(id) {
 const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
 if (TAB_SCREENS.includes(id)) return;
 if (id === 's-chapters') { switchTab('chapters'); return; }
+
+// Page transition animation
+const overlay = document.getElementById('page-overlay');
+const currentScreen = document.querySelector('.screen.active');
+
+// Fade out current screen
+if (currentScreen) {
+  currentScreen.classList.add('exiting');
+  overlay.classList.add('active');
+  await new Promise(resolve => setTimeout(resolve, 300));
+  currentScreen.classList.remove('active', 'exiting');
+}
+
+// Hide bottom nav for non-tab screens
 hideBottomNav();
-document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+
+// Show new screen
 const el = document.getElementById(id);
-if (el) el.classList.add('active');
+if (el) {
+  el.classList.add('active');
+  overlay.classList.remove('active');
+}
 }
 
 function showBottomNav() {
@@ -1109,19 +1179,34 @@ if (nav) nav.style.display = 'none';
 
 function switchTab(tab) {
 currentTab = tab;
-document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
-showBottomNav();
-const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
-const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
-const screenEl = document.getElementById(screenMap[tab]);
-const tabEl = document.getElementById(tabMap[tab]);
-if (screenEl) screenEl.classList.add('active');
-if (tabEl) tabEl.classList.add('active');
-if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
-if (tab === 'leaderboard') renderLeaderboardTab();
-if (tab === 'profile') renderProfileTab();
-if (tab === 'about') renderAboutTab();
+const overlay = document.getElementById('page-overlay');
+const currentScreen = document.querySelector('.screen.active');
+
+// Fade out
+if (currentScreen) {
+  currentScreen.classList.add('exiting');
+  overlay.classList.add('active');
+}
+
+setTimeout(() => {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'exiting'));
+  document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
+  showBottomNav();
+  
+  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
+  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
+  const screenEl = document.getElementById(screenMap[tab]);
+  const tabEl = document.getElementById(tabMap[tab]);
+  if (screenEl) screenEl.classList.add('active');
+  if (tabEl) tabEl.classList.add('active');
+  
+  overlay.classList.remove('active');
+  
+  if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
+  if (tab === 'leaderboard') renderLeaderboardTab();
+  if (tab === 'profile') renderProfileTab();
+  if (tab === 'about') renderAboutTab();
+}, 300);
 }
 
 // ═══════════════════════════════════════════════════════
