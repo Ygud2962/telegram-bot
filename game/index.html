@@ -918,6 +918,7 @@ body::before{
 #quiz-container button:active {
   transform: translateX(0) scale(.98);
 }
+@keyframes flashPulse{0%{opacity:1;transform:scale(.5)}100%{opacity:0;transform:scale(2)}}
 </style>
 </head>
 <body>
@@ -1209,10 +1210,16 @@ body::before{
       <div class="cipher-hint-title">// ПОДСКАЗКА</div>
       <div id="cipher-hint-text"></div>
     </div>
-    <div class="cipher-input-wrap" id="cipher-input-wrap">
+    <div class="cipher-input-wrap" id="cipher-input-wrap" style="position:relative">
       <input class="cipher-input" id="cipher-input" type="text" placeholder="ВВЕДИТЕ ОТВЕТ..."
-        autocomplete="off" autocorrect="off" spellcheck="false"
-        onkeydown="if(event.key==='Enter')checkAnswer()">
+        autocomplete="off" autocorrect="off" spellcheck="false" readonly
+        onkeydown="if(event.key==='Enter')checkAnswer()"
+        onfocus="this.removeAttribute('readonly')">
+      <button id="btn-keyboard" onclick="toggleKeyboard()" title="Открыть клавиатуру"
+        style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+        background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.2);
+        border-radius:6px;padding:4px 8px;cursor:pointer;font-size:16px;
+        color:var(--accent);line-height:1;transition:background .15s">⌨️</button>
     </div>
     <div class="cipher-actions">
       <button class="btn-check" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>

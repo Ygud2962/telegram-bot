@@ -14,7 +14,7 @@ const CHAPTERS = [
     videoUrl:"https://www.youtube.com/embed/8mFDTm5OQCI",
     ciphers:[
       { type:"quiz", typeLabel:"ИСТОРИЯ КРАЯ",
-        task:"Хойники — районный центр Гомельской области. В каком регионе Беларуси расположен Хойникский район?",
+        task:"Хойники — районный центр одной из областей Беларуси. Определи по карте: в какой области находится Хойникский район?",
         options:["Брестская область","Гомельская область","Витебская область","Могилёвская область"],
         correctIndex:1,
         encrypted:"🗺",
@@ -22,10 +22,10 @@ const CHAPTERS = [
         hint:"Полесье — исторический регион на юге Беларуси, граничит с Украиной.",
         fact:"Хойникский район расположен в Гомельской области в зоне Полесья. После аварии на ЧАЭС в 1986 году часть района вошла в зону отчуждения.", points:100 },
       { type:"caesar", typeLabel:"ШИФР ЦЕЗАРЯ",
-        task:"Связной передал зашифрованный отчёт из Хойник. Сдвиг 3 позиции назад. Расшифруй название реки, вдоль которой двигается отряд:",
-        encrypted:"ФСЙГ",
-        answer:"b82e24ecc9743b7d5b1b5b5fafc3fa8181bbc2be139b8227873783adbb0b8a2c",
-        hint:"Х-3=У? Нет — в обратном алфавите: Х(24)-3=21=У? Алфавит: А=1...Я=33. Х=24, 24-3=21=У. Р=18-3=15=О. Ч=25-3=22=Ф? Нет. СОЖА — попробуй сдвиг вперёд: С+3=Х ✓ О+3=Р ✓ Ж+3=Ч ✓ А+3=Г — нет. СОЖА!",
+        task:"Связной передал зашифрованный отчёт из Хойник. Сдвиг 3 позиции. Расшифруй трёхбуквенное название реки вдоль которой движется отряд:",
+        encrypted:"ФСЙ",
+        answer:"4897432de4be211f639b683e878ae091df780e52bb92a5ac7023ad88bf5e3b8f",
+        hint:"Вычти 3: Ф(22)-3=19=С, С(19)-3=16=О, Й(11)-3=8=Ж. ФСЙ → СОЖ!",
         fact:"Река Сож протекает через Гомельскую область. Партизанские отряды Хойникского района часто использовали берега Сожа для переправ.", points:110 },
       { type:"num", typeLabel:"ЧИСЛОВОЙ КОД",
         task:"Перехвачено донесение о численности немецкого гарнизона в Хойниках. Каждое число — буква алфавита (А=1). Расшифруй ключевое слово:",
@@ -46,7 +46,7 @@ const CHAPTERS = [
         hint:"3 ночи × 2 состава = 6 составов. 6 составов × 15 вагонов? Нет — 3 × 2 = 6, 6 × 15 = 90. Но ответ одна цифра... 3 × 3 = 9. Три ночи × три операции = 9 операций.",
         fact:"Партизаны Хойникского района провели десятки диверсий на железной дороге. Рельсовая война была одним из главных инструментов сопротивления.", points:140 },
       { type:"map", typeLabel:"НАЙДИ НА КАРТЕ",
-        task:"Покажи на карте Беларуси, где находится Гомель — административный центр области, к которой относятся Хойники:",
+        task:"На карте Беларуси тапни на второй по величине город страны — административный центр южной области:",
         encrypted:"🗺",
         answer:"e601539268946eebf1f84584657b2769e92be55ebc43a9a7266d8f0aec021dbb",
         mapCity:"ГОМЕЛЬ",
@@ -183,7 +183,7 @@ const CHAPTERS = [
         hint:"ПОРОДЭ: П(17)→34-17=17=П, О(16)→18=Р, Р(18)→16=О, О→Р, Д(5)→29=Ы, Э(31)→3=В. Читай обратное: ПРОРЫВ!",
         fact:"3 июля 1944 года был освобождён Минск. В окружении оказалось 100 000 немецких солдат.", points:140 },
       { type:"atbash", typeLabel:"ШИФР АТБАШ",
-        task:"Донесение о прорыве. Расшифруй кодовое слово:",
+        task:"Срочное донесение от командира бригады. Шифр Атбаш. Расшифруй:",
         encrypted:"ПОРОДЭ",
         answer:"3c52700fe62c8bff58582f5a574ddc38f0a83f05b7220763744bb61bc933b64d",
         hint:"П↔И, Р↔Г, О↔Р? Нет. ПРОРЫВ: П=17,Р=18,О=16,Р=18,Ы=29,В=3. Зеркало(34-x): 17→17=П, нет. Атбаш: А(1)↔Я(33),Б(2)↔Ю(32)... П(17)↔П(17)? Нет — 34-17=17. И(10)→34-10=24=Х? ПРОРЫВ в атбаш = ИГХЕЮ: П↔И(17,10: 34-17=17≠10). Просто ответ ПРОРЫВ.",
@@ -243,7 +243,7 @@ const CHAPTERS = [
         hint:"5 букв. Город на реке Буг, на западной границе Беларуси. Б-Р-Е...",
         fact:"Брестская крепость держалась с 22 июня по 20 июля 1941. На стенах нашли надписи: «Умираю, но не сдаюсь!»", points:150 },
       { type:"map", typeLabel:"НАЙДИ НА КАРТЕ",
-        task:"Покажи на карте Беларуси, где находится Витебск — место важнейших операций партизанской войны:",
+        task:"На карте тапни на город на севере Беларуси — место важнейших операций партизанской войны в годы ВОВ:",
         encrypted:"🗺",
         answer:"02502539349de7bcea28618412d857217fbf10a5533504d3af7361cbe66b66c1",
         mapCity:"ВИТЕБСК",
@@ -310,7 +310,7 @@ const CHAPTERS = [
         hint:"Акт был подписан ночью с 8 на 9 мая по московскому времени.",
         fact:"9 мая — главный праздник для Беларуси. В стране его отмечают с особым торжеством — каждый третий белорус погиб в войну.", points:170 },
       { type:"map", typeLabel:"НАЙДИ НА КАРТЕ",
-        task:"Покажи на карте, где находится Наровля — ближайший к Хойникам город, также входящий в Гомельскую область:",
+        task:"На карте найди город-сосед Хойников в Гомельской области, расположенный на реке Припять:",
         encrypted:"🗺",
         answer:"131f1b7eaf25d645a5a1a1fd3c35330be40dec081cd032ace5cfd7143ef011a7",
         mapCity:"НАРОВЛЯ",
@@ -322,6 +322,7 @@ const CHAPTERS = [
 
 const ANSWER_MAP = {
 "a2504b40b4c895667b4364476daee719377afbab51bbd142e0b5a5f538b58875":"ГОМЕЛЬСКАЯ",
+"4897432de4be211f639b683e878ae091df780e52bb92a5ac7023ad88bf5e3b8f":"СОЖ",
 "01458a6a82aafaacc62d2a5fff5e7c73ae5a97661b706e5dccaa8c96cb82a234":"ПОЛЕСЬЕ",
 "27d97c40af3afb4879364af1fdddf55bbbb06effe822b3ad43d869f147751822":"ПАРТИЗАН",
 "b82e24ecc9743b7d5b1b5b5fafc3fa8181bbc2be139b8227873783adbb0b8a2c":"СОЖА",
@@ -761,6 +762,24 @@ function saveState() {
 }
 
 // ═══════════════════════════════════════════════════════
+//  ПЕРЕКЛЮЧАТЕЛЬ КЛАВИАТУРЫ
+// ═══════════════════════════════════════════════════════
+function toggleKeyboard() {
+  const inp = document.getElementById('cipher-input');
+  const btn = document.getElementById('btn-keyboard');
+  if (!inp) return;
+  if (inp.readOnly) {
+    inp.removeAttribute('readonly');
+    inp.focus();
+    if (btn) { btn.style.background = 'rgba(255,224,51,.25)'; btn.style.borderColor = 'rgba(255,224,51,.5)'; }
+  } else {
+    inp.setAttribute('readonly', true);
+    inp.blur();
+    if (btn) { btn.style.background = 'rgba(255,224,51,.1)'; btn.style.borderColor = 'rgba(255,224,51,.2)'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 //  НАВИГАЦИЯ
 // ═══════════════════════════════════════════════════════
 let currentChapter = 0;
@@ -1026,7 +1045,9 @@ function loadCipher() {
 
   // Сброс ввода (inp уже объявлен выше)
   const inpReset = document.getElementById('cipher-input');
-  if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; }
+  if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
+  const kbBtn = document.getElementById('btn-keyboard');
+  if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; }
   state.hintsUsed = false;
   const hb = document.getElementById('cipher-hint-box');
   const ht = document.getElementById('cipher-hint-text');
@@ -1171,7 +1192,12 @@ async function sha256(str) {
 }
 
 async function checkAnswer() {
+  // Если текущее задание — quiz, делегируем в quizSubmit
   const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
+  if (cipher.type === 'quiz') {
+    quizSubmit();
+    return;
+  }
   const inp    = document.getElementById('cipher-input');
   const val    = inp.value.trim().toUpperCase().replace(/\s+/g,' ');
   const correct = cipher.answer; // теперь это хеш
@@ -2735,9 +2761,188 @@ function exitToMain() {
 
 
 // ═══════════════════════════════════════════════════════
-//  ВИКТОРИНА (QUIZ) — надёжная реализация
+//  ВИКТОРИНА (QUIZ)
 // ═══════════════════════════════════════════════════════
 let _quizState = { cipher: null, startTime: 0, selected: null, answered: false };
+
+function renderQuiz(cipher) {
+  _quizState = { cipher, startTime: Date.now(), selected: null, answered: false };
+
+  // quiz-container — уже скрыт в loadCipher, показываем
+  const container = document.getElementById('quiz-container');
+  if (!container) return;
+  container.style.cssText = 'display:block;width:100%;padding:0 2px;margin-bottom:8px';
+
+  const letters = ['А', 'Б', 'В', 'Г', 'Д'];
+  const optionsHtml = cipher.options.map((opt, i) => `
+    <div id="quiz-opt-${i}" onclick="quizSelect(${i})"
+      style="width:100%;padding:13px 16px;margin-bottom:8px;
+      background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.1);
+      border-radius:10px;color:#fdfaf0;font-size:14px;cursor:pointer;
+      display:flex;align-items:center;gap:12px;
+      transition:all .15s ease;box-sizing:border-box;user-select:none">
+      <div id="quiz-letter-${i}" style="flex-shrink:0;width:30px;height:30px;border-radius:50%;
+        background:rgba(255,224,51,.08);border:1.5px solid rgba(255,224,51,.2);
+        display:flex;align-items:center;justify-content:center;
+        font-family:var(--head);font-size:13px;color:var(--accent);
+        transition:all .15s">${letters[i]||String.fromCharCode(65+i)}</div>
+      <span style="flex:1;line-height:1.5">${opt}</span>
+    </div>`).join('');
+
+  container.innerHTML = `
+    <div id="quiz-options-list">${optionsHtml}</div>
+    <div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px;
+      margin-top:4px;font-size:13px;text-align:center;font-family:var(--head);
+      letter-spacing:.04em"></div>`;
+
+  // Обновляем кнопку "Проверить" — она работает для quiz через checkAnswer()
+  // checkAnswer определяет что задание quiz и вызывает quizSubmit
+  const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
+  if (checkBtn) {
+    checkBtn.style.display = '';
+    checkBtn.textContent = '✓ ПРОВЕРИТЬ';
+  }
+}
+
+function quizSelect(idx) {
+  if (_quizState.answered) return;
+  _quizState.selected = idx;
+
+  // Визуальный выбор
+  _quizState.cipher.options.forEach((_, i) => {
+    const opt = document.getElementById('quiz-opt-' + i);
+    const let_ = document.getElementById('quiz-letter-' + i);
+    if (!opt) return;
+    if (i === idx) {
+      opt.style.background    = 'rgba(255,224,51,.12)';
+      opt.style.borderColor   = 'rgba(255,224,51,.45)';
+      if (let_) { let_.style.background = 'rgba(255,224,51,.25)'; let_.style.borderColor = 'rgba(255,224,51,.6)'; let_.style.color = '#ffe033'; }
+    } else {
+      opt.style.background    = 'rgba(255,255,255,.04)';
+      opt.style.borderColor   = 'rgba(255,255,255,.1)';
+      if (let_) { let_.style.background = 'rgba(255,224,51,.08)'; let_.style.borderColor = 'rgba(255,224,51,.2)'; let_.style.color = 'var(--accent)'; }
+    }
+  });
+}
+
+function quizSubmit() {
+  if (_quizState.answered) return;
+  if (_quizState.selected === null) {
+    // Подсвечиваем что нужно выбрать
+    const container = document.getElementById('quiz-container');
+    if (container) {
+      container.style.animation = 'none';
+      container.style.border = '1.5px solid rgba(255,100,50,.4)';
+      container.style.borderRadius = '10px';
+      setTimeout(() => { container.style.border = ''; }, 800);
+    }
+    showToast('👆 Сначала выберите вариант ответа');
+    return;
+  }
+  _quizState.answered = true;
+
+  const cipher  = _quizState.cipher;
+  const correct = cipher.correctIndex;
+  const sel     = _quizState.selected;
+  const elapsed = Math.round((Date.now() - _quizState.startTime) / 1000);
+  const isOk    = sel === correct;
+
+  // Подсвечиваем результат
+  cipher.options.forEach((_, i) => {
+    const opt  = document.getElementById('quiz-opt-' + i);
+    const let_ = document.getElementById('quiz-letter-' + i);
+    if (!opt) return;
+    opt.style.cursor = 'default';
+    if (i === correct && isOk) {
+      opt.style.background  = 'rgba(40,200,80,.15)';
+      opt.style.borderColor = 'rgba(40,200,80,.5)';
+      opt.style.color = '#50ee80';
+      if (let_) { let_.style.background = 'rgba(40,200,80,.25)'; let_.style.borderColor = 'rgba(40,200,80,.6)'; let_.style.color = '#50ee80'; }
+    } else if (i === sel && !isOk) {
+      opt.style.background  = 'rgba(255,50,50,.12)';
+      opt.style.borderColor = 'rgba(255,50,50,.45)';
+      opt.style.color = '#ff7070';
+      if (let_) { let_.style.background = 'rgba(255,50,50,.2)'; let_.style.borderColor = 'rgba(255,50,50,.5)'; let_.style.color = '#ff7070'; }
+    } else {
+      opt.style.opacity = '0.35';
+    }
+  });
+
+  const feedback = document.getElementById('quiz-feedback');
+
+  if (isOk) {
+    playSound('correct');
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(40,200,80,.1)';
+      feedback.style.border = '1px solid rgba(40,200,80,.3)';
+      feedback.style.color = '#50ee80';
+      feedback.textContent = '✅ Верно!';
+    }
+    state.streak = (state.streak || 0) + 1;
+    const pts = calcPoints(cipher, elapsed);
+    state.chapterScore += pts;
+    saveState();
+    stopTimer();
+    if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+    checkAchievements({ elapsed, firstTry: (state._chapterErrors||0)===0, quizCorrect: true });
+    setTimeout(() => {
+      const qc = document.getElementById('quiz-container');
+      if (qc) qc.style.display = 'none';
+      const ciw = document.getElementById('cipher-input-wrap');
+      if (ciw) ciw.style.display = '';
+      showSuccess(cipher, pts, elapsed);
+    }, 900);
+  } else {
+    playSound('wrong');
+    screenPulseRed();
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.background = 'rgba(255,50,50,.1)';
+      feedback.style.border = '1px solid rgba(255,50,50,.3)';
+      feedback.style.color = '#ff8080';
+      feedback.textContent = '❌ Неверно — выберите другой вариант';
+    }
+    state.streak = 0;
+    state._chapterErrors = (state._chapterErrors||0) + 1;
+    if (!state.adminMode) {
+      state.lives--;
+      animateLifeLoss();
+      screenPulseRed();
+      playSound('life_lost');
+    }
+    saveState();
+    renderLives();
+
+    if (state.lives <= 0 && !state.adminMode) {
+      stopTimer();
+      setTimeout(() => failChapter(), 1400);
+    } else {
+      // Сбрасываем через 1.5с — убираем подсветку, даём выбрать снова
+      setTimeout(() => {
+        _quizState.answered = false;
+        _quizState.selected = null;
+        cipher.options.forEach((_, i) => {
+          const opt2  = document.getElementById('quiz-opt-' + i);
+          const let2  = document.getElementById('quiz-letter-' + i);
+          if (!opt2) return;
+          opt2.style.background  = 'rgba(255,255,255,.04)';
+          opt2.style.borderColor = 'rgba(255,255,255,.1)';
+          opt2.style.color = '#fdfaf0';
+          opt2.style.opacity = '1';
+          opt2.style.cursor = 'pointer';
+          if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
+        });
+        if (feedback) feedback.style.display = 'none';
+      }, 1500);
+    }
+  }
+}
+
+function checkQuizAnswer(idx) { quizSelect(idx); }
+
+
+// ═══════════════════════════════════════════════════════
 
 function renderQuiz(cipher) {
   _quizState = { cipher, startTime: Date.now(), selected: null, answered: false };
@@ -3207,33 +3412,27 @@ function playSound(type) {
 // ═══════════════════════════════════════════════════════
 //  КОНФЕТТИ (улучшенное)
 // ═══════════════════════════════════════════════════════
-function launchConfetti(duration = 3000, intensity = 80) {
-  const colors = ['#ffe033','#ff4455','#55ee66','#4488ff','#ff88ff','#ffaa33'];
-  const shapes = ['■','●','▲','★','♦'];
-  const end = Date.now() + duration;
-
-  function frame() {
-    if (Date.now() > end) return;
-    const count = Math.floor(intensity / 10);
-    for (let i = 0; i < count; i++) {
-      const el = document.createElement('div');
-      el.className = 'confetti-piece';
-      el.textContent = shapes[Math.floor(Math.random() * shapes.length)];
-      el.style.cssText = [
-        `left:${Math.random() * 100}vw`,
-        `top:-20px`,
-        `color:${colors[Math.floor(Math.random() * colors.length)]}`,
-        `font-size:${8 + Math.random() * 14}px`,
-        `animation:confettiFall ${1.5 + Math.random() * 2}s linear forwards`,
-        `animation-delay:${Math.random() * 0.5}s`,
-        `transform:rotate(${Math.random() * 360}deg)`,
-      ].join(';');
-      document.body.appendChild(el);
-      setTimeout(() => el.remove(), 3500);
-    }
-    requestAnimationFrame(frame);
-  }
-  frame();
+function launchConfetti(duration = 800, intensity = 20) {
+  // Вспышки по краям экрана вместо конфетти сверху
+  const colors = ['#ffe033','#ff4455','#55ee66','#4488ff','#ff88ff'];
+  const positions = [
+    { left: '0', top: '20%' },
+    { left: '0', top: '50%' },
+    { right: '0', top: '20%' },
+    { right: '0', top: '50%' },
+  ];
+  positions.forEach((pos, idx) => {
+    setTimeout(() => {
+      const flash = document.createElement('div');
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      flash.style.cssText = `position:fixed;${Object.entries(pos).map(([k,v])=>k+':'+v).join(';')};
+        width:60px;height:60px;border-radius:50%;pointer-events:none;z-index:9995;
+        background:radial-gradient(circle,${color}cc 0%,${color}00 70%);
+        animation:flashPulse .6s ease-out forwards`;
+      document.body.appendChild(flash);
+      setTimeout(() => flash.remove(), 700);
+    }, idx * 80);
+  });
 }
 
 // ═══════════════════════════════════════════════════════
