@@ -83,6 +83,16 @@
         .btn:active { transform: scale(.98); }
         .btn-accent { background: var(--accent); color: #0a0a08; }
         .btn-danger { border-color: var(--accent2); color: var(--accent2); }
+        .btn-icon {
+            width: 48px;
+            height: 48px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
         
         /* Intro */
         #s-intro {
@@ -178,9 +188,14 @@
             color: var(--muted);
             letter-spacing: .2em;
         }
-        .cipher-input-wrap { margin-bottom: 12px; }
+        .cipher-input-wrap { 
+            margin-bottom: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
         .cipher-input {
-            width: 100%;
+            flex: 1;
             background: rgba(255,255,255,.05);
             border: 1px solid rgba(255,255,255,.15);
             border-radius: 6px;
@@ -482,6 +497,938 @@
             <div id="quiz-container" class="quiz-container" style="display:none;"></div>
             <div class="cipher-input-wrap" id="cipher-input-wrap">
                 <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" autocomplete="off" autocorrect="off" spellcheck="false">
+                <button id="btn-keyboard" class="btn btn-icon" onclick="toggleKeyboard()" title="Клавиатура">⌨️</button>
+            </div>
+            <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
+            <div id="cipher-timer" class="cipher-timer">0с</div>
+            <div class="cipher-actions">
+                <button id="btn-hint" class="btn btn-hint" onclick="showHint()">💡 ПОДСКАЗКА</button>
+                <button id="btn-check" class="btn btn-check" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
+            </div>
+            <div id="cipher-hint-box" class="cipher-hint-box">
+                <div id="cipher-hint-text"></div>
+            </div>
+            <div id="cipher-ref" class="cipher-ref"></div>
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button class="btn" style="flex:1;" onclick="pauseGame()">⏸ ПАУЗА</button>
+                <button class="btn" style="flex:1;" onclick="goToChapters()">📖 ГЛАВЫ</button>
+            </div>
+        </div>
+        
+        <!-- SUCCESS -->
+        <div id="s-success" class="screen">
+            <div style="text-align:center;margin:40px 0;">
+                <div style="font-size:64px;margin-bottom:16px;">✅</div>
+                <div id="succ-cipher-name" style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;"></div>
+                <div id="succ-answer" class="succ-answer"></div>
+                <div id="succ-pts" class="succ-pts"></div>
+                <div id="succ-time" class="succ-time"></div>
+                <div id="succ-speed" style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;"></div>
+            </div>
+            <div id="succ-fact" class="succ-fact"></div>
+            <button id="succ-next-btn" class="btn btn-accent" onclick="nextCipher()"></button>
+        </div>
+        
+        <!-- CHAPTER END -->
+        <div id="s-chapter-end" class="screen">
+            <div style="text-align:center;margin:40px 0;">
+                <div id="chend-medal" class="chend-medal"></div>
+                <div id="chend-chapter-name" style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:8px;"></div>
+                <div id="chend-score" class="chend-score"></div>
+                <div id="chend-total" class="chend-total"></div>
+                <div id="chend-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;"></div>
+            </div>
+            <button id="chend-next-btn" class="btn btn-accent"></button>
+        </div>
+        
+        <!-- CHAPTER FAIL -->
+        <div id="s-chapter-fail" class="screen">
+            <div style="text-align:center;margin:40px 0;">
+                <div style="font-size:64px;margin-bottom:16px;">💔</div>
+                <div id="fail-chapter-name" style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent2);margin-bottom:8px;"></div>
+                <div id="fail-score-line" style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:24px;"></div>
+            </div>
+            <button id="fail-retry-btn" class="btn" style="display:none;"></button>
+            <div id="fail-retry-info" style="background:rgba(255,58,58,.08);border:1px solid rgba(255,58,58,.2);border-radius:6px;padding:12px;font-size:var(--fs-xs);color:var(--accent2);margin:12px 0;display:none;"></div>
+            <button id="fail-next-btn" class="btn" style="display:none;"></button>
+            <button class="btn" onclick="showScreen('s-chapters');renderChapters();">← К ЗАДАНИЯМ</button>
+        </div>
+        
+        <!-- PAUSE -->
+        <div id="s-pause" class="screen">
+            <div class="pause-info">
+                <div class="pause-icon">⏸</div>
+                <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:8px;">ПАУЗА</div>
+                <div id="pause-chapter-info" style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:32px;"></div>
+                <button class="btn btn-accent" onclick="resumeGame()">▶ ПРОДОЛЖИТЬ</button>
+                <button class="btn" onclick="goToChapters()">📖 К ГЛАВАМ</button>
+                <button class="btn" onclick="exitToMain()">🏠 В ГЛАВНОЕ МЕНЮ</button>
+            </div>
+        </div>
+        
+        <!-- FINAL -->
+        <div id="s-final" class="screen">
+            <div style="text-align:center;margin:40px 0;">
+                <div id="final-stars" class="final-stars">★★★★★</div>
+                <div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin:20px 0;">МИССИЯ ВЫПОЛНЕНА</div>
+                <div id="final-score-val" class="final-score"></div>
+                <div id="final-rank" class="final-rank"></div>
+                <div id="final-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:24px;"></div>
+                <div id="final-uid" style="font-size:var(--fs-xs);color:var(--muted);font-family:var(--mono);margin-bottom:16px;display:none;"></div>
+            </div>
+            <div id="final-chapter-scores" style="background:var(--bg-soft);border-radius:8px;padding:16px;margin-bottom:16px;"></div>
+            <button class="btn btn-accent" onclick="showScreen('s-leaderboard-tab');switchTab('leaderboard');">🏆 ТАБЛИЦА ЛИДЕРОВ</button>
+            <button class="btn" onclick="showScreen('s-chapters');renderChapters();">← К ЗАДАНИЯМ</button>
+        </div>
+        
+        <!-- LEADERBOARD TAB -->
+        <div id="s-leaderboard-tab" class="screen">
+            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
+            <div id="lb-list-tab"></div>
+        </div>
+        
+        <!-- PROFILE TAB -->
+        <div id="s-profile-tab" class="screen">
+            <div id="profile-tab-content"></div>
+        </div>
+        
+        <!-- ABOUT TAB -->
+        <div id="s-about-tab" class="screen">
+            <div id="about-tab-content"></div>
+        </div>
+    </div>
+    
+    <!-- BOTTOM NAV -->
+    <div id="bottom-nav">
+        <div class="bn-tab active" id="bn-chapters" onclick="switchTab('chapters')">
+            <span class="bn-tab-icon">🗺</span>
+            ЗАДАНИЯ
+        </div>
+        <div class="bn-tab" id="bn-leaderboard" onclick="switchTab('leaderboard')">
+            <span class="bn-tab-icon">🏆</span>
+            РЕЙТИНГ
+        </div>
+        <div class="bn-tab" id="bn-profile" onclick="switchTab('profile')">
+            <span class="bn-tab-icon">👤</span>
+            ПРОФИЛЬ
+        </div>
+        <div class="bn-tab" id="bn-about" onclick="switchTab('about')">
+            <span class="bn-tab-icon">ℹ️</span>
+            О ИГРЕ
+        </div>
+    </div>
+
+    <script>
+// ═══════════════════════════════════════════════════════
+//  ДАННЫЕ ИГРЫ — 6 ГЛАВ, 36 ЗАДАНИЙ
+// ═══════════════════════════════════════════════════════
+const CHAPTERS = [
+{
+id:1, title: "ХОЙНИКИ: ОГНЕННОЕ ЛЕТО", subtitle: "Глава I",
+place: "ХОЙНИКИ · ГОМЕЛЬСКАЯ ОБЛ. · 1941", stamp: "🌿",
+meta: "Дата: 28.08.1941\nМесто: г. Хойники, Полесье\nСтатус: ОККУПАЦИЯ",
+briefing: `Август 1941. Хойники — небольшой город на юге Гомельской области, в сердце Полесья. Немецкие войска заняли город. Местные жители уходят в леса — начинается партизанское движение. Первый связной отряда передаёт координаты явки. Ты — его преемник. Расшифруй донесения.`,
+mission: "Выполни 6 разведывательных заданий по Хойникскому региону",
+videoUrl: "https://www.youtube.com/embed/8mFDTm5OQCI",
+ciphers:[
+{ type: "quiz", typeLabel: "ИСТОРИЯ КРАЯ",
+task: "Хойники — районный центр одной из областей Беларуси. Определи по карте: в какой области находится Хойникский район?",
+options:["Брестская область", "Гомельская область", "Витебская область", "Могилёвская область"],
+correctIndex:1,
+encrypted: "🗺",
+answer: "a2504b40b4c895667b4364476daee719377afbab51bbd142e0b5a5f538b58875",
+hint: "Полесье — исторический регион на юге Беларуси, граничит с Украиной.",
+fact: "Хойникский район расположен в Гомельской области в зоне Полесья. После аварии на ЧАЭС в 1986 году часть района вошла в зону отчуждения.", points:100 },
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
+task: "Связной передал зашифрованный отчёт из Хойник. Сдвиг 3 позиции. Расшифруй трёхбуквенное название реки вдоль которой движется отряд:",
+encrypted: "ФСЙ",
+answer: "4897432de4be211f639b683e878ae091df780e52bb92a5ac7023ad88bf5e3b8f",
+hint: "Вычти 3: Ф(22)-3=19=С, С(19)-3=16=О, Й(11)-3=8=Ж. ФСЙ → СОЖ!",
+fact: "Река Сож протекает через Гомельскую область. Партизанские отряды Хойникского района часто использовали берега Сожа для переправ.", points:110 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
+task: "Перехвачено донесение о численности немецкого гарнизона в Хойниках. Каждое число — буква алфавита (А=1). Расшифруй ключевое слово:",
+encrypted: "16-1-18-20-10-9-1-14",
+answer: "27d97c40af3afb4879364af1fdddf55bbbb06effe822b3ad43d869f147751822",
+hint: "П=16, А=1, Р=18, Т=20, И=10, З=9, А=1, Н=14. Восемь букв.",
+fact: "Партизанское движение в Хойникском районе началось с первых дней оккупации. К 1943 году в районе действовало несколько крупных отрядов.", points:120 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы — получишь название исторического региона, где расположены Хойники. Именно здесь плотные леса и болота стали союзниками партизан:",
+encrypted: "ЬЕЛЕСОП",
+answer: "01458a6a82aafaacc62d2a5fff5e7c73ae5a97661b706e5dccaa8c96cb82a234",
+hint: "6 букв. Природный регион южной Беларуси. Много болот и лесов. П-О-Л...",
+fact: "Полесье — одна из крупнейших заболоченных территорий Европы. Немецкие войска избегали здесь активных действий — партизаны чувствовали себя здесь как дома.", points:130 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "За 3 ночи партизанский отряд из Хойникского района провёл по 3 диверсии каждую ночь. Сколько всего диверсий провёл отряд?",
+encrypted: "3 × 3 = ?",
+answer: "19581e27de7ced00ff1ce50b2047e7a567c76b1cbaebabe5ef03f7c3017bb5b7",
+hint: "3 ночи × 3 операции = 9 операций.",
+fact: "Партизаны Хойникского района провели десятки диверсий на железной дороге. Рельсовая война была одним из главных инструментов сопротивления.", points:140 },
+{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
+task: "На карте Беларуси тапни на второй по величине город страны — административный центр южной области:",
+encrypted: "🗺",
+answer: "e601539268946eebf1f84584657b2769e92be55ebc43a9a7266d8f0aec021dbb",
+mapCity: "ГОМЕЛЬ",
+hint: "Юго-восток Беларуси, недалеко от границы с Россией и Украиной. Второй по величине город страны.",
+fact: "Гомель — второй по величине город Беларуси. Хойники находятся в 80 км к юго-западу от Гомеля.", points:150 }
+]
+},
+{
+id:2, title: "ПОДПОЛЬЕ МИНСКА", subtitle: "Глава II",
+place: "МИНСК · ИЮЛЬ 1942", stamp: "📜",
+meta: "Дата: 14.07.1942\nМесто: Минск, оккупация\nСтатус: АКТИВНО",
+briefing: `Лето 1942 года. Минск под оккупацией уже год. Подпольная сеть «Комета» действует в городе. Перехваченные донесения содержат сведения о вражеских колоннах. Немцы меняют коды каждые 48 часов — действуй быстро.`,
+mission: "Расшифруй 6 донесений минского подполья",
+videoUrl: "https://www.youtube.com/embed/dL8DM0PfRvQ",
+ciphers:[
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
+task: "Каждая буква сдвинута на 3 позиции вперёд. А→Г, Б→Д... Расшифруй слово:",
+encrypted: "ЁСУСЖ",
+answer: "f9e05f164c5a0d5f568e20655d6a3460a1b89be8ae2d039432b7f591269c56d7",
+hint: "Ё(6)−3=3=Г. С(19)−3=16=О. У(21)−3=18=Р. С(19)−3=16=О. Ж(8)−3=5=Д. ГОРОД!",
+fact: "Минское подполье — одна из крупнейших сетей сопротивления в Европе: более 9000 участников.", points:100 },
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Расшифруй радиограмму. Буквы разделены /, слова //",
+encrypted: "....-/.-.././-...//.-.././.-...",
+answer: "9f105caf00cb3a6702aa88267e5efeac19d5ed77d966999d103ad3c02e09f622",
+hint: ".... = Х, .-.. = Л, . = Е, -... = Б → ХЛЕБ. .-.= Р, .-.. = Л? Нет: Д=-.., О=---, Р=.-., О=---, Г=--. ДОРОГ.",
+fact: "Подпольщики рисковали жизнью при каждом выходе в эфир — немцы засекали радиосигналы за несколько минут.", points:120 },
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
+task: "Сдвиг изменился — теперь 4 позиции вперёд. Найди ключевое слово:",
+encrypted: "ХОПДЗ",
+answer: "f4f847839b6e46ff3047b6ca7622555097aa47f3ee69e4f935530f4faa93d18c",
+hint: "Х(24)−4=20=С. О(16)−4=12=К. П(17)−4=13=Л. Д(5)−4=1=А. З(9)−4=5=Д. СКЛАД!",
+fact: "Подпольщики организовывали тайные склады оружия и медикаментов для партизан.", points:130 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Каждая буква заменяется на зеркальную: А↔Я, Б↔Ю, В↔Э... Расшифруй слово:",
+encrypted: "НЭАЧГ",
+answer: "f44ea8d11615d997a61d3b8b0b80d8b5ea76d2dbb60c17fa162ede87abbe7bf7",
+hint: "Атбаш: 34-позиция. НЭАЧГ→СВЯЗЬ.",
+fact: "Шифр Атбаш — один из древнейших, использовался ещё в библейские времена.", points:150 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
+task: "Числовой код места встречи. Каждое число — порядковый номер буквы (А=1):",
+encrypted: "33-3-12-1",
+answer: "20239dec89076cf07026693b3e5d5efc14bd7a26c1cd49e2bb77deb90cf8a00f",
+hint: "33=Я, 3=В, 12=К, 1=А → ЯВКА!",
+fact: "Явка — место для секретных встреч. Адрес передавали только числовым кодом.", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Минское подполье действовало под носом у оккупантов. В каком году было создано Минское антифашистское подполье?",
+options:["1939", "1941", "1943", "1944"],
+correctIndex:1,
+encrypted: "📅",
+answer: "5933b0b35d5d3e9d1f53fbce9403c5672883fff37f429dc1da26881f47415672",
+hint: "Оккупация Минска началась 28 июня 1941 года. Подполье начало формироваться сразу.",
+fact: "Минское подполье начало формироваться в июле 1941 года. За годы оккупации оно организовало тысячи актов саботажа.", points:130 }
+]
+},
+{
+id:3, title: "РЕЛЬСОВАЯ ВОЙНА", subtitle: "Глава III",
+place: "БЕЛАРУСЬ · АВГУСТ 1943", stamp: "💣",
+meta: "Дата: 03.08.1943\nМесто: Вся Беларусь\nСтатус: КРИТИЧНО",
+briefing: `3 августа 1943 года — ночь «Рельсовой войны». Тысячи партизан одновременно атакуют железные дороги по всей Беларуси. Координация — через шифрованные радиограммы. Расшифруй донесения о результатах операции до рассвета.`,
+mission: "Расшифруй 6 оперативных донесений штаба",
+videoUrl: "https://www.youtube.com/embed/B2bqJSMNwOI",
+ciphers:[
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Радиограмма от партизанского отряда. Буквы разделены /, слова //",
+encrypted: "--/---/.../-//--./---/.-./../-",
+answer: "324d91c47431ef6d9a3d33983c3ff54e023f6bc359870d0ba5e3fce44afe2e6a",
+hint: "М=--,О=---,С=...,Т=- → МОСТ. Г=--.,О=---,Р=.-.,И=..,Т=- → ГОРИТ",
+fact: "В первую ночь Рельсовой войны партизаны произвели 42 000 взрывов на железных дорогах Беларуси.", points:110 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Зашифрованный маршрут отступления. Расшифруй одно слово:",
+encrypted: "ПЛМГ",
+answer: "f275f3dada670a7d7abdacfb2143475de1ea768123cd40111fb66d0d52ca74d8",
+hint: "Атбаш: Л(13)→34-13=21=У✓, М(14)→34-14=20=Т✓, Г(4)→34-4=30=Ь✓. ПЛМГ → ПУТЬ!",
+fact: "Партизанские отряды знали каждую тропу в белорусских лесах. Местные проводники были бесценны.", points:130 },
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:7,
+task: "Срочное донесение. Сдвиг 7 позиций вперёд. Расшифруй:",
+encrypted: "ХЩЧЁК",
+answer: "06074d823df2801860e0d583c4c56927c9cf6f4255acced4541585f5123b3d50",
+hint: "Вычти 7: Х(24)-7=17=О✓, Щ(27)-7=20=Т✓, Ч(25)-7=18=Р✓, Ё(7)-7=0→33=Я✓, К(12)-7=5=Д✓. ХЩЧЁК → ОТРЯД!",
+fact: "К 1943 году в Беларуси действовало более 150 000 партизан, объединённых в 1255 отрядов.", points:140 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
+task: "Координата места закладки взрывчатки. Расшифруй кодовое слово:",
+encrypted: "3-9-18-29-3",
+answer: "24e6357fad3c0e1a6a24349c4250d1ead3461a4ca8052433cbb0c95515e1b4db",
+hint: "В=3, З=9, Р=18, Ы=29, В=3. 3-9-18-29-3 = ВЗРЫВ!",
+fact: "Партизаны Беларуси за годы войны уничтожили более 11 000 немецких эшелонов.", points:150 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Первый партизанский отряд подорвал 12 рельсов. Второй — в 2 раза больше. Третий — столько же сколько второй. Сколько рельсов всего?",
+encrypted: "12 + 24 + 24 = ?",
+answer: "39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9",
+hint: "12 рельсов + 12×2=24 + 24 = 60 рельсов всего!",
+fact: "3 августа 1943 года в Беларуси было произведено более 40 000 взрывов — это координировано как ни одна другая операция партизан.", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Рельсовая война — это массовая диверсионная операция советских партизан. Как назывался второй этап Рельсовой войны, начавшийся в сентябре 1943?",
+options:["Операция «Гром»", "«Концерт»", "Операция «Взрыв»", "«Буря»"],
+correctIndex:1,
+encrypted: "🎵",
+answer: "66a7a5807c3130eb2d0b55bb260a6a001b9d62095c94b753cbb215f3e4f099e1",
+hint: "Второй этап назвали музыкальным словом. Он охватил уже не только Беларусь.",
+fact: "Операция «Концерт» (сентябрь–октябрь 1943) — второй этап Рельсовой войны. Охватила территории от Карелии до Крыма.", points:140 }
+]
+},
+{
+id:4, title: "ОПЕРАЦИЯ БАГРАТИОН", subtitle: "Глава IV",
+place: "БЕЛАРУСЬ · ИЮНЬ 1944", stamp: "⚔️",
+meta: "Дата: 23.06.1944\nМесто: Вся Беларусь\nСтатус: НАСТУПЛЕНИЕ",
+briefing: `23 июня 1944 года. Начинается крупнейшая наступательная операция Второй мировой войны — «Багратион». Советские войска прорывают немецкую оборону. Партизаны наносят удар изнутри. Каждая секунда важна — расшифруй приказы командования.`,
+mission: "Выполни 6 заданий операции освобождения Беларуси",
+videoUrl: "https://www.youtube.com/embed/x86qIVm1rOc",
+ciphers:[
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
+task: "Приказ к началу наступления. Сдвиг 4 назад. Расшифруй:",
+encrypted: "ФЧЕИК",
+answer: "fec3d20ab54d04d7e2007c03c222a7204d732a1c75b18cf5730813d8007eb428",
+hint: "Вычти 4: Ф(22)-4=18=Р✓, Ч(25)-4=21=У✓, Е(6)-4=2=Б✓, И(10)-4=6=Е✓, К(12)-4=8=Ж✓. ФЧЕИК → РУБЕЖ!",
+fact: "Операция «Багратион» привела к полному освобождению Беларуси и уничтожению группы армий «Центр».", points:120 },
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Радиограмма от командира бригады. Расшифруй одно слово:",
+encrypted: "---/..../-.../---/--./-.././.-.../---/-..",
+answer: "e4d2f03d6cacba6f4636f7a06005337f496fb959510878462cb55d1e688ab307",
+hint: "ПРОРЫВ!",
+fact: "3 июля 1944 года был освобождён Минск. В окружении оказалось 100 000 немецких солдат.", points:140 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Срочное донесение от командира бригады. Шифр Атбаш. Расшифруй:",
+encrypted: "ПОРОДЭ",
+answer: "3c52700fe62c8bff58582f5a574ddc38f0a83f05b7220763744bb61bc933b64d",
+hint: "ПРОРЫВ",
+fact: "За первые 5 дней операции советские войска продвинулись на 150 км.", points:150 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
+task: "Название освобождённой столицы — числовым кодом:",
+encrypted: "14-10-15-19-12",
+answer: "e6f182a0288b446b693099008c4747ce928497399ea20a4c89dfef0be894662c",
+hint: "М=14, И=10, Н=15, С=19, К=12. 14-10-15-19-12 = МИНСК!",
+fact: "Минск был освобождён 3 июля 1944 года — через 3 года и 5 дней после начала оккупации.", points:160 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Операция «Багратион» началась 23 июня 1944. Минск освобождён 3 июля. Беларусь полностью освобождена 28 июля. Сколько дней от начала операции до полного освобождения?",
+encrypted: "23 июня → 28 июля = ?",
+answer: "9f14025af0065b30e47e23ebb3b491d39ae8ed17d33739e5ff3827ffb3634953",
+hint: "Июнь: 23→30 = 7 дней. Июль: 1→28 = 28 дней. Итого: 7+28 = 35 дней.",
+fact: "За 35 дней операции «Багратион» была полностью освобождена Беларусь. Потери немцев — 500 000 человек.", points:180 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Операция «Багратион» — крупнейшее наступление ВМВ. Как называлась немецкая группа армий, разгромленная в ходе этой операции?",
+options:["Группа «Север»", "Группа «Центр»", "Группа «Юг»", "Группа «А»"],
+correctIndex:1,
+encrypted: "⚔️",
+answer: "f513a0aa4f8f39744c6fddf2b5eb18cc1eac55ca866a1b243d835362a023f243",
+hint: "Это группа армий, которая защищала Беларусь и центральное направление.",
+fact: "Группа армий «Центр» была полностью разгромлена. Это стало крупнейшим поражением Германии во Второй мировой войне.", points:150 }
+]
+},
+{
+id:5, title: "ЗНАЙ СВОЮ ЗЕМЛЮ", subtitle: "Глава V",
+place: "БЕЛАРУСЬ · ИСТОРИЯ И ГЕОГРАФИЯ", stamp: "🗺",
+meta: "Тип: ИСТОРИЯ И ГЕОГРАФИЯ\nТема: Беларусь\nСтатус: ПРОВЕРКА ЗНАНИЙ",
+briefing: `Разведчик должен знать свою землю как себя. Города, реки, даты, имена героев. Здесь нет только шифров — есть знание. Ответь на вопросы о Беларуси и её истории. Шесть заданий — шесть проверок.`,
+mission: "Выполни 6 заданий по истории и географии Беларуси",
+videoUrl: "https://www.youtube.com/embed/WCaFD_c5J0Q",
+ciphers:[
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Какой город Беларуси был удостоен звания «Город-герой» наравне с Москвой и Ленинградом?",
+options:["Гомель", "Витебск", "Минск", "Брест"],
+correctIndex:2,
+encrypted: "🏙",
+answer: "e6f182a0288b446b693099008c4747ce928497399ea20a4c89dfef0be894662c",
+hint: "Это столица Беларуси. Была полностью разрушена во время оккупации.",
+fact: "Минск получил звание «Город-герой» в 1974 году. Во время оккупации было уничтожено 80% зданий города.", points:120 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Брестскую крепость защищал гарнизон около 9000 человек против 45000 немцев. Во сколько раз немецких солдат было больше?",
+encrypted: "45000 ÷ 9000 = ?",
+answer: "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+hint: "45000 разделить на 9000. Упросим: 45 ÷ 9 = 5.",
+fact: "Несмотря на пятикратное превосходство противника, защитники Брестской крепости держались почти месяц.", points:140 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы и получи название крепости — символа стойкости, принявшей первый удар 22 июня 1941:",
+encrypted: "СТЕРБ",
+answer: "1f357f38d0a3225db20815563c70bfe154832f7e0cd2cb79edde8a1e5038a85b",
+hint: "5 букв. Город на реке Буг, на западной границе Беларуси. Б-Р-Е...",
+fact: "Брестская крепость держалась с 22 июня по 20 июля 1941. На стенах нашли надписи: «Умираю, но не сдаюсь!»", points:150 },
+{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
+task: "На карте тапни на город на севере Беларуси — место важнейших операций партизанской войны в годы ВОВ:",
+encrypted: "🗺",
+answer: "02502539349de7bcea28618412d857217fbf10a5533504d3af7361cbe66b66c1",
+mapCity: "ВИТЕБСК",
+hint: "Северо-восток Беларуси, на реке Западная Двина. Четвёртый по величине город.",
+fact: "Витебск оккупирован 11 июля 1941. Освобождён 26 июня 1944 в ходе операции «Багратион».", points:160 },
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
+task: "Зашифровано имя главной военной операции освобождения Беларуси. Сдвиг 3 назад:",
+encrypted: "ДГЁУГХЛСР",
+answer: "32076f76c7be7c437b41289f10c44cce9c107523aee32428024297703302ae2d",
+hint: "Вычти 3: ДГЁУГХЛСР-3=БАГРАТИОН!",
+fact: "Операция «Багратион» (июнь–август 1944) — крупнейшая наступательная операция ВМВ.", points:170 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Сколько мирных жителей и солдат потеряла Беларусь в годы Второй мировой войны?",
+options:["Каждый 10-й", "Каждый 5-й", "Каждый 3-й", "Каждый 2-й"],
+correctIndex:2,
+encrypted: "📊",
+answer: "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+hint: "Беларусь — одна из наиболее пострадавших стран. Каждый третий...",
+fact: "Беларусь потеряла каждого третьего жителя — около 3 миллионов человек. Это самые высокие потери среди всех советских республик в пересчёте на долю населения.", points:200 }
+]
+},
+{
+id:6, title: "ДОРОГА К ПОБЕДЕ", subtitle: "Глава VI",
+place: "БЕЛАРУСЬ · БЕРЛИН · 1945", stamp: "🌟",
+meta: "Дата: 09.05.1945\nМесто: Берлин\nСтатус: ФИНАЛ",
+briefing: `Последняя глава. Апрель 1945. Советские войска идут на Берлин. Среди бойцов — солдаты из Беларуси, пережившие оккупацию, потерявшие родных. Они несут Победу. Докажи что ты достоин звания Маршала Победы.`,
+mission: "Пройди финальный экзамен — 6 заданий о Победе",
+videoUrl: "https://www.youtube.com/embed/dL8DM0PfRvQ",
+ciphers:[
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Война длилась с 22 июня 1941 по 9 мая 1945. Сколько полных лет продолжалась война?",
+encrypted: "1941 → 1945 = ? лет",
+answer: "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+hint: "1945 минус 1941 = 4 года. Четыре долгих года.",
+fact: "Великая Отечественная война длилась 3 года, 10 месяцев и 18 дней — с 22 июня 1941 по 9 мая 1945.", points:120 },
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Первое слово победной радиограммы. Расшифруй:",
+encrypted: ".../.-.../.-/.-../.-/",
+answer: "9890080953fe693654e3db2bece9ddc1e28e86659ece82fd3a44e9904809a94f",
+hint: "С=...,Л=.-..,А=.-,В=.--,А=.- = СЛАВА",
+fact: "9 мая 1945 в 00:43 по московскому времени был подписан Акт о капитуляции Германии.", points:130 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Последнее слово в приказе. Расшифруй:",
+encrypted: "ТЦО",
+answer: "0dd0a827bdd580e9eaa343e55ae702740b9f2346d8b6699c5a8669ea0b64571f",
+hint: "Атбаш: Т(20)→34-20=14=М✓, Ц(24)→34-24=10=И✓, О(16)→34-16=18=Р✓. ТЦО → МИР!",
+fact: "Слово «МИР» — самое долгожданное слово для миллионов людей, переживших войну.", points:150 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы — получишь название города, где была подписана капитуляция Германии:",
+encrypted: "ЛИНЕРБ",
+answer: "06b21234e80f4cbe0bbcca7195551e94577a26f59f43bb4e78ea22aa3804b525",
+hint: "6 букв. Столица Германии. Б-Е-Р...",
+fact: "8 мая 1945 в Берлине был подписан Акт о безоговорочной капитуляции Германии. Для СССР дата победы — 9 мая.", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Какого числа каждый год в Беларуси и России отмечают День Победы?",
+options:["7 мая", "8 мая", "9 мая", "10 мая"],
+correctIndex:2,
+encrypted: "📅",
+answer: "060672b8531404f598515957df33d6387e0647cbc382d35ef286fa3466362384",
+hint: "Акт был подписан ночью с 8 на 9 мая по московскому времени.",
+fact: "9 мая — главный праздник для Беларуси. В стране его отмечают с особым торжеством — каждый третий белорус погиб в войну.", points:170 },
+{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
+task: "На карте найди город-сосед Хойников в Гомельской области, расположенный на реке Припять:",
+encrypted: "🗺",
+answer: "131f1b7eaf25d645a5a1a1fd3c35330be40dec081cd032ace5cfd7143ef011a7",
+mapCity: "НАРОВЛЯ",
+hint: "Юг Гомельской области, рядом с Хойниками, на берегу реки Припять.",
+fact: "Наровля и Хойники — города-соседи в Гомельской области. Оба расположены в зоне влияния Чернобыльской катастрофы 1986 года.", points:200 }
+]
+}
+];
+
+const ANSWER_MAP = {
+"a2504b40b4c895667b4364476daee719377afbab51bbd142e0b5a5f538b58875": "ГОМЕЛЬСКАЯ",
+"4897432de4be211f639b683e878ae091df780e52bb92a5ac7023ad88bf5e3b8f": "СОЖ",
+"01458a6a82aafaacc62d2a5fff5e7c73ae5a97661b706e5dccaa8c96cb82a234": "ПОЛЕСЬЕ",
+"27d97c40af3afb4879364af1fdddf55bbbb06effe822b3ad43d869f147751822": "ПАРТИЗАН",
+"9f14025af0065b30e47e23ebb3b491d39ae8ed17d33739e5ff3827ffb3634953": "35",
+"ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d": "5",
+"4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a": "4",
+"39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9": "60",
+"f9e05f164c5a0d5f568e20655d6a3460a1b89be8ae2d039432b7f591269c56d7": "ГОРОД",
+"9f105caf00cb3a6702aa88267e5efeac19d5ed77d966999d103ad3c02e09f622": "ХЛЕБ ДОРОГ",
+"f4f847839b6e46ff3047b6ca76225<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ШИФРОВАЛЬЩИК · 1941-1945</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --bg: #0a0a08;
+            --bg-soft: #141108;
+            --accent: #ffe033;
+            --accent2: #ff3a3a;
+            --muted: #888;
+            --green: #55dd55;
+            --head: 'Courier New', monospace;
+            --mono: 'Courier New', monospace;
+            --fs-xs: 10px;
+            --fs-sm: 12px;
+            --fs-base: 14px;
+            --fs-lg: 16px;
+            --fs-xl: 20px;
+            --fs-2xl: 28px;
+            --fs-hero: 42px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+        }
+        body {
+            background: var(--bg);
+            color: #fdfaf0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        /* Screen transitions */
+        .screen {
+            display: none;
+            width: 100%;
+            height: 100vh;
+            padding: 16px;
+            padding-bottom: 80px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .screen.active {
+            display: block;
+            opacity: 1;
+            transform: scale(1);
+            z-index: 10;
+        }
+        .screen.exiting {
+            opacity: 0;
+            transform: scale(1.05);
+            pointer-events: none;
+        }
+        
+        .btn {
+            background: rgba(255,224,51,.1);
+            border: 1px solid rgba(255,224,51,.3);
+            color: var(--accent);
+            padding: 12px 24px;
+            font-family: var(--head);
+            font-size: var(--fs-sm);
+            font-weight: 700;
+            border-radius: 4px;
+            cursor: pointer;
+            letter-spacing: .08em;
+            width: 100%;
+            margin: 8px 0;
+            transition: all .2s;
+        }
+        .btn:active { transform: scale(.98); }
+        .btn-accent { background: var(--accent); color: #0a0a08; }
+        .btn-danger { border-color: var(--accent2); color: var(--accent2); }
+        .btn-icon {
+            width: 48px;
+            height: 48px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        
+        /* Intro */
+        #s-intro {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            position: relative;
+            background: linear-gradient(180deg, #0a0a08 0%, #1a1508 100%);
+        }
+        .intro-stamp, .intro-date, .intro-title, .intro-ribbon, .intro-desc, .intro-quote, .intro-btn, .intro-how, .intro-memory {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all .6s ease;
+        }
+        .intro-show { opacity: 1; transform: translateY(0); }
+        #intro-stamp { font-size: 72px; margin-bottom: 16px; filter: drop-shadow(0 0 30px rgba(255,224,51,.4)); }
+        #intro-date { font-size: var(--fs-sm); color: var(--muted); letter-spacing: .15em; margin-bottom: 8px; }
+        #intro-title { font-family: var(--head); font-size: var(--fs-hero); color: var(--accent); letter-spacing: .06em; line-height: .9; margin-bottom: 16px; text-shadow: 0 0 40px rgba(255,224,51,.5); }
+        #intro-ribbon { width: 200px; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); margin: 20px auto; }
+        #intro-desc { font-size: var(--fs-base); color: #ccc; max-width: 320px; margin-bottom: 24px; line-height: 1.6; }
+        #intro-quote { font-size: var(--fs-sm); color: var(--muted); font-style: italic; margin-bottom: 32px; }
+        #intro-btn { width: 200px; }
+        #intro-how { font-size: var(--fs-xs); color: var(--muted); margin-top: 16px; cursor: pointer; text-decoration: underline; }
+        #intro-memory { font-size: var(--fs-xs); color: var(--muted); margin-top: 40px; letter-spacing: .1em; }
+        
+        /* Canvas backgrounds */
+        #fireworks-canvas, #petals-canvas, #particles-canvas, #map-canvas, #three-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+        #three-canvas { z-index: 1; }
+        
+        /* Chapters */
+        .chapter-card {
+            background: var(--bg-soft);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            transition: all .2s;
+        }
+        .chapter-card.locked { opacity: .5; }
+        .chapter-card.completed { border-color: var(--green); }
+        .ch-icon { font-size: 32px; }
+        .ch-inner { flex: 1; min-width: 0; }
+        .ch-num { font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em; }
+        .ch-title { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; margin: 4px 0; }
+        .ch-place { font-size: var(--fs-xs); color: var(--muted); }
+        .ch-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+        .ch-tag { font-size: 9px; background: rgba(255,255,255,.05); padding: 2px 6px; border-radius: 3px; }
+        .ch-right { text-align: right; }
+        .ch-badge { font-size: 20px; }
+        .ch-score { font-family: var(--head); font-size: var(--fs-sm); color: var(--accent); margin-top: 4px; }
+        
+        /* Cipher screen */
+        .cipher-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .cipher-chapter-label { font-size: var(--fs-xs); color: var(--muted); letter-spacing: .08em; }
+        .cipher-score-display { font-family: var(--head); font-size: var(--fs-sm); color: var(--accent); }
+        .cipher-type-label { font-size: var(--fs-xs); color: var(--accent); letter-spacing: .1em; margin-bottom: 8px; }
+        .cipher-task { font-size: var(--fs-base); color: #fdfaf0; margin-bottom: 16px; line-height: 1.5; }
+        .cipher-box {
+            background: rgba(255,224,51,.05);
+            border: 1px solid rgba(255,224,51,.2);
+            border-radius: 6px;
+            padding: 20px;
+            font-family: var(--mono);
+            font-size: var(--fs-2xl);
+            text-align: center;
+            letter-spacing: .15em;
+            margin-bottom: 16px;
+            position: relative;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .cipher-box::before {
+            content: attr(data-num);
+            position: absolute;
+            top: 6px;
+            left: 10px;
+            font-size: 10px;
+            color: var(--muted);
+            letter-spacing: .2em;
+        }
+        .cipher-input-wrap { 
+            margin-bottom: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .cipher-input {
+            flex: 1;
+            background: rgba(255,255,255,.05);
+            border: 1px solid rgba(255,255,255,.15);
+            border-radius: 6px;
+            padding: 14px;
+            font-size: var(--fs-lg);
+            color: #fdfaf0;
+            text-align: center;
+            letter-spacing: .1em;
+            font-family: var(--mono);
+        }
+        .cipher-input.correct { border-color: var(--green); background: rgba(85,221,85,.1); }
+        .cipher-input.wrong { border-color: var(--accent2); background: rgba(255,58,58,.1); animation: shake .4s; }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+        .cipher-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .cipher-actions .btn { flex: 1; }
+        .btn-check { background: rgba(255,224,51,.15); border-color: rgba(255,224,51,.4); }
+        .btn-hint { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.15); }
+        .cipher-hint-box {
+            background: rgba(255,224,51,.08);
+            border: 1px solid rgba(255,224,51,.2);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-size: var(--fs-sm);
+            color: var(--accent);
+            display: none;
+        }
+        .cipher-hint-box.show { display: block; }
+        .cipher-ref {
+            background: rgba(0,0,0,.3);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 16px;
+            font-size: var(--fs-xs);
+            color: var(--muted);
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
+        .cipher-progress { display: flex; gap: 6px; justify-content: center; margin: 16px 0; }
+        .cipher-prog-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
+        .cipher-prog-dot.done { background: var(--green); }
+        .cipher-prog-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+        .cipher-attempts-label { font-size: var(--fs-sm); text-align: center; margin: 12px 0; }
+        .cipher-timer { font-family: var(--head); font-size: var(--fs-xl); color: var(--muted); text-align: center; }
+        
+        /* Bottom nav */
+        #bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-soft);
+            border-top: 1px solid rgba(255,255,255,.08);
+            display: none;
+            justify-content: space-around;
+            padding: 8px 0;
+            z-index: 100;
+        }
+        .bn-tab {
+            flex: 1;
+            text-align: center;
+            padding: 8px 4px;
+            font-size: 10px;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all .2s;
+        }
+        .bn-tab.active { color: var(--accent); }
+        .bn-tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+        
+        /* Leaderboard */
+        .lb-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255,255,255,.04);
+        }
+        .lb-rank { font-size: 20px; min-width: 30px; text-align: center; }
+        .lb-rank.gold { color: #ffd700; }
+        .lb-rank.silver { color: #c0c0c0; }
+        .lb-rank.bronze { color: #cd7f32; }
+        .lb-name { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; }
+        .lb-score { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
+        
+        /* Success screen */
+        .succ-answer { font-family: var(--mono); font-size: var(--fs-2xl); color: var(--accent); letter-spacing: .15em; margin: 20px 0; text-align: center; }
+        .succ-pts { font-family: var(--head); font-size: var(--fs-hero); color: var(--green); text-align: center; }
+        .succ-time { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 8px; }
+        .succ-fact { background: rgba(255,255,255,.03); border-left: 3px solid var(--accent); padding: 12px; margin: 20px 0; font-size: var(--fs-sm); color: #ccc; line-height: 1.6; }
+        
+        /* Chapter end */
+        .chend-medal { font-size: 72px; text-align: center; margin: 20px 0; }
+        .chend-score { font-family: var(--head); font-size: var(--fs-2xl); color: var(--accent); text-align: center; }
+        .chend-total { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 4px; }
+        
+        /* Pause */
+        .pause-info { text-align: center; padding: 40px 20px; }
+        .pause-icon { font-size: 64px; margin-bottom: 16px; }
+        
+        /* Confetti */
+        .confetti-piece {
+            position: fixed;
+            top: -10px;
+            width: 10px;
+            height: 10px;
+            z-index: 9999;
+            animation: confetti-fall 2s linear forwards;
+        }
+        @keyframes confetti-fall { to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+        
+        /* Quiz */
+        .quiz-container { width: 100%; margin-bottom: 12px; }
+        .quiz-option {
+            width: 100%;
+            padding: 14px 16px;
+            margin-bottom: 8px;
+            background: rgba(255,255,255,.04);
+            border: 1.5px solid rgba(255,255,255,.1);
+            border-radius: 10px;
+            color: #fdfaf0;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all .15s ease;
+            user-select: none;
+        }
+        .quiz-letter {
+            flex-shrink: 0;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255,224,51,.08);
+            border: 1.5px solid rgba(255,224,51,.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--head);
+            font-size: 13px;
+            color: var(--accent);
+            transition: all .15s;
+        }
+        
+        /* Anagram */
+        .anagram-answer { display: flex; justify-content: center; gap: 6px; margin: 16px 0; }
+        .anagram-slot {
+            width: 40px;
+            height: 50px;
+            border: 2px solid rgba(255,224,51,.3);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--mono);
+            font-size: var(--fs-xl);
+            color: var(--accent);
+            cursor: pointer;
+            background: rgba(255,224,51,.05);
+        }
+        .anagram-slot.filled { background: rgba(255,224,51,.15); border-color: var(--accent); }
+        .anagram-pool { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 16px 0; }
+        .anagram-letter {
+            width: 40px;
+            height: 50px;
+            border: 2px solid rgba(255,255,255,.15);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--mono);
+            font-size: var(--fs-xl);
+            color: #fdfaf0;
+            cursor: pointer;
+            background: rgba(255,255,255,.05);
+        }
+        .anagram-letter.used { opacity: .3; pointer-events: none; }
+        .anagram-reset { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.15); color: #fdfaf0; padding: 8px 16px; border-radius: 4px; font-size: var(--fs-sm); cursor: pointer; }
+        
+        /* Map */
+        .map-container { width: 100%; max-width: 340px; margin: 0 auto; }
+        .map-container svg { width: 100%; height: auto; }
+        .map-city-dot { cursor: pointer; transition: all .2s; }
+        .map-city-dot circle { transition: all .2s; }
+        .map-city-dot:hover circle { fill: #fff; }
+        .map-city-label { font-size: 10px; fill: var(--muted); pointer-events: none; }
+        .map-hint-text { text-align: center; font-size: var(--fs-sm); color: var(--muted); margin-top: 12px; }
+        
+        /* Final */
+        .final-score { font-family: var(--head); font-size: var(--fs-hero); color: var(--accent); text-align: center; margin: 20px 0; }
+        .final-rank { font-size: var(--fs-xl); color: var(--green); text-align: center; margin-bottom: 24px; }
+        .final-stars { font-size: 48px; text-align: center; opacity: 0; transition: opacity .5s; }
+        .final-stars.show { opacity: 1; }
+        
+        /* Profile tab */
+        .profile-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+        .profile-stat-item { text-align: center; background: var(--bg-soft); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); }
+        .profile-stat-value { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
+        .profile-stat-label { font-size: 9px; color: var(--muted); letter-spacing: .06em; margin-top: 4px; }
+        
+        /* Splash */
+        #splash-screen { z-index: 10000; }
+        @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        
+        /* Content wrapper */
+        .content-wrapper { position: relative; z-index: 10; width: 100%; height: 100%; }
+        
+        /* Page transition overlay */
+        #page-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0a08;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #page-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="three-canvas"></canvas>
+    <canvas id="fireworks-canvas"></canvas>
+    <canvas id="petals-canvas"></canvas>
+    <canvas id="particles-canvas"></canvas>
+    <canvas id="map-canvas"></canvas>
+    
+    <!-- Page transition overlay -->
+    <div id="page-overlay"></div>
+    
+    <div class="content-wrapper">
+        <!-- INTRO -->
+        <div id="s-intro" class="screen active">
+            <div id="intro-stamp" class="intro-stamp">🔐</div>
+            <div id="intro-date" class="intro-date">1941 – 1945</div>
+            <div id="intro-title" class="intro-title">ШИФРО<br>ВАЛЬЩИК</div>
+            <div id="intro-ribbon" class="intro-ribbon"></div>
+            <div id="intro-desc" class="intro-desc">
+                Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.
+            </div>
+            <div id="intro-quote" class="intro-quote">«Никто не забыт, ничто не забыто»</div>
+            <button id="intro-btn" class="btn btn-accent intro-btn" onclick="showScreen('s-chapters'); renderChapters();">▶ НАЧАТЬ МИССИЮ</button>
+            <div id="intro-how" class="intro-how" onclick="showScreen('s-about-tab'); switchTab('about');">❓ КАК ИГРАТЬ</div>
+            <div id="intro-memory" class="intro-memory">Помним · Чтим · Гордимся</div>
+        </div>
+        
+        <!-- CHAPTERS -->
+        <div id="s-chapters" class="screen">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;">🗺 ЗАДАНИЯ</div>
+                <button id="btn-reset-header" class="btn" style="width:auto;padding:8px 12px;font-size:var(--fs-xs);" onclick="confirmReset()">🗑 СБРОС</button>
+            </div>
+            <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:12px;">
+                <div id="ch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .5s;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted);margin-bottom:16px;letter-spacing:.06em;">
+                <span id="stat-completed-label">0 / 6 глав</span>
+                <span id="stat-players-label">👥 — игроков</span>
+                <span id="stat-score">0 оч</span>
+            </div>
+            <div id="chapters-list"></div>
+            <button id="btn-to-final" class="btn btn-accent" style="display:none;margin-top:16px;" onclick="showFinal()">🏆 СМОТРЕТЬ ИТОГ</button>
+        </div>
+        
+        <!-- BRIEFING -->
+        <div id="s-briefing" class="screen">
+            <div style="text-align:center;margin-bottom:20px;">
+                <div id="brief-stamp" style="font-size:48px;margin-bottom:8px;"></div>
+                <div id="brief-num" style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-bottom:4px;"></div>
+                <div id="brief-title" style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em;"></div>
+                <div id="brief-place" style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;"></div>
+            </div>
+            <div id="brief-meta" style="background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;padding:12px;font-size:var(--fs-xs);color:var(--accent);line-height:1.8;margin-bottom:20px;"></div>
+            <div id="brief-text" style="font-size:var(--fs-base);color:#ccc;line-height:1.7;margin-bottom:20px;"></div>
+            <div id="brief-mission" style="background:rgba(85,221,85,.08);border-left:3px solid var(--green);padding:12px;font-size:var(--fs-sm);color:var(--green);margin-bottom:24px;"></div>
+            <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
+            <button class="btn" onclick="showScreen('s-chapters');renderChapters();">← НАЗАД</button>
+        </div>
+        
+        <!-- CIPHER -->
+        <div id="s-cipher" class="screen">
+            <div class="cipher-header">
+                <div id="cipher-chapter-label" class="cipher-chapter-label"></div>
+                <div id="cipher-score-display" class="cipher-score-display">0 оч</div>
+            </div>
+            <div id="cipher-progress" class="cipher-progress"></div>
+            <div id="cipher-type-label" class="cipher-type-label"></div>
+            <div id="cipher-task" class="cipher-task"></div>
+            <div id="cipher-box" class="cipher-box" data-num="001"></div>
+            <div id="quiz-container" class="quiz-container" style="display:none;"></div>
+            <div class="cipher-input-wrap" id="cipher-input-wrap">
+                <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" autocomplete="off" autocorrect="off" spellcheck="false">
+                <button id="btn-keyboard" class="btn btn-icon" onclick="toggleKeyboard()" title="Клавиатура">⌨️</button>
             </div>
             <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
             <div id="cipher-timer" class="cipher-timer">0с</div>
@@ -1144,26 +2091,22 @@ const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
 if (TAB_SCREENS.includes(id)) return;
 if (id === 's-chapters') { switchTab('chapters'); return; }
 
-// Page transition animation
 const overlay = document.getElementById('page-overlay');
 const currentScreen = document.querySelector('.screen.active');
 
-// Fade out current screen
 if (currentScreen) {
-  currentScreen.classList.add('exiting');
-  overlay.classList.add('active');
-  await new Promise(resolve => setTimeout(resolve, 300));
-  currentScreen.classList.remove('active', 'exiting');
+currentScreen.classList.add('exiting');
+overlay.classList.add('active');
+await new Promise(resolve => setTimeout(resolve, 300));
+currentScreen.classList.remove('active', 'exiting');
 }
 
-// Hide bottom nav for non-tab screens
 hideBottomNav();
 
-// Show new screen
 const el = document.getElementById(id);
 if (el) {
-  el.classList.add('active');
-  overlay.classList.remove('active');
+el.classList.add('active');
+overlay.classList.remove('active');
 }
 }
 
@@ -1182,31 +2125,65 @@ currentTab = tab;
 const overlay = document.getElementById('page-overlay');
 const currentScreen = document.querySelector('.screen.active');
 
-// Fade out
 if (currentScreen) {
-  currentScreen.classList.add('exiting');
-  overlay.classList.add('active');
+currentScreen.classList.add('exiting');
+overlay.classList.add('active');
 }
 
 setTimeout(() => {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'exiting'));
-  document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
-  showBottomNav();
-  
-  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
-  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
-  const screenEl = document.getElementById(screenMap[tab]);
-  const tabEl = document.getElementById(tabMap[tab]);
-  if (screenEl) screenEl.classList.add('active');
-  if (tabEl) tabEl.classList.add('active');
-  
-  overlay.classList.remove('active');
-  
-  if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
-  if (tab === 'leaderboard') renderLeaderboardTab();
-  if (tab === 'profile') renderProfileTab();
-  if (tab === 'about') renderAboutTab();
+document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'exiting'));
+document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
+showBottomNav();
+
+const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
+const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
+const screenEl = document.getElementById(screenMap[tab]);
+const tabEl = document.getElementById(tabMap[tab]);
+if (screenEl) screenEl.classList.add('active');
+if (tabEl) tabEl.classList.add('active');
+
+overlay.classList.remove('active');
+
+if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
+if (tab === 'leaderboard') renderLeaderboardTab();
+if (tab === 'profile') renderProfileTab();
+if (tab === 'about') renderAboutTab();
 }, 300);
+}
+
+// ═══════════════════════════════════════════════════════
+//  КЛАВИАТУРА - ПОЯВЛЕНИЕ/ИСЧЕЗНОВЕНИЕ
+// ═══════════════════════════════════════════════════════
+function toggleKeyboard() {
+const inp = document.getElementById('cipher-input');
+const btn = document.getElementById('btn-keyboard');
+if (!inp) return;
+
+if (inp.hasAttribute('readonly')) {
+// Показать клавиатуру - убрать readonly и сфокусировать
+inp.removeAttribute('readonly');
+inp.focus();
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.25)'; 
+btn.style.borderColor = 'rgba(255,224,51,.5)';
+btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+}
+if (tg && tg.HapticFeedback) {
+tg.HapticFeedback.impactOccurred('light');
+}
+} else {
+// Скрыть клавиатуру - добавить readonly и убрать фокус
+inp.setAttribute('readonly', true);
+inp.blur();
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.1)'; 
+btn.style.borderColor = 'rgba(255,224,51,.2)';
+btn.style.boxShadow = 'none';
+}
+if (tg && tg.HapticFeedback) {
+tg.HapticFeedback.impactOccurred('light');
+}
+}
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1378,7 +2355,7 @@ startTimer();
 const inpReset = document.getElementById('cipher-input');
 if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
 const kbBtn = document.getElementById('btn-keyboard');
-if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; }
+if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; kbBtn.style.boxShadow = 'none'; }
 state.hintsUsed = false;
 const hb = document.getElementById('cipher-hint-box');
 const ht = document.getElementById('cipher-hint-text');
@@ -2878,4 +3855,3 @@ fetchAndApplyState();
     </script>
 </body>
 </html>
-
