@@ -24,19 +24,15 @@
             --fs-2xl: 28px;
             --fs-hero: 42px;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body {
             width: 100%;
             height: 100%;
             overflow: hidden;
-            position: fixed;
-        }
-        body {
             background: var(--bg);
             color: #fdfaf0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-        
         .screen {
             display: none;
             width: 100%;
@@ -44,26 +40,8 @@
             padding: 16px;
             padding-bottom: 80px;
             overflow-y: auto;
-            overflow-x: hidden;
-            position: absolute;
-            top: 0;
-            left: 0;
-            opacity: 0;
-            transform: scale(0.95);
-            transition: opacity 0.3s ease, transform 0.3s ease;
         }
-        .screen.active {
-            display: block;
-            opacity: 1;
-            transform: scale(1);
-            z-index: 10;
-        }
-        .screen.exiting {
-            opacity: 0;
-            transform: scale(1.05);
-            pointer-events: none;
-        }
-        
+        .screen.active { display: block; }
         .btn {
             background: rgba(255,224,51,.1);
             border: 1px solid rgba(255,224,51,.3);
@@ -74,206 +52,32 @@
             font-weight: 700;
             border-radius: 4px;
             cursor: pointer;
-            letter-spacing: .08em;
             width: 100%;
             margin: 8px 0;
-            transition: all .2s;
         }
-        .btn:active { transform: scale(.98); }
         .btn-accent { background: var(--accent); color: #0a0a08; }
-        .btn-danger { border-color: var(--accent2); color: var(--accent2); }
-        .btn-icon {
-            width: 48px;
-            height: 48px;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            flex-shrink: 0;
-        }
-        .btn-small {
-            padding: 8px 16px;
-            font-size: var(--fs-xs);
-            width: auto;
-        }
-        
         #s-intro {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            position: relative;
-            background: linear-gradient(180deg, #0a0a08 0%, #1a1508 100%);
+            height: 100vh;
         }
-        .intro-stamp, .intro-date, .intro-title, .intro-ribbon, .intro-desc, .intro-quote, .intro-btn, .intro-how, .intro-memory {
-            opacity: 0;
-            transform: translateY(20px);
-            transition: all .6s ease;
-        }
-        .intro-show { opacity: 1; transform: translateY(0); }
-        #intro-stamp { font-size: 72px; margin-bottom: 16px; filter: drop-shadow(0 0 30px rgba(255,224,51,.4)); }
-        #intro-date { font-size: var(--fs-sm); color: var(--muted); letter-spacing: .15em; margin-bottom: 8px; }
-        #intro-title { font-family: var(--head); font-size: var(--fs-hero); color: var(--accent); letter-spacing: .06em; line-height: .9; margin-bottom: 16px; text-shadow: 0 0 40px rgba(255,224,51,.5); }
-        #intro-ribbon { width: 200px; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); margin: 20px auto; }
-        #intro-desc { font-size: var(--fs-base); color: #ccc; max-width: 320px; margin-bottom: 24px; line-height: 1.6; }
-        #intro-quote { font-size: var(--fs-sm); color: var(--muted); font-style: italic; margin-bottom: 32px; }
-        #intro-btn { width: 200px; }
-        #intro-how { font-size: var(--fs-xs); color: var(--muted); margin-top: 16px; cursor: pointer; text-decoration: underline; }
-        #intro-memory { font-size: var(--fs-xs); color: var(--muted); margin-top: 40px; letter-spacing: .1em; }
-        
-        #fireworks-canvas, #petals-canvas, #particles-canvas, #map-canvas, #three-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 0;
-        }
-        #three-canvas { z-index: 1; }
-        
-        .chapter-card {
-            background: var(--bg-soft);
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 8px;
-            padding: 16px;
-            margin: 12px 0;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            transition: all .2s;
-        }
-        .chapter-card.locked { opacity: .5; }
-        .chapter-card.completed { border-color: var(--green); }
-        .ch-icon { font-size: 32px; }
-        .ch-inner { flex: 1; min-width: 0; }
-        .ch-num { font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em; }
-        .ch-title { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; margin: 4px 0; }
-        .ch-place { font-size: var(--fs-xs); color: var(--muted); }
-        .ch-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-        .ch-tag { font-size: 9px; background: rgba(255,255,255,.05); padding: 2px 6px; border-radius: 3px; }
-        .ch-right { text-align: right; }
-        .ch-badge { font-size: 20px; }
-        .ch-score { font-family: var(--head); font-size: var(--fs-sm); color: var(--accent); margin-top: 4px; }
-        
-        .cipher-header { 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        .cipher-info-left {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .cipher-chapter-label { font-size: var(--fs-xs); color: var(--muted); letter-spacing: .08em; }
-        .cipher-admin-label { 
-            font-size: var(--fs-xs); 
-            color: var(--accent); 
-            letter-spacing: .08em;
-            font-weight: 700;
-        }
-        .cipher-score-display { font-family: var(--head); font-size: var(--fs-sm); color: var(--accent); }
-        .cipher-type-label { font-size: var(--fs-xs); color: var(--accent); letter-spacing: .1em; margin-bottom: 8px; }
-        .cipher-task { font-size: var(--fs-base); color: #fdfaf0; margin-bottom: 16px; line-height: 1.5; }
-        .cipher-box {
-            background: rgba(255,224,51,.05);
-            border: 1px solid rgba(255,224,51,.2);
-            border-radius: 6px;
-            padding: 20px;
-            font-family: var(--mono);
-            font-size: var(--fs-2xl);
-            text-align: center;
-            letter-spacing: .15em;
-            margin-bottom: 16px;
-            position: relative;
-            min-height: 80px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            word-break: break-word;
-        }
-        .cipher-box::before {
-            content: attr(data-num);
-            position: absolute;
-            top: 6px;
-            left: 10px;
-            font-size: 10px;
-            color: var(--muted);
-            letter-spacing: .2em;
-        }
-        .cipher-input-wrap { 
-            margin-bottom: 12px;
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
+        #intro-stamp { font-size: 72px; margin-bottom: 16px; }
+        #intro-title { font-family: var(--head); font-size: 42px; color: var(--accent); margin-bottom: 16px; }
+        #intro-desc { font-size: 14px; color: #ccc; max-width: 320px; margin-bottom: 24px; }
         .cipher-input {
-            flex: 1;
+            width: 100%;
             background: rgba(255,255,255,.05);
             border: 1px solid rgba(255,255,255,.15);
             border-radius: 6px;
             padding: 14px;
-            font-size: var(--fs-lg);
+            font-size: 16px;
             color: #fdfaf0;
             text-align: center;
-            letter-spacing: .1em;
-            font-family: var(--mono);
+            margin: 12px 0;
         }
-        .cipher-input.correct { border-color: var(--green); background: rgba(85,221,85,.1); }
-        .cipher-input.wrong { border-color: var(--accent2); background: rgba(255,58,58,.1); animation: shake .4s; }
-        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
-        .cipher-actions { display: flex; gap: 8px; margin-top: 12px; }
-        .cipher-actions .btn { flex: 1; }
-        .btn-check { background: rgba(255,224,51,.15); border-color: rgba(255,224,51,.4); }
-        .btn-hint { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.15); }
-        .cipher-hint-box {
-            background: rgba(255,224,51,.08);
-            border: 1px solid rgba(255,224,51,.2);
-            border-radius: 6px;
-            padding: 12px;
-            margin-top: 12px;
-            font-size: var(--fs-sm);
-            color: var(--accent);
-            display: none;
-        }
-        .cipher-hint-box.show { display: block; }
-        .cipher-ref {
-            background: rgba(0,0,0,.3);
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 6px;
-            padding: 12px;
-            margin-top: 16px;
-            font-size: var(--fs-sm);
-            color: var(--muted);
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
-        .morse-ref {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 4px;
-            font-size: var(--fs-sm);
-        }
-        .morse-ref div {
-            background: rgba(255,224,51,.05);
-            padding: 4px;
-            border-radius: 3px;
-            text-align: center;
-        }
-        .cipher-progress { display: flex; gap: 6px; justify-content: center; margin: 16px 0; }
-        .cipher-prog-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
-        .cipher-prog-dot.done { background: var(--green); }
-        .cipher-prog-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-        .cipher-attempts-label { font-size: var(--fs-sm); text-align: center; margin: 12px 0; }
-        .cipher-timer { font-family: var(--head); font-size: var(--fs-xl); color: var(--muted); text-align: center; }
-        
         #bottom-nav {
             position: fixed;
             bottom: 0;
@@ -284,7 +88,6 @@
             display: none;
             justify-content: space-around;
             padding: 8px 0;
-            z-index: 100;
         }
         .bn-tab {
             flex: 1;
@@ -293,47 +96,59 @@
             font-size: 10px;
             color: var(--muted);
             cursor: pointer;
-            transition: all .2s;
         }
         .bn-tab.active { color: var(--accent); }
-        .bn-tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
-        
-        .lb-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255,255,255,.04);
-        }
-        .lb-rank { font-size: 20px; min-width: 30px; text-align: center; }
-        .lb-rank.gold { color: #ffd700; }
-        .lb-rank.silver { color: #c0c0c0; }
-        .lb-rank.bronze { color: #cd7f32; }
-        .lb-name { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; }
-        .lb-score { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
-        
-        .succ-answer { font-family: var(--mono); font-size: var(--fs-2xl); color: var(--accent); letter-spacing: .15em; margin: 20px 0; text-align: center; }
-        .succ-pts { font-family: var(--head); font-size: var(--fs-hero); color: var(--green); text-align: center; }
-        .succ-time { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 8px; }
-        .succ-fact { background: rgba(255,255,255,.03); border-left: 3px solid var(--accent); padding: 12px; margin: 20px 0; font-size: var(--fs-sm); color: #ccc; line-height: 1.6; }
-        
-        .chend-medal { font-size: 72px; text-align: center; margin: 20px 0; }
-        .chend-score { font-family: var(--head); font-size: var(--fs-2xl); color: var(--accent); text-align: center; }
-        .chend-total { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 4px; }
-        
-        .pause-info { text-align: center; padding: 40px 20px; }
-        .pause-icon { font-size: 64px; margin-bottom: 16px; }
-        
-        .confetti-piece {
+        #splash-screen {
             position: fixed;
-            top: -10px;
-            width: 10px;
-            height: 10px;
-            z-index: 9999;
-            animation: confetti-fall 2s linear forwards;
+            inset: 0;
+            z-index: 9000;
+            background: #0a0a08;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
-        @keyframes confetti-fall { to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
-        
+        .chapter-card {
+            background: var(--bg-soft);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .chapter-card.completed { border-color: var(--green); }
+        .cipher-header { display: flex; justify-content: space-between; margin-bottom: 16px; }
+        .cipher-progress { display: flex; gap: 6px; justify-content: center; margin: 16px 0; }
+        .cipher-prog-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
+        .cipher-prog-dot.done { background: var(--green); }
+        .cipher-prog-dot.active { background: var(--accent); }
+        #cipher-box {
+            background: rgba(255,224,51,.05);
+            border: 1px solid rgba(255,224,51,.2);
+            border-radius: 6px;
+            padding: 20px;
+            font-family: var(--mono);
+            font-size: 28px;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .cipher-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .cipher-actions .btn { flex: 1; }
+        #cipher-attempts-label { font-size: 12px; text-align: center; margin: 12px 0; }
+        #cipher-timer { font-family: var(--head); font-size: 20px; color: var(--muted); text-align: center; }
+        #three-canvas, #fireworks-canvas, #petals-canvas, #particles-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+        #three-canvas { z-index: 1; }
+        .content-wrapper { position: relative; z-index: 10; width: 100%; height: 100%; }
         .quiz-container { width: 100%; margin-bottom: 12px; }
         .quiz-option {
             width: 100%;
@@ -348,8 +163,6 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            transition: all .15s ease;
-            user-select: none;
         }
         .quiz-letter {
             flex-shrink: 0;
@@ -364,9 +177,7 @@
             font-family: var(--head);
             font-size: 13px;
             color: var(--accent);
-            transition: all .15s;
         }
-        
         .anagram-answer { display: flex; justify-content: center; gap: 6px; margin: 16px 0; }
         .anagram-slot {
             width: 40px;
@@ -399,54 +210,95 @@
             background: rgba(255,255,255,.05);
         }
         .anagram-letter.used { opacity: .3; pointer-events: none; }
-        .anagram-reset { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.15); color: #fdfaf0; padding: 8px 16px; border-radius: 4px; font-size: var(--fs-sm); cursor: pointer; }
-        
         .map-container { width: 100%; max-width: 340px; margin: 0 auto; }
         .map-container svg { width: 100%; height: auto; }
-        .map-city-dot { cursor: pointer; transition: all .2s; }
+        .map-city-dot { cursor: pointer; }
         .map-city-dot circle { transition: all .2s; }
-        .map-city-dot:hover circle { fill: #fff; }
         .map-city-label { font-size: 10px; fill: var(--muted); pointer-events: none; }
         .map-hint-text { text-align: center; font-size: var(--fs-sm); color: var(--muted); margin-top: 12px; }
-        
+        .cipher-ref {
+            background: rgba(0,0,0,.3);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 16px;
+            font-size: var(--fs-sm);
+            color: var(--muted);
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
+        .morse-ref {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 4px;
+            font-size: var(--fs-sm);
+        }
+        .morse-ref div {
+            background: rgba(255,224,51,.05);
+            padding: 4px;
+            border-radius: 3px;
+            text-align: center;
+        }
+        .cipher-hint-box {
+            background: rgba(255,224,51,.08);
+            border: 1px solid rgba(255,224,51,.2);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-size: var(--fs-sm);
+            color: var(--accent);
+            display: none;
+        }
+        .cipher-hint-box.show { display: block; }
+        .succ-answer { font-family: var(--mono); font-size: var(--fs-2xl); color: var(--accent); letter-spacing: .15em; margin: 20px 0; text-align: center; }
+        .succ-pts { font-family: var(--head); font-size: var(--fs-hero); color: var(--green); text-align: center; }
+        .succ-time { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 8px; }
+        .succ-fact { background: rgba(255,255,255,.03); border-left: 3px solid var(--accent); padding: 12px; margin: 20px 0; font-size: var(--fs-sm); color: #ccc; line-height: 1.6; }
+        .chend-medal { font-size: 72px; text-align: center; margin: 20px 0; }
+        .chend-score { font-family: var(--head); font-size: var(--fs-2xl); color: var(--accent); text-align: center; }
         .final-score { font-family: var(--head); font-size: var(--fs-hero); color: var(--accent); text-align: center; margin: 20px 0; }
         .final-rank { font-size: var(--fs-xl); color: var(--green); text-align: center; margin-bottom: 24px; }
         .final-stars { font-size: 48px; text-align: center; opacity: 0; transition: opacity .5s; }
         .final-stars.show { opacity: 1; }
-        
-        .profile-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
-        .profile-stat-item { text-align: center; background: var(--bg-soft); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); }
-        .profile-stat-value { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
-        .profile-stat-label { font-size: 9px; color: var(--muted); letter-spacing: .06em; margin-top: 4px; }
-        
-        #splash-screen { z-index: 10000; }
-        @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-        
-        .content-wrapper { position: relative; z-index: 10; width: 100%; height: 100%; }
-        
-        #page-overlay {
+        .lb-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255,255,255,.04);
+        }
+        .lb-rank { font-size: 20px; min-width: 30px; text-align: center; }
+        .lb-rank.gold { color: #ffd700; }
+        .lb-rank.silver { color: #c0c0c0; }
+        .lb-rank.bronze { color: #cd7f32; }
+        .lb-name { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; }
+        .lb-score { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
+        .nav-buttons { display: flex; gap: 8px; margin-top: 16px; }
+        .nav-buttons .btn { flex: 1; }
+        #game-toast {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #0a0a08;
-            z-index: 9999;
-            opacity: 0;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20,17,8,.95);
+            border: 1px solid rgba(255,224,51,.3);
+            color: #ffe033;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-family: var(--head);
+            font-size: 12px;
+            z-index: 999;
             pointer-events: none;
-            transition: opacity 0.3s ease;
+            opacity: 0;
+            transition: opacity .3s;
         }
-        #page-overlay.active {
-            opacity: 1;
-            pointer-events: all;
-        }
-
         #ach-toast {
             position: fixed;
-            top: 20px;
+            top: 80px;
             right: 20px;
             z-index: 9997;
-            background: linear-gradient(135deg, #1a1508, #2a2010);
+            background: linear-gradient(135deg,#1a1508,#2a2010);
             border: 1px solid rgba(255,224,51,.4);
             border-radius: 12px;
             padding: 12px 18px;
@@ -461,34 +313,18 @@
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
-
-        #save-toast {
+        @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .pause-info { text-align: center; padding: 40px 20px; }
+        .pause-icon { font-size: 64px; margin-bottom: 16px; }
+        .confetti-piece {
             position: fixed;
-            bottom: 100px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(20,17,8,.85);
-            border: 1px solid rgba(255,224,51,.3);
-            color: #ffe033;
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-family: var(--head);
-            font-size: 12px;
-            letter-spacing: .06em;
-            z-index: 9996;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity .3s ease;
+            top: -10px;
+            width: 10px;
+            height: 10px;
+            z-index: 9999;
+            animation: confetti-fall 2s linear forwards;
         }
-
-        .nav-buttons {
-            display: flex;
-            gap: 8px;
-            margin-top: 16px;
-        }
-        .nav-buttons .btn {
-            flex: 1;
-        }
+        @keyframes confetti-fall { to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
     </style>
 </head>
 <body>
@@ -496,89 +332,76 @@
     <canvas id="fireworks-canvas"></canvas>
     <canvas id="petals-canvas"></canvas>
     <canvas id="particles-canvas"></canvas>
-    <canvas id="map-canvas"></canvas>
     
-    <div id="page-overlay"></div>
-    
+    <div id="splash-screen">
+        <div style="font-size:72px;margin-bottom:16px;animation:popIn .6s ease both;">🔐</div>
+        <div style="font-family:var(--head);font-size:var(--fs-hero);color:var(--accent);letter-spacing:.06em;text-align:center;line-height:.9;">ШИФРО<br>ВАЛЬЩИК</div>
+        <div style="margin-top:24px;width:200px;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden;">
+            <div id="splash-bar" style="height:100%;width:0%;background:var(--accent);border-radius:2px;transition:width .05s linear;box-shadow:0 0 8px var(--accent);"></div>
+        </div>
+        <div style="margin-top:10px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;">ЗАГРУЗКА...</div>
+    </div>
+
     <div class="content-wrapper">
-        <!-- INTRO -->
         <div id="s-intro" class="screen active">
-            <div id="intro-stamp" class="intro-stamp">🔐</div>
-            <div id="intro-date" class="intro-date">1941 – 1945</div>
-            <div id="intro-title" class="intro-title">ШИФРО<br>ВАЛЬЩИК</div>
-            <div id="intro-ribbon" class="intro-ribbon"></div>
-            <div id="intro-desc" class="intro-desc">
-                Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.
-            </div>
-            <div id="intro-quote" class="intro-quote">«Никто не забыт, ничто не забыто»</div>
-            <button id="intro-btn" class="btn btn-accent intro-btn" onclick="showScreen('s-chapters'); renderChapters();">▶ НАЧАТЬ МИССИЮ</button>
-            <div id="intro-how" class="intro-how" onclick="showScreen('s-about-tab'); switchTab('about');">❓ КАК ИГРАТЬ</div>
-            <div id="intro-memory" class="intro-memory">Помним · Чтим · Гордимся</div>
+            <div id="intro-stamp">🔐</div>
+            <div id="intro-title">ШИФРОВАЛЬЩИК</div>
+            <div id="intro-desc">Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.</div>
+            <button class="btn btn-accent" onclick="showScreen('s-chapters'); renderChapters();" style="width:200px;">▶ НАЧАТЬ МИССИЮ</button>
         </div>
         
-        <!-- CHAPTERS -->
         <div id="s-chapters" class="screen">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;">🗺 ЗАДАНИЯ</div>
-                <button id="btn-reset-header" class="btn btn-small" onclick="confirmReset()">🗑 СБРОС</button>
-            </div>
+            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:16px;">🗺 ЗАДАНИЯ</div>
             <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:12px;">
-                <div id="ch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .5s;"></div>
+                <div id="ch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;"></div>
             </div>
-            <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted);margin-bottom:16px;letter-spacing:.06em;">
+            <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted);margin-bottom:16px;">
                 <span id="stat-completed-label">0 / 6 глав</span>
-                <span id="stat-players-label">👥 — игроков</span>
                 <span id="stat-score">0 оч</span>
             </div>
             <div id="chapters-list"></div>
-            <button id="btn-to-final" class="btn btn-accent" style="display:none;margin-top:16px;" onclick="showFinal()">🏆 СМОТРЕТЬ ИТОГ</button>
             <div class="nav-buttons">
                 <button class="btn" onclick="switchTab('profile')">👤 ПРОФИЛЬ</button>
                 <button class="btn" onclick="switchTab('about')">ℹ️ О ИГРЕ</button>
             </div>
         </div>
         
-        <!-- BRIEFING -->
         <div id="s-briefing" class="screen">
             <div style="text-align:center;margin-bottom:20px;">
                 <div id="brief-stamp" style="font-size:48px;margin-bottom:8px;"></div>
-                <div id="brief-num" style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-bottom:4px;"></div>
-                <div id="brief-title" style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em;"></div>
-                <div id="brief-place" style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;"></div>
+                <div id="brief-num" style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:4px;"></div>
+                <div id="brief-title" style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);"></div>
+                <div id="brief-place" style="font-size:var(--fs-sm);color:var(--muted);"></div>
             </div>
             <div id="brief-meta" style="background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;padding:12px;font-size:var(--fs-xs);color:var(--accent);line-height:1.8;margin-bottom:20px;"></div>
             <div id="brief-text" style="font-size:var(--fs-base);color:#ccc;line-height:1.7;margin-bottom:20px;"></div>
             <div id="brief-mission" style="background:rgba(85,221,85,.08);border-left:3px solid var(--green);padding:12px;font-size:var(--fs-sm);color:var(--green);margin-bottom:24px;"></div>
-            <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
+            <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ</button>
             <div class="nav-buttons">
                 <button class="btn" onclick="showScreen('s-chapters');renderChapters();">← НАЗАД</button>
                 <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
             </div>
         </div>
         
-        <!-- CIPHER -->
         <div id="s-cipher" class="screen">
             <div class="cipher-header">
-                <div class="cipher-info-left">
-                    <div id="cipher-chapter-label" class="cipher-chapter-label"></div>
-                    <div id="cipher-admin-label" class="cipher-admin-label" style="display:none;">👑 АДМИН</div>
-                </div>
-                <div id="cipher-score-display" class="cipher-score-display">0 оч</div>
+                <div id="cipher-chapter-label" style="font-size:var(--fs-xs);color:var(--muted);"></div>
+                <div id="cipher-score-display" style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);">0 оч</div>
             </div>
             <div id="cipher-progress" class="cipher-progress"></div>
-            <div id="cipher-type-label" class="cipher-type-label"></div>
-            <div id="cipher-task" class="cipher-task"></div>
-            <div id="cipher-box" class="cipher-box" data-num="001"></div>
+            <div id="cipher-type-label" style="font-size:var(--fs-xs);color:var(--accent);margin-bottom:8px;"></div>
+            <div id="cipher-task" style="font-size:var(--fs-base);color:#fdfaf0;margin-bottom:16px;"></div>
+            <div id="cipher-box"></div>
             <div id="quiz-container" class="quiz-container" style="display:none;"></div>
-            <div class="cipher-input-wrap" id="cipher-input-wrap">
-                <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" autocomplete="off" autocorrect="off" spellcheck="false">
-                <button id="btn-keyboard" class="btn btn-icon" onclick="toggleKeyboard()" title="Клавиатура">⌨️</button>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+                <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" style="flex:1;">
+                <button id="btn-keyboard" class="btn" style="width:48px;" onclick="toggleKeyboard()">⌨️</button>
             </div>
-            <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
-            <div id="cipher-timer" class="cipher-timer">0с</div>
+            <div id="cipher-attempts-label"></div>
+            <div id="cipher-timer">0с</div>
             <div class="cipher-actions">
-                <button id="btn-hint" class="btn btn-hint" onclick="showHint()">💡 ПОДСКАЗКА</button>
-                <button id="btn-check" class="btn btn-check" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
+                <button id="btn-hint" class="btn" onclick="showHint()">💡 ПОДСКАЗКА</button>
+                <button id="btn-check" class="btn btn-accent" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
             </div>
             <div id="cipher-hint-box" class="cipher-hint-box">
                 <div id="cipher-hint-text"></div>
@@ -590,11 +413,10 @@
             </div>
         </div>
         
-        <!-- SUCCESS -->
         <div id="s-success" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div style="font-size:64px;margin-bottom:16px;">✅</div>
-                <div id="succ-cipher-name" style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;"></div>
+                <div id="succ-cipher-name" style="font-size:var(--fs-xs);color:var(--muted);"></div>
                 <div id="succ-answer" class="succ-answer"></div>
                 <div id="succ-pts" class="succ-pts"></div>
                 <div id="succ-time" class="succ-time"></div>
@@ -608,14 +430,13 @@
             </div>
         </div>
         
-        <!-- CHAPTER END -->
         <div id="s-chapter-end" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div id="chend-medal" class="chend-medal"></div>
                 <div id="chend-chapter-name" style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:8px;"></div>
                 <div id="chend-score" class="chend-score"></div>
-                <div id="chend-total" class="chend-total"></div>
-                <div id="chend-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;"></div>
+                <div id="chend-total" style="font-size:var(--fs-sm);color:var(--muted);"></div>
+                <div id="chend-pct" style="font-size:var(--fs-sm);color:var(--muted);"></div>
             </div>
             <button id="chend-next-btn" class="btn btn-accent"></button>
             <div class="nav-buttons">
@@ -624,7 +445,6 @@
             </div>
         </div>
         
-        <!-- CHAPTER FAIL -->
         <div id="s-chapter-fail" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div style="font-size:64px;margin-bottom:16px;">💔</div>
@@ -640,7 +460,6 @@
             </div>
         </div>
         
-        <!-- PAUSE -->
         <div id="s-pause" class="screen">
             <div class="pause-info">
                 <div class="pause-icon">⏸</div>
@@ -654,11 +473,10 @@
             </div>
         </div>
         
-        <!-- FINAL -->
         <div id="s-final" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div id="final-stars" class="final-stars">★★★★★</div>
-                <div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin:20px 0;">МИССИЯ ВЫПОЛНЕНА</div>
+                <div style="font-size:var(--fs-xs);color:var(--muted);margin:20px 0;">МИССИЯ ВЫПОЛНЕНА</div>
                 <div id="final-score-val" class="final-score"></div>
                 <div id="final-rank" class="final-rank"></div>
                 <div id="final-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:24px;"></div>
@@ -672,9 +490,8 @@
             </div>
         </div>
         
-        <!-- LEADERBOARD TAB -->
         <div id="s-leaderboard-tab" class="screen">
-            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
+            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
             <div id="lb-list-tab"></div>
             <div class="nav-buttons">
                 <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
@@ -682,7 +499,6 @@
             </div>
         </div>
         
-        <!-- PROFILE TAB -->
         <div id="s-profile-tab" class="screen">
             <div id="profile-tab-content"></div>
             <div class="nav-buttons">
@@ -691,7 +507,6 @@
             </div>
         </div>
         
-        <!-- ABOUT TAB -->
         <div id="s-about-tab" class="screen">
             <div id="about-tab-content"></div>
             <div class="nav-buttons">
@@ -701,316 +516,285 @@
         </div>
     </div>
     
-    <!-- BOTTOM NAV -->
     <div id="bottom-nav">
         <div class="bn-tab active" id="bn-chapters" onclick="switchTab('chapters')">
-            <span class="bn-tab-icon">🗺</span>
-            ЗАДАНИЯ
+            <span>🗺</span><br>ЗАДАНИЯ
         </div>
         <div class="bn-tab" id="bn-leaderboard" onclick="switchTab('leaderboard')">
-            <span class="bn-tab-icon">🏆</span>
-            РЕЙТИНГ
+            <span>🏆</span><br>РЕЙТИНГ
         </div>
         <div class="bn-tab" id="bn-profile" onclick="switchTab('profile')">
-            <span class="bn-tab-icon">👤</span>
-            ПРОФИЛЬ
+            <span>👤</span><br>ПРОФИЛЬ
         </div>
         <div class="bn-tab" id="bn-about" onclick="switchTab('about')">
-            <span class="bn-tab-icon">ℹ️</span>
-            О ИГРЕ
+            <span>ℹ️</span><br>О ИГРЕ
         </div>
     </div>
 
     <script>
 // ═══════════════════════════════════════════════════════
-//  ДАННЫЕ ИГРЫ — 6 ГЛАВ, 36 ЗАДАНИЙ
+//  ДАННЫЕ ИГРЫ — 6 ГЛАВ
 // ═══════════════════════════════════════════════════════
 const CHAPTERS = [
 {
 id:1, title: "ХОЙНИКИ: ОГНЕННОЕ ЛЕТО", subtitle: "Глава I",
-place: "ХОЙНИКИ · ГОМЕЛЬСКАЯ ОБЛ. · 1941", stamp: "🌿",
-meta: "Дата: 28.08.1941\nМесто: г. Хойники, Полесье\nСтатус: ОККУПАЦИЯ",
-briefing: `Август 1941. Хойники — небольшой город на юге Гомельской области, в сердце Полесья. Немецкие войска заняли город. Местные жители уходят в леса — начинается партизанское движение. Первый связной отряда передаёт координаты явки. Ты — его преемник. Расшифруй донесения.`,
-mission: "Выполни 6 разведывательных заданий по Хойникскому региону",
+place: "ХОЙНИКИ · 1941", stamp: "🌿",
 ciphers:[
-{ type: "quiz", typeLabel: "ИСТОРИЯ КРАЯ",
-task: "Хойники — районный центр одной из областей Беларуси. Определи по карте: в какой области находится Хойникский район?",
-options:["Брестская область", "Гомельская область", "Витебская область", "Могилёвская область"],
+{ type: "quiz", typeLabel: "ИСТОРИЯ",
+task: "В какой области находится Хойникский район?",
+options:["Брестская", "Гомельская", "Витебская", "Могилёвская"],
 correctIndex:1,
-encrypted: "Гомельская область",
 answer: "ГОМЕЛЬСКАЯ",
-hint: "Полесье — исторический регион на юге Беларуси, граничит с Украиной.",
-fact: "Хойникский район расположен в Гомельской области в зоне Полесья. После аварии на ЧАЭС в 1986 году часть района вошла в зону отчуждения.", points:100 },
+hint: "Полесье — регион на юге Беларуси",
+fact: "Хойники в Гомельской области", points:100 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Связной передал зашифрованный отчёт из Хойник. Сдвиг 3 позиции. Расшифруй трёхбуквенное название реки вдоль которой движется отряд:",
+task: "Сдвиг 3 позиции. Расшифруй название реки:",
 encrypted: "ФСЙ",
 answer: "СОЖ",
-hint: "Вычти 3: Ф(22)-3=19=С, С(19)-3=16=О, Й(11)-3=8=Ж. ФСЙ → СОЖ!",
-fact: "Река Сож протекает через Гомельскую область. Партизанские отряды Хойникского района часто использовали берега Сожа для переправ.", points:110 },
+hint: "Вычти 3 из каждой буквы",
+fact: "Река Сож", points:110 },
 { type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
-task: "Перехвачено донесение о численности немецкого гарнизона в Хойниках. Каждое число — буква алфавита (А=1). Расшифруй ключевое слово:",
+task: "Каждое число — буква (А=1). Расшифруй:",
 encrypted: "17-1-18-20-10-9-1-15",
 answer: "ПАРТИЗАН",
-hint: "П=17, А=1, Р=18, Т=20, И=10, З=9, А=1, Н=15. Восемь букв.",
-fact: "Партизанское движение в Хойникском районе началось с первых дней оккупации. К 1943 году в районе действовало несколько крупных отрядов.", points:120 },
-{ type: "anagram", typeLabel: "АНАГРАММА",
-task: "Переставь буквы — получишь название исторического региона, где расположены Хойники. Именно здесь плотные леса и болота стали союзниками партизан:",
-encrypted: "ЬЕЛЕСОП",
-answer: "ПОЛЕСЬЕ",
-hint: "6 букв. Природный регион южной Беларуси. Много болот и лесов. П-О-Л...",
-fact: "Полесье — одна из крупнейших заболоченных территорий Европы. Немецкие войска избегали здесь активных действий — партизаны чувствовали себя здесь как дома.", points:130 },
-{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
-task: "За 3 ночи партизанский отряд из Хойникского района провёл по 3 диверсии каждую ночь. Сколько всего диверсий провёл отряд?",
+hint: "П=17, А=1, Р=18...",
+fact: "Партизанское движение", points:120 },
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "3 ночи × 3 диверсии = ?",
 encrypted: "3 × 3 = ?",
 answer: "9",
-hint: "3 ночи × 3 операции = 9 операций.",
-fact: "Партизаны Хойникского района провели десятки диверсий на железной дороге. Рельсовая война была одним из главных инструментов сопротивления.", points:140 },
-{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
-task: "На карте Беларуси тапни на второй по величине город страны — административный центр южной области:",
+hint: "Простое умножение",
+fact: "Рельсовая война", points:140 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы — регион Беларуси:",
+encrypted: "ЬЕЛЕСОП",
+answer: "ПОЛЕСЬЕ",
+hint: "6 букв, много болот",
+fact: "Полесье", points:130 },
+{ type: "map", typeLabel: "КАРТА",
+task: "Тапни на второй город Беларуси:",
 encrypted: "🗺",
 answer: "ГОМЕЛЬ",
-mapCity: "ГОМЕЛЬ",
-hint: "Юго-восток Беларуси, недалеко от границы с Россией и Украиной. Второй по величине город страны.",
-fact: "Гомель — второй по величине город Беларуси. Хойники находятся в 80 км к юго-западу от Гомеля.", points:150 }
+hint: "Юго-восток Беларуси",
+fact: "Гомель — второй по величине город", points:150 }
 ]
 },
 {
 id:2, title: "ПОДПОЛЬЕ МИНСКА", subtitle: "Глава II",
-place: "МИНСК · ИЮЛЬ 1942", stamp: "📜",
-meta: "Дата: 14.07.1942\nМесто: Минск, оккупация\nСтатус: АКТИВНО",
-briefing: `Лето 1942 года. Минск под оккупацией уже год. Подпольная сеть «Комета» действует в городе. Перехваченные донесения содержат сведения о вражеских колоннах. Немцы меняют коды каждые 48 часов — действуй быстро.`,
-mission: "Расшифруй 6 донесений минского подполья",
+place: "МИНСК · 1942", stamp: "📜",
 ciphers:[
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Каждая буква сдвинута на 3 позиции вперёд. А→Г, Б→Д... Расшифруй слово:",
+task: "Сдвиг 3. Расшифруй:",
 encrypted: "ЁСУСЖ",
 answer: "ГОРОД",
-hint: "Ё(6)−3=3=Г. С(19)−3=16=О. У(21)−3=18=Р. С(19)−3=16=О. Ж(8)−3=5=Д. ГОРОД!",
-fact: "Минское подполье — одна из крупнейших сетей сопротивления в Европе: более 9000 участников.", points:100 },
-{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
-task: "Расшифруй радиограмму. Буквы разделены /, слова с новой строки",
-encrypted: "....-/.-.././-...\n.-.././.-...",
-answer: "ХЛЕБ\nДОРОГ",
-hint: ".... = Х, .-.. = Л, . = Е, -... = Б → ХЛЕБ. Д=-.., О=---, Р=.-., О=---, Г=--. ДОРОГ.",
-fact: "Подпольщики рисковали жизнью при каждом выходе в эфир — немцы засекали радиосигналы за несколько минут.", points:120 },
+hint: "Ё-3=Г, С-3=О...",
+fact: "Минское подполье", points:100 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
-task: "Сдвиг изменился — теперь 4 позиции вперёд. Найди ключевое слово:",
+task: "Сдвиг 4. Найди слово:",
 encrypted: "ХОПДЗ",
 answer: "СКЛАД",
-hint: "Х(24)−4=20=С. О(16)−4=12=К. П(17)−4=13=Л. Д(5)−4=1=А. З(9)−4=5=Д. СКЛАД!",
-fact: "Подпольщики организовывали тайные склады оружия и медикаментов для партизан.", points:130 },
-{ type: "atbash", typeLabel: "ШИФР АТБАШ",
-task: "Каждая буква заменяется на зеркальную: А↔Я, Б↔Ю, В↔Э... Расшифруй слово:",
-encrypted: "НЭАЧГ",
-answer: "СВЯЗЬ",
-hint: "Атбаш: 34-позиция. НЭАЧГ→СВЯЗЬ.",
-fact: "Шифр Атбаш — один из древнейших, использовался ещё в библейские времена.", points:150 },
-{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
-task: "Числовой код места встречи. Каждое число — порядковый номер буквы (А=1):",
+hint: "Х-4=С, О-4=К...",
+fact: "Тайные склады", points:130 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ",
+task: "Код места встречи:",
 encrypted: "33-3-12-1",
 answer: "ЯВКА",
-hint: "33=Я, 3=В, 12=К, 1=А → ЯВКА!",
-fact: "Явка — место для секретных встреч. Адрес передавали только числовым кодом.", points:160 },
-{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
-task: "Минское подполье действовало под носом у оккупантов. В каком году было создано Минское антифашистское подполье?",
+hint: "33=Я, 3=В...",
+fact: "Явки для встреч", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "Когда создано Минское подполье?",
 options:["1939", "1941", "1943", "1944"],
 correctIndex:1,
-encrypted: "1941",
 answer: "1941",
-hint: "Оккупация Минска началась 28 июня 1941 года. Подполье начало формироваться сразу.",
-fact: "Минское подполье начало формироваться в июле 1941 года. За годы оккупации оно организовало тысячи актов саботажа.", points:130 }
+hint: "Оккупация началась 28 июня 1941",
+fact: "Июль 1941", points:130 },
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "12 + 24 + 24 = ?",
+encrypted: "12 + 24 + 24 = ?",
+answer: "60",
+hint: "Простое сложение",
+fact: "40 000 взрывов", points:160 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы — слово:",
+encrypted: "ЬЗЯВС",
+answer: "СВЯЗЬ",
+hint: "5 букв",
+fact: "Шифр Атбаш", points:150 }
 ]
 },
 {
 id:3, title: "РЕЛЬСОВАЯ ВОЙНА", subtitle: "Глава III",
-place: "БЕЛАРУСЬ · АВГУСТ 1943", stamp: "💣",
-meta: "Дата: 03.08.1943\nМесто: Вся Беларусь\nСтатус: КРИТИЧНО",
-briefing: `3 августа 1943 года — ночь «Рельсовой войны». Тысячи партизан одновременно атакуют железные дороги по всей Беларуси. Координация — через шифрованные радиограммы. Расшифруй донесения о результатах операции до рассвета.`,
-mission: "Расшифруй 6 оперативных донесений штаба",
+place: "БЕЛАРУСЬ · 1943", stamp: "💣",
 ciphers:[
-{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
-task: "Радиограмма от партизанского отряда. Буквы разделены /, слова с новой строки",
-encrypted: "--/---/.../-\n--./---/.-./../-",
-answer: "МОСТ\nГОРИТ",
-hint: "М=--,О=---,С=...,Т=- → МОСТ. Г=--.,О=---,Р=.-.,И=..,Т=- → ГОРИТ",
-fact: "В первую ночь Рельсовой войны партизаны произвели 42 000 взрывов на железных дорогах Беларуси.", points:110 },
-{ type: "atbash", typeLabel: "ШИФР АТБАШ",
-task: "Зашифрованный маршрут отступления. Расшифруй одно слово:",
-encrypted: "ПЛМГ",
-answer: "ПУТЬ",
-hint: "Атбаш: Л(13)→34-13=21=У✓, М(14)→34-14=20=Т✓, Г(4)→34-4=30=Ь✓. ПЛМГ → ПУТЬ!",
-fact: "Партизанские отряды знали каждую тропу в белорусских лесах. Местные проводники были бесценны.", points:130 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:7,
-task: "Срочное донесение. Сдвиг 7 позиций вперёд. Расшифруй:",
+task: "Сдвиг 7:",
 encrypted: "ХЩЧЁК",
 answer: "ОТРЯД",
-hint: "Вычти 7: Х(24)-7=17=О✓, Щ(27)-7=20=Т✓, Ч(25)-7=18=Р✓, Ё(7)-7=0→33=Я✓, К(12)-7=5=Д✓. ХЩЧЁК → ОТРЯД!",
-fact: "К 1943 году в Беларуси действовало более 150 000 партизан, объединённых в 1255 отрядов.", points:140 },
-{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
-task: "Координата места закладки взрывчатки. Расшифруй кодовое слово:",
+hint: "Вычти 7",
+fact: "150 000 партизан", points:140 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ",
+task: "Код:",
 encrypted: "3-9-18-29-3",
 answer: "ВЗРЫВ",
-hint: "В=3, З=9, Р=18, Ы=29, В=3. 3-9-18-29-3 = ВЗРЫВ!",
-fact: "Партизаны Беларуси за годы войны уничтожили более 11 000 немецких эшелонов.", points:150 },
-{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
-task: "Первый партизанский отряд подорвал 12 рельсов. Второй — в 2 раза больше. Третий — столько же сколько второй. Сколько рельсов всего?",
+hint: "В=3, З=9...",
+fact: "11 000 эшелонов", points:150 },
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "12 + 24 + 24 = ?",
 encrypted: "12 + 24 + 24 = ?",
 answer: "60",
-hint: "12 рельсов + 12×2=24 + 24 = 60 рельсов всего!",
-fact: "3 августа 1943 года в Беларуси было произведено более 40 000 взрывов — это координировано как ни одна другая операция партизан.", points:160 },
-{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
-task: "Рельсовая война — это массовая диверсионная операция советских партизан. Как назывался второй этап Рельсовой войны, начавшийся в сентябре 1943?",
-options:["Операция «Гром»", "«Концерт»", "Операция «Взрыв»", "«Буря»"],
+hint: "Простое сложение",
+fact: "40 000 взрывов", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "Второй этап Рельсовой войны?",
+options:["Гром", "Концерт", "Взрыв", "Буря"],
 correctIndex:1,
-encrypted: "Концерт",
 answer: "КОНЦЕРТ",
-hint: "Второй этап назвали музыкальным словом. Он охватил уже не только Беларусь.",
-fact: "Операция «Концерт» (сентябрь–октябрь 1943) — второй этап Рельсовой войны. Охватила территории от Карелии до Крыма.", points:140 }
+hint: "Музыкальное слово",
+fact: "Сентябрь 1943", points:140 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы — слово:",
+encrypted: "ЬТЯУП",
+answer: "ПУТЬ",
+hint: "4 буквы",
+fact: "Лесные тропы", points:130 },
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
+task: "Сдвиг 4:",
+encrypted: "ФЧЕИК",
+answer: "РУБЕЖ",
+hint: "Вычти 4",
+fact: "Освобождение", points:120 }
 ]
 },
 {
 id:4, title: "ОПЕРАЦИЯ БАГРАТИОН", subtitle: "Глава IV",
-place: "БЕЛАРУСЬ · ИЮНЬ 1944", stamp: "⚔️",
-meta: "Дата: 23.06.1944\nМесто: Вся Беларусь\nСтатус: НАСТУПЛЕНИЕ",
-briefing: `23 июня 1944 года. Начинается крупнейшая наступательная операция Второй мировой войны — «Багратион». Советские войска прорывают немецкую оборону. Партизаны наносят удар изнутри. Каждая секунда важна — расшифруй приказы командования.`,
-mission: "Выполни 6 заданий операции освобождения Беларуси",
+place: "БЕЛАРУСЬ · 1944", stamp: "⚔️",
 ciphers:[
-{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
-task: "Приказ к началу наступления. Сдвиг 4 назад. Расшифруй:",
-encrypted: "ФЧЕИК",
-answer: "РУБЕЖ",
-hint: "Вычти 4: Ф(22)-4=18=Р✓, Ч(25)-4=21=У✓, Е(6)-4=2=Б✓, И(10)-4=6=Е✓, К(12)-4=8=Ж✓. ФЧЕИК → РУБЕЖ!",
-fact: "Операция «Багратион» привела к полному освобождению Беларуси и уничтожению группы армий «Центр».", points:120 },
-{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
-task: "Радиограмма от командира бригады. Расшифруй одно слово:",
-encrypted: ".--./.-./---/.-./-.--",
-answer: "ПРОРЫВ",
-hint: "П=.--., Р=.-., О=---, Р=.-., Ы=-.--, В=.--. ПРОРЫВ!",
-fact: "3 июля 1944 года был освобождён Минск. В окружении оказалось 100 000 немецких солдат.", points:140 },
-{ type: "atbash", typeLabel: "ШИФР АТБАШ",
-task: "Срочное донесение от командира бригады. Шифр Атбаш. Расшифруй:",
-encrypted: "ПОРОДЭ",
-answer: "ПРОРЫВ",
-hint: "ПРОРЫВ",
-fact: "За первые 5 дней операции советские войска продвинулись на 150 км.", points:150 },
-{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
-task: "Название освобождённой столицы — числовым кодом:",
+{ type: "num", typeLabel: "ЧИСЛОВОЙ",
+task: "Столица:",
 encrypted: "14-10-15-19-12",
 answer: "МИНСК",
-hint: "М=14, И=10, Н=15, С=19, К=12. 14-10-15-19-12 = МИНСК!",
-fact: "Минск был освобождён 3 июля 1944 года — через 3 года и 5 дней после начала оккупации.", points:160 },
-{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
-task: "Операция «Багратион» началась 23 июня 1944. Минск освобождён 3 июля. Беларусь полностью освобождена 28 июля. Сколько дней от начала операции до полного освобождения?",
+hint: "М=14...",
+fact: "3 июля 1944", points:160 },
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "23 июня → 28 июля = ? дней",
 encrypted: "23 июня → 28 июля = ?",
 answer: "35",
-hint: "Июнь: 23→30 = 7 дней. Июль: 1→28 = 28 дней. Итого: 7+28 = 35 дней.",
-fact: "За 35 дней операции «Багратион» была полностью освобождена Беларусь. Потери немцев — 500 000 человек.", points:180 },
-{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
-task: "Операция «Багратион» — крупнейшее наступление ВМВ. Как называлась немецкая группа армий, разгромленная в ходе этой операции?",
-options:["Группа «Север»", "Группа «Центр»", "Группа «Юг»", "Группа «А»"],
+hint: "Июнь: 7 дней, Июль: 28",
+fact: "500 000 потерь немцев", points:180 },
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "Немецкая группа армий?",
+options:["Север", "Центр", "Юг", "А"],
 correctIndex:1,
-encrypted: "Группа Центр",
 answer: "ГРУППА ЦЕНТР",
-hint: "Это группа армий, которая защищала Беларусь и центральное направление.",
-fact: "Группа армий «Центр» была полностью разгромлена. Это стало крупнейшим поражением Германии во Второй мировой войне.", points:150 }
+hint: "Центральное направление",
+fact: "Крупнейшее поражение", points:150 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы — слово:",
+encrypted: "ЫВРОПР",
+answer: "ПРОРЫВ",
+hint: "6 букв",
+fact: "150 км за 5 дней", points:150 },
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
+task: "Операция:",
+encrypted: "ДГЁУГХЛСР",
+answer: "БАГРАТИОН",
+hint: "Вычти 3",
+fact: "Июнь-август 1944", points:170 },
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "45000 ÷ 9000 = ?",
+encrypted: "45000 ÷ 9000 = ?",
+answer: "5",
+hint: "45 ÷ 9",
+fact: "Брестская крепость", points:140 }
 ]
 },
 {
 id:5, title: "ЗНАЙ СВОЮ ЗЕМЛЮ", subtitle: "Глава V",
-place: "БЕЛАРУСЬ · ИСТОРИЯ И ГЕОГРАФИЯ", stamp: "🗺",
-meta: "Тип: ИСТОРИЯ И ГЕОГРАФИЯ\nТема: Беларусь\nСтатус: ПРОВЕРКА ЗНАНИЙ",
-briefing: `Разведчик должен знать свою землю как себя. Города, реки, даты, имена героев. Здесь нет только шифров — есть знание. Ответь на вопросы о Беларуси и её истории. Шесть заданий — шесть проверок.`,
-mission: "Выполни 6 заданий по истории и географии Беларуси",
+place: "БЕЛАРУСЬ", stamp: "🗺",
 ciphers:[
-{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
-task: "Какой город Беларуси был удостоен звания «Город-герой» наравне с Москвой и Ленинградом?",
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "Город-герой?",
 options:["Гомель", "Витебск", "Минск", "Брест"],
 correctIndex:2,
-encrypted: "Минск",
 answer: "МИНСК",
-hint: "Это столица Беларуси. Была полностью разрушена во время оккупации.",
-fact: "Минск получил звание «Город-герой» в 1974 году. Во время оккупации было уничтожено 80% зданий города.", points:120 },
-{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
-task: "Брестскую крепость защищал гарнизон около 9000 человек против 45000 немцев. Во сколько раз немецких солдат было больше?",
-encrypted: "45000 ÷ 9000 = ?",
-answer: "5",
-hint: "45000 разделить на 9000. Упросим: 45 ÷ 9 = 5.",
-fact: "Несмотря на пятикратное превосходство противника, защитники Брестской крепости держались почти месяц.", points:140 },
+hint: "Столица",
+fact: "80% зданий уничтожено", points:120 },
 { type: "anagram", typeLabel: "АНАГРАММА",
-task: "Переставь буквы и получи название крепости — символа стойкости, принявшей первый удар 22 июня 1941:",
+task: "Крепость:",
 encrypted: "СТЕРБ",
 answer: "БРЕСТ",
-hint: "5 букв. Город на реке Буг, на западной границе Беларуси. Б-Р-Е...",
-fact: "Брестская крепость держалась с 22 июня по 20 июля 1941. На стенах нашли надписи: «Умираю, но не сдаюсь!»", points:150 },
-{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
-task: "На карте тапни на город на севере Беларуси — место важнейших операций партизанской войны в годы ВОВ:",
-encrypted: "🗺",
-answer: "ВИТЕБСК",
-mapCity: "ВИТЕБСК",
-hint: "Северо-восток Беларуси, на реке Западная Двина. Четвёртый по величине город.",
-fact: "Витебск оккупирован 11 июля 1941. Освобождён 26 июня 1944 в ходе операции «Багратион».", points:160 },
+hint: "5 букв, река Буг",
+fact: "Держалась месяц", points:150 },
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "Потери Беларуси?",
+options:["10-й", "5-й", "3-й", "2-й"],
+correctIndex:2,
+answer: "3",
+hint: "Каждый третий",
+fact: "3 миллиона человек", points:200 },
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "1941 → 1945 = ? лет",
+encrypted: "1941 → 1945 = ?",
+answer: "4",
+hint: "1945 - 1941",
+fact: "3 года 10 месяцев", points:120 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Зашифровано имя главной военной операции освобождения Беларуси. Сдвиг 3 назад:",
+task: "Операция:",
 encrypted: "ДГЁУГХЛСР",
 answer: "БАГРАТИОН",
-hint: "Вычти 3: ДГЁУГХЛСР-3=БАГРАТИОН!",
-fact: "Операция «Багратион» (июнь–август 1944) — крупнейшая наступательная операция ВМВ.", points:170 },
-{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
-task: "Сколько мирных жителей и солдат потеряла Беларусь в годы Второй мировой войны?",
-options:["Каждый 10-й", "Каждый 5-й", "Каждый 3-й", "Каждый 2-й"],
+hint: "Вычти 3",
+fact: "Крупнейшая операция", points:170 },
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "День Победы?",
+options:["7 мая", "8 мая", "9 мая", "10 мая"],
 correctIndex:2,
-encrypted: "Каждый 3-й",
-answer: "3",
-hint: "Беларусь — одна из наиболее пострадавших стран. Каждый третий...",
-fact: "Беларусь потеряла каждого третьего жителя — около 3 миллионов человек. Это самые высокие потери среди всех советских республик в пересчёте на долю населения.", points:200 }
+answer: "9",
+hint: "Ночь с 8 на 9",
+fact: "Главный праздник", points:170 }
 ]
 },
 {
 id:6, title: "ДОРОГА К ПОБЕДЕ", subtitle: "Глава VI",
-place: "БЕЛАРУСЬ · БЕРЛИН · 1945", stamp: "🌟",
-meta: "Дата: 09.05.1945\nМесто: Берлин\nСтатус: ФИНАЛ",
-briefing: `Последняя глава. Апрель 1945. Советские войска идут на Берлин. Среди бойцов — солдаты из Беларуси, пережившие оккупацию, потерявшие родных. Они несут Победу. Докажи что ты достоин звания Маршала Победы.`,
-mission: "Пройди финальный экзамен — 6 заданий о Победе",
+place: "1945", stamp: "🌟",
 ciphers:[
-{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
-task: "Война длилась с 22 июня 1941 по 9 мая 1945. Сколько полных лет продолжалась война?",
-encrypted: "1941 → 1945 = ? лет",
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "1941 → 1945 = ? лет",
+encrypted: "1941 → 1945 = ?",
 answer: "4",
-hint: "1945 минус 1941 = 4 года. Четыре долгих года.",
-fact: "Великая Отечественная война длилась 3 года, 10 месяцев и 18 дней — с 22 июня 1941 по 9 мая 1945.", points:120 },
-{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
-task: "Первое слово победной радиограммы. Расшифруй:",
-encrypted: ".../.-../.-/.--/.-",
-answer: "СЛАВА",
-hint: "С=..., Л=.-.., А=.-, В=.--, А=.- = СЛАВА",
-fact: "9 мая 1945 в 00:43 по московскому времени был подписан Акт о капитуляции Германии.", points:130 },
-{ type: "atbash", typeLabel: "ШИФР АТБАШ",
-task: "Последнее слово в приказе. Расшифруй:",
-encrypted: "ТЦО",
-answer: "МИР",
-hint: "Атбаш: Т(20)→34-20=14=М✓, Ц(24)→34-24=10=И✓, О(16)→34-16=18=Р✓. ТЦО → МИР!",
-fact: "Слово «МИР» — самое долгожданное слово для миллионов людей, переживших войну.", points:150 },
-{ type: "anagram", typeLabel: "АНАГРАММА",
-task: "Переставь буквы — получишь название города, где была подписана капитуляция Германии:",
-encrypted: "ЛИНЕРБ",
-answer: "БЕРЛИН",
-hint: "6 букв. Столица Германии. Б-Е-Р...",
-fact: "8 мая 1945 в Берлине был подписан Акт о безоговорочной капитуляции Германии. Для СССР дата победы — 9 мая.", points:160 },
-{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
-task: "Какого числа каждый год в Беларуси и России отмечают День Победы?",
+hint: "1945 - 1941",
+fact: "3 года 10 месяцев", points:120 },
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "День Победы?",
 options:["7 мая", "8 мая", "9 мая", "10 мая"],
 correctIndex:2,
-encrypted: "9 мая",
 answer: "9",
-hint: "Акт был подписан ночью с 8 на 9 мая по московскому времени.",
-fact: "9 мая — главный праздник для Беларуси. В стране его отмечают с особым торжеством — каждый третий белорус погиб в войну.", points:170 },
-{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
-task: "На карте найди город-сосед Хойников в Гомельской области, расположенный на реке Припять:",
-encrypted: "🗺",
+hint: "Ночь с 8 на 9",
+fact: "Главный праздник", points:170 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Город капитуляции:",
+encrypted: "ЛИНЕРБ",
+answer: "БЕРЛИН",
+hint: "Столица Германии",
+fact: "8 мая 1945", points:160 },
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
+task: "Последнее слово:",
+encrypted: "ТЦО",
+answer: "МИР",
+hint: "Вычти 3",
+fact: "Самое долгожданное", points:150 },
+{ type: "math", typeLabel: "РАСЧЁТ",
+task: "45000 ÷ 9000 = ?",
+encrypted: "45000 ÷ 9000 = ?",
+answer: "5",
+hint: "45 ÷ 9",
+fact: "Брестская крепость", points:140 },
+{ type: "quiz", typeLabel: "ВОПРОС",
+task: "Город-сосед Хойников?",
+options:["Мозырь", "Наровля", "Припять", "Калинковичи"],
+correctIndex:1,
 answer: "НАРОВЛЯ",
-mapCity: "НАРОВЛЯ",
-hint: "Юг Гомельской области, рядом с Хойниками, на берегу реки Припять.",
-fact: "Наровля и Хойники — города-соседи в Гомельской области. Оба расположены в зоне влияния Чернобыльской катастрофы 1986 года.", points:200 }
+hint: "Река Припять",
+fact: "Зона ЧАЭС", points:200 }
 ]
 }
 ];
@@ -1039,7 +823,7 @@ const MAP_CITIES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-//  TELEGRAM INTEGRATION
+//  TELEGRAM
 // ═══════════════════════════════════════════════════════
 let tg = null, tgUser = null, tgInitLB = [], tgInitMe = null, tgOpenChapters = null;
 try {
@@ -1073,7 +857,7 @@ return 'Разведчик';
 }
 
 // ═══════════════════════════════════════════════════════
-//  STATE MANAGEMENT
+//  STATE
 // ═══════════════════════════════════════════════════════
 const DEFAULT_STATE = () => ({
 lives: 5, chapter: 0, cipherIdx: 0, startTime: 0,
@@ -1105,14 +889,13 @@ return uid ? `cipher_v4_${uid}` : 'cipher_v4_guest';
 function loadState() {
 try {
 const s = localStorage.getItem(storageKey());
-if (s) { Object.assign(state, JSON.parse(s)); state._noptsMode = false; }
+if (s) Object.assign(state, JSON.parse(s));
 } catch(e) {}
 }
 
 function saveState() {
 try {
-const toSave = Object.assign({}, state, { _noptsMode: false });
-localStorage.setItem(storageKey(), JSON.stringify(toSave));
+localStorage.setItem(storageKey(), JSON.stringify(state));
 } catch(e) {}
 }
 
@@ -1129,11 +912,20 @@ const dbScore = tgInitMe.score || 0;
 const dbCompleted = tgInitMe.completed || 0;
 const dbGameOver = tgInitMe.game_over || false;
 const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
-if (dbAdminMode) { state.adminMode = true; }
+if (dbAdminMode) {
+state.adminMode = true;
+console.log('👑 adminMode=true установлен от бота');
+}
 state.totalScore = dbScore;
 state.completedChapters = {};
-for (let i = 1; i <= dbCompleted; i++) { state.completedChapters[i] = true; }
-state.chapterScores = {};
+for (let i = 1; i <= dbCompleted; i++) {
+state.completedChapters[i] = true;
+}
+const newScores = {};
+for (let i = 1; i <= dbCompleted; i++) {
+if (state.chapterScores[i]) newScores[i] = state.chapterScores[i];
+}
+state.chapterScores = newScores;
 state.gameOver = dbGameOver;
 try { localStorage.removeItem(storageKey()); } catch(e2) {}
 saveState();
@@ -1143,28 +935,17 @@ saveState();
 // ═══════════════════════════════════════════════════════
 //  NAVIGATION
 // ═══════════════════════════════════════════════════════
-async function showScreen(id) {
+function showScreen(id) {
 const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
 if (TAB_SCREENS.includes(id)) return;
-if (id === 's-chapters') { switchTab('chapters'); return; }
-
-const overlay = document.getElementById('page-overlay');
-const currentScreen = document.querySelector('.screen.active');
-
-if (currentScreen) {
-currentScreen.classList.add('exiting');
-if (overlay) overlay.classList.add('active');
-await new Promise(resolve => setTimeout(resolve, 300));
-currentScreen.classList.remove('active', 'exiting');
+if (id === 's-chapters') {
+switchTab('chapters');
+return;
 }
-
 hideBottomNav();
-
+document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
 const el = document.getElementById(id);
-if (el) {
-el.classList.add('active');
-if (overlay) overlay.classList.remove('active');
-}
+if (el) el.classList.add('active');
 }
 
 function showBottomNav() {
@@ -1177,88 +958,51 @@ const nav = document.getElementById('bottom-nav');
 if (nav) nav.style.display = 'none';
 }
 
+let currentTab = 'chapters';
 function switchTab(tab) {
 currentTab = tab;
-const overlay = document.getElementById('page-overlay');
-const currentScreen = document.querySelector('.screen.active');
-
-if (currentScreen && overlay) {
-currentScreen.classList.add('exiting');
-overlay.classList.add('active');
-}
-
-setTimeout(() => {
-document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'exiting'));
+document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
 document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
 showBottomNav();
-
-const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
-const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
+const screenMap = {
+'chapters': 's-chapters',
+'leaderboard': 's-leaderboard-tab',
+'profile': 's-profile-tab',
+'about': 's-about-tab',
+};
+const tabMap = {
+'chapters': 'bn-chapters',
+'leaderboard': 'bn-leaderboard',
+'profile': 'bn-profile',
+'about': 'bn-about',
+};
 const screenEl = document.getElementById(screenMap[tab]);
 const tabEl = document.getElementById(tabMap[tab]);
 if (screenEl) screenEl.classList.add('active');
 if (tabEl) tabEl.classList.add('active');
-
-if (overlay) overlay.classList.remove('active');
-
 if (tab === 'chapters') { renderChapters(); }
 if (tab === 'leaderboard') renderLeaderboardTab();
 if (tab === 'profile') renderProfileTab();
 if (tab === 'about') renderAboutTab();
-}, 300);
 }
 
 // ═══════════════════════════════════════════════════════
-//  KEYBOARD TOGGLE
+//  KEYBOARD
 // ═══════════════════════════════════════════════════════
 function toggleKeyboard() {
 const inp = document.getElementById('cipher-input');
 const btn = document.getElementById('btn-keyboard');
 if (!inp) return;
-
-if (inp.hasAttribute('readonly')) {
+if (inp.readOnly) {
 inp.removeAttribute('readonly');
 inp.focus();
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.25)'; 
-btn.style.borderColor = 'rgba(255,224,51,.5)';
-btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-}
+if (btn) { btn.style.background = 'rgba(255,224,51,.25)'; btn.style.borderColor = 'rgba(255,224,51,.5)'; }
 } else {
 inp.setAttribute('readonly', true);
 inp.blur();
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.1)'; 
-btn.style.borderColor = 'rgba(255,224,51,.2)';
-btn.style.boxShadow = 'none';
+if (btn) { btn.style.background = 'rgba(255,224,51,.1)'; btn.style.borderColor = 'rgba(255,224,51,.2)'; }
 }
 }
-}
-
-// Auto-show keyboard on focus
-document.addEventListener('DOMContentLoaded', () => {
-const inp = document.getElementById('cipher-input');
-if (inp) {
-inp.addEventListener('focus', function() {
-this.removeAttribute('readonly');
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.25)'; 
-btn.style.borderColor = 'rgba(255,224,51,.5)';
-btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-}
-});
-inp.addEventListener('blur', function() {
-this.setAttribute('readonly', true);
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.1)'; 
-btn.style.borderColor = 'rgba(255,224,51,.2)';
-btn.style.boxShadow = 'none';
-}
-});
-}
-});
 
 // ═══════════════════════════════════════════════════════
 //  RENDER CHAPTERS
@@ -1270,43 +1014,23 @@ let completedCount = 0;
 CHAPTERS.forEach((ch, i) => {
 const isDone = !!state.completedChapters[ch.id];
 if (isDone) completedCount++;
-let isLocked, visuallyLocked;
-if (state.adminMode) { isLocked = false; visuallyLocked = false; }
-else {
-const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
-const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
-isLocked = !(serverAllows && prevDone);
-visuallyLocked = isLocked;
-}
 const card = document.createElement('div');
-card.className = 'chapter-card' + (visuallyLocked?' locked':'') + (isDone?' completed':'');
-const typeIcons = {'caesar':'🔐','morse':'📡','atbash':'🪞','num':'🔢','anagram':'🔤','math':'➗','photo':'🖼','map':'🗺','quiz':'❓'};
-const uniqueTypes = [...new Set(ch.ciphers.map(c=>c.type))];
-const tags = uniqueTypes.map(t=>`<span class="ch-tag">${typeIcons[t]||'❓'} ${ch.ciphers.find(c=>c.type===t).typeLabel}</span>`).join('');
-let statusText, badgeIcon;
-if (isDone && state.chapterScores[ch.id] > 0) { statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅'; }
-else if (isDone) { statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔'; }
-else if (state.adminMode) { statusText='👑 ОТКРЫТО'; badgeIcon='▶'; }
-else if (!serverAllows) { statusText='🔒 НЕ ОТКРЫТА'; badgeIcon='🔒'; }
-else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
-else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
+card.className = 'chapter-card' + (isDone ? ' completed' : '');
 const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
 card.innerHTML = `
-<div class="ch-icon">${ch.stamp || '🔐'}</div>
-<div class="ch-inner">
-<div class="ch-num">${ch.subtitle} · ${statusText}</div>
-<div class="ch-title">${ch.title}</div>
-<div class="ch-place">${ch.place}</div>
-<div class="ch-tags">${tags}</div>
+<div style="font-size:32px;">${ch.stamp || '🔐'}</div>
+<div style="flex:1;">
+<div style="font-family:var(--head);font-size:14px;color:#fdfaf0;margin:4px 0;">${ch.title}</div>
+<div style="font-size:10px;color:var(--muted);">${ch.place}</div>
 </div>
-<div class="ch-right">
-<div class="ch-badge">${badgeIcon}</div>
-${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
+<div style="text-align:right;">
+<div style="font-size:20px;">${isDone ? '✅' : '▶'}</div>
+${scoreVal ? `<div style="font-family:var(--head);font-size:12px;color:var(--accent);">${scoreVal}</div>` : ''}
 </div>`;
-const canRepeat = state.retryPenalty || state._noptsMode;
-const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
-if (canPlay) { card.onclick = () => { showBriefing(i); }; card.style.cursor = 'pointer'; }
-else { card.style.cursor = isDone ? 'default' : 'not-allowed'; }
+if (!isDone) {
+card.onclick = () => { showBriefing(i); };
+card.style.cursor = 'pointer';
+}
 list.appendChild(card);
 });
 const total = CHAPTERS.length;
@@ -1317,17 +1041,10 @@ const clEl = document.getElementById('stat-completed-label');
 if (clEl) clEl.textContent = completedCount + ' / ' + total + ' глав';
 const scEl = document.getElementById('stat-score');
 if (scEl) scEl.textContent = state.totalScore;
-const resetBtn = document.getElementById('btn-reset-header');
-if (resetBtn) resetBtn.style.display = (state.adminMode || window._adminMode) ? 'inline-block' : 'none';
-const plEl = document.getElementById('stat-players-label');
-const plCount = tgInitLB.length || state.leaderboard.length;
-if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
-if (state.gameOver) { document.getElementById('btn-to-final').style.display = 'block'; }
-else { document.getElementById('btn-to-final').style.display = 'none'; }
 }
 
 // ═══════════════════════════════════════════════════════
-//  BRIEFING & START
+//  BRIEFING
 // ═══════════════════════════════════════════════════════
 function showBriefing(idx) {
 if (idx < 0 || idx >= CHAPTERS.length) { showScreen('s-chapters'); renderChapters(); return; }
@@ -1337,12 +1054,15 @@ document.getElementById('brief-num').textContent = ch.subtitle + ' — ' + ch.pl
 document.getElementById('brief-title').textContent = ch.title;
 document.getElementById('brief-place').textContent = ch.place;
 document.getElementById('brief-stamp').textContent = ch.stamp;
-document.getElementById('brief-meta').innerHTML = ch.meta.replace(/\n/g,'<br>');
-document.getElementById('brief-text').textContent = ch.briefing;
-document.getElementById('brief-mission').textContent = ch.mission;
+document.getElementById('brief-meta').innerHTML = ch.meta ? ch.meta.replace(/\n/g,'<br>') : '';
+document.getElementById('brief-text').textContent = ch.briefing || '';
+document.getElementById('brief-mission').textContent = ch.mission || '';
 showScreen('s-briefing');
 }
 
+// ═══════════════════════════════════════════════════════
+//  START CHAPTER
+// ═══════════════════════════════════════════════════════
 function startChapter(idx) {
 state.chapter = idx;
 state.cipherIdx = 0;
@@ -1368,6 +1088,7 @@ if (!cipher) { finishChapter(); return; }
 
 const qc = document.getElementById('quiz-container');
 if (qc) qc.style.display = 'none';
+
 const inp = document.getElementById('cipher-input');
 const inpWrap = document.getElementById('cipher-input-wrap');
 const checkBtn = document.getElementById('btn-check');
@@ -1375,7 +1096,7 @@ const hintBtn = document.getElementById('btn-hint');
 const boxEl = document.getElementById('cipher-box');
 
 if (cipher.type !== 'quiz') {
-if (inp) { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; inp.setAttribute('readonly', true); }
+if (inp) { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; }
 if (inpWrap) inpWrap.style.display = '';
 if (checkBtn) checkBtn.style.display = '';
 if (hintBtn) { hintBtn.style.display = ''; hintBtn.disabled = false; hintBtn.textContent = '💡 ПОДСКАЗКА'; }
@@ -1383,13 +1104,15 @@ if (boxEl) boxEl.style.display = '';
 } else {
 if (inp) inp.style.display = 'none';
 if (inpWrap) inpWrap.style.display = 'none';
-if (checkBtn) checkBtn.style.display = '';
+if (checkBtn) checkBtn.style.display = 'none';
 if (boxEl) boxEl.style.display = 'none';
 }
 
 state.startTime = Date.now();
 const prog = document.getElementById('cipher-progress');
-prog.innerHTML = ch.ciphers.map((c, i) => `<div class="cipher-prog-dot ${i < state.cipherIdx ? 'done' : i === state.cipherIdx ? 'active' : ''}"></div>`).join('');
+prog.innerHTML = ch.ciphers.map((c, i) =>
+`<div class="cipher-prog-dot ${i < state.cipherIdx ? 'done' : i === state.cipherIdx ? 'active' : ''}"></div>`
+).join('');
 
 document.getElementById('cipher-chapter-label').textContent = ch.subtitle + ' · ' + ch.place;
 const scoreEl = document.getElementById('cipher-score-display');
@@ -1400,59 +1123,69 @@ document.getElementById('cipher-task').textContent = cipher.task;
 const box = document.getElementById('cipher-box');
 if (box) {
 box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
-if (cipher.type === 'morse') { box.innerHTML = ''; animateMorse(box, cipher.encrypted); }
-else if (cipher.type === 'quiz') { box.style.display = 'none'; }
-else if (cipher.type === 'anagram') { box.textContent = ''; box.style.display = 'none'; }
-else if (cipher.type === 'math') { box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`; }
-else if (cipher.type === 'map') { box.innerHTML = ''; renderMap(cipher); }
-else { box.textContent = cipher.encrypted; }
+if (cipher.type === 'quiz') {
+box.style.display = 'none';
+} else if (cipher.type === 'anagram') {
+box.textContent = '';
+box.style.display = 'none';
+} else if (cipher.type === 'math') {
+box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`;
+} else if (cipher.type === 'map') {
+box.innerHTML = '';
+renderMap(cipher);
+} else {
+box.textContent = cipher.encrypted || '';
+}
 }
 
 const inputWrap = document.querySelector('.cipher-input-wrap');
 const actions = document.querySelector('.cipher-actions');
 const btnCheck = document.querySelector('.btn-check');
-if (cipher.type === 'map' || cipher.type === 'anagram') { 
-if (inputWrap) inputWrap.style.display = 'none'; 
-if (btnCheck) btnCheck.style.display = 'none'; 
-} else { 
-if (inputWrap) inputWrap.style.display = ''; 
-if (btnCheck) btnCheck.style.display = ''; 
+if (cipher.type === 'map' || cipher.type === 'anagram') {
+if (inputWrap) inputWrap.style.display = 'none';
+if (btnCheck) btnCheck.style.display = 'none';
+} else {
+if (inputWrap) inputWrap.style.display = '';
+if (btnCheck) btnCheck.style.display = '';
 }
 
 renderLives();
 startTimer();
 
+const inpReset = document.getElementById('cipher-input');
+if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
 const kbBtn = document.getElementById('btn-keyboard');
-if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; kbBtn.style.boxShadow = 'none'; }
+if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; }
 
 state.hintsUsed = false;
 const hb = document.getElementById('cipher-hint-box');
 const ht = document.getElementById('cipher-hint-text');
+const bh = document.getElementById('btn-hint');
 if (hb) hb.className = 'cipher-hint-box';
 if (ht) ht.textContent = '';
-if (hintBtn) { hintBtn.disabled = false; hintBtn.textContent = '💡 ПОДСКАЗКА'; }
+if (bh) { bh.disabled = false; bh.textContent = '💡 ПОДСКАЗКА'; }
 
 renderRef(cipher.type, cipher.shift);
 if (cipher.type === 'anagram') renderAnagram(cipher);
 if (cipher.type === 'map') renderMap(cipher);
 if (cipher.type === 'quiz') renderQuiz(cipher);
-
-const adminLabel = document.getElementById('cipher-admin-label');
-if (adminLabel) adminLabel.style.display = state.adminMode ? 'block' : 'none';
+if (cipher.type !== 'map' && cipher.type !== 'anagram' && inp) inp.focus();
 }
 
 function renderLives() {
 const el = document.getElementById('cipher-attempts-label');
 if (!el) return;
-if (state.adminMode) { el.innerHTML = '♾️ АДМИН'; return; }
+if (state.adminMode) {
+el.innerHTML = '♾️ АДМИН';
+return;
+}
 const n = state.lives;
-let row1 = '', row2 = '';
-for(let i=0;i<3;i++) row1 += i < n ? '❤️' : '🖤';
-for(let i=3;i<5;i++) row2 += i < n ? '❤️' : '🖤';
-el.innerHTML = '<div>' + row1 + '</div><div>' + row2 + '</div>';
+let hearts = '';
+for(let i=0;i<n;i++) hearts += '❤️';
+for(let i=n;i<5;i++) hearts += '🖤';
+el.innerHTML = hearts;
 }
 
-let _timerInterval = null;
 function startTimer() {
 if (_timerInterval) clearInterval(_timerInterval);
 const el = document.getElementById('cipher-timer');
@@ -1476,25 +1209,26 @@ const el = document.getElementById('cipher-timer');
 if (el) el.style.color = 'var(--muted)';
 }
 
-function animateMorse(el, text) {
-el.innerHTML = '<span style="white-space:pre-line">' + text + '</span>';
-}
-
 function renderRef(type, shift) {
 const ref = document.getElementById('cipher-ref');
 if (!ref) return;
-if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) { ref.innerHTML = ''; return; }
+if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) {
+ref.innerHTML = '';
+return;
+}
 if (type === 'morse') {
-ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div><div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">/ — разделение букв &nbsp;&nbsp; \\n — новое слово</div><div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
+ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div><div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">/ — разделение букв &nbsp;&nbsp; // — пробел (новое слово)</div><div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
 } else if (type === 'atbash') {
 const a = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА АТБАШ (зеркальный алфавит)</div><div class="caesar-ref">${a.split('').map((l,i)=>`<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${a[a.length-1-i]}</span><span style="color:var(--muted)">→${l}</span></div>`).join(' ')}</div>`;
 } else if (type === 'num') {
 const a = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// ЧИСЛОВОЙ КОД (буква = номер в алфавите)</div><div class="caesar-ref">${a.split('').map((l,i)=>`<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${i+1}</span><span style="color:var(--muted)">=${l}</span></div>`).join(' ')}</div>`;
-} else if (type === 'anagram' || type === 'map') { ref.innerHTML = ''; }
-else if (type === 'math') { ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div><div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ цифрой в поле ниже.</div>`; }
-else {
+} else if (type === 'anagram' || type === 'map') {
+ref.innerHTML = '';
+} else if (type === 'math') {
+ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div><div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ цифрой в поле ниже.</div>`;
+} else {
 const alpha = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// АЛФАВИТ ДЛЯ РАСШИФРОВКИ (сдвиг ${shift})</div><div class="caesar-ref">${alpha.split('').map((l,i)=>{ const fromIdx = (i + shift) % alpha.length; return `<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${alpha[fromIdx]}</span><span style="color:var(--muted)">→${l}</span></div>`; }).join(' ')}</div>`;
 }
@@ -1505,7 +1239,10 @@ ref.innerHTML = `<div class="cipher-ref-title">// АЛФАВИТ ДЛЯ РАСШ
 // ═══════════════════════════════════════════════════════
 async function checkAnswer() {
 const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
-if (cipher.type === 'quiz') { quizSubmit(); return; }
+if (cipher.type === 'quiz') {
+quizSubmit();
+return;
+}
 if (cipher.type === 'map' || cipher.type === 'anagram') return;
 
 const inp = document.getElementById('cipher-input');
@@ -1513,8 +1250,6 @@ const val = inp.value.trim().toUpperCase().replace(/\s+/g, ' ');
 if (!val) { inp.focus(); showToast('👆 Введите ответ'); return; }
 
 const elapsed = Math.round((Date.now() - state.startTime) / 1000);
-saveState();
-showSaveToast();
 
 if (val === cipher.answer) {
 inp.className = 'cipher-input correct';
@@ -1532,33 +1267,20 @@ setTimeout(() => showSuccess(cipher, pts, elapsed), 400);
 inp.className = 'cipher-input wrong';
 playSound('wrong');
 setTimeout(() => inp.className = 'cipher-input', 500);
-inp.value = '';
 state.streak = 0;
 state._chapterErrors = (state._chapterErrors || 0) + 1;
 if (!state.adminMode) {
 state.lives--;
-animateLifeLoss();
-screenPulseRed();
-playSound('life_lost');
 }
 saveState();
-if (state.lives <= 0) {
-if (state.adminMode) {
-state.lives = 5; saveState(); renderLives();
-const hb = document.getElementById('cipher-hint-box');
-const ht = document.getElementById('cipher-hint-text');
-hb.className = 'cipher-hint-box show';
-ht.textContent = '⚡ Режим админа: жизни восстановлены';
-setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
-} else {
-inp.disabled = true;
 renderLives();
+if (state.lives <= 0) {
+inp.disabled = true;
 stopTimer();
 setTimeout(() => failChapter(), 1200);
-}
 } else {
-renderLives();
 showToast('❌ Неверно! Попробуйте ещё раз');
+inp.value = '';
 }
 }
 }
@@ -1589,7 +1311,7 @@ renderLives();
 }
 
 // ═══════════════════════════════════════════════════════
-//  SUCCESS SCREEN
+//  SUCCESS
 // ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
 document.getElementById('succ-answer').textContent = cipher.answer;
@@ -1639,13 +1361,19 @@ const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
 const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
 if (!state.chapterStats) state.chapterStats = {};
-state.chapterStats[ch.id] = { time: chTime, errors: state._chapterErrors || 0, hints: state._chapterHints || 0, score: state.chapterScore, max: ch.ciphers.reduce((s,c) => s+c.points, 0) };
+state.chapterStats[ch.id] = {
+time: chTime, errors: state._chapterErrors || 0,
+hints: state._chapterHints || 0, score: state.chapterScore,
+max: ch.ciphers.reduce((s,c) => s+c.points, 0)
+};
 state.completedChapters[ch.id] = true;
 if (!alreadyDone && !state._noptsMode) {
 state.chapterScores[ch.id] = state.chapterScore;
 state.totalScore += state.chapterScore;
 if (state.retryPenalty) state.retryPenalty = false;
-} else if (state._noptsMode) { state.chapterScores[ch.id] = 0; }
+} else if (state._noptsMode) {
+state.chapterScores[ch.id] = 0;
+}
 const maxPossible = ch.ciphers.reduce((s,c)=>s+c.points, 0);
 const pct = state.chapterScore / maxPossible;
 let medal = '🥉';
@@ -1661,8 +1389,13 @@ document.getElementById('chend-score').textContent = state.chapterScore;
 document.getElementById('chend-total').textContent = state.totalScore;
 document.getElementById('chend-pct').textContent = Math.round(pct*100) + '%';
 const nextBtn = document.getElementById('chend-next-btn');
-if (allDone) { nextBtn.textContent = '🏆 СМОТРЕТЬ ИТОГ'; nextBtn.onclick = () => { showFinal(); }; }
-else { nextBtn.textContent = '← К ЗАДАНИЯМ'; nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); }; }
+if (allDone) {
+nextBtn.textContent = '🏆 СМОТРЕТЬ ИТОГ';
+nextBtn.onclick = () => { showFinal(); };
+} else {
+nextBtn.textContent = '← К ЗАДАНИЯМ';
+nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); };
+}
 playSound('chapter_win');
 launchConfetti(800, 20);
 showScreen('s-chapter-end');
@@ -1675,12 +1408,20 @@ async function failChapter() {
 const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
 if (!state.chapterStats) state.chapterStats = {};
-state.chapterStats[ch.id] = { time: 0, errors: state._chapterErrors || 0, hints: state._chapterHints || 0, score: state.chapterScore, max: ch.ciphers.reduce((s,c2) => s+c2.points, 0), failed: true };
+state.chapterStats[ch.id] = {
+time: 0, errors: state._chapterErrors || 0,
+hints: state._chapterHints || 0, score: state.chapterScore,
+max: ch.ciphers.reduce((s,c2) => s+c2.points, 0), failed: true
+};
 if (!state.chapterFailCounts) state.chapterFailCounts = {};
 const failCount = (state.chapterFailCounts[ch.id] || 0) + 1;
 state.chapterFailCounts[ch.id] = failCount;
-if (!alreadyDone && !state._noptsMode) { state.chapterScores[ch.id] = state.chapterScore; state.totalScore += state.chapterScore; }
-else if (state._noptsMode) { state.chapterScores[ch.id] = 0; }
+if (!alreadyDone && !state._noptsMode) {
+state.chapterScores[ch.id] = state.chapterScore;
+state.totalScore += state.chapterScore;
+} else if (state._noptsMode) {
+state.chapterScores[ch.id] = 0;
+}
 const allDone = CHAPTERS.every(c => state.completedChapters[c.id]);
 if (allDone) state.gameOver = true;
 updateLeaderboard();
@@ -1698,7 +1439,9 @@ nextBtn.style.display = 'block';
 nextBtn.textContent = '🏆 СМОТРЕТЬ ИТОГ';
 nextBtn.onclick = () => showFinal();
 nextBtn.style.display = 'block';
-} else { nextBtn.style.display = 'none'; }
+} else {
+nextBtn.style.display = 'none';
+}
 const retryBtn = document.getElementById('fail-retry-btn');
 const retryInfo = document.getElementById('fail-retry-info');
 const currentFailCount = state.chapterFailCounts[ch.id] || 1;
@@ -1710,7 +1453,9 @@ retryBtn.onclick = () => { state._isRetryAttempt = true; retryChapterWithPenalty
 }
 if (retryInfo) {
 retryInfo.style.display = 'block';
-retryInfo.innerHTML = currentFailCount === 1 ? `⚠️ Повтор: штраф <b>-${currentPenalty}%</b> от набранных очков<br>Жизни восстановятся` : `⚠️ Повтор #${currentFailCount}: штраф <b>-${currentPenalty}%</b> от очков<br>Жизни восстановятся`;
+retryInfo.innerHTML = currentFailCount === 1
+? `⚠️ Повтор: штраф <b>-${currentPenalty}%</b> от набранных очков<br>Жизни восстановятся`
+: `⚠️ Повтор #${currentFailCount}: штраф <b>-${currentPenalty}%</b> от очков<br>Жизни восстановятся`;
 }
 showScreen('s-chapter-fail');
 }
@@ -1745,7 +1490,10 @@ const letters = ['А', 'Б', 'В', 'Г', 'Д'];
 const optionsHtml = cipher.options.map((opt, i) => `<div id="quiz-opt-${i}" onclick="quizSelect(${i})" class="quiz-option"> <div id="quiz-letter-${i}" class="quiz-letter">${letters[i]}</div> <span>${opt}</span> </div>`).join('');
 container.innerHTML = `<div id="quiz-options-list">${optionsHtml}</div><div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px; margin-top:4px;font-size:13px;text-align:center;"></div>`;
 const checkBtn = document.getElementById('btn-check');
-if (checkBtn) { checkBtn.style.display = ''; checkBtn.textContent = '✓ ПРОВЕРИТЬ'; }
+if (checkBtn) {
+checkBtn.style.display = '';
+checkBtn.textContent = '✓ ПРОВЕРИТЬ';
+}
 }
 
 function quizSelect(idx) {
@@ -1778,7 +1526,6 @@ const correct = cipher.correctIndex;
 const selected = _quizState.selected;
 const elapsed = Math.round((Date.now() - _quizState.startTime) / 1000);
 const isCorrect = selected === correct;
-
 cipher.options.forEach((_, i) => {
 const opt = document.getElementById('quiz-opt-' + i);
 const let_ = document.getElementById('quiz-letter-' + i);
@@ -1794,9 +1541,10 @@ opt.style.background = 'rgba(255,50,50,.12)';
 opt.style.borderColor = 'rgba(255,50,50,.45)';
 opt.style.color = '#ff7070';
 if (let_) { let_.style.background = 'rgba(255,50,50,.2)'; let_.style.borderColor = 'rgba(255,50,50,.5)'; let_.style.color = '#ff7070'; }
-} else { opt.style.opacity = '0.4'; }
+} else {
+opt.style.opacity = '0.4';
+}
 });
-
 const feedback = document.getElementById('quiz-feedback');
 if (isCorrect) {
 playSound('correct');
@@ -1821,7 +1569,6 @@ showSuccess(cipher, pts, elapsed);
 }, 900);
 } else {
 playSound('wrong');
-screenPulseRed();
 if (feedback) {
 feedback.style.display = 'block';
 feedback.style.background = 'rgba(255,50,50,.1)';
@@ -1833,8 +1580,6 @@ state.streak = 0;
 state._chapterErrors = (state._chapterErrors || 0) + 1;
 if (!state.adminMode) {
 state.lives--;
-animateLifeLoss();
-playSound('life_lost');
 }
 saveState();
 renderLives();
@@ -1885,7 +1630,9 @@ document.getElementById(`ag-letter-${letterIdx}`).classList.add('used');
 const slot = document.getElementById(`ag-slot-${slotIdx}`);
 slot.textContent = anagramState.letters[letterIdx];
 slot.classList.add('filled');
-if (!anagramState.placed.includes(null)) { setTimeout(checkAnagram, 300); }
+if (!anagramState.placed.includes(null)) {
+setTimeout(checkAnagram, 300);
+}
 }
 
 function removeFromSlot(slotIdx) {
@@ -1921,9 +1668,16 @@ setTimeout(() => slots.forEach(s => { s.style.borderColor = ''; s.style.backgrou
 state.lives--;
 saveState();
 if (state.lives <= 0) {
-if (state.adminMode) { state.lives = 5; saveState(); renderLives(); setTimeout(resetAnagram, 500); }
-else { setTimeout(() => failChapter(), 1200); }
-} else { renderLives(); setTimeout(resetAnagram, 900); }
+if (state.adminMode) {
+state.lives = 5; saveState(); renderLives();
+setTimeout(resetAnagram, 500);
+} else {
+setTimeout(() => failChapter(), 1200);
+}
+} else {
+renderLives();
+setTimeout(resetAnagram, 900);
+}
 showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
@@ -1954,14 +1708,24 @@ state.chapterScore += pts;
 saveState();
 setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
 } else {
-if (dotEl) { const c = dotEl.querySelector('circle'); c.setAttribute('fill','#ff3a3a'); setTimeout(() => c.setAttribute('fill','#ffe033'), 700); }
+if (dotEl) {
+const c = dotEl.querySelector('circle');
+c.setAttribute('fill','#ff3a3a');
+setTimeout(() => c.setAttribute('fill','#ffe033'), 700);
+}
 document.getElementById('map-hint-text').textContent = '❌ Не здесь. Попробуй ещё раз.';
 state.lives--;
 saveState();
 if (state.lives <= 0) {
-if (state.adminMode) { state.lives = 5; saveState(); renderLives(); document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены'; }
-else { setTimeout(() => failChapter(), 1200); }
-} else { renderLives(); }
+if (state.adminMode) {
+state.lives = 5; saveState(); renderLives();
+document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
+} else {
+setTimeout(() => failChapter(), 1200);
+}
+} else {
+renderLives();
+}
 showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
@@ -1969,9 +1733,10 @@ showToast('❌ Неверно! Попробуйте ещё раз');
 // ═══════════════════════════════════════════════════════
 //  SOUNDS
 // ═══════════════════════════════════════════════════════
-let _audioCtx = null;
 function getAudio() {
-if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
+if (!_audioCtx) {
+try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+}
 return _audioCtx;
 }
 
@@ -2043,7 +1808,12 @@ o.start(now + i * 0.08); o.stop(now + 1.5);
 // ═══════════════════════════════════════════════════════
 function launchConfetti(duration = 800, intensity = 20) {
 const colors = ['#ffe033','#ff4455','#55ee66','#4488ff','#ff88ff'];
-const positions = [{ left: '0', top: '20%' }, { left: '0', top: '50%' }, { right: '0', top: '20%' }, { right: '0', top: '50%' }];
+const positions = [
+{ left: '0', top: '20%' },
+{ left: '0', top: '50%' },
+{ right: '0', top: '20%' },
+{ right: '0', top: '50%' },
+];
 positions.forEach((pos, idx) => {
 setTimeout(() => {
 const flash = document.createElement('div');
@@ -2056,7 +1826,7 @@ setTimeout(() => flash.remove(), 700);
 }
 
 // ═══════════════════════════════════════════════════════
-//  PAUSE & NAVIGATION
+//  NAVIGATION & PAUSE
 // ═══════════════════════════════════════════════════════
 function pauseGame() {
 saveState();
@@ -2065,7 +1835,9 @@ pausedFromScreen = 's-cipher';
 hideBottomNav();
 const ch = CHAPTERS[state.chapter];
 const el = document.getElementById('pause-chapter-info');
-if (el && ch) { el.textContent = ch.subtitle + ' · ' + ch.title + ' · Задание ' + (state.cipherIdx + 1) + '/' + ch.ciphers.length; }
+if (el && ch) {
+el.textContent = ch.subtitle + ' · ' + ch.title + ' · Задание ' + (state.cipherIdx + 1) + '/' + ch.ciphers.length;
+}
 showScreen('s-pause');
 }
 
@@ -2086,7 +1858,11 @@ showBottomNav();
 
 function exitToMain() {
 saveState();
-if (tg) { setTimeout(() => tg.close(), 300); } else { goToChapters(); }
+if (tg) {
+setTimeout(() => tg.close(), 300);
+} else {
+goToChapters();
+}
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2097,8 +1873,11 @@ const name = getTgUserName();
 const uid = getTgUserId() || 'guest';
 const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length };
 const idx = state.leaderboard.findIndex(e => e.uid === uid);
-if (idx >= 0) { if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry; }
-else { state.leaderboard.push(entry); }
+if (idx >= 0) {
+if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry;
+} else {
+state.leaderboard.push(entry);
+}
 state.leaderboard.sort((a,b) => b.score - a.score);
 }
 
@@ -2131,7 +1910,11 @@ const el = document.getElementById('profile-tab-content');
 if (!el) return;
 const uid = getTgUserId();
 const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-const completed = Object.keys(state.completedChapters).length;
+const dbCompleted = tgInitMe?.completed || 0;
+const dbScore = tgInitMe?.score || 0;
+const localCompleted = Object.keys(state.completedChapters).length;
+const completed = Math.max(localCompleted, dbCompleted);
+if (dbScore > state.totalScore) state.totalScore = dbScore;
 const pct = Math.round((completed / CHAPTERS.length) * 100);
 el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;">🎖</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;">РАЗВЕДЧИК</div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
 }
@@ -2150,7 +1933,12 @@ el.innerHTML = `<div style="padding:16px;text-align:center;"><div style="font-si
 // ═══════════════════════════════════════════════════════
 function confirmReset() {
 const isAdmin = state.adminMode || window._adminMode === true;
-if (!isAdmin) { if (getTgUserId()) { alert('Прогресс сохранён в системе и не может быть удалён.'); } return; }
+if (!isAdmin) {
+if (getTgUserId()) {
+alert('Прогресс сохранён в системе и не может быть удалён.');
+}
+return;
+}
 if (!confirm('Сбросить тестовый прогресс к нулю? Все главы останутся открытыми.')) return;
 try { localStorage.removeItem(storageKey()); } catch(e) {}
 state = DEFAULT_STATE();
@@ -2160,25 +1948,84 @@ showToast('🗑 Прогресс сброшен');
 }
 
 // ═══════════════════════════════════════════════════════
-//  EFFECTS
+//  FINAL
 // ═══════════════════════════════════════════════════════
-function screenPulseRed() {
-const overlay = document.createElement('div');
-overlay.style.cssText = `position:fixed;inset:0;z-index:9998;pointer-events:none; background:rgba(255,50,50,0);transition:background .1s ease`;
-document.body.appendChild(overlay);
-requestAnimationFrame(() => {
-overlay.style.background = 'rgba(255,50,50,0.18)';
-setTimeout(() => { overlay.style.background = 'rgba(255,50,50,0)'; setTimeout(() => overlay.remove(), 200); }, 150);
+async function showFinal() {
+document.getElementById('final-score-val').textContent = state.totalScore;
+const uid = getTgUserId();
+const finalUidEl = document.getElementById('final-uid');
+if (finalUidEl && uid) {
+finalUidEl.textContent = 'ID: ' + uid;
+finalUidEl.style.display = 'block';
+}
+const maxAll = CHAPTERS.reduce((s,ch)=>s+ch.ciphers.reduce((a,c)=>a+c.points,0),0);
+const pct = Math.round(state.totalScore / maxAll * 100);
+let rank = 'НОВОБРАНЕЦ';
+if (pct >= 90) rank = 'МАРШАЛ ПОБЕДЫ 🌟';
+else if (pct >= 75) rank = 'ПОЛКОВНИК РАЗВЕДКИ ⭐';
+else if (pct >= 55) rank = 'КАПИТАН ПОДПОЛЬЯ 🎖';
+else if (pct >= 35) rank = 'СЕРЖАНТ СВЯЗИ 🏅';
+document.getElementById('final-rank').textContent = rank;
+document.getElementById('final-pct').textContent = pct + '% от максимума';
+let rows = '';
+CHAPTERS.forEach(ch => {
+const s = state.chapterScores[ch.id] || 0;
+const m = ch.ciphers.reduce((a,c)=>a+c.points,0);
+rows += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:17px"><span>${ch.subtitle}: ${ch.title}</span><span style="color:var(--accent)">${s}/${m}</span></div>`;
 });
+document.getElementById('final-chapter-scores').innerHTML = rows;
+setTimeout(() => document.getElementById('final-stars').classList.add('show'), 800);
+setTimeout(() => playSound('game_win'), 300);
+setTimeout(() => launchConfetti(1500, 40), 500);
+showScreen('s-final');
 }
 
-function animateLifeLoss() {
-const el = document.getElementById('cipher-attempts-label');
-if (!el) return;
-el.style.transition = 'transform .15s,filter .15s';
-el.style.transform = 'scale(1.3)';
-el.style.filter = 'drop-shadow(0 0 8px rgba(255,58,58,.9))';
-setTimeout(() => { el.style.transform = ''; el.style.filter = ''; renderLives(); }, 200);
+// ═══════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════
+function showToast(text, duration = 2500) {
+const old = document.getElementById('game-toast');
+if (old) old.remove();
+const toast = document.createElement('div');
+toast.id = 'game-toast';
+toast.textContent = text;
+toast.style.cssText = `position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(20,17,8,.95); border:1px solid rgba(255,224,51,.3); color:#ffe033; padding:8px 20px; border-radius:20px; font-family:var(--head); font-size:12px; z-index:999; pointer-events:none; opacity:0; transition:opacity .3s;`;
+document.body.appendChild(toast);
+requestAnimationFrame(() => { toast.style.opacity = '1'; });
+setTimeout(() => {
+toast.style.opacity = '0';
+setTimeout(() => toast.remove(), 300);
+}, duration);
+}
+
+// ═══════════════════════════════════════════════════════
+//  SPLASH
+// ═══════════════════════════════════════════════════════
+function showSplash() {
+const splash = document.getElementById('splash-screen');
+let pct = 0;
+const bar = splash.querySelector('#splash-bar');
+const interval = setInterval(() => {
+pct += Math.random() * 15;
+if (pct >= 100) {
+pct = 100;
+clearInterval(interval);
+}
+bar.style.width = pct + '%';
+if (pct >= 100) {
+setTimeout(() => {
+splash.style.opacity = '0';
+setTimeout(() => splash.remove(), 500);
+}, 200);
+}
+}, 80);
+// Timeout fallback - force show after 5 seconds
+setTimeout(() => {
+if (splash && splash.parentNode) {
+splash.style.opacity = '0';
+setTimeout(() => { if (splash.parentNode) splash.remove(); }, 500);
+}
+}, 5000);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2217,16 +2064,21 @@ camera.updateProjectionMatrix();
 });
 let active = true;
 const introEl = document.getElementById('s-intro');
-new MutationObserver(() => { active = introEl.classList.contains('active'); }).observe(introEl, { attributes: true, attributeFilter: ['class'] });
+new MutationObserver(() => {
+active = introEl.classList.contains('active');
+}).observe(introEl, { attributes: true, attributeFilter: ['class'] });
 let f = 0;
 (function loop() {
 requestAnimationFrame(loop);
 if (!active) return;
 f++;
 const t = f * 0.008;
-cube.rotation.x = t * 0.7; cube.rotation.y = t;
-cube2.rotation.x = -t * 0.4; cube2.rotation.y = t * 0.5;
-ring1.rotation.z = t * 0.3; ring2.rotation.x = t * 0.2;
+cube.rotation.x = t * 0.7;
+cube.rotation.y = t;
+cube2.rotation.x = -t * 0.4;
+cube2.rotation.y = t * 0.5;
+ring1.rotation.z = t * 0.3;
+ring2.rotation.x = t * 0.2;
 points.rotation.y = t * 0.1;
 camera.position.x = Math.sin(t * 0.3) * 0.3;
 camera.position.y = Math.cos(t * 0.2) * 0.15;
@@ -2250,14 +2102,29 @@ let active = true;
 const intro = document.getElementById('s-intro');
 new MutationObserver(()=>{ active = intro.classList.contains('active'); }).observe(intro, {attributes:true, attributeFilter:['class']});
 function spawnRocket(){
-rockets.push({ x: c.width * (.2 + Math.random() * .6), y: c.height, tx: c.width * (.1 + Math.random() * .8), ty: c.height * (.1 + Math.random() * .45), color: COLORS[Math.floor(Math.random()*COLORS.length)], trail: [] });
+rockets.push({
+x: c.width * (.2 + Math.random() * .6),
+y: c.height,
+tx: c.width * (.1 + Math.random() * .8),
+ty: c.height * (.1 + Math.random() * .45),
+color: COLORS[Math.floor(Math.random()*COLORS.length)],
+trail: []
+});
 }
 function explode(r){
 const n = 60 + Math.floor(Math.random()*50);
 for(let i=0;i<n;i++){
 const angle = (Math.PI*2/n)*i + Math.random()*0.3;
 const speed = 1.5 + Math.random()*2.5;
-particles.push({ x:r.tx, y:r.ty, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, color: r.color, life: 1, decay: .012 + Math.random()*0.018, size: 2 + Math.random()*2 });
+particles.push({
+x:r.tx, y:r.ty,
+vx: Math.cos(angle)*speed,
+vy: Math.sin(angle)*speed,
+color: r.color,
+life: 1,
+decay: .012 + Math.random()*0.018,
+size: 2 + Math.random()*2
+});
 }
 }
 function draw(){
@@ -2277,20 +2144,30 @@ const speed = Math.min(dist*.12, 14);
 r.x += dx/dist*speed; r.y += dy/dist*speed;
 r.trail.forEach((pt,i)=>{
 const a = (i/r.trail.length)*.8;
-ctx.beginPath(); ctx.arc(pt.x,pt.y,1.5,0,Math.PI*2);
-ctx.fillStyle = r.color; ctx.globalAlpha = a; ctx.fill();
+ctx.beginPath();
+ctx.arc(pt.x,pt.y,1.5,0,Math.PI*2);
+ctx.fillStyle = r.color;
+ctx.globalAlpha = a;
+ctx.fill();
 });
 ctx.globalAlpha=1;
-ctx.beginPath(); ctx.arc(r.x,r.y,3,0,Math.PI*2);
-ctx.fillStyle='#fff'; ctx.fill();
+ctx.beginPath();
+ctx.arc(r.x,r.y,3,0,Math.PI*2);
+ctx.fillStyle='#fff';
+ctx.fill();
 return true;
 });
 particles = particles.filter(p=>{
-p.x+=p.vx; p.y+=p.vy; p.vy+=.04; p.vx*=.97; p.vy*=.97;
+p.x+=p.vx; p.y+=p.vy;
+p.vy+=.04;
+p.vx*=.97; p.vy*=.97;
 p.life-=p.decay;
 if(p.life<=0) return false;
-ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);
-ctx.fillStyle=p.color; ctx.globalAlpha=p.life*.9; ctx.fill();
+ctx.beginPath();
+ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);
+ctx.fillStyle=p.color;
+ctx.globalAlpha=p.life*.9;
+ctx.fill();
 ctx.globalAlpha=1;
 return true;
 });
@@ -2313,15 +2190,34 @@ let petals=[], active=true;
 const intro = document.getElementById('s-intro');
 new MutationObserver(()=>{ active = intro.classList.contains('active'); }).observe(intro, {attributes:true, attributeFilter:['class']});
 for(let i=0;i<28;i++){
-petals.push({ x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight - window.innerHeight, r: 3+Math.random()*5, vx: (Math.random()-.5)*0.6, vy: 0.4+Math.random()*0.7, rot: Math.random()*Math.PI*2, rotV: (Math.random()-.5)*0.06, color: PCOLORS[Math.floor(Math.random()*PCOLORS.length)], wobble: Math.random()*Math.PI*2, wobbleS: 0.02+Math.random()*0.03 });
+petals.push({
+x: Math.random()*window.innerWidth,
+y: Math.random()*window.innerHeight - window.innerHeight,
+r: 3+Math.random()*5,
+vx: (Math.random()-.5)*0.6,
+vy: 0.4+Math.random()*0.7,
+rot: Math.random()*Math.PI*2,
+rotV: (Math.random()-.5)*0.06,
+color: PCOLORS[Math.floor(Math.random()*PCOLORS.length)],
+wobble: Math.random()*Math.PI*2,
+wobbleS: 0.02+Math.random()*0.03
+});
 }
 function drawPetal(p){
-ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
-ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r*1.8, 0, 0, Math.PI*2);
-ctx.fillStyle = p.color; ctx.globalAlpha = .75; ctx.fill();
-ctx.beginPath(); ctx.ellipse(-p.r*.2, -p.r*.3, p.r*.3, p.r*.5, -.5, 0, Math.PI*2);
-ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fill();
-ctx.restore(); ctx.globalAlpha=1;
+ctx.save();
+ctx.translate(p.x, p.y);
+ctx.rotate(p.rot);
+ctx.beginPath();
+ctx.ellipse(0, 0, p.r, p.r*1.8, 0, 0, Math.PI*2);
+ctx.fillStyle = p.color;
+ctx.globalAlpha = .75;
+ctx.fill();
+ctx.beginPath();
+ctx.ellipse(-p.r*.2, -p.r*.3, p.r*.3, p.r*.5, -.5, 0, Math.PI*2);
+ctx.fillStyle = 'rgba(255,255,255,.3)';
+ctx.fill();
+ctx.restore();
+ctx.globalAlpha=1;
 }
 function loop(){
 requestAnimationFrame(loop);
@@ -2332,7 +2228,10 @@ p.wobble += p.wobbleS;
 p.x += p.vx + Math.sin(p.wobble)*0.5;
 p.y += p.vy;
 p.rot += p.rotV;
-if(p.y > c.height+20){ p.y = -20; p.x = Math.random()*c.width; p.color = PCOLORS[Math.floor(Math.random()*PCOLORS.length)]; }
+if(p.y > c.height+20){
+p.y = -20; p.x = Math.random()*c.width;
+p.color = PCOLORS[Math.floor(Math.random()*PCOLORS.length)];
+}
 drawPetal(p);
 });
 }
@@ -2347,11 +2246,21 @@ const c = document.getElementById('particles-canvas');
 if(!c) return;
 const ctx = c.getContext('2d');
 let W, H, pts = [];
-function resize(){ W = c.width = window.innerWidth; H = c.height = window.innerHeight; }
+function resize(){
+W = c.width = window.innerWidth;
+H = c.height = window.innerHeight;
+}
 resize();
 window.addEventListener('resize', resize);
 const CHARS = '01-./·•✦АБВ'.split('');
-for(let i=0;i<55;i++) pts.push({ x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, s: Math.random()*10+8, v: Math.random()*0.4+0.1, o: Math.random()*0.5+0.1, c: CHARS[Math.floor(Math.random()*CHARS.length)] });
+for(let i=0;i<55;i++) pts.push({
+x: Math.random()*window.innerWidth,
+y: Math.random()*window.innerHeight,
+s: Math.random()*10+8,
+v: Math.random()*0.4+0.1,
+o: Math.random()*0.5+0.1,
+c: CHARS[Math.floor(Math.random()*CHARS.length)]
+});
 function draw(){
 ctx.clearRect(0,0,W,H);
 ctx.font = '12px monospace';
@@ -2369,97 +2278,6 @@ draw();
 })();
 
 // ═══════════════════════════════════════════════════════
-//  INTRO ANIMATION
-// ═══════════════════════════════════════════════════════
-function introEntrance(){
-const seq = [['intro-stamp',300],['intro-date',700],['intro-title',1000],['intro-ribbon',1500],['intro-desc',1900],['intro-quote',2300],['intro-btn',2700],['intro-how',2950],['intro-memory',3200]];
-seq.forEach(([id, ms])=> setTimeout(()=>{ const el = document.getElementById(id); if(el) el.classList.add('intro-show'); }, ms));
-}
-
-// ═══════════════════════════════════════════════════════
-//  SPLASH SCREEN
-// ═══════════════════════════════════════════════════════
-function showSplash() {
-const splash = document.createElement('div');
-splash.id = 'splash-screen';
-splash.style.cssText = `position:fixed;inset:0;z-index:9000;background:#0a0a08; display:flex;flex-direction:column;align-items:center;justify-content:center; transition:opacity .5s ease`;
-splash.innerHTML = `<div style="font-size:72px;margin-bottom:16px;animation:popIn .6s ease both">🔐</div><div style="font-family:var(--head);font-size:var(--fs-hero);color:var(--accent); letter-spacing:.06em;text-align:center;line-height:.9; text-shadow:0 0 40px rgba(255,224,51,.6)">ШИФРО<br>ВАЛЬЩИК</div><div style="margin-top:24px;width:200px;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden"><div id="splash-bar" style="height:100%;width:0%;background:var(--accent);border-radius:2px; transition:width .05s linear;box-shadow:0 0 8px var(--accent)"></div></div><div style="margin-top:10px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em">ЗАГРУЗКА...</div>`;
-document.body.appendChild(splash);
-let pct = 0;
-const bar = splash.querySelector('#splash-bar');
-const interval = setInterval(() => {
-pct += Math.random() * 15;
-if (pct >= 100) { pct = 100; clearInterval(interval); }
-bar.style.width = pct + '%';
-if (pct >= 100) { setTimeout(() => { splash.style.opacity = '0'; setTimeout(() => splash.remove(), 500); }, 200); }
-}, 80);
-// Timeout fallback
-setTimeout(() => {
-if (splash.parentNode) {
-splash.style.opacity = '0';
-setTimeout(() => { if (splash.parentNode) splash.remove(); }, 500);
-}
-}, 5000);
-}
-
-// ═══════════════════════════════════════════════════════
-//  TOASTS
-// ═══════════════════════════════════════════════════════
-function showToast(text, duration = 2500) {
-const old = document.getElementById('game-toast');
-if (old) old.remove();
-const toast = document.createElement('div');
-toast.id = 'game-toast';
-toast.textContent = text;
-toast.style.cssText = `position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(20,17,8,.95); border:1px solid rgba(255,224,51,.3); color:#ffe033; padding:8px 20px; border-radius:20px; font-family:var(--head); font-size:12px; letter-spacing:.06em; z-index:999; pointer-events:none; opacity:0; transition:opacity .3s ease;`;
-document.body.appendChild(toast);
-requestAnimationFrame(() => { toast.style.opacity = '1'; });
-setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, duration);
-}
-
-function showSaveToast() {
-const old = document.getElementById('save-toast');
-if (old) old.remove();
-const toast = document.createElement('div');
-toast.id = 'save-toast';
-toast.textContent = '💾 Прогресс сохранён';
-toast.style.cssText = `position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:rgba(20,17,8,.7); border:1px solid rgba(255,224,51,.2); color:#ffe033; padding:8px 20px; border-radius:20px; font-family:var(--head); font-size:12px; letter-spacing:.06em; z-index:9996; pointer-events:none; opacity:0; transition:opacity .3s ease;`;
-document.body.appendChild(toast);
-requestAnimationFrame(() => { toast.style.opacity = '1'; });
-setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 1500);
-}
-
-// ═══════════════════════════════════════════════════════
-//  FINAL SCREEN
-// ═══════════════════════════════════════════════════════
-async function showFinal() {
-document.getElementById('final-score-val').textContent = state.totalScore;
-const uid = getTgUserId();
-const finalUidEl = document.getElementById('final-uid');
-if (finalUidEl && uid) { finalUidEl.textContent = 'ID: ' + uid; finalUidEl.style.display = 'block'; }
-const maxAll = CHAPTERS.reduce((s,ch)=>s+ch.ciphers.reduce((a,c)=>a+c.points,0),0);
-const pct = Math.round(state.totalScore / maxAll * 100);
-let rank = 'НОВОБРАНЕЦ';
-if (pct >= 90) rank = 'МАРШАЛ ПОБЕДЫ 🌟';
-else if (pct >= 75) rank = 'ПОЛКОВНИК РАЗВЕДКИ ⭐';
-else if (pct >= 55) rank = 'КАПИТАН ПОДПОЛЬЯ 🎖';
-else if (pct >= 35) rank = 'СЕРЖАНТ СВЯЗИ 🏅';
-document.getElementById('final-rank').textContent = rank;
-document.getElementById('final-pct').textContent = pct + '% от максимума';
-let rows = '';
-CHAPTERS.forEach(ch => {
-const s = state.chapterScores[ch.id] || 0;
-const m = ch.ciphers.reduce((a,c)=>a+c.points,0);
-rows += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:17px"><span>${ch.subtitle}: ${ch.title}</span><span style="color:var(--accent)">${s}/${m}</span></div>`;
-});
-document.getElementById('final-chapter-scores').innerHTML = rows;
-setTimeout(() => document.getElementById('final-stars').classList.add('show'), 800);
-setTimeout(() => playSound('game_win'), 300);
-setTimeout(() => launchConfetti(1500, 40), 500);
-showScreen('s-final');
-}
-
-// ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
 if (document.readyState === "loading") {
@@ -2468,7 +2286,6 @@ showSplash();
 loadState();
 mergeBotLeaderboard();
 init3DIntro();
-introEntrance();
 renderChapters();
 });
 } else {
@@ -2476,7 +2293,6 @@ showSplash();
 loadState();
 mergeBotLeaderboard();
 init3DIntro();
-introEntrance();
 renderChapters();
 }
     </script>
