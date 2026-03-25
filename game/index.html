@@ -251,8 +251,8 @@
             margin-top: 16px;
             font-size: var(--fs-sm);
             color: var(--muted);
-            max-height: none;
-            overflow-y: visible;
+            max-height: 200px;
+            overflow-y: auto;
         }
         .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
         .morse-ref {
@@ -441,7 +441,6 @@
             pointer-events: all;
         }
 
-        /* Достижения - правый верхний угол */
         #ach-toast {
             position: fixed;
             top: 20px;
@@ -463,7 +462,6 @@
             to { transform: translateX(0); opacity: 1; }
         }
 
-        /* Уведомление о сохранении */
         #save-toast {
             position: fixed;
             bottom: 100px;
@@ -503,18 +501,22 @@
     <div id="page-overlay"></div>
     
     <div class="content-wrapper">
+        <!-- INTRO -->
         <div id="s-intro" class="screen active">
             <div id="intro-stamp" class="intro-stamp">🔐</div>
             <div id="intro-date" class="intro-date">1941 – 1945</div>
             <div id="intro-title" class="intro-title">ШИФРО<br>ВАЛЬЩИК</div>
             <div id="intro-ribbon" class="intro-ribbon"></div>
-            <div id="intro-desc" class="intro-desc">Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.</div>
+            <div id="intro-desc" class="intro-desc">
+                Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.
+            </div>
             <div id="intro-quote" class="intro-quote">«Никто не забыт, ничто не забыто»</div>
             <button id="intro-btn" class="btn btn-accent intro-btn" onclick="showScreen('s-chapters'); renderChapters();">▶ НАЧАТЬ МИССИЮ</button>
             <div id="intro-how" class="intro-how" onclick="showScreen('s-about-tab'); switchTab('about');">❓ КАК ИГРАТЬ</div>
             <div id="intro-memory" class="intro-memory">Помним · Чтим · Гордимся</div>
         </div>
         
+        <!-- CHAPTERS -->
         <div id="s-chapters" class="screen">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
                 <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;">🗺 ЗАДАНИЯ</div>
@@ -536,6 +538,7 @@
             </div>
         </div>
         
+        <!-- BRIEFING -->
         <div id="s-briefing" class="screen">
             <div style="text-align:center;margin-bottom:20px;">
                 <div id="brief-stamp" style="font-size:48px;margin-bottom:8px;"></div>
@@ -553,6 +556,7 @@
             </div>
         </div>
         
+        <!-- CIPHER -->
         <div id="s-cipher" class="screen">
             <div class="cipher-header">
                 <div class="cipher-info-left">
@@ -586,6 +590,7 @@
             </div>
         </div>
         
+        <!-- SUCCESS -->
         <div id="s-success" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div style="font-size:64px;margin-bottom:16px;">✅</div>
@@ -603,6 +608,7 @@
             </div>
         </div>
         
+        <!-- CHAPTER END -->
         <div id="s-chapter-end" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div id="chend-medal" class="chend-medal"></div>
@@ -618,6 +624,7 @@
             </div>
         </div>
         
+        <!-- CHAPTER FAIL -->
         <div id="s-chapter-fail" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div style="font-size:64px;margin-bottom:16px;">💔</div>
@@ -633,6 +640,7 @@
             </div>
         </div>
         
+        <!-- PAUSE -->
         <div id="s-pause" class="screen">
             <div class="pause-info">
                 <div class="pause-icon">⏸</div>
@@ -646,6 +654,7 @@
             </div>
         </div>
         
+        <!-- FINAL -->
         <div id="s-final" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div id="final-stars" class="final-stars">★★★★★</div>
@@ -663,6 +672,7 @@
             </div>
         </div>
         
+        <!-- LEADERBOARD TAB -->
         <div id="s-leaderboard-tab" class="screen">
             <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
             <div id="lb-list-tab"></div>
@@ -672,6 +682,7 @@
             </div>
         </div>
         
+        <!-- PROFILE TAB -->
         <div id="s-profile-tab" class="screen">
             <div id="profile-tab-content"></div>
             <div class="nav-buttons">
@@ -680,6 +691,7 @@
             </div>
         </div>
         
+        <!-- ABOUT TAB -->
         <div id="s-about-tab" class="screen">
             <div id="about-tab-content"></div>
             <div class="nav-buttons">
@@ -689,6 +701,7 @@
         </div>
     </div>
     
+    <!-- BOTTOM NAV -->
     <div id="bottom-nav">
         <div class="bn-tab active" id="bn-chapters" onclick="switchTab('chapters')">
             <span class="bn-tab-icon">🗺</span>
@@ -709,6 +722,9 @@
     </div>
 
     <script>
+// ═══════════════════════════════════════════════════════
+//  ДАННЫЕ ИГРЫ — 6 ГЛАВ, 36 ЗАДАНИЙ
+// ═══════════════════════════════════════════════════════
 const CHAPTERS = [
 {
 id:1, title: "ХОЙНИКИ: ОГНЕННОЕ ЛЕТО", subtitle: "Глава I",
@@ -716,7 +732,6 @@ place: "ХОЙНИКИ · ГОМЕЛЬСКАЯ ОБЛ. · 1941", stamp: "🌿",
 meta: "Дата: 28.08.1941\nМесто: г. Хойники, Полесье\nСтатус: ОККУПАЦИЯ",
 briefing: `Август 1941. Хойники — небольшой город на юге Гомельской области, в сердце Полесья. Немецкие войска заняли город. Местные жители уходят в леса — начинается партизанское движение. Первый связной отряда передаёт координаты явки. Ты — его преемник. Расшифруй донесения.`,
 mission: "Выполни 6 разведывательных заданий по Хойникскому региону",
-videoUrl: "https://www.youtube.com/embed/8mFDTm5OQCI",
 ciphers:[
 { type: "quiz", typeLabel: "ИСТОРИЯ КРАЯ",
 task: "Хойники — районный центр одной из областей Беларуси. Определи по карте: в какой области находится Хойникский район?",
@@ -765,7 +780,6 @@ place: "МИНСК · ИЮЛЬ 1942", stamp: "📜",
 meta: "Дата: 14.07.1942\nМесто: Минск, оккупация\nСтатус: АКТИВНО",
 briefing: `Лето 1942 года. Минск под оккупацией уже год. Подпольная сеть «Комета» действует в городе. Перехваченные донесения содержат сведения о вражеских колоннах. Немцы меняют коды каждые 48 часов — действуй быстро.`,
 mission: "Расшифруй 6 донесений минского подполья",
-videoUrl: "https://www.youtube.com/embed/dL8DM0PfRvQ",
 ciphers:[
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
 task: "Каждая буква сдвинута на 3 позиции вперёд. А→Г, Б→Д... Расшифруй слово:",
@@ -813,7 +827,6 @@ place: "БЕЛАРУСЬ · АВГУСТ 1943", stamp: "💣",
 meta: "Дата: 03.08.1943\nМесто: Вся Беларусь\nСтатус: КРИТИЧНО",
 briefing: `3 августа 1943 года — ночь «Рельсовой войны». Тысячи партизан одновременно атакуют железные дороги по всей Беларуси. Координация — через шифрованные радиограммы. Расшифруй донесения о результатах операции до рассвета.`,
 mission: "Расшифруй 6 оперативных донесений штаба",
-videoUrl: "https://www.youtube.com/embed/B2bqJSMNwOI",
 ciphers:[
 { type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
 task: "Радиограмма от партизанского отряда. Буквы разделены /, слова с новой строки",
@@ -861,7 +874,6 @@ place: "БЕЛАРУСЬ · ИЮНЬ 1944", stamp: "⚔️",
 meta: "Дата: 23.06.1944\nМесто: Вся Беларусь\nСтатус: НАСТУПЛЕНИЕ",
 briefing: `23 июня 1944 года. Начинается крупнейшая наступательная операция Второй мировой войны — «Багратион». Советские войска прорывают немецкую оборону. Партизаны наносят удар изнутри. Каждая секунда важна — расшифруй приказы командования.`,
 mission: "Выполни 6 заданий операции освобождения Беларуси",
-videoUrl: "https://www.youtube.com/embed/x86qIVm1rOc",
 ciphers:[
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
 task: "Приказ к началу наступления. Сдвиг 4 назад. Расшифруй:",
@@ -909,7 +921,6 @@ place: "БЕЛАРУСЬ · ИСТОРИЯ И ГЕОГРАФИЯ", stamp: "🗺"
 meta: "Тип: ИСТОРИЯ И ГЕОГРАФИЯ\nТема: Беларусь\nСтатус: ПРОВЕРКА ЗНАНИЙ",
 briefing: `Разведчик должен знать свою землю как себя. Города, реки, даты, имена героев. Здесь нет только шифров — есть знание. Ответь на вопросы о Беларуси и её истории. Шесть заданий — шесть проверок.`,
 mission: "Выполни 6 заданий по истории и географии Беларуси",
-videoUrl: "https://www.youtube.com/embed/WCaFD_c5J0Q",
 ciphers:[
 { type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
 task: "Какой город Беларуси был удостоен звания «Город-герой» наравне с Москвой и Ленинградом?",
@@ -960,7 +971,6 @@ place: "БЕЛАРУСЬ · БЕРЛИН · 1945", stamp: "🌟",
 meta: "Дата: 09.05.1945\nМесто: Берлин\nСтатус: ФИНАЛ",
 briefing: `Последняя глава. Апрель 1945. Советские войска идут на Берлин. Среди бойцов — солдаты из Беларуси, пережившие оккупацию, потерявшие родных. Они несут Победу. Докажи что ты достоин звания Маршала Победы.`,
 mission: "Пройди финальный экзамен — 6 заданий о Победе",
-videoUrl: "https://www.youtube.com/embed/dL8DM0PfRvQ",
 ciphers:[
 { type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
 task: "Война длилась с 22 июня 1941 по 9 мая 1945. Сколько полных лет продолжалась война?",
@@ -1015,19 +1025,22 @@ const MORSE_TABLE = {
 
 const RU_ALPHA = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ';
 const MAP_CITIES = [
-{ name:'МИНСК', x:188, y:175, hint:'Столица' },
-{ name:'БРЕСТ', x:62, y:268, hint:'Юго-запад' },
-{ name:'ГРОДНО', x:75, y:148, hint:'Северо-запад' },
-{ name:'ВИТЕБСК', x:255, y:82, hint:'Север' },
-{ name:'МОГИЛЁВ', x:268, y:198, hint:'Восток' },
-{ name:'ГОМЕЛЬ', x:278, y:298, hint:'Юго-восток' },
-{ name:'ПОЛОЦК', x:215, y:72, hint:'Север' },
-{ name:'БАРАНОВИЧИ',x:130, y:212, hint:'Центр-запад' },
-{ name:'ПИНСК', x:110, y:285, hint:'Юг' },
-{ name:'БОБРУЙСК', x:228, y:240, hint:'Центр' },
-{ name:'НАРОВЛЯ', x:285, y:310, hint:'Юг Гомельской обл.' },
+{ name:'МИНСК', x:188, y:175 },
+{ name:'БРЕСТ', x:62, y:268 },
+{ name:'ГРОДНО', x:75, y:148 },
+{ name:'ВИТЕБСК', x:255, y:82 },
+{ name:'МОГИЛЁВ', x:268, y:198 },
+{ name:'ГОМЕЛЬ', x:278, y:298 },
+{ name:'ПОЛОЦК', x:215, y:72 },
+{ name:'БАРАНОВИЧИ',x:130, y:212 },
+{ name:'ПИНСК', x:110, y:285 },
+{ name:'БОБРУЙСК', x:228, y:240 },
+{ name:'НАРОВЛЯ', x:285, y:310 },
 ];
 
+// ═══════════════════════════════════════════════════════
+//  TELEGRAM INTEGRATION
+// ═══════════════════════════════════════════════════════
 let tg = null, tgUser = null, tgInitLB = [], tgInitMe = null, tgOpenChapters = null;
 try {
 tg = window.Telegram?.WebApp;
@@ -1037,14 +1050,14 @@ tg.expand();
 tgUser = tg.initDataUnsafe?.user;
 const sp = tg.initDataUnsafe?.start_param;
 if (sp) {
-  try {
-    const parsed = JSON.parse(decodeURIComponent(sp));
-    tgInitLB = parsed.lb || [];
-    tgInitMe = parsed.me || null;
-    if (parsed.open) tgOpenChapters = new Set(parsed.open);
-    if (parsed.sync_url) window._syncUrl = parsed.sync_url;
-    if (parsed.admin_mode === true) window._adminMode = true;
-  } catch(e) { console.warn('startParam parse error:', e); }
+try {
+const parsed = JSON.parse(decodeURIComponent(sp));
+tgInitLB = parsed.lb || [];
+tgInitMe = parsed.me || null;
+if (parsed.open) tgOpenChapters = new Set(parsed.open);
+if (parsed.sync_url) window._syncUrl = parsed.sync_url;
+if (parsed.admin_mode === true) window._adminMode = true;
+} catch(e) { console.warn('startParam parse error:', e); }
 }
 }
 } catch(e) {}
@@ -1059,6 +1072,9 @@ if (tgUser) return tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_nam
 return 'Разведчик';
 }
 
+// ═══════════════════════════════════════════════════════
+//  STATE MANAGEMENT
+// ═══════════════════════════════════════════════════════
 const DEFAULT_STATE = () => ({
 lives: 5, chapter: 0, cipherIdx: 0, startTime: 0,
 chapterScore: 0, totalScore: 0,
@@ -1105,38 +1121,28 @@ const myUid = getTgUserId();
 if (tgInitLB.length) {
 state.leaderboard = tgInitLB.map(r => ({
 uid: String(r.uid), name: r.name, score: r.score,
-completed: r.completed, role: r.role || 'player',
-achievementCount: r.achievementCount || 0,
-achievementPts: r.achievementPts || 0
+completed: r.completed, role: r.role || 'player'
 }));
 }
 if (tgInitMe && myUid) {
 const dbScore = tgInitMe.score || 0;
 const dbCompleted = tgInitMe.completed || 0;
 const dbGameOver = tgInitMe.game_over || false;
-const dbRestartMode = tgInitMe.restart_mode || null;
 const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
-if (dbAdminMode) { state.adminMode = true; console.log('👑 adminMode=true установлен от бота'); }
-if (dbRestartMode === 'penalty') {
-  state.totalScore = 0; state.completedChapters = {}; state.chapterScores = {};
-  state.gameOver = false; state.retryPenalty = true; state._noptsMode = false;
-  try { localStorage.removeItem(storageKey()); } catch(e2) {}
-} else if (dbRestartMode === 'nopts') {
-  state.totalScore = 0; state.completedChapters = {}; state.chapterScores = {};
-  state.gameOver = false; state.retryPenalty = false; state._noptsMode = true;
-  try { localStorage.removeItem(storageKey()); } catch(e2) {}
-} else {
-  state.totalScore = dbScore; state.completedChapters = {};
-  for (let i = 1; i <= dbCompleted; i++) { state.completedChapters[i] = true; }
-  const newScores = {};
-  for (let i = 1; i <= dbCompleted; i++) { if (state.chapterScores[i]) newScores[i] = state.chapterScores[i]; }
-  state.chapterScores = newScores; state.gameOver = dbGameOver;
-  try { localStorage.removeItem(storageKey()); } catch(e2) {}
-}
+if (dbAdminMode) { state.adminMode = true; }
+state.totalScore = dbScore;
+state.completedChapters = {};
+for (let i = 1; i <= dbCompleted; i++) { state.completedChapters[i] = true; }
+state.chapterScores = {};
+state.gameOver = dbGameOver;
+try { localStorage.removeItem(storageKey()); } catch(e2) {}
 saveState();
 }
 }
 
+// ═══════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════
 async function showScreen(id) {
 const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
 if (TAB_SCREENS.includes(id)) return;
@@ -1146,18 +1152,18 @@ const overlay = document.getElementById('page-overlay');
 const currentScreen = document.querySelector('.screen.active');
 
 if (currentScreen) {
-  currentScreen.classList.add('exiting');
-  overlay.classList.add('active');
-  await new Promise(resolve => setTimeout(resolve, 300));
-  currentScreen.classList.remove('active', 'exiting');
+currentScreen.classList.add('exiting');
+if (overlay) overlay.classList.add('active');
+await new Promise(resolve => setTimeout(resolve, 300));
+currentScreen.classList.remove('active', 'exiting');
 }
 
 hideBottomNav();
 
 const el = document.getElementById(id);
 if (el) {
-  el.classList.add('active');
-  overlay.classList.remove('active');
+el.classList.add('active');
+if (overlay) overlay.classList.remove('active');
 }
 }
 
@@ -1176,58 +1182,87 @@ currentTab = tab;
 const overlay = document.getElementById('page-overlay');
 const currentScreen = document.querySelector('.screen.active');
 
-if (currentScreen) {
-  currentScreen.classList.add('exiting');
-  overlay.classList.add('active');
+if (currentScreen && overlay) {
+currentScreen.classList.add('exiting');
+overlay.classList.add('active');
 }
 
 setTimeout(() => {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'exiting'));
-  document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
-  showBottomNav();
-  
-  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
-  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
-  const screenEl = document.getElementById(screenMap[tab]);
-  const tabEl = document.getElementById(tabMap[tab]);
-  if (screenEl) screenEl.classList.add('active');
-  if (tabEl) tabEl.classList.add('active');
-  
-  overlay.classList.remove('active');
-  
-  if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
-  if (tab === 'leaderboard') renderLeaderboardTab();
-  if (tab === 'profile') renderProfileTab();
-  if (tab === 'about') renderAboutTab();
+document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'exiting'));
+document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
+showBottomNav();
+
+const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
+const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
+const screenEl = document.getElementById(screenMap[tab]);
+const tabEl = document.getElementById(tabMap[tab]);
+if (screenEl) screenEl.classList.add('active');
+if (tabEl) tabEl.classList.add('active');
+
+if (overlay) overlay.classList.remove('active');
+
+if (tab === 'chapters') { renderChapters(); }
+if (tab === 'leaderboard') renderLeaderboardTab();
+if (tab === 'profile') renderProfileTab();
+if (tab === 'about') renderAboutTab();
 }, 300);
 }
 
+// ═══════════════════════════════════════════════════════
+//  KEYBOARD TOGGLE
+// ═══════════════════════════════════════════════════════
 function toggleKeyboard() {
 const inp = document.getElementById('cipher-input');
 const btn = document.getElementById('btn-keyboard');
 if (!inp) return;
 
 if (inp.hasAttribute('readonly')) {
-  inp.removeAttribute('readonly');
-  inp.focus();
-  if (btn) { 
-    btn.style.background = 'rgba(255,224,51,.25)'; 
-    btn.style.borderColor = 'rgba(255,224,51,.5)';
-    btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-  }
-  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+inp.removeAttribute('readonly');
+inp.focus();
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.25)'; 
+btn.style.borderColor = 'rgba(255,224,51,.5)';
+btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+}
 } else {
-  inp.setAttribute('readonly', true);
-  inp.blur();
-  if (btn) { 
-    btn.style.background = 'rgba(255,224,51,.1)'; 
-    btn.style.borderColor = 'rgba(255,224,51,.2)';
-    btn.style.boxShadow = 'none';
-  }
-  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+inp.setAttribute('readonly', true);
+inp.blur();
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.1)'; 
+btn.style.borderColor = 'rgba(255,224,51,.2)';
+btn.style.boxShadow = 'none';
+}
 }
 }
 
+// Auto-show keyboard on focus
+document.addEventListener('DOMContentLoaded', () => {
+const inp = document.getElementById('cipher-input');
+if (inp) {
+inp.addEventListener('focus', function() {
+this.removeAttribute('readonly');
+const btn = document.getElementById('btn-keyboard');
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.25)'; 
+btn.style.borderColor = 'rgba(255,224,51,.5)';
+btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+}
+});
+inp.addEventListener('blur', function() {
+this.setAttribute('readonly', true);
+const btn = document.getElementById('btn-keyboard');
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.1)'; 
+btn.style.borderColor = 'rgba(255,224,51,.2)';
+btn.style.boxShadow = 'none';
+}
+});
+}
+});
+
+// ═══════════════════════════════════════════════════════
+//  RENDER CHAPTERS
+// ═══════════════════════════════════════════════════════
 function renderChapters() {
 const list = document.getElementById('chapters-list');
 list.innerHTML = '';
@@ -1238,10 +1273,10 @@ if (isDone) completedCount++;
 let isLocked, visuallyLocked;
 if (state.adminMode) { isLocked = false; visuallyLocked = false; }
 else {
-  const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
-  const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
-  isLocked = !(serverAllows && prevDone);
-  visuallyLocked = isLocked;
+const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
+const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
+isLocked = !(serverAllows && prevDone);
+visuallyLocked = isLocked;
 }
 const card = document.createElement('div');
 card.className = 'chapter-card' + (visuallyLocked?' locked':'') + (isDone?' completed':'');
@@ -1257,39 +1292,23 @@ else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
 else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
 const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
 card.innerHTML = `
-   <div class="ch-icon">${ch.stamp || '🔐'}</div>
-   <div class="ch-inner">
-     <div class="ch-num">${ch.subtitle} · ${statusText}</div>
-     <div class="ch-title">${ch.title}</div>
-     <div class="ch-place">${ch.place}</div>
-     <div class="ch-tags">${tags}</div>
-   </div>
-   <div class="ch-right">
-     <div class="ch-badge">${badgeIcon}</div>
-    ${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
-   </div>`;
+<div class="ch-icon">${ch.stamp || '🔐'}</div>
+<div class="ch-inner">
+<div class="ch-num">${ch.subtitle} · ${statusText}</div>
+<div class="ch-title">${ch.title}</div>
+<div class="ch-place">${ch.place}</div>
+<div class="ch-tags">${tags}</div>
+</div>
+<div class="ch-right">
+<div class="ch-badge">${badgeIcon}</div>
+${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
+</div>`;
 const canRepeat = state.retryPenalty || state._noptsMode;
 const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
 if (canPlay) { card.onclick = () => { showBriefing(i); }; card.style.cursor = 'pointer'; }
 else { card.style.cursor = isDone ? 'default' : 'not-allowed'; }
 list.appendChild(card);
 });
-if (state.adminMode) {
-const banner = document.createElement('div');
-banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.25);border-radius:8px;font-size:var(--fs-xs);color:#ffd700;letter-spacing:.06em';
-banner.textContent = '👑 РЕЖИМ АДМИНИСТРАТОРА · Все главы открыты · Рейтинг не учитывается';
-list.insertBefore(banner, list.firstChild);
-} else if (state._noptsMode) {
-const banner = document.createElement('div');
-banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(100,180,255,.06);border:1px solid rgba(100,180,255,.2);border-radius:8px;font-size:var(--fs-xs);color:#64b4ff;letter-spacing:.06em';
-banner.textContent = '👁 РЕЖИМ ПРАКТИКИ · Очки не начисляются';
-list.insertBefore(banner, list.firstChild);
-} else if (state.retryPenalty) {
-const banner = document.createElement('div');
-banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(255,100,50,.06);border:1px solid rgba(255,100,50,.2);border-radius:8px;font-size:var(--fs-xs);color:#ff6432;letter-spacing:.06em';
-banner.textContent = '🔥 ПОВТОРНОЕ ПРОХОЖДЕНИЕ · +10 сек к каждому заданию';
-list.insertBefore(banner, list.firstChild);
-}
 const total = CHAPTERS.length;
 const pct = Math.round((completedCount / total) * 100);
 const pbEl = document.getElementById('ch-progress-bar');
@@ -1307,6 +1326,9 @@ if (state.gameOver) { document.getElementById('btn-to-final').style.display = 'b
 else { document.getElementById('btn-to-final').style.display = 'none'; }
 }
 
+// ═══════════════════════════════════════════════════════
+//  BRIEFING & START
+// ═══════════════════════════════════════════════════════
 function showBriefing(idx) {
 if (idx < 0 || idx >= CHAPTERS.length) { showScreen('s-chapters'); renderChapters(); return; }
 currentChapter = idx;
@@ -1335,11 +1357,15 @@ loadCipher();
 showScreen('s-cipher');
 }
 
+// ═══════════════════════════════════════════════════════
+//  LOAD CIPHER
+// ═══════════════════════════════════════════════════════
 function loadCipher() {
 const ch = CHAPTERS[state.chapter];
 if (!ch) { showScreen('s-chapters'); renderChapters(); return; }
 const cipher = ch.ciphers[state.cipherIdx];
 if (!cipher) { finishChapter(); return; }
+
 const qc = document.getElementById('quiz-container');
 if (qc) qc.style.display = 'none';
 const inp = document.getElementById('cipher-input');
@@ -1347,6 +1373,7 @@ const inpWrap = document.getElementById('cipher-input-wrap');
 const checkBtn = document.getElementById('btn-check');
 const hintBtn = document.getElementById('btn-hint');
 const boxEl = document.getElementById('cipher-box');
+
 if (cipher.type !== 'quiz') {
 if (inp) { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; inp.setAttribute('readonly', true); }
 if (inpWrap) inpWrap.style.display = '';
@@ -1359,47 +1386,57 @@ if (inpWrap) inpWrap.style.display = 'none';
 if (checkBtn) checkBtn.style.display = '';
 if (boxEl) boxEl.style.display = 'none';
 }
+
 state.startTime = Date.now();
 const prog = document.getElementById('cipher-progress');
 prog.innerHTML = ch.ciphers.map((c, i) => `<div class="cipher-prog-dot ${i < state.cipherIdx ? 'done' : i === state.cipherIdx ? 'active' : ''}"></div>`).join('');
+
 document.getElementById('cipher-chapter-label').textContent = ch.subtitle + ' · ' + ch.place;
 const scoreEl = document.getElementById('cipher-score-display');
 if (scoreEl) scoreEl.textContent = state.chapterScore + ' оч';
 document.getElementById('cipher-type-label').textContent = cipher.typeLabel;
 document.getElementById('cipher-task').textContent = cipher.task;
+
 const box = document.getElementById('cipher-box');
-if (box) { if (cipher.type !== 'quiz') box.style.display = ''; }
+if (box) {
 box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
-box.style.position = 'relative';
 if (cipher.type === 'morse') { box.innerHTML = ''; animateMorse(box, cipher.encrypted); }
-else if (cipher.type === 'quiz') { box.style.display = ''; box.innerHTML = ''; }
+else if (cipher.type === 'quiz') { box.style.display = 'none'; }
 else if (cipher.type === 'anagram') { box.textContent = ''; box.style.display = 'none'; }
-else if (cipher.type === 'math') { box.style.display = ''; box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`; }
-else if (cipher.type === 'photo') { box.style.display = ''; box.innerHTML = `<div class="photo-task-img">${cipher.image}</div><div style="font-family:var(--mono);font-size:var(--fs-2xl);text-align:center;padding:8px 0">${cipher.encrypted}</div>`; }
-else if (cipher.type === 'map') { box.style.display = ''; box.innerHTML = ''; renderMap(cipher); }
-else { box.style.display = ''; box.textContent = cipher.encrypted; }
+else if (cipher.type === 'math') { box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`; }
+else if (cipher.type === 'map') { box.innerHTML = ''; renderMap(cipher); }
+else { box.textContent = cipher.encrypted; }
+}
+
 const inputWrap = document.querySelector('.cipher-input-wrap');
 const actions = document.querySelector('.cipher-actions');
 const btnCheck = document.querySelector('.btn-check');
-if (cipher.type === 'map' || cipher.type === 'anagram') { inputWrap.style.display = 'none'; btnCheck.style.display = 'none'; }
-else { inputWrap.style.display = ''; btnCheck.style.display = ''; }
+if (cipher.type === 'map' || cipher.type === 'anagram') { 
+if (inputWrap) inputWrap.style.display = 'none'; 
+if (btnCheck) btnCheck.style.display = 'none'; 
+} else { 
+if (inputWrap) inputWrap.style.display = ''; 
+if (btnCheck) btnCheck.style.display = ''; 
+}
+
 renderLives();
 startTimer();
-const inpReset = document.getElementById('cipher-input');
-if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
+
 const kbBtn = document.getElementById('btn-keyboard');
 if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; kbBtn.style.boxShadow = 'none'; }
+
 state.hintsUsed = false;
 const hb = document.getElementById('cipher-hint-box');
 const ht = document.getElementById('cipher-hint-text');
-const bh = document.getElementById('btn-hint');
 if (hb) hb.className = 'cipher-hint-box';
 if (ht) ht.textContent = '';
-if (bh) { bh.disabled = false; bh.textContent = '💡 ПОДСКАЗКА'; }
+if (hintBtn) { hintBtn.disabled = false; hintBtn.textContent = '💡 ПОДСКАЗКА'; }
+
 renderRef(cipher.type, cipher.shift);
 if (cipher.type === 'anagram') renderAnagram(cipher);
 if (cipher.type === 'map') renderMap(cipher);
 if (cipher.type === 'quiz') renderQuiz(cipher);
+
 const adminLabel = document.getElementById('cipher-admin-label');
 if (adminLabel) adminLabel.style.display = state.adminMode ? 'block' : 'none';
 }
@@ -1415,15 +1452,7 @@ for(let i=3;i<5;i++) row2 += i < n ? '❤️' : '🖤';
 el.innerHTML = '<div>' + row1 + '</div><div>' + row2 + '</div>';
 }
 
-function animateLifeLoss() {
-const el = document.getElementById('cipher-attempts-label');
-if (!el) return;
-el.style.transition = 'transform .15s,filter .15s';
-el.style.transform = 'scale(1.3)';
-el.style.filter = 'drop-shadow(0 0 8px rgba(255,58,58,.9))';
-setTimeout(() => { el.style.transform = ''; el.style.filter = ''; renderLives(); }, 200);
-}
-
+let _timerInterval = null;
 function startTimer() {
 if (_timerInterval) clearInterval(_timerInterval);
 const el = document.getElementById('cipher-timer');
@@ -1448,14 +1477,15 @@ if (el) el.style.color = 'var(--muted)';
 }
 
 function animateMorse(el, text) {
-el.innerHTML = '<span style="animation:typewriter 2s steps(40);white-space:pre-line">' + text + '</span>';
+el.innerHTML = '<span style="white-space:pre-line">' + text + '</span>';
 }
 
 function renderRef(type, shift) {
 const ref = document.getElementById('cipher-ref');
-if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) { if (ref) ref.innerHTML = ''; return; }
+if (!ref) return;
+if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) { ref.innerHTML = ''; return; }
 if (type === 'morse') {
-ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div><div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">/ — разделение букв</div><div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
+ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div><div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">/ — разделение букв &nbsp;&nbsp; \\n — новое слово</div><div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
 } else if (type === 'atbash') {
 const a = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА АТБАШ (зеркальный алфавит)</div><div class="caesar-ref">${a.split('').map((l,i)=>`<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${a[a.length-1-i]}</span><span style="color:var(--muted)">→${l}</span></div>`).join(' ')}</div>`;
@@ -1464,29 +1494,15 @@ const a = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// ЧИСЛОВОЙ КОД (буква = номер в алфавите)</div><div class="caesar-ref">${a.split('').map((l,i)=>`<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${i+1}</span><span style="color:var(--muted)">=${l}</span></div>`).join(' ')}</div>`;
 } else if (type === 'anagram' || type === 'map') { ref.innerHTML = ''; }
 else if (type === 'math') { ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div><div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ цифрой в поле ниже.</div>`; }
-else if (type === 'photo') { ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div><div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ словами в поле ниже.</div>`; }
 else {
 const alpha = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// АЛФАВИТ ДЛЯ РАСШИФРОВКИ (сдвиг ${shift})</div><div class="caesar-ref">${alpha.split('').map((l,i)=>{ const fromIdx = (i + shift) % alpha.length; return `<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${alpha[fromIdx]}</span><span style="color:var(--muted)">→${l}</span></div>`; }).join(' ')}</div>`;
 }
 }
 
-function calcPoints(cipher, elapsed) {
-const max = cipher.points;
-const secs = Math.max(0, elapsed);
-const penalty = Math.floor(Math.max(0, secs - 10) / 10) * 0.08;
-let factor = Math.max(0.20, 1 - penalty);
-if (state.retryPenalty) {
-const ch = CHAPTERS[state.chapter];
-const fails = ch && state.chapterFailCounts ? (state.chapterFailCounts[ch.id] || 1) : 1;
-const penaltyFactor = Math.max(0.50, 1 - fails * 0.05);
-factor = Math.max(0.10, factor * penaltyFactor);
-}
-const streakBonus = Math.min(0.30, (state.streak || 0) * 0.05);
-factor = Math.min(1.30, factor + streakBonus);
-return Math.round(max * factor);
-}
-
+// ═══════════════════════════════════════════════════════
+//  CHECK ANSWER
+// ═══════════════════════════════════════════════════════
 async function checkAnswer() {
 const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
 if (cipher.type === 'quiz') { quizSubmit(); return; }
@@ -1505,13 +1521,12 @@ inp.className = 'cipher-input correct';
 inp.disabled = true;
 state.streak = (state.streak || 0) + 1;
 playSound('correct');
-const pts = calcPoints(cipher, elapsed);
+const pts = cipher.points;
 state.chapterScore += pts;
 saveState();
 stopTimer();
 if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
 const isFirstTry = (state._chapterErrors || 0) === 0;
-checkAchievements({ elapsed, firstTry: isFirstTry, quizCorrect: cipher.type === 'quiz', mathCorrect: cipher.type === 'math', anagramCorrect: cipher.type === 'anagram', mapCorrect: cipher.type === 'map', morseFast: cipher.type === 'morse' && elapsed <= 10 });
 setTimeout(() => showSuccess(cipher, pts, elapsed), 400);
 } else {
 inp.className = 'cipher-input wrong';
@@ -1528,22 +1543,22 @@ playSound('life_lost');
 }
 saveState();
 if (state.lives <= 0) {
-  if (state.adminMode) {
-    state.lives = 5; saveState(); renderLives();
-    const hb = document.getElementById('cipher-hint-box');
-    const ht = document.getElementById('cipher-hint-text');
-    hb.className = 'cipher-hint-box show';
-    ht.textContent = '⚡ Режим админа: жизни восстановлены';
-    setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
-  } else {
-    inp.disabled = true;
-    renderLives();
-    stopTimer();
-    setTimeout(() => failChapter(), 1200);
-  }
+if (state.adminMode) {
+state.lives = 5; saveState(); renderLives();
+const hb = document.getElementById('cipher-hint-box');
+const ht = document.getElementById('cipher-hint-text');
+hb.className = 'cipher-hint-box show';
+ht.textContent = '⚡ Режим админа: жизни восстановлены';
+setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
 } else {
-  renderLives();
-  showToast('❌ Неверно! Попробуйте ещё раз');
+inp.disabled = true;
+renderLives();
+stopTimer();
+setTimeout(() => failChapter(), 1200);
+}
+} else {
+renderLives();
+showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 }
@@ -1573,6 +1588,9 @@ renderLives();
 }
 }
 
+// ═══════════════════════════════════════════════════════
+//  SUCCESS SCREEN
+// ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
 document.getElementById('succ-answer').textContent = cipher.answer;
 document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
@@ -1613,6 +1631,9 @@ finishChapter();
 }
 }
 
+// ═══════════════════════════════════════════════════════
+//  FINISH CHAPTER
+// ═══════════════════════════════════════════════════════
 async function finishChapter() {
 const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
@@ -1634,7 +1655,6 @@ const allDone = CHAPTERS.every(c => state.completedChapters[c.id]);
 if (allDone) state.gameOver = true;
 updateLeaderboard();
 saveState();
-sendResultToBot({ type: 'chapter_complete', chapter: ch.id, chapter_title: ch.title, score: state.chapterScore, total_score: state.totalScore, user_id: getTgUserId(), user_name: getTgUserName(), game_over: allDone });
 document.getElementById('chend-chapter-name').textContent = ch.title;
 document.getElementById('chend-medal').textContent = medal;
 document.getElementById('chend-score').textContent = state.chapterScore;
@@ -1643,23 +1663,19 @@ document.getElementById('chend-pct').textContent = Math.round(pct*100) + '%';
 const nextBtn = document.getElementById('chend-next-btn');
 if (allDone) { nextBtn.textContent = '🏆 СМОТРЕТЬ ИТОГ'; nextBtn.onclick = () => { showFinal(); }; }
 else { nextBtn.textContent = '← К ЗАДАНИЯМ'; nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); }; }
-if (state._isRetryAttempt) { state._isRetryAttempt = false; checkAchievements({ retryWin: true, comeback: true }); }
-const chNoErrors = (state._chapterErrors || 0) === 0;
-const chNoHints = (state._chapterHints || 0) === 0;
-if (chNoErrors) state._perfectChapters = (state._perfectChapters || 0) + 1;
-if (chNoHints) state._noHintChapters = (state._noHintChapters || 0) + 1;
-checkAchievements({ chapterDoneNoErrors: chNoErrors, chapterDoneNoHints: chNoHints, survived1: state.lives === 1 });
 playSound('chapter_win');
 launchConfetti(800, 20);
 showScreen('s-chapter-end');
 }
 
+// ═══════════════════════════════════════════════════════
+//  FAIL CHAPTER
+// ═══════════════════════════════════════════════════════
 async function failChapter() {
 const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
-const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
 if (!state.chapterStats) state.chapterStats = {};
-state.chapterStats[ch.id] = { time: chTime, errors: state._chapterErrors || 0, hints: state._chapterHints || 0, score: state.chapterScore, max: ch.ciphers.reduce((s,c2) => s+c2.points, 0), failed: true };
+state.chapterStats[ch.id] = { time: 0, errors: state._chapterErrors || 0, hints: state._chapterHints || 0, score: state.chapterScore, max: ch.ciphers.reduce((s,c2) => s+c2.points, 0), failed: true };
 if (!state.chapterFailCounts) state.chapterFailCounts = {};
 const failCount = (state.chapterFailCounts[ch.id] || 0) + 1;
 state.chapterFailCounts[ch.id] = failCount;
@@ -1669,7 +1685,6 @@ const allDone = CHAPTERS.every(c => state.completedChapters[c.id]);
 if (allDone) state.gameOver = true;
 updateLeaderboard();
 saveState();
-sendResultToBot({ type: 'chapter_failed', chapter: ch.id, chapter_title: ch.title, score: state.chapterScore, total_score: state.totalScore, user_id: getTgUserId(), user_name: getTgUserName() });
 document.getElementById('fail-chapter-name').textContent = ch.title;
 document.getElementById('fail-score-line').textContent = `Набрано очков в этой главе: ${state.chapterScore}`;
 const nextIdx = state.chapter + 1;
@@ -1715,26 +1730,20 @@ state.streak = 0;
 state._chapterErrors = 0;
 state._chapterHints = 0;
 saveState();
-autoSync(false);
 showBriefing(idx);
 }
 
-function retryChapter(idx) { retryChapterWithPenalty(idx); }
-
+// ═══════════════════════════════════════════════════════
+//  QUIZ
+// ═══════════════════════════════════════════════════════
 function renderQuiz(cipher) {
 _quizState = { cipher, startTime: Date.now(), selected: null, answered: false };
-let container = document.getElementById('quiz-container');
-if (!container) {
-container = document.createElement('div');
-container.id = 'quiz-container';
-const refEl = document.getElementById('cipher-hint-box');
-if (refEl && refEl.parentNode) refEl.parentNode.insertBefore(container, refEl);
-else document.getElementById('cipher-body') && document.getElementById('cipher-body').appendChild(container);
-}
-container.style.cssText = 'display:block;width:100%;padding:0 2px;margin-bottom:12px';
+const container = document.getElementById('quiz-container');
+if (!container) return;
+container.style.display = 'block';
 const letters = ['А', 'Б', 'В', 'Г', 'Д'];
-const optionsHtml = cipher.options.map((opt, i) => `<div id="quiz-opt-${i}" onclick="quizSelect(${i})" style="width:100%;padding:14px 16px;margin-bottom:8px; background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.1); border-radius:10px;color:#fdfaf0;font-size:14px;cursor:pointer; display:flex;align-items:center;gap:12px; transition:all .15s ease;box-sizing:border-box;user-select:none"> <div id="quiz-letter-${i}" style="flex-shrink:0;width:30px;height:30px;border-radius:50%; background:rgba(255,224,51,.08);border:1.5px solid rgba(255,224,51,.2); display:flex;align-items:center;justify-content:center; font-family:var(--head);font-size:13px;color:var(--accent); transition:all .15s">${letters[i] || String.fromCharCode(65+i)}</div> <span style="flex:1;line-height:1.5">${opt}</span> </div>`).join('');
-container.innerHTML = `<div style="font-size:10px;color:rgba(255,224,51,.5);letter-spacing:.12em; text-align:center;margin-bottom:10px;font-family:var(--head)">👆 ВЫБЕРИТЕ ВАРИАНТ И НАЖМИТЕ ПРОВЕРИТЬ</div><div id="quiz-options-list">${optionsHtml}</div><div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px; margin-top:4px;margin-bottom:8px;font-size:13px;text-align:center; font-family:var(--head);letter-spacing:.04em"></div>`;
+const optionsHtml = cipher.options.map((opt, i) => `<div id="quiz-opt-${i}" onclick="quizSelect(${i})" class="quiz-option"> <div id="quiz-letter-${i}" class="quiz-letter">${letters[i]}</div> <span>${opt}</span> </div>`).join('');
+container.innerHTML = `<div id="quiz-options-list">${optionsHtml}</div><div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px; margin-top:4px;font-size:13px;text-align:center;"></div>`;
 const checkBtn = document.getElementById('btn-check');
 if (checkBtn) { checkBtn.style.display = ''; checkBtn.textContent = '✓ ПРОВЕРИТЬ'; }
 }
@@ -1749,12 +1758,10 @@ if (!opt) return;
 if (i === idx) {
 opt.style.background = 'rgba(255,224,51,.12)';
 opt.style.borderColor = 'rgba(255,224,51,.45)';
-opt.style.color = '#fdfaf0';
 if (let_) { let_.style.background = 'rgba(255,224,51,.25)'; let_.style.borderColor = 'rgba(255,224,51,.6)'; let_.style.color = '#ffe033'; }
 } else {
 opt.style.background = 'rgba(255,255,255,.04)';
 opt.style.borderColor = 'rgba(255,255,255,.1)';
-opt.style.color = '#fdfaf0';
 if (let_) { let_.style.background = 'rgba(255,224,51,.08)'; let_.style.borderColor = 'rgba(255,224,51,.2)'; let_.style.color = 'var(--accent)'; }
 }
 });
@@ -1762,7 +1769,7 @@ if (let_) { let_.style.background = 'rgba(255,224,51,.08)'; let_.style.borderCol
 
 function quizSubmit() {
 if (_quizState.answered || _quizState.selected === null) {
-if (_quizState.selected === null) showToast('👆 Выберите вариант ответа');
+showToast('👆 Выберите вариант ответа');
 return;
 }
 _quizState.answered = true;
@@ -1771,6 +1778,7 @@ const correct = cipher.correctIndex;
 const selected = _quizState.selected;
 const elapsed = Math.round((Date.now() - _quizState.startTime) / 1000);
 const isCorrect = selected === correct;
+
 cipher.options.forEach((_, i) => {
 const opt = document.getElementById('quiz-opt-' + i);
 const let_ = document.getElementById('quiz-letter-' + i);
@@ -1788,6 +1796,7 @@ opt.style.color = '#ff7070';
 if (let_) { let_.style.background = 'rgba(255,50,50,.2)'; let_.style.borderColor = 'rgba(255,50,50,.5)'; let_.style.color = '#ff7070'; }
 } else { opt.style.opacity = '0.4'; }
 });
+
 const feedback = document.getElementById('quiz-feedback');
 if (isCorrect) {
 playSound('correct');
@@ -1799,12 +1808,10 @@ feedback.style.color = '#50ee80';
 feedback.textContent = '✅ Верно!';
 }
 state.streak = (state.streak || 0) + 1;
-const pts = calcPoints(cipher, elapsed);
+const pts = cipher.points;
 state.chapterScore += pts;
 saveState();
 stopTimer();
-if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
-checkAchievements({ elapsed, firstTry: (state._chapterErrors || 0) === 0, quizCorrect: true });
 setTimeout(() => {
 const qc = document.getElementById('quiz-container');
 if (qc) qc.style.display = 'none';
@@ -1832,39 +1839,40 @@ playSound('life_lost');
 saveState();
 renderLives();
 if (state.lives <= 0) {
-  stopTimer();
-  setTimeout(() => failChapter(), 1400);
+stopTimer();
+setTimeout(() => failChapter(), 1400);
 } else {
-  setTimeout(() => {
-    _quizState.answered = false;
-    _quizState.selected = null;
-    cipher.options.forEach((_, i) => {
-      const opt2 = document.getElementById('quiz-opt-' + i);
-      const let2 = document.getElementById('quiz-letter-' + i);
-      if (!opt2 || i === correct) return;
-      opt2.style.background = 'rgba(255,255,255,.04)';
-      opt2.style.borderColor = 'rgba(255,255,255,.1)';
-      opt2.style.color = '#fdfaf0';
-      opt2.style.opacity = '1';
-      opt2.style.cursor = 'pointer';
-      if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
-    });
-    if (feedback) feedback.style.display = 'none';
-  }, 2000);
-  showToast('❌ Неверно! Попробуйте ещё раз');
+setTimeout(() => {
+_quizState.answered = false;
+_quizState.selected = null;
+cipher.options.forEach((_, i) => {
+const opt2 = document.getElementById('quiz-opt-' + i);
+const let2 = document.getElementById('quiz-letter-' + i);
+if (!opt2 || i === correct) return;
+opt2.style.background = 'rgba(255,255,255,.04)';
+opt2.style.borderColor = 'rgba(255,255,255,.1)';
+opt2.style.color = '#fdfaf0';
+opt2.style.opacity = '1';
+opt2.style.cursor = 'pointer';
+if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
+});
+if (feedback) feedback.style.display = 'none';
+}, 2000);
+showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 }
 
-let anagramState = { letters: [], placed: [], indices: [] };
-
+// ═══════════════════════════════════════════════════════
+//  ANAGRAM
+// ═══════════════════════════════════════════════════════
 function renderAnagram(cipher) {
 const box = document.getElementById('cipher-box');
 box.style.display = 'none';
 const letters = cipher.encrypted.split('');
 anagramState = { letters: [...letters], placed: Array(letters.length).fill(null), usedIdx: Array(letters.length).fill(false) };
 const ref = document.getElementById('cipher-ref');
-ref.innerHTML = `<div class="cipher-ref-title">// СОСТАВЬ СЛОВО</div><div style="font-size:var(--fs-sm);color:var(--accent);font-weight:700;margin-bottom:10px;text-align:center;letter-spacing:.04em">👆 Тапай на буквы ниже — составляй слово<br><span style="color:var(--muted);font-size:var(--fs-xs);font-weight:400">(ввод вручную не рекомендуется)</span></div><div class="anagram-answer" id="ag-answer">${letters.map((_,i)=>`<div class="anagram-slot" id="ag-slot-${i}" onclick="removeFromSlot(${i})"></div>`).join('')}</div><div class="anagram-pool" id="ag-pool">${letters.map((l,i)=>`<div class="anagram-letter" id="ag-letter-${i}" onclick="addToSlot(${i})">${l}</div>`).join('')}</div><div style="text-align:center"><button class="anagram-reset" onclick="resetAnagram()">↺ Сбросить</button></div>`;
+ref.innerHTML = `<div class="cipher-ref-title">// СОСТАВЬ СЛОВО</div><div style="font-size:var(--fs-sm);color:var(--accent);font-weight:700;margin-bottom:10px;text-align:center;">👆 Тапай на буквы ниже — составляй слово</div><div class="anagram-answer" id="ag-answer">${letters.map((_,i)=>`<div class="anagram-slot" id="ag-slot-${i}" onclick="removeFromSlot(${i})"></div>`).join('')}</div><div class="anagram-pool" id="ag-pool">${letters.map((l,i)=>`<div class="anagram-letter" id="ag-letter-${i}" onclick="addToSlot(${i})">${l}</div>`).join('')}</div><div style="text-align:center"><button class="anagram-reset" onclick="resetAnagram()">↺ Сбросить</button></div>`;
 }
 
 function addToSlot(letterIdx) {
@@ -1903,7 +1911,7 @@ const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 const slots = document.querySelectorAll('.anagram-slot');
 if (answer.toUpperCase() === cipher.answer) {
 slots.forEach(s => { s.style.borderColor = '#55dd55'; s.style.background = 'rgba(85,221,85,.15)'; });
-const pts = calcPoints(cipher, elapsed);
+const pts = cipher.points;
 state.chapterScore += pts;
 saveState();
 setTimeout(() => showSuccess(cipher, pts, elapsed), 600);
@@ -1920,11 +1928,11 @@ showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 
-let mapAnswered = false;
-
+// ═══════════════════════════════════════════════════════
+//  MAP
+// ═══════════════════════════════════════════════════════
 function renderMap(cipher) {
 mapAnswered = false;
-const target = cipher.mapCity;
 const ref = document.getElementById('cipher-ref');
 const dots = MAP_CITIES.map(c => {
 return `<g class="map-city-dot" id="mcdot-${c.name}" onclick="checkMapAnswer('${c.name}')"> <circle cx="${c.x}" cy="${c.y}" r="6" fill="#ffe033" opacity=".7" stroke="#0a0a08" stroke-width="1"/> <text class="map-city-label" x="${c.x + 9}" y="${c.y + 4}">${c.name}</text> </g>`;
@@ -1941,7 +1949,7 @@ if (clicked === cipher.answer) {
 mapAnswered = true;
 if (dotEl) dotEl.querySelector('circle').setAttribute('fill','#55dd55');
 document.getElementById('map-hint-text').textContent = '✅ Верно! ' + clicked;
-const pts = calcPoints(cipher, elapsed);
+const pts = cipher.points;
 state.chapterScore += pts;
 saveState();
 setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
@@ -1958,6 +1966,9 @@ showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 
+// ═══════════════════════════════════════════════════════
+//  SOUNDS
+// ═══════════════════════════════════════════════════════
 let _audioCtx = null;
 function getAudio() {
 if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
@@ -1974,59 +1985,62 @@ osc.connect(gain);
 gain.connect(ctx.destination);
 const now = ctx.currentTime;
 if (type === 'correct') {
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(523, now);
-  osc.frequency.setValueAtTime(784, now + 0.1);
-  gain.gain.setValueAtTime(0.3, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-  osc.start(now); osc.stop(now + 0.4);
+osc.type = 'sine';
+osc.frequency.setValueAtTime(523, now);
+osc.frequency.setValueAtTime(784, now + 0.1);
+gain.gain.setValueAtTime(0.3, now);
+gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+osc.start(now); osc.stop(now + 0.4);
 } else if (type === 'wrong') {
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(150, now);
-  osc.frequency.setValueAtTime(100, now + 0.15);
-  gain.gain.setValueAtTime(0.2, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-  osc.start(now); osc.stop(now + 0.3);
+osc.type = 'sawtooth';
+osc.frequency.setValueAtTime(150, now);
+osc.frequency.setValueAtTime(100, now + 0.15);
+gain.gain.setValueAtTime(0.2, now);
+gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+osc.start(now); osc.stop(now + 0.3);
 } else if (type === 'chapter_win') {
-  const freqs = [523, 659, 784, 1047];
-  freqs.forEach((f, i) => {
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'sine';
-    o.frequency.setValueAtTime(f, now + i * 0.1);
-    g.gain.setValueAtTime(0.25, now + i * 0.1);
-    g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.3);
-    o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.3);
-  });
+const freqs = [523, 659, 784, 1047];
+freqs.forEach((f, i) => {
+const o = ctx.createOscillator();
+const g = ctx.createGain();
+o.connect(g); g.connect(ctx.destination);
+o.type = 'sine';
+o.frequency.setValueAtTime(f, now + i * 0.1);
+g.gain.setValueAtTime(0.25, now + i * 0.1);
+g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.3);
+o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.3);
+});
 } else if (type === 'life_lost') {
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(200, now);
-  osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
-  gain.gain.setValueAtTime(0.15, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-  osc.start(now); osc.stop(now + 0.3);
+osc.type = 'square';
+osc.frequency.setValueAtTime(200, now);
+osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+gain.gain.setValueAtTime(0.15, now);
+gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+osc.start(now); osc.stop(now + 0.3);
 } else if (type === 'hint') {
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(440, now);
-  gain.gain.setValueAtTime(0.15, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-  osc.start(now); osc.stop(now + 0.2);
+osc.type = 'sine';
+osc.frequency.setValueAtTime(440, now);
+gain.gain.setValueAtTime(0.15, now);
+gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+osc.start(now); osc.stop(now + 0.2);
 } else if (type === 'game_win') {
-  [523,659,784,880,1047].forEach((f, i) => {
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = i % 2 === 0 ? 'sine' : 'triangle';
-    o.frequency.setValueAtTime(f, now + i * 0.08);
-    g.gain.setValueAtTime(0.2, now + i * 0.08);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
-    o.start(now + i * 0.08); o.stop(now + 1.5);
-  });
+[523,659,784,880,1047].forEach((f, i) => {
+const o = ctx.createOscillator();
+const g = ctx.createGain();
+o.connect(g); g.connect(ctx.destination);
+o.type = i % 2 === 0 ? 'sine' : 'triangle';
+o.frequency.setValueAtTime(f, now + i * 0.08);
+g.gain.setValueAtTime(0.2, now + i * 0.08);
+g.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+o.start(now + i * 0.08); o.stop(now + 1.5);
+});
 }
 } catch(e) {}
 }
 
+// ═══════════════════════════════════════════════════════
+//  CONFETTI
+// ═══════════════════════════════════════════════════════
 function launchConfetti(duration = 800, intensity = 20) {
 const colors = ['#ffe033','#ff4455','#55ee66','#4488ff','#ff88ff'];
 const positions = [{ left: '0', top: '20%' }, { left: '0', top: '50%' }, { right: '0', top: '20%' }, { right: '0', top: '50%' }];
@@ -2041,12 +2055,12 @@ setTimeout(() => flash.remove(), 700);
 });
 }
 
-let pausedFromScreen = null;
-
+// ═══════════════════════════════════════════════════════
+//  PAUSE & NAVIGATION
+// ═══════════════════════════════════════════════════════
 function pauseGame() {
 saveState();
 stopTimer();
-autoSync(false);
 pausedFromScreen = 's-cipher';
 hideBottomNav();
 const ch = CHAPTERS[state.chapter];
@@ -2068,21 +2082,20 @@ saveState();
 showScreen('s-chapters');
 renderChapters();
 showBottomNav();
-autoSync(true);
 }
 
 function exitToMain() {
 saveState();
-autoSync(false);
 if (tg) { setTimeout(() => tg.close(), 300); } else { goToChapters(); }
 }
 
+// ═══════════════════════════════════════════════════════
+//  LEADERBOARD
+// ═══════════════════════════════════════════════════════
 function updateLeaderboard() {
 const name = getTgUserName();
 const uid = getTgUserId() || 'guest';
-const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length,
-achievementCount: Object.keys(state.achievements || {}).length,
-achievementPts: state.achievementPts || 0 };
+const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length };
 const idx = state.leaderboard.findIndex(e => e.uid === uid);
 if (idx >= 0) { if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry; }
 else { state.leaderboard.push(entry); }
@@ -2091,66 +2104,50 @@ state.leaderboard.sort((a,b) => b.score - a.score);
 
 function renderLeaderboardTab() {
 const list = document.getElementById('lb-list-tab');
-if (!state.leaderboard.length) {
-list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
+if (!list) return;
+const myUid = getTgUserId() || 'guest';
+const lb = state.leaderboard || [];
+if (!lb.length) {
+list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
 return;
 }
-const myUid = getTgUserId() || 'guest';
-const total = tgInitLB.length || state.leaderboard.length;
-const header = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align:center;margin-bottom:16px;letter-spacing:.06em">👥 ${total || 0} уч. · 👆 нажми на себя</div>`;
 const medals = ['🥇','🥈','🥉'];
-const myRole2 = tgInitMe?.role || '';
-const isAdminUser = myRole2 === 'admin' || (tgUser && tgUser.id === 516406248);
-const filteredLb = isAdminUser ? state.leaderboard : state.leaderboard.filter(e => e.role !== 'admin' && e.role !== 'tester');
-const visibleLb = isAdminUser ? filteredLb : filteredLb.slice(0, 10);
-const rows = visibleLb.map((e,i) => {
+const rows = lb.slice(0,20).map((e,i) => {
 const isMe = e.uid === myUid;
 const pct = Math.round((e.completed / 6) * 100);
 const done = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
 const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
-const roleIcon = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
 const clickAttr = isMe ? ' onclick="showMyStats()" ' : '';
-return `<div ${clickAttr}style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);background:${isMe?'rgba(255,224,51,.06)':rankBg};${isMe?'border-left:3px solid var(--accent);cursor:pointer':''}"> <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">${medals[i] || `<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">${i+1}</span>`}</div> <div style="flex:1;min-width:0"> <div style="font-family:var(--head);font-size:var(--fs-base); color:${isMe?'var(--accent)':'#fdfaf0'}; white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.name}${roleIcon}${isMe?' 👈':''}</div> <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em">${done}</div> <div style="font-size:9px;color:var(--accent);margin-top:2px">🏅 ${e.achievementCount || 0} дост. (+${e.achievementPts || 0}⭐)</div> </div> <div style="font-family:var(--head);font-size:var(--fs-xl); color:${isMe?'var(--accent)':'#c4b06a'}; text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">${e.score}</div> </div>`;
+return `<div ${clickAttr}style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);background:${isMe?'rgba(255,224,51,.06)':rankBg};${isMe?'border-left:3px solid var(--accent);cursor:pointer':''}"> <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">${medals[i] || `<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">${i+1}</span>`}</div> <div style="flex:1;min-width:0"> <div style="font-family:var(--head);font-size:var(--fs-base); color:${isMe?'var(--accent)':'#fdfaf0'}; white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.name}${isMe?' 👈':''}</div> <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em">${done}</div> </div> <div style="font-family:var(--head);font-size:var(--fs-xl); color:${isMe?'var(--accent)':'#c4b06a'}; text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">${e.score}</div> </div>`;
 }).join('');
-const myInTop = visibleLb.some(e => e.uid === myUid);
-const myPos = myInTop ? '' : `<div style="margin:12px 16px;padding:12px; background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px; font-size:var(--fs-sm);color:var(--muted);text-align:center">📍 Вы не в топ-10. Нажмите на своё имя в рейтинге для статистики.</div>`;
-list.innerHTML = header + rows + myPos;
+list.innerHTML = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align:center;margin-bottom:16px;">👥 ${lb.length} уч. · 👆 нажми на себя</div>` + rows;
 }
 
+// ═══════════════════════════════════════════════════════
+//  PROFILE
+// ═══════════════════════════════════════════════════════
 function renderProfileTab() {
 const el = document.getElementById('profile-tab-content');
 if (!el) return;
 const uid = getTgUserId();
 const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-const dbCompleted = tgInitMe?.completed || 0;
-const dbScore = tgInitMe?.score || 0;
-const localCompleted = Object.keys(state.completedChapters).length;
-const completed = Math.max(localCompleted, dbCompleted);
-if (dbScore > state.totalScore) state.totalScore = dbScore;
+const completed = Object.keys(state.completedChapters).length;
 const pct = Math.round((completed / CHAPTERS.length) * 100);
-const myRole = tgInitMe?.role || (tgUser?.id === 516406248 ? 'admin' : 'player');
-const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
-const titles = [[0,'Новобранец','🎖'],[35,'Сержант связи','🏅'],[55,'Капитан подполья','🎖'],[75,'Полковник разведки','⭐'],[90,'Маршал Победы','🌟']];
-const maxScore = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
-const scorePct = Math.round((state.totalScore / maxScore) * 100);
-const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
-const roleLabel2 = roleLabels[myRole] || '';
-const chapterHistory = CHAPTERS.map(ch => {
-const done = !!state.completedChapters[ch.id];
-const score = state.chapterScores[ch.id] || 0;
-const icon = done ? (score > 0 ? '✅' : '💔') : '🔒';
-const color = done ? (score > 0 ? 'var(--green)' : 'var(--accent2)') : 'rgba(255,255,255,.2)';
-return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0; border-bottom:1px solid rgba(255,255,255,.04)"> <div style="font-size:18px">${icon}</div> <div style="flex:1"> <div style="font-size:var(--fs-sm);color:${done?'#fdfaf0':'rgba(255,255,255,.3)'}">${ch.title}</div> <div style="font-size:10px;color:var(--muted)">${ch.subtitle}</div> </div> <div style="font-family:var(--head);font-size:var(--fs-sm);color:${color}">${score ? score + ' оч' : done ? '—' : ''}</div> </div>`;
-}).join('');
-el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>${roleLabel2 ? `<div style="margin-top:6px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.06em">${roleLabel2}</div>` : ''}<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px; background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1); border-radius:20px;padding:5px 14px"> <span style="font-size:10px;color:var(--muted);letter-spacing:.06em">TELEGRAM ID</span> <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span> </div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><div style="margin-top:16px"> <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted); letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>${chapterHistory}</div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
+el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;">🎖</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;">РАЗВЕДЧИК</div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
 }
 
+// ═══════════════════════════════════════════════════════
+//  ABOUT
+// ═══════════════════════════════════════════════════════
 function renderAboutTab() {
 const el = document.getElementById('about-tab-content');
 if (!el) return;
-el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ 1.0 · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div></div>`;
+el.innerHTML = `<div style="padding:16px;text-align:center;"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ 1.0 · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>`;
 }
 
+// ═══════════════════════════════════════════════════════
+//  RESET
+// ═══════════════════════════════════════════════════════
 function confirmReset() {
 const isAdmin = state.adminMode || window._adminMode === true;
 if (!isAdmin) { if (getTgUserId()) { alert('Прогресс сохранён в системе и не может быть удалён.'); } return; }
@@ -2158,17 +2155,13 @@ if (!confirm('Сбросить тестовый прогресс к нулю? В
 try { localStorage.removeItem(storageKey()); } catch(e) {}
 state = DEFAULT_STATE();
 state.adminMode = true;
-const syncUrl = window._syncUrl;
-const uid = getTgUserId();
-if (syncUrl && uid) {
-const resetUrl = syncUrl.replace('/game_sync', '/game_reset');
-fetch(resetUrl, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ user_id: uid }) })
-.then(r => r.json()).then(d => console.log('✅ Прогресс сброшен в БД:', d)).catch(e => console.warn('reset sync error:', e));
-}
 renderChapters();
 showToast('🗑 Прогресс сброшен');
 }
 
+// ═══════════════════════════════════════════════════════
+//  EFFECTS
+// ═══════════════════════════════════════════════════════
 function screenPulseRed() {
 const overlay = document.createElement('div');
 overlay.style.cssText = `position:fixed;inset:0;z-index:9998;pointer-events:none; background:rgba(255,50,50,0);transition:background .1s ease`;
@@ -2179,6 +2172,18 @@ setTimeout(() => { overlay.style.background = 'rgba(255,50,50,0)'; setTimeout(()
 });
 }
 
+function animateLifeLoss() {
+const el = document.getElementById('cipher-attempts-label');
+if (!el) return;
+el.style.transition = 'transform .15s,filter .15s';
+el.style.transform = 'scale(1.3)';
+el.style.filter = 'drop-shadow(0 0 8px rgba(255,58,58,.9))';
+setTimeout(() => { el.style.transform = ''; el.style.filter = ''; renderLives(); }, 200);
+}
+
+// ═══════════════════════════════════════════════════════
+//  3D INTRO
+// ═══════════════════════════════════════════════════════
 function init3DIntro() {
 const canvas = document.getElementById('three-canvas');
 if (!canvas || typeof THREE === 'undefined') return;
@@ -2229,6 +2234,9 @@ renderer.render(scene, camera);
 })();
 }
 
+// ═══════════════════════════════════════════════════════
+//  FIREWORKS
+// ═══════════════════════════════════════════════════════
 (function initFireworks(){
 const c = document.getElementById('fireworks-canvas');
 if(!c) return;
@@ -2236,7 +2244,7 @@ const ctx = c.getContext('2d');
 function resize(){ c.width=window.innerWidth; c.height=window.innerHeight; }
 resize();
 window.addEventListener('resize', resize);
-const COLORS = ['#ff4422','#ff8800','#ffcc00','#ffe033','#ffffff','#ff3388','#44aaff','#88ff44'];
+const COLORS = ['#ff4422','#ff8800','#ffcc00','#ffe033','#ffffff'];
 let rockets = [], particles = [], frame = 0;
 let active = true;
 const intro = document.getElementById('s-intro');
@@ -2251,7 +2259,6 @@ const angle = (Math.PI*2/n)*i + Math.random()*0.3;
 const speed = 1.5 + Math.random()*2.5;
 particles.push({ x:r.tx, y:r.ty, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, color: r.color, life: 1, decay: .012 + Math.random()*0.018, size: 2 + Math.random()*2 });
 }
-for(let i=0;i<12;i++){ particles.push({ x:r.tx, y:r.ty, vx: (Math.random()-.5)*1.5, vy: Math.random()*2, color:'#ffeeaa', life:1, decay:.03, size:1.5 }); }
 }
 function draw(){
 requestAnimationFrame(draw);
@@ -2260,38 +2267,40 @@ ctx.fillStyle='rgba(0,0,0,.18)';
 ctx.fillRect(0,0,c.width,c.height);
 frame++;
 if(frame > 60 && frame % 90 === 0) spawnRocket();
-if(frame > 120 && frame % 130 === 0) spawnRocket();
 rockets = rockets.filter(r=>{
-  r.trail.push({x:r.x,y:r.y});
-  if(r.trail.length>12) r.trail.shift();
-  const dx=r.tx-r.x, dy=r.ty-r.y;
-  const dist=Math.sqrt(dx*dx+dy*dy);
-  if(dist < 5){ explode(r); return false; }
-  const speed = Math.min(dist*.12, 14);
-  r.x += dx/dist*speed; r.y += dy/dist*speed;
-  r.trail.forEach((pt,i)=>{
-    const a = (i/r.trail.length)*.8;
-    ctx.beginPath(); ctx.arc(pt.x,pt.y,1.5,0,Math.PI*2);
-    ctx.fillStyle = r.color; ctx.globalAlpha = a; ctx.fill();
-  });
-  ctx.globalAlpha=1;
-  ctx.beginPath(); ctx.arc(r.x,r.y,3,0,Math.PI*2);
-  ctx.fillStyle='#fff'; ctx.fill();
-  return true;
+r.trail.push({x:r.x,y:r.y});
+if(r.trail.length>12) r.trail.shift();
+const dx=r.tx-r.x, dy=r.ty-r.y;
+const dist=Math.sqrt(dx*dx+dy*dy);
+if(dist < 5){ explode(r); return false; }
+const speed = Math.min(dist*.12, 14);
+r.x += dx/dist*speed; r.y += dy/dist*speed;
+r.trail.forEach((pt,i)=>{
+const a = (i/r.trail.length)*.8;
+ctx.beginPath(); ctx.arc(pt.x,pt.y,1.5,0,Math.PI*2);
+ctx.fillStyle = r.color; ctx.globalAlpha = a; ctx.fill();
+});
+ctx.globalAlpha=1;
+ctx.beginPath(); ctx.arc(r.x,r.y,3,0,Math.PI*2);
+ctx.fillStyle='#fff'; ctx.fill();
+return true;
 });
 particles = particles.filter(p=>{
-  p.x+=p.vx; p.y+=p.vy; p.vy+=.04; p.vx*=.97; p.vy*=.97;
-  p.life-=p.decay;
-  if(p.life<=0) return false;
-  ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);
-  ctx.fillStyle=p.color; ctx.globalAlpha=p.life*.9; ctx.fill();
-  ctx.globalAlpha=1;
-  return true;
+p.x+=p.vx; p.y+=p.vy; p.vy+=.04; p.vx*=.97; p.vy*=.97;
+p.life-=p.decay;
+if(p.life<=0) return false;
+ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);
+ctx.fillStyle=p.color; ctx.globalAlpha=p.life*.9; ctx.fill();
+ctx.globalAlpha=1;
+return true;
 });
 }
 draw();
 })();
 
+// ═══════════════════════════════════════════════════════
+//  PETALS
+// ═══════════════════════════════════════════════════════
 (function initPetals(){
 const c = document.getElementById('petals-canvas');
 if(!c) return;
@@ -2330,6 +2339,9 @@ drawPetal(p);
 loop();
 })();
 
+// ═══════════════════════════════════════════════════════
+//  PARTICLES
+// ═══════════════════════════════════════════════════════
 (function initParticles(){
 const c = document.getElementById('particles-canvas');
 if(!c) return;
@@ -2356,368 +2368,17 @@ requestAnimationFrame(draw);
 draw();
 })();
 
+// ═══════════════════════════════════════════════════════
+//  INTRO ANIMATION
+// ═══════════════════════════════════════════════════════
 function introEntrance(){
-const seq = [['intro-stamp',300],['intro-date',700],['intro-title',1000],['intro-ribbon',1500],['intro-desc',1900],['intro-quote',2300],['intro-btn',2700],['intro-how',2950],['intro-memory',3200],['skyline',800]];
+const seq = [['intro-stamp',300],['intro-date',700],['intro-title',1000],['intro-ribbon',1500],['intro-desc',1900],['intro-quote',2300],['intro-btn',2700],['intro-how',2950],['intro-memory',3200]];
 seq.forEach(([id, ms])=> setTimeout(()=>{ const el = document.getElementById(id); if(el) el.classList.add('intro-show'); }, ms));
 }
 
-async function autoSync(showNotification = true) {
-const syncUrl = window._syncUrl;
-const uid = getTgUserId();
-if (!syncUrl || !uid) return;
-const completed = Object.keys(state.completedChapters).length;
-if (state.totalScore === _lastSyncedScore && completed === _lastSyncedCompleted) return;
-if (_syncInFlight) return;
-_syncInFlight = true;
-const data = { type: completed > 0 ? 'chapter_complete' : 'sync', chapter: completed > 0 ? Math.max(...Object.keys(state.completedChapters).map(Number)) : 0, score: 0, total_score: state.totalScore, completed: completed, game_over: state.gameOver || false, user_id: uid, user_name: getTgUserName(),
-achievement_count: Object.keys(state.achievements || {}).length,
-achievement_pts: state.achievementPts || 0 };
-try {
-const resp = await fetch(syncUrl, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
-if (resp.ok) {
-_lastSyncedScore = state.totalScore;
-_lastSyncedCompleted = completed;
-console.log('✅ autoSync OK:', state.totalScore, 'pts,', completed, 'chapters');
-if (showNotification) showToast('✅ Прогресс сохранён');
-}
-} catch(e) { console.warn('autoSync error:', e); } finally { _syncInFlight = false; }
-}
-
-document.addEventListener('visibilitychange', () => {
-if (document.hidden && state.totalScore > 0) { saveState(); autoSync(false); }
-});
-
-window.addEventListener('beforeunload', () => {
-if (state.totalScore > 0 && window._syncUrl && getTgUserId()) {
-const data = { type: 'sync', total_score: state.totalScore, completed: Object.keys(state.completedChapters).length, game_over: state.gameOver || false, user_id: getTgUserId(), user_name: getTgUserName() };
-navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
-}
-});
-
-async function showFinal() {
-document.getElementById('final-score-val').textContent = state.totalScore;
-const uid = getTgUserId();
-const finalUidEl = document.getElementById('final-uid');
-if (finalUidEl && uid) { finalUidEl.textContent = 'ID: ' + uid; finalUidEl.style.display = 'block'; }
-const maxAll = CHAPTERS.reduce((s,ch)=>s+ch.ciphers.reduce((a,c)=>a+c.points,0),0);
-const pct = Math.round(state.totalScore / maxAll * 100);
-let rank = 'НОВОБРАНЕЦ';
-if (pct >= 90) rank = 'МАРШАЛ ПОБЕДЫ 🌟';
-else if (pct >= 75) rank = 'ПОЛКОВНИК РАЗВЕДКИ ⭐';
-else if (pct >= 55) rank = 'КАПИТАН ПОДПОЛЬЯ 🎖';
-else if (pct >= 35) rank = 'СЕРЖАНТ СВЯЗИ 🏅';
-document.getElementById('final-rank').textContent = rank;
-document.getElementById('final-pct').textContent = pct + '% от максимума';
-let rows = '';
-CHAPTERS.forEach(ch => {
-const s = state.chapterScores[ch.id] || 0;
-const m = ch.ciphers.reduce((a,c)=>a+c.points,0);
-rows += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:17px"><span>${ch.subtitle}: ${ch.title}</span><span style="color:var(--accent)">${s}/${m}</span></div>`;
-});
-document.getElementById('final-chapter-scores').innerHTML = rows;
-setTimeout(() => document.getElementById('final-stars').classList.add('show'), 800);
-setTimeout(() => playSound('game_win'), 300);
-setTimeout(() => launchConfetti(1500, 40), 500);
-sendResultToBot({ type: 'game_complete', total_score: state.totalScore, rank: rank, pct: pct, user_id: getTgUserId(), user_name: getTgUserName() });
-showScreen('s-final');
-}
-
-const ACHIEVEMENTS = [
-{id:'speed_1', icon:'⚡', name:'Молния', desc:'Ответил за 5 секунд', pts:10},
-{id:'perfect_1', icon:'🎯', name:'Снайпер', desc:'Глава без единой ошибки', pts:50},
-{id:'ch1_done', icon:'🏅', name:'Первый шаг', desc:'Пройдена глава I', pts:20},
-{id:'ch6_done', icon:'🥇', name:'Победитель', desc:'Пройдена вся игра', pts:100},
-{id:'score_100', icon:'💫', name:'Первые очки', desc:'Набрал 100 очков', pts:5},
-{id:'score_500', icon:'⭐', name:'Набирает обороты', desc:'Набрал 500 очков', pts:10},
-{id:'score_1000', icon:'🌠', name:'Тысячник', desc:'Набрал 1000 очков', pts:20},
-{id:'morse_1', icon:'📡', name:'Морзист', desc:'Решил задание на азбуке Морзе', pts:10},
-{id:'caesar_5', icon:'🔐', name:'Цезарь', desc:'5 заданий шифром Цезаря', pts:20},
-{id:'atbash_3', icon:'🪞', name:'Зеркало', desc:'3 задания шифром Атбаш', pts:15},
-{id:'math_3', icon:'➗', name:'Математик', desc:'3 математических задания', pts:20},
-{id:'anagram_3', icon:'🔤', name:'Буквоед', desc:'3 анаграммы', pts:20},
-{id:'map_1', icon:'🗺', name:'Картограф', desc:'Нашёл город на карте', pts:15},
-{id:'first_try', icon:'🎊', name:'С первого раза', desc:'Правильный ответ без ошибок', pts:5},
-{id:'comeback', icon:'💪', name:'Возвращение', desc:'Прошёл главу после провала', pts:30},
-{id:'streak_3', icon:'🔥', name:'На волне', desc:'Стрик 3 правильных ответа', pts:15},
-{id:'streak_5', icon:'💥', name:'Огонь!', desc:'Стрик 5 правильных ответа', pts:30},
-{id:'streak_10', icon:'🌋', name:'Вулкан', desc:'Стрик 10 правильных ответов', pts:60},
-{id:'no_hints_1', icon:'🧠', name:'Умник', desc:'Глава без подсказок', pts:30},
-{id:'no_hints_all', icon:'🎓', name:'Мастер шифров', desc:'Все главы без подсказок', pts:150},
-{id:'perfect_all', icon:'👑', name:'Безупречный', desc:'Все главы без ошибок', pts:200},
-{id:'all_gold', icon:'👸', name:'Чемпион', desc:'80%+ во всех главах', pts:200},
-{id:'score_2500', icon:'💎', name:'Эксперт', desc:'Набрал 2500 очков', pts:40},
-{id:'score_5000', icon:'🏆', name:'Легенда', desc:'Набрал 5000+ очков', pts:80},
-{id:'morse_5', icon:'📻', name:'Радист', desc:'5 заданий на Морзе', pts:25},
-{id:'quiz_5', icon:'🧩', name:'Знаток', desc:'Правильно ответил на 5 вопросов викторины', pts:30},
-{id:'quiz_10', icon:'🎓', name:'Профессор', desc:'Правильно ответил на 10 вопросов викторины', pts:60},
-{id:'quiz_all', icon:'🏫', name:'Учёный', desc:'Все вопросы викторины правильно', pts:100},
-{id:'date_1941', icon:'📅', name:'Помню 41-й', desc:'Назвал год начала оккупации', pts:15},
-{id:'date_1945', icon:'🕊', name:'Помню 45-й', desc:'Назвал год Победы', pts:15},
-{id:'one_life', icon:'❤️', name:'На волоске', desc:'Прошёл главу с 1 оставшейся жизнью', pts:50},
-{id:'retry_win', icon:'💪', name:'Не сдаётся', desc:'После провала прошёл главу с первой попытки', pts:60},
-{id:'first_quiz', icon:'❓', name:'Первый вопрос', desc:'Ответил на первый вопрос викторины', pts:5},
-{id:'first_math', icon:'🔢', name:'Первый расчёт', desc:'Решил первую математическую задачу', pts:5},
-{id:'first_anagram', icon:'🔤', name:'Первая анаграмма', desc:'Разгадал первую анаграмму', pts:5},
-{id:'first_map_t', icon:'🧭', name:'Первая карта', desc:'Нашёл первый город на карте', pts:5},
-{id:'all_quiz', icon:'📚', name:'Эрудит', desc:'Все вопросы викторины пройдены', pts:50},
-{id:'perfect_run', icon:'🌈', name:'Идеальный забег', desc:'Глава без ошибок, без подсказок и быстро', pts:120},
-{id:'speedrun', icon:'🏁', name:'Спидран', desc:'Все 6 глав менее чем за 1 час', pts:150},
-{id:'pacifist', icon:'🕊', name:'Пацифист', desc:'Не использовал ни одной подсказки', pts:100},
-{id:'iron_will', icon:'⚙️', name:'Железная воля', desc:'5 заданий подряд без ошибок', pts:45},
-{id:'chain_6', icon:'⛓', name:'Цепная реакция', desc:'6 правильных ответов подряд (2 главы)', pts:80},
-{id:'weekend', icon:'📆', name:'Выходной разведчик', desc:'Играл в выходной день', pts:10},
-{id:'school_time', icon:'🏫', name:'Школьный час', desc:'Играл с 8 до 15 часов', pts:10},
-{id:'marathon', icon:'🏃', name:'Марафон', desc:'Прошёл 3 главы за один сеанс', pts:35},
-{id:'all_in_day', icon:'☀️', name:'День победы', desc:'Прошёл все 6 глав за один день', pts:100},
-{id:'long_game', icon:'🌙', name:'Долгая ночь', desc:'Играл более 30 минут', pts:20},
-{id:'top5', icon:'⭐', name:'В элите', desc:'Вошёл в топ-5 рейтинга', pts:60},
-{id:'beat_someone', icon:'📈', name:'Обогнал', desc:'Поднялся выше другого игрока', pts:15},
-{id:'shared', icon:'📤', name:'Поделился', desc:'Поделился результатом', pts:10},
-{id:'ach_20', icon:'🏆', name:'Достиженец', desc:'Получил 20 достижений', pts:40},
-{id:'ach_30', icon:'💠', name:'Мастер наград', desc:'Получил 30 достижений', pts:60},
-{id:'war_expert', icon:'🎗', name:'Эксперт войны', desc:'Правильно ответил на все вопросы о ВОВ', pts:75},
-{id:'geo_expert', icon:'🌍', name:'Географ', desc:'Нашёл все 3 города на карте', pts:50},
-{id:'cipher_master', icon:'🔓', name:'Взломщик', desc:'Разгадал все шифры без подсказок', pts:90},
-{id:'history_buff', icon:'📖', name:'Историк', desc:'Прочитал 15 исторических фактов', pts:30},
-{id:'memory', icon:'🎖', name:'Вечная память', desc:'Завершил игру и прочитал все факты', pts:80},
-{id:'all_100', icon:'💯', name:'Сотка!', desc:'Получил 100 достижений', pts:250},
-{id:'true_hero', icon:'🌟', name:'Настоящий герой', desc:'Прошёл все главы на золото без подсказок', pts:300},
-{id:'school_legend', icon:'👑', name:'Легенда школы', desc:'Первый кто получил все достижения', pts:500},
-{id:'peacekeeper', icon:'🕊', name:'Миротворец', desc:'Помнит и чтит историю своей Родины', pts:100},
-{id:'defender', icon:'🛡', name:'Защитник', desc:'Завершил игру — настоящий разведчик', pts:150},
-{id:'hoiki_1', icon:'🌿', name:'Сын Полесья', desc:'Завершил главу о Хойниках', pts:25},
-{id:'hoiki_quiz', icon:'📍', name:'Знаток Хойник', desc:'Ответил на все вопросы о Хойниках', pts:40},
-{id:'gomel_map', icon:'🗺', name:'Компас Гомельщины', desc:'Нашёл Гомель на карте', pts:20},
-{id:'polesia', icon:'🌲', name:'Дух Полесья', desc:'Узнал название региона', pts:15},
-{id:'soizh_river', icon:'🌊', name:'По реке Сож', desc:'Расшифровал название реки', pts:20},
-{id:'speed_any', icon:'🔥', name:'На максимуме', desc:'Любое задание за 3 секунды', pts:35},
-{id:'speed_morse', icon:'📻', name:'Телеграфист', desc:'Морзе за 10 секунд', pts:30},
-{id:'no_wrong_1', icon:'✨', name:'Без промаха', desc:'Первое задание без ошибок', pts:10},
-{id:'fast_start', icon:'⏩', name:'Быстрый старт', desc:'Первые 3 задания за 30 секунд', pts:25},
-{id:'retry_2', icon:'🔄', name:'Настойчивый', desc:'Повторил одну главу дважды', pts:25},
-{id:'comeback_3', icon:'🦅', name:'Феникс', desc:'Провалил и победил 3 раза подряд', pts:70},
-{id:'all_types', icon:'🎭', name:'Универсал', desc:'Решил все типы шифров', pts:60},
-{id:'full_game', icon:'🎮', name:'Настоящий разведчик', desc:'Прошёл игру полностью', pts:150},
-{id:'night_owl', icon:'🦉', name:'Полуночник', desc:'Играл после 23:00', pts:15},
-{id:'early_bird', icon:'🐦', name:'Ранняя пташка', desc:'Играл до 8:00', pts:15},
-{id:'dedicated', icon:'📚', name:'Усердный', desc:'Прошёл 10+ заданий', pts:20},
-{id:'veteran', icon:'🎖', name:'Ветеран', desc:'Прошёл 30 заданий', pts:50},
-{id:'collector', icon:'🗃', name:'Коллекционер', desc:'Получил 10 достижений', pts:30},
-{id:'explorer', icon:'🧭', name:'Исследователь', desc:'Открыл все 6 глав', pts:25},
-{id:'historian', icon:'📜', name:'Историк', desc:'Прочитал 10 исторических фактов', pts:20},
-{id:'survivor', icon:'🛡', name:'Выживший', desc:'Остался с 1 жизнью и победил', pts:40},
-{id:'comeback_ch', icon:'🔄', name:'Несломленный', desc:'Повторил главу и победил', pts:35},
-{id:'top3', icon:'🏅', name:'Призёр', desc:'Попал в топ-3 рейтинга', pts:50},
-{id:'top1', icon:'🥇', name:'Чемпион школы', desc:'Первое место в рейтинге', pts:100},
-{id:'ch3_done', icon:'🥈', name:'Полпути', desc:'Пройдено 3 главы', pts:40},
-{id:'ch1_gold', icon:'🌟', name:'Золото главы I', desc:'80%+ очков в главе I', pts:30},
-{id:'ch2_gold', icon:'🌟', name:'Золото главы II', desc:'80%+ очков в главе II', pts:30},
-{id:'ch3_gold', icon:'🌟', name:'Золото главы III', desc:'80%+ очков в главе III', pts:30},
-{id:'ch4_gold', icon:'🌟', name:'Золото главы IV', desc:'80%+ очков в главе IV', pts:30},
-{id:'ch5_gold', icon:'🌟', name:'Золото главы V', desc:'80%+ очков в главе V', pts:30},
-{id:'ch6_gold', icon:'🌟', name:'Золото главы VI', desc:'80%+ очков в главе VI', pts:30},
-{id:'perfect_3', icon:'💎', name:'Бриллиант', desc:'3 главы без ошибок', pts:100},
-];
-
-if (!state.achievements) state.achievements = {};
-if (!state.achievementPts) state.achievementPts = 0;
-
-function unlockAchievement(id) {
-if (!state.achievements) state.achievements = {};
-if (state.achievements[id]) return;
-const ach = ACHIEVEMENTS.find(a => a.id === id);
-if (!ach) return;
-state.achievements[id] = Date.now();
-state.achievementPts = (state.achievementPts || 0) + ach.pts;
-saveState();
-showAchievementToast(ach);
-setTimeout(() => autoSync(false), 500);
-}
-
-function showAchievementToast(ach) {
-const old = document.getElementById('ach-toast');
-if (old) old.remove();
-const el = document.createElement('div');
-el.id = 'ach-toast';
-el.innerHTML = `<div style="font-size:28px;flex-shrink:0">${ach.icon}</div><div><div style="font-size:9px;color:rgba(255,224,51,.6);letter-spacing:.1em;margin-bottom:2px">ДОСТИЖЕНИЕ</div><div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent)">${ach.name}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${ach.desc} · +${ach.pts}⭐</div></div>`;
-document.body.appendChild(el);
-setTimeout(() => { el.style.transition = 'opacity .3s,transform .3s'; el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; setTimeout(() => el.remove(), 300); }, 3000);
-}
-
-function checkAchievements(context = {}) {
-const done = Object.keys(state.completedChapters).length;
-const score = state.totalScore;
-const achs = state.achievements || {};
-const stats = state.chapterStats || {};
-const typesUsed = new Set();
-let totalCiphers = 0, morseCount = 0, caesarCount = 0, atbashCount = 0, mathCount = 0, anagramCount = 0, mapCount = 0;
-CHAPTERS.forEach(ch => {
-if (state.completedChapters[ch.id]) {
-ch.ciphers.forEach(c => {
-totalCiphers++;
-typesUsed.add(c.type);
-if (c.type === 'morse') morseCount++;
-if (c.type === 'caesar') caesarCount++;
-if (c.type === 'atbash') atbashCount++;
-if (c.type === 'math') mathCount++;
-if (c.type === 'anagram') anagramCount++;
-if (c.type === 'map') mapCount++;
-});
-}
-});
-if (context.elapsed <= 5) unlockAchievement('speed_1');
-if ((state._fastAnswers || 0) >= 5) unlockAchievement('speed_5');
-if ((state._fastAnswers || 0) >= 10) unlockAchievement('speed_10');
-if (context.chapterDoneNoErrors) unlockAchievement('perfect_1');
-if ((state._perfectChapters || 0) >= 3) unlockAchievement('perfect_3');
-if ((state._perfectChapters || 0) >= 6) unlockAchievement('perfect_all');
-if (context.chapterDoneNoHints) unlockAchievement('no_hints_1');
-if ((state._noHintChapters || 0) >= 6) unlockAchievement('no_hints_all');
-if ((state.streak || 0) >= 3) unlockAchievement('streak_3');
-if ((state.streak || 0) >= 5) unlockAchievement('streak_5');
-if ((state.streak || 0) >= 10) unlockAchievement('streak_10');
-if (done >= 1) unlockAchievement('ch1_done');
-if (done >= 3) unlockAchievement('ch3_done');
-if (done >= 6) { unlockAchievement('ch6_done'); unlockAchievement('full_game'); }
-if (done >= 6) unlockAchievement('explorer');
-CHAPTERS.forEach((ch, i) => {
-if (!state.completedChapters[ch.id]) return;
-const s = state.chapterStats && state.chapterStats[ch.id];
-const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0);
-const chScore = state.chapterScores[ch.id] || 0;
-if (chScore >= maxCh * 0.8) { unlockAchievement('ch' + (i+1) + '_gold'); }
-});
-const goldCount = CHAPTERS.filter((ch,i) => { const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0); return (state.chapterScores[ch.id] || 0) >= maxCh * 0.8; }).length;
-if (goldCount >= 6) unlockAchievement('all_gold');
-if (goldCount >= 6) unlockAchievement('champion');
-if (score >= 100) unlockAchievement('score_100');
-if (score >= 500) unlockAchievement('score_500');
-if (score >= 1000) unlockAchievement('score_1000');
-if (score >= 2500) unlockAchievement('score_2500');
-if (score >= 5000) unlockAchievement('score_5000');
-if (morseCount >= 1) unlockAchievement('morse_1');
-if (morseCount >= 5) unlockAchievement('morse_5');
-if (caesarCount >= 5) unlockAchievement('caesar_5');
-if (atbashCount >= 3) unlockAchievement('atbash_3');
-if (mathCount >= 3) unlockAchievement('math_3');
-if (anagramCount >= 3) unlockAchievement('anagram_3');
-if (mapCount >= 1) unlockAchievement('map_1');
-if (typesUsed.size >= 6) unlockAchievement('all_types');
-if (totalCiphers >= 10) unlockAchievement('dedicated');
-if (totalCiphers >= 30) unlockAchievement('veteran');
-const h = new Date().getHours();
-if (h >= 23 || h < 6) unlockAchievement('night_owl');
-if (h >= 5 && h < 8) unlockAchievement('early_bird');
-if (context.firstTry) unlockAchievement('first_try');
-if (context.survived1) unlockAchievement('survivor');
-if (context.comeback) unlockAchievement('comeback');
-if (context.retryWin) unlockAchievement('comeback_ch');
-const achCount = Object.keys(state.achievements || {}).length;
-if (achCount >= 10) unlockAchievement('collector');
-if (achCount >= 20) unlockAchievement('ach_20');
-if (achCount >= 30) unlockAchievement('ach_30');
-if (achCount >= 100) unlockAchievement('all_100');
-if (state.completedChapters[1]) unlockAchievement('hoiki_1');
-if (done >= 1 && context.quizCorrect) unlockAchievement('first_quiz');
-if (context.quizCorrect) { state._quizCorrect = (state._quizCorrect || 0) + 1; if (state._quizCorrect >= 5) unlockAchievement('quiz_5'); if (state._quizCorrect >= 10) unlockAchievement('quiz_10'); }
-if (context.mathCorrect) unlockAchievement('first_math');
-if (context.anagramCorrect) unlockAchievement('first_anagram');
-if (context.mapCorrect) unlockAchievement('first_map_t');
-if (context.elapsed <= 3) unlockAchievement('speed_any');
-if (context.elapsed <= 5 && !achs.no_wrong_1) unlockAchievement('no_wrong_1');
-if (context.morseFast) unlockAchievement('speed_morse');
-const hour = new Date().getHours();
-if (hour >= 8 && hour < 15) unlockAchievement('school_time');
-const day = new Date().getDay();
-if (day === 0 || day === 6) unlockAchievement('weekend');
-if (state.lives === 1 && context.chapterDoneNoErrors === false && done > 0) unlockAchievement('one_life');
-if (context.retryWin) unlockAchievement('retry_win');
-if (context.shared) unlockAchievement('shared');
-if (done >= 6) unlockAchievement('defender');
-if (done >= 6 && (state._perfectChapters || 0) >= 6 && (state._noHintChapters || 0) >= 6) unlockAchievement('true_hero');
-if (done >= 6 && context.readAllFacts) unlockAchievement('memory');
-}
-
-function showMyStats() {
-const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-const stats = state.chapterStats || {};
-const total = state.totalScore;
-const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
-const pct = Math.round(total / maxAll * 100);
-const rows = CHAPTERS.map(ch => {
-const s = stats[ch.id];
-const score = state.chapterScores[ch.id] || 0;
-const maxCh = ch.ciphers.reduce((a,c2) => a+c2.points, 0);
-if (!state.completedChapters[ch.id]) { return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)"><div style="font-size:18px">🔒</div><div style="flex:1"><div style="font-size:var(--fs-sm);color:rgba(255,255,255,.3)">'+ch.title+'</div><div style="font-size:10px;color:var(--muted)">'+ch.subtitle+'</div></div><div style="font-family:var(--head);font-size:var(--fs-sm);color:rgba(255,255,255,.2)">не пройдена</div></div>'; }
-const sp = Math.round(score / maxCh * 100);
-const medal = sp >= 85 ? '🥇' : sp >= 60 ? '🥈' : '🥉';
-const timeTxt = s ? (s.time >= 60 ? Math.floor(s.time/60) + 'м ' + (s.time%60) + 'с' : s.time + 'с') : '—';
-const failTag = s && s.failed ? ' <span style="color:var(--accent2)">ПРОВАЛ</span>' : '';
-return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)"><div style="font-size:18px">'+medal+'</div><div style="flex:1"><div style="font-size:var(--fs-sm);color:#fdfaf0">'+ch.title+failTag+'</div><div style="font-size:10px;color:var(--muted)">'+ch.subtitle+'</div></div><div style="text-align:right"><div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent)">'+score+'</div><div style="font-size:9px;color:var(--muted)">⏱ '+timeTxt+(s?' · ❌'+s.errors+' ош.':'')+(s?' · 💡'+s.hints+' подск.':'')+'</div><div style="font-size:9px;color:var(--muted)">'+sp+'%</div></div></div>';
-}).join('');
-let modal = document.getElementById('stats-modal');
-if (!modal) {
-modal = document.createElement('div');
-modal.id = 'stats-modal';
-modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);display:flex;align-items:flex-end;justify-content:center';
-modal.onclick = (e) => { if (e.target === modal) closeMyStats(); };
-document.body.appendChild(modal);
-}
-modal.innerHTML = '<div style="background:#161612;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:0 0 32px"><div style="padding:16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center"><div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);letter-spacing:.06em">МОЯ СТАТИСТИКА</div><div style="font-size:24px;cursor:pointer" onclick="closeMyStats()">✕</div></div><div style="padding:16px"><div style="display:flex;justify-content:space-around;text-align:center;margin-bottom:16px"><div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">'+total+'</div><div style="font-size:10px;color:var(--muted)">ОЧКОВ</div></div><div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">'+Object.keys(state.completedChapters).length+'/6</div><div style="font-size:10px;color:var(--muted)">ГЛАВ</div></div><div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">'+pct+'%</div><div style="font-size:10px;color:var(--muted)">РЕЗУЛЬТАТ</div></div></div><div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:8px">// ПО ГЛАВАМ</div>'+rows+'<button onclick="shareMyTotal()" style="width:100%;margin-top:16px;background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.3);color:var(--accent);padding:12px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">📤 ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ</button></div></div>';
-modal.style.display = 'flex';
-}
-
-function closeMyStats() { const modal = document.getElementById('stats-modal'); if (modal) modal.style.display = 'none'; }
-
-function shareMyTotal() {
-const total = state.totalScore;
-const done = Object.keys(state.completedChapters).length;
-const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
-const pct = Math.round(total / maxAll * 100);
-const medal = pct >= 90 ? '🌟' : pct >= 75 ? '⭐' : pct >= 55 ? '🎖' : '🏅';
-const text = medal + ' ШИФРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
-if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(() => showToast('📋 Скопировано! Вставьте в чат')); } else { fallbackCopy(text); }
-}
-
-function fallbackCopy(text) {
-try { const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('📋 Скопировано! Вставьте в чат'); } catch(e) { showToast('Не удалось скопировать'); }
-}
-
-function showMyAchievements() {
-let modal = document.getElementById('ach-modal');
-if (!modal) {
-modal = document.createElement('div');
-modal.id = 'ach-modal';
-modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);display:flex;align-items:flex-end;justify-content:center';
-modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
-document.body.appendChild(modal);
-}
-const inner = document.createElement('div');
-inner.style.cssText = 'background:#161612;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:0 0 32px';
-inner.innerHTML = '<div style="padding:16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center"><div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);letter-spacing:.06em">МОИ ДОСТИЖЕНИЯ</div><div style="font-size:24px;cursor:pointer" onclick="closeAchModal()">✕</div></div>';
-renderAchievementsTab(inner);
-modal.innerHTML = '';
-modal.appendChild(inner);
-modal.style.display = 'flex';
-}
-
-function closeAchModal() { const m = document.getElementById('ach-modal'); if (m) m.style.display = 'none'; }
-
-function renderAchievementsTab(container) {
-const myAchs = state.achievements || {};
-const total = ACHIEVEMENTS.length;
-const earned = Object.keys(myAchs).length;
-const earnedPts = state.achievementPts || 0;
-let html = `<div style="padding:16px"><div style="background:#141108;border:1px solid rgba(255,224,51,.12); border-radius:8px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-around;text-align:center"><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earned}</div><div style="font-size:10px;color:var(--muted)">ПОЛУЧЕНО</div></div><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${total}</div><div style="font-size:10px;color:var(--muted)">ВСЕГО</div></div><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earnedPts}</div><div style="font-size:10px;color:var(--muted)">ОЧКОВ</div></div></div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">`;
-ACHIEVEMENTS.forEach(ach => {
-const has = !!myAchs[ach.id];
-html += `<div style="background:${has ? 'linear-gradient(145deg,#1a1808,#141208)' : '#0e0c08'}; border:1px solid ${has ? 'rgba(255,224,51,.25)' : 'rgba(255,255,255,.05)'}; border-radius:8px;padding:10px;opacity:${has ? '1' : '0.35'}"><div style="font-size:22px;margin-bottom:4px">${ach.icon}</div><div style="font-family:var(--head);font-size:11px;color:${has ? 'var(--accent)' : '#fdfaf0'}; letter-spacing:.04em">${ach.name}</div><div style="font-size:9px;color:var(--muted);margin-top:2px;line-height:1.4">${ach.desc}</div><div style="font-size:9px;color:${has ? 'var(--accent)' : 'rgba(255,255,255,.2)'};margin-top:4px">+${ach.pts}⭐</div></div>`;
-});
-html += '</div></div>';
-container.innerHTML = html;
-}
-
+// ═══════════════════════════════════════════════════════
+//  SPLASH SCREEN
+// ═══════════════════════════════════════════════════════
 function showSplash() {
 const splash = document.createElement('div');
 splash.id = 'splash-screen';
@@ -2732,71 +2393,18 @@ if (pct >= 100) { pct = 100; clearInterval(interval); }
 bar.style.width = pct + '%';
 if (pct >= 100) { setTimeout(() => { splash.style.opacity = '0'; setTimeout(() => splash.remove(), 500); }, 200); }
 }, 80);
+// Timeout fallback
+setTimeout(() => {
+if (splash.parentNode) {
+splash.style.opacity = '0';
+setTimeout(() => { if (splash.parentNode) splash.remove(); }, 500);
+}
+}, 5000);
 }
 
-async function fetchAndApplyState() {
-const uid = getTgUserId();
-const syncUrl = window._syncUrl;
-if (!uid || !syncUrl) return;
-try {
-const base = syncUrl.replace('/game_sync', '');
-const resp = await fetch(base + '/game_state?user_id=' + uid);
-if (!resp.ok) return;
-const data = await resp.json();
-if (!data.ok) return;
-if (data.banned) {
-document.body.innerHTML = '<div style="text-align:center;padding:60px 20px;"><div style="font-size:64px;margin-bottom:16px;">🚫</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent2);">Доступ заблокирован</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;">Ваш аккаунт заблокирован администратором.</div></div>';
-try { localStorage.removeItem(storageKey()); } catch(e2) {}
-return;
-}
-if (typeof data.score === 'number' && data.score < state.totalScore) {
-const savedAdminMode = state.adminMode;
-state.totalScore = data.score;
-state.completedChapters = {};
-for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
-state.chapterScores = {};
-state.gameOver = data.game_over || false;
-state.adminMode = savedAdminMode;
-try { localStorage.removeItem(storageKey()); } catch(e2) {}
-saveState();
-renderChapters();
-}
-} catch(e) { console.warn('fetchAndApplyState:', e); }
-}
-
-async function sendResultToBot(data) {
-data.completed = Object.keys(state.completedChapters).length;
-data.total_score = state.totalScore;
-data.user_id = getTgUserId();
-data.user_name = tgUser ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim() : 'Игрок';
-console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score, 'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО');
-const syncUrl = window._syncUrl;
-if (syncUrl && data.user_id) {
-try {
-const resp = await fetch(syncUrl, {
-method: 'POST',
-headers: {'Content-Type': 'application/json'},
-body: JSON.stringify(data)
-});
-if (resp.ok) {
-const result = await resp.json().catch(() => ({}));
-if (result.banned) {
-document.body.innerHTML = '<div style="text-align:center;padding:60px 20px;"><div style="font-size:64px;margin-bottom:16px;">🚫</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent2);">Доступ заблокирован</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;">Ваш аккаунт заблокирован администратором.</div></div>';
-try { localStorage.removeItem(storageKey()); } catch(e2) {}
-return;
-}
-_lastSyncedScore = data.total_score;
-_lastSyncedCompleted = data.completed;
-showToast('✅ Прогресс сохранён');
-return;
-}
-} catch(e) { console.warn('game_sync fetch error:', e); }
-}
-if (tg && tg.sendData && tg.initData) {
-try { tg.sendData(JSON.stringify(data)); return; } catch(e) { console.warn('tg.sendData failed:', e); }
-}
-}
-
+// ═══════════════════════════════════════════════════════
+//  TOASTS
+// ═══════════════════════════════════════════════════════
 function showToast(text, duration = 2500) {
 const old = document.getElementById('game-toast');
 if (old) old.remove();
@@ -2821,6 +2429,39 @@ requestAnimationFrame(() => { toast.style.opacity = '1'; });
 setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 1500);
 }
 
+// ═══════════════════════════════════════════════════════
+//  FINAL SCREEN
+// ═══════════════════════════════════════════════════════
+async function showFinal() {
+document.getElementById('final-score-val').textContent = state.totalScore;
+const uid = getTgUserId();
+const finalUidEl = document.getElementById('final-uid');
+if (finalUidEl && uid) { finalUidEl.textContent = 'ID: ' + uid; finalUidEl.style.display = 'block'; }
+const maxAll = CHAPTERS.reduce((s,ch)=>s+ch.ciphers.reduce((a,c)=>a+c.points,0),0);
+const pct = Math.round(state.totalScore / maxAll * 100);
+let rank = 'НОВОБРАНЕЦ';
+if (pct >= 90) rank = 'МАРШАЛ ПОБЕДЫ 🌟';
+else if (pct >= 75) rank = 'ПОЛКОВНИК РАЗВЕДКИ ⭐';
+else if (pct >= 55) rank = 'КАПИТАН ПОДПОЛЬЯ 🎖';
+else if (pct >= 35) rank = 'СЕРЖАНТ СВЯЗИ 🏅';
+document.getElementById('final-rank').textContent = rank;
+document.getElementById('final-pct').textContent = pct + '% от максимума';
+let rows = '';
+CHAPTERS.forEach(ch => {
+const s = state.chapterScores[ch.id] || 0;
+const m = ch.ciphers.reduce((a,c)=>a+c.points,0);
+rows += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:17px"><span>${ch.subtitle}: ${ch.title}</span><span style="color:var(--accent)">${s}/${m}</span></div>`;
+});
+document.getElementById('final-chapter-scores').innerHTML = rows;
+setTimeout(() => document.getElementById('final-stars').classList.add('show'), 800);
+setTimeout(() => playSound('game_win'), 300);
+setTimeout(() => launchConfetti(1500, 40), 500);
+showScreen('s-final');
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
 if (document.readyState === "loading") {
 document.addEventListener('DOMContentLoaded', () => {
 showSplash();
@@ -2829,7 +2470,6 @@ mergeBotLeaderboard();
 init3DIntro();
 introEntrance();
 renderChapters();
-fetchAndApplyState();
 });
 } else {
 showSplash();
@@ -2838,28 +2478,7 @@ mergeBotLeaderboard();
 init3DIntro();
 introEntrance();
 renderChapters();
-fetchAndApplyState();
 }
-
-document.getElementById('cipher-input').addEventListener('focus', function() {
-this.removeAttribute('readonly');
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.25)'; 
-btn.style.borderColor = 'rgba(255,224,51,.5)';
-btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-}
-});
-
-document.getElementById('cipher-input').addEventListener('blur', function() {
-this.setAttribute('readonly', true);
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.1)'; 
-btn.style.borderColor = 'rgba(255,224,51,.2)';
-btn.style.boxShadow = 'none';
-}
-});
     </script>
 </body>
 </html>
