@@ -3465,6 +3465,7 @@ function showSplash() {
   splash.id = 'splash-screen';
   splash.style.cssText = `position:fixed;inset:0;z-index:9000;background:#0a0a08;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
+    pointer-events:none;
     transition:opacity .5s ease`;
 
   splash.innerHTML = `
@@ -3494,6 +3495,15 @@ function showSplash() {
       }, 200);
     }
   }, 80);
+
+  // Фоллбэк на случай, если анимация не завершится (например, из-за лагов WebView).
+  // Главное: не блокировать клики бесконечно.
+  setTimeout(() => {
+    if (splash && splash.parentNode) {
+      splash.style.opacity = '0';
+      setTimeout(() => { try { splash.remove(); } catch(e) {} }, 500);
+    }
+  }, 4500);
 }
 
 // ═══════════════════════════════════════════════════════
