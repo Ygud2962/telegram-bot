@@ -472,10 +472,15 @@ async function sendResultToBot(data) {
           try { localStorage.removeItem(storageKey()); } catch(e2) {}
           return;
         }
-        if (typeof result.db_score === 'number' && result.db_score < state.totalScore) {
+        const localCompleted = Object.keys(state.completedChapters || {}).length;
+        const serverCompleted = result.db_completed || 0;
+        if (
+          typeof result.db_score === 'number' &&
+          (result.db_score > state.totalScore || serverCompleted > localCompleted)
+        ) {
           state.totalScore = result.db_score;
           state.completedChapters = {};
-          for (let i = 1; i <= (result.db_completed||0); i++) state.completedChapters[i] = true;
+          for (let i = 1; i <= (serverCompleted||0); i++) state.completedChapters[i] = true;
           state.chapterScores = {};
           try { localStorage.removeItem(storageKey()); } catch(e2) {}
           saveState();
@@ -680,7 +685,9 @@ function mergeBotLeaderboard() {
   if (tgInitLB.length) {
     state.leaderboard = tgInitLB.map(r => ({
       uid: String(r.uid), name: r.name, score: r.score,
-      completed: r.completed, role: r.role || 'player'
+      completed: r.completed, role: r.role || 'player',
+      achievementCount: r.achievementCount || 0,
+      achievementPts: r.achievementPts || 0
     }));
   }
 
@@ -1725,11 +1732,21 @@ async function showFinal() {
   setTimeout(() => playSound('game_win'), 300);
   setTimeout(() => launchConfetti(1500, 40), 500);
 
+  const lastCh = CHAPTERS[state.chapter];
+  const lastChapterId = lastCh ? lastCh.id : 6;
+  const lastChapterScore = state.chapterScore ||
+    (state.chapterScores && lastCh ? (state.chapterScores[lastCh.id] || 0) : 0) ||
+    0;
+
   sendResultToBot({
     type: 'game_complete',
     total_score: state.totalScore,
     rank: rank,
     pct: pct,
+    chapter: lastChapterId,
+    score: lastChapterScore,
+    // Важно: чтобы бот не затирал game_over=false на финальном экране.
+    game_over: true,
     user_id: getTgUserId(),
     user_name: getTgUserName()
   });
@@ -1743,7 +1760,12 @@ async function showFinal() {
 function updateLeaderboard() {
   const name  = getTgUserName();
   const uid   = getTgUserId() || 'guest';
-  const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length };
+  const entry = {
+    uid, name, score: state.totalScore,
+    completed: Object.keys(state.completedChapters).length,
+    achievementCount: Object.keys(state.achievements || {}).length,
+    achievementPts: state.achievementPts || 0
+  };
   const idx   = state.leaderboard.findIndex(e => e.uid === uid);
   if (idx >= 0) {
     if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry;
@@ -3261,12 +3283,12 @@ let mapAnswered = false;
 
 function renderMap(cipher) {
   mapAnswered = false;
-  const target = cipher.mapCity;
+  const target = cipher.mapCity || '';
   const ref = document.getElementById('cipher-ref');
 
   const dots = MAP_CITIES.map(c => {
     const isTarget = false; // не показываем правильный заранее
-    return `<g class="map-city-dot" id="mcdot-${c.name}" onclick="checkMapAnswer('${c.name}')">
+    return `<g class="map-city-dot" id="mcdot-${c.name}" onclick="checkMapAnswer('${c.name}','${target}')">
       <circle cx="${c.x}" cy="${c.y}" r="6" fill="#ffe033" opacity=".7" stroke="#0a0a08" stroke-width="1"/>
       <text class="map-city-label" x="${c.x + 9}" y="${c.y + 4}">${c.name}</text>
     </g>`;
@@ -3864,13 +3886,25 @@ async function fetchAndApplyState() {
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
       return;
     }
-    if (typeof data.score === 'number' && data.score < state.totalScore) {
+    const localCompleted = Object.keys(state.completedChapters || {}).length;
+    const serverCompleted = data.completed || 0;
+    const serverScore = typeof data.score === 'number' ? data.score : 0;
+    const serverGameOver = !!data.game_over;
+
+    // Сервер может быть впереди (например, если localStorage “устарел” после перезагрузки).
+    // Тогда обязаны подтянуть сервер, иначе прогресс “откатится”.
+    const serverIsAhead =
+      serverScore > (state.totalScore || 0) ||
+      serverCompleted > localCompleted ||
+      (serverGameOver && !state.gameOver);
+
+    if (serverIsAhead) {
       const savedAdminMode = state.adminMode; // сохраняем перед перезаписью
-      state.totalScore = data.score;
+      state.totalScore = serverScore;
       state.completedChapters = {};
-      for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
+      for (let i = 1; i <= (serverCompleted || 0); i++) state.completedChapters[i] = true;
       state.chapterScores = {};
-      state.gameOver = data.game_over || false;
+      state.gameOver = serverGameOver;
       state.adminMode = savedAdminMode; // восстанавливаем
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
       saveState();
