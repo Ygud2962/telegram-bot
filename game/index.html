@@ -148,6 +148,24 @@
             z-index: 0;
         }
         #three-canvas { z-index: 1; }
+        #map-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            opacity: .55;
+        }
+        #radar-canvas {
+            position: fixed;
+            right: 12px;
+            bottom: 120px;
+            pointer-events: none;
+            z-index: 0;
+            opacity: .9;
+        }
         .content-wrapper { position: relative; z-index: 10; width: 100%; height: 100%; }
         .quiz-container { width: 100%; margin-bottom: 12px; }
         .quiz-option {
@@ -332,8 +350,10 @@
     <canvas id="fireworks-canvas"></canvas>
     <canvas id="petals-canvas"></canvas>
     <canvas id="particles-canvas"></canvas>
+    <canvas id="map-canvas"></canvas>
+    <canvas id="radar-canvas" width="70" height="70"></canvas>
     
-    <div id="splash-screen">
+    <div id="splash-screen" style="display:none;">
         <div style="font-size:72px;margin-bottom:16px;animation:popIn .6s ease both;">🔐</div>
         <div style="font-family:var(--head);font-size:var(--fs-hero);color:var(--accent);letter-spacing:.06em;text-align:center;line-height:.9;">ШИФРО<br>ВАЛЬЩИК</div>
         <div style="margin-top:24px;width:200px;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden;">
@@ -359,6 +379,11 @@
                 <span id="stat-completed-label">0 / 6 глав</span>
                 <span id="stat-score">0 оч</span>
             </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:var(--fs-xs);color:var(--muted);margin-bottom:10px;gap:10px;">
+                <span id="stat-players-label">👥 — игроков</span>
+                <button id="btn-reset-header" class="btn" style="display:none;flex:0 0 auto;width:auto;padding:8px 12px;margin:0;" onclick="confirmReset()">🗑 СБРОС</button>
+            </div>
+            <button id="btn-to-final" class="btn btn-accent" style="display:none;" onclick="showFinal()">🏆 К ИТОГУ</button>
             <div id="chapters-list"></div>
             <div class="nav-buttons">
                 <button class="btn" onclick="switchTab('profile')">👤 ПРОФИЛЬ</button>
@@ -393,7 +418,7 @@
             <div id="cipher-task" style="font-size:var(--fs-base);color:#fdfaf0;margin-bottom:16px;"></div>
             <div id="cipher-box"></div>
             <div id="quiz-container" class="quiz-container" style="display:none;"></div>
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+            <div id="cipher-input-wrap" class="cipher-input-wrap" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
                 <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" style="flex:1;">
                 <button id="btn-keyboard" class="btn" style="width:48px;" onclick="toggleKeyboard()">⌨️</button>
             </div>
@@ -401,7 +426,7 @@
             <div id="cipher-timer">0с</div>
             <div class="cipher-actions">
                 <button id="btn-hint" class="btn" onclick="showHint()">💡 ПОДСКАЗКА</button>
-                <button id="btn-check" class="btn btn-accent" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
+                <button id="btn-check" class="btn btn-accent btn-check" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
             </div>
             <div id="cipher-hint-box" class="cipher-hint-box">
                 <div id="cipher-hint-text"></div>
@@ -531,7 +556,7 @@
         </div>
     </div>
 
-    <script>
+    <script type="text/plain">
 // ═══════════════════════════════════════════════════════
 //  ДАННЫЕ ИГРЫ — 6 ГЛАВ
 // ═══════════════════════════════════════════════════════
@@ -2296,6 +2321,7 @@ init3DIntro();
 renderChapters();
 }
     </script>
+    <script src="/game/game.js"></script>
 </body>
 </html>
 
