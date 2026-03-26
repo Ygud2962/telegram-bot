@@ -23,15 +23,15 @@ const CHAPTERS = [
         fact:"Хойникский район расположен в Гомельской области в зоне Полесья. После аварии на ЧАЭС в 1986 году часть района вошла в зону отчуждения.", points:100 },
       { type:"caesar", typeLabel:"ШИФР ЦЕЗАРЯ",
         task:"Связной передал зашифрованный отчёт из Хойник. Сдвиг 3 позиции. Расшифруй трёхбуквенное название реки вдоль которой движется отряд:",
-        encrypted:"ФСЙ",
+        shift:3, encrypted:"ФСЙ",
         answer:"4897432de4be211f639b683e878ae091df780e52bb92a5ac7023ad88bf5e3b8f",
         hint:"Вычти 3: Ф(22)-3=19=С, С(19)-3=16=О, Й(11)-3=8=Ж. ФСЙ → СОЖ!",
         fact:"Река Сож протекает через Гомельскую область. Партизанские отряды Хойникского района часто использовали берега Сожа для переправ.", points:110 },
       { type:"num", typeLabel:"ЧИСЛОВОЙ КОД",
         task:"Перехвачено донесение о численности немецкого гарнизона в Хойниках. Каждое число — буква алфавита (А=1). Расшифруй ключевое слово:",
-        encrypted:"16-1-18-20-10-9-1-14",
+        encrypted:"17-1-18-20-10-9-1-15",
         answer:"27d97c40af3afb4879364af1fdddf55bbbb06effe822b3ad43d869f147751822",
-        hint:"П=16, А=1, Р=18, Т=20, И=10, З=9, А=1, Н=14. Восемь букв.",
+        hint:"П=17, А=1, Р=18, Т=20, И=10, З=9, А=1, Н=15. Восемь букв. П-А-Р-Т-И-З-А-Н!",
         fact:"Партизанское движение в Хойникском районе началось с первых дней оккупации. К 1943 году в районе действовало несколько крупных отрядов.", points:120 },
       { type:"anagram", typeLabel:"АНАГРАММА",
         task:"Переставь буквы — получишь название исторического региона, где расположены Хойники. Именно здесь плотные леса и болота стали союзниками партизан:",
@@ -306,7 +306,7 @@ const CHAPTERS = [
         options:["7 мая","8 мая","9 мая","10 мая"],
         correctIndex:2,
         encrypted:"📅",
-        answer:"060672b8531404f598515957df33d6387e0647cbc382d35ef286fa3466362384",
+        answer:"131f1b7eaf25d645a5a1a1fd3c35330be40dec081cd032ace5cfd7143ef011a7",
         hint:"Акт был подписан ночью с 8 на 9 мая по московскому времени.",
         fact:"9 мая — главный праздник для Беларуси. В стране его отмечают с особым торжеством — каждый третий белорус погиб в войну.", points:170 },
       { type:"map", typeLabel:"НАЙДИ НА КАРТЕ",
@@ -472,15 +472,10 @@ async function sendResultToBot(data) {
           try { localStorage.removeItem(storageKey()); } catch(e2) {}
           return;
         }
-        const localCompleted = Object.keys(state.completedChapters || {}).length;
-        const serverCompleted = result.db_completed || 0;
-        if (
-          typeof result.db_score === 'number' &&
-          (result.db_score > state.totalScore || serverCompleted > localCompleted)
-        ) {
+        if (typeof result.db_score === 'number' && result.db_score < state.totalScore) {
           state.totalScore = result.db_score;
           state.completedChapters = {};
-          for (let i = 1; i <= (serverCompleted||0); i++) state.completedChapters[i] = true;
+          for (let i = 1; i <= (result.db_completed||0); i++) state.completedChapters[i] = true;
           state.chapterScores = {};
           try { localStorage.removeItem(storageKey()); } catch(e2) {}
           saveState();
@@ -667,7 +662,8 @@ const DEFAULT_STATE = () => ({
   chapterFailCounts: {}, // {chapterId: количество провалов}
   chapterStats: {},
   gameOver: false, leaderboard: [],
-  adminMode: false
+  adminMode: false,
+  achievements: {}, achievementPts: 0
 });
 
 let state = DEFAULT_STATE();
@@ -685,9 +681,7 @@ function mergeBotLeaderboard() {
   if (tgInitLB.length) {
     state.leaderboard = tgInitLB.map(r => ({
       uid: String(r.uid), name: r.name, score: r.score,
-      completed: r.completed, role: r.role || 'player',
-      achievementCount: r.achievementCount || 0,
-      achievementPts: r.achievementPts || 0
+      completed: r.completed, role: r.role || 'player'
     }));
   }
 
@@ -1732,21 +1726,11 @@ async function showFinal() {
   setTimeout(() => playSound('game_win'), 300);
   setTimeout(() => launchConfetti(1500, 40), 500);
 
-  const lastCh = CHAPTERS[state.chapter];
-  const lastChapterId = lastCh ? lastCh.id : 6;
-  const lastChapterScore = state.chapterScore ||
-    (state.chapterScores && lastCh ? (state.chapterScores[lastCh.id] || 0) : 0) ||
-    0;
-
   sendResultToBot({
     type: 'game_complete',
     total_score: state.totalScore,
     rank: rank,
     pct: pct,
-    chapter: lastChapterId,
-    score: lastChapterScore,
-    // Важно: чтобы бот не затирал game_over=false на финальном экране.
-    game_over: true,
     user_id: getTgUserId(),
     user_name: getTgUserName()
   });
@@ -1760,12 +1744,7 @@ async function showFinal() {
 function updateLeaderboard() {
   const name  = getTgUserName();
   const uid   = getTgUserId() || 'guest';
-  const entry = {
-    uid, name, score: state.totalScore,
-    completed: Object.keys(state.completedChapters).length,
-    achievementCount: Object.keys(state.achievements || {}).length,
-    achievementPts: state.achievementPts || 0
-  };
+  const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length };
   const idx   = state.leaderboard.findIndex(e => e.uid === uid);
   if (idx >= 0) {
     if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry;
@@ -1776,7 +1755,7 @@ function updateLeaderboard() {
 }
 
 function renderLeaderboard() {
-  const list = document.getElementById('lb-list');
+  const list = document.getElementById('lb-list-tab');
   // Помечаем текущего игрока
   const myUid = getTgUserId() || 'guest';
   if (!state.leaderboard.length) {
@@ -2977,7 +2956,7 @@ function renderQuiz(cipher) {
     container.id = 'quiz-container';
     const refEl = document.getElementById('cipher-hint-box');
     if (refEl && refEl.parentNode) refEl.parentNode.insertBefore(container, refEl);
-    else document.getElementById('cipher-body') && document.getElementById('cipher-body').appendChild(container);
+    else document.querySelector('.cipher-body') && document.querySelector('.cipher-body').appendChild(container);
   }
   container.style.cssText = 'display:block;width:100%;padding:0 2px;margin-bottom:12px';
 
@@ -3007,14 +2986,7 @@ function renderQuiz(cipher) {
     <div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px;
       margin-top:4px;margin-bottom:8px;font-size:13px;text-align:center;
       font-family:var(--head);letter-spacing:.04em"></div>
-    <button id="quiz-submit-btn" onclick="quizSubmit()"
-      style="width:100%;padding:14px;margin-top:4px;
-      background:rgba(255,224,51,.12);border:1.5px solid rgba(255,224,51,.2);
-      color:rgba(255,224,51,.5);font-family:var(--head);font-size:var(--fs-sm);
-      font-weight:700;border-radius:8px;cursor:not-allowed;letter-spacing:.08em;
-      transition:all .2s;pointer-events:none" disabled>
-      ✓ ОТВЕТИТЬ
-    </button>`;
+`;
 }
 
 function quizSelect(idx) {
@@ -3039,17 +3011,7 @@ function quizSelect(idx) {
     }
   });
 
-  // Активируем кнопку
-  const submitBtn = document.getElementById('quiz-submit-btn');
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.style.background = 'rgba(255,224,51,.2)';
-    submitBtn.style.borderColor = 'rgba(255,224,51,.5)';
-    submitBtn.style.color = '#ffe033';
-    submitBtn.style.cursor = 'pointer';
-    submitBtn.style.pointerEvents = 'auto';
-    submitBtn.style.boxShadow = '0 0 12px rgba(255,224,51,.15)';
-  }
+
 }
 
 function quizSubmit() {
@@ -3062,9 +3024,7 @@ function quizSubmit() {
   const elapsed  = Math.round((Date.now() - _quizState.startTime) / 1000);
   const isCorrect = selected === correct;
 
-  // Блокируем кнопку ответить
-  const submitBtn = document.getElementById('quiz-submit-btn');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.style.pointerEvents = 'none'; }
+
 
   // Подсвечиваем правильный/неправильный
   cipher.options.forEach((_, i) => {
@@ -3155,15 +3115,7 @@ function quizSubmit() {
           if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
         });
         if (feedback) feedback.style.display = 'none';
-        if (submitBtn) {
-          submitBtn.disabled = true;
-          submitBtn.style.background = 'rgba(255,224,51,.08)';
-          submitBtn.style.borderColor = 'rgba(255,224,51,.15)';
-          submitBtn.style.color = 'rgba(255,224,51,.4)';
-          submitBtn.style.cursor = 'not-allowed';
-          submitBtn.style.pointerEvents = 'none';
-          submitBtn.style.boxShadow = 'none';
-        }
+
       }, 2000);
     }
   }
@@ -3283,12 +3235,12 @@ let mapAnswered = false;
 
 function renderMap(cipher) {
   mapAnswered = false;
-  const target = cipher.mapCity || '';
+  const target = cipher.mapCity;
   const ref = document.getElementById('cipher-ref');
 
   const dots = MAP_CITIES.map(c => {
     const isTarget = false; // не показываем правильный заранее
-    return `<g class="map-city-dot" id="mcdot-${c.name}" onclick="checkMapAnswer('${c.name}','${target}')">
+    return `<g class="map-city-dot" id="mcdot-${c.name}" onclick="checkMapAnswer('${c.name}')">
       <circle cx="${c.x}" cy="${c.y}" r="6" fill="#ffe033" opacity=".7" stroke="#0a0a08" stroke-width="1"/>
       <text class="map-city-label" x="${c.x + 9}" y="${c.y + 4}">${c.name}</text>
     </g>`;
@@ -3465,7 +3417,6 @@ function showSplash() {
   splash.id = 'splash-screen';
   splash.style.cssText = `position:fixed;inset:0;z-index:9000;background:#0a0a08;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    pointer-events:none;
     transition:opacity .5s ease`;
 
   splash.innerHTML = `
@@ -3495,15 +3446,6 @@ function showSplash() {
       }, 200);
     }
   }, 80);
-
-  // Фоллбэк на случай, если анимация не завершится (например, из-за лагов WebView).
-  // Главное: не блокировать клики бесконечно.
-  setTimeout(() => {
-    if (splash && splash.parentNode) {
-      splash.style.opacity = '0';
-      setTimeout(() => { try { splash.remove(); } catch(e) {} }, 500);
-    }
-  }, 4500);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3896,25 +3838,13 @@ async function fetchAndApplyState() {
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
       return;
     }
-    const localCompleted = Object.keys(state.completedChapters || {}).length;
-    const serverCompleted = data.completed || 0;
-    const serverScore = typeof data.score === 'number' ? data.score : 0;
-    const serverGameOver = !!data.game_over;
-
-    // Сервер может быть впереди (например, если localStorage “устарел” после перезагрузки).
-    // Тогда обязаны подтянуть сервер, иначе прогресс “откатится”.
-    const serverIsAhead =
-      serverScore > (state.totalScore || 0) ||
-      serverCompleted > localCompleted ||
-      (serverGameOver && !state.gameOver);
-
-    if (serverIsAhead) {
+    if (typeof data.score === 'number' && data.score < state.totalScore) {
       const savedAdminMode = state.adminMode; // сохраняем перед перезаписью
-      state.totalScore = serverScore;
+      state.totalScore = data.score;
       state.completedChapters = {};
-      for (let i = 1; i <= (serverCompleted || 0); i++) state.completedChapters[i] = true;
+      for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
       state.chapterScores = {};
-      state.gameOver = serverGameOver;
+      state.gameOver = data.game_over || false;
       state.adminMode = savedAdminMode; // восстанавливаем
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
       saveState();
