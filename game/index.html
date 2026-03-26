@@ -24,15 +24,19 @@
             --fs-2xl: 28px;
             --fs-hero: 42px;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         html, body {
             width: 100%;
             height: 100%;
             overflow: hidden;
+            position: fixed;
+        }
+        body {
             background: var(--bg);
             color: #fdfaf0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
+        
         .screen {
             display: none;
             width: 100%;
@@ -40,8 +44,26 @@
             padding: 16px;
             padding-bottom: 80px;
             overflow-y: auto;
+            overflow-x: hidden;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
-        .screen.active { display: block; }
+        .screen.active {
+            display: block;
+            opacity: 1;
+            transform: scale(1);
+            z-index: 10;
+        }
+        .screen.exiting {
+            opacity: 0;
+            transform: scale(1.05);
+            pointer-events: none;
+        }
+        
         .btn {
             background: rgba(255,224,51,.1);
             border: 1px solid rgba(255,224,51,.3);
@@ -52,32 +74,206 @@
             font-weight: 700;
             border-radius: 4px;
             cursor: pointer;
+            letter-spacing: .08em;
             width: 100%;
             margin: 8px 0;
+            transition: all .2s;
         }
+        .btn:active { transform: scale(.98); }
         .btn-accent { background: var(--accent); color: #0a0a08; }
+        .btn-danger { border-color: var(--accent2); color: var(--accent2); }
+        .btn-icon {
+            width: 48px;
+            height: 48px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .btn-small {
+            padding: 8px 16px;
+            font-size: var(--fs-xs);
+            width: auto;
+        }
+        
         #s-intro {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            height: 100vh;
+            position: relative;
+            background: linear-gradient(180deg, #0a0a08 0%, #1a1508 100%);
         }
-        #intro-stamp { font-size: 72px; margin-bottom: 16px; }
-        #intro-title { font-family: var(--head); font-size: 42px; color: var(--accent); margin-bottom: 16px; }
-        #intro-desc { font-size: 14px; color: #ccc; max-width: 320px; margin-bottom: 24px; }
-        .cipher-input {
+        .intro-stamp, .intro-date, .intro-title, .intro-ribbon, .intro-desc, .intro-quote, .intro-btn, .intro-how, .intro-memory {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all .6s ease;
+        }
+        .intro-show { opacity: 1; transform: translateY(0); }
+        #intro-stamp { font-size: 72px; margin-bottom: 16px; filter: drop-shadow(0 0 30px rgba(255,224,51,.4)); }
+        #intro-date { font-size: var(--fs-sm); color: var(--muted); letter-spacing: .15em; margin-bottom: 8px; }
+        #intro-title { font-family: var(--head); font-size: var(--fs-hero); color: var(--accent); letter-spacing: .06em; line-height: .9; margin-bottom: 16px; text-shadow: 0 0 40px rgba(255,224,51,.5); }
+        #intro-ribbon { width: 200px; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); margin: 20px auto; }
+        #intro-desc { font-size: var(--fs-base); color: #ccc; max-width: 320px; margin-bottom: 24px; line-height: 1.6; }
+        #intro-quote { font-size: var(--fs-sm); color: var(--muted); font-style: italic; margin-bottom: 32px; }
+        #intro-btn { width: 200px; }
+        #intro-how { font-size: var(--fs-xs); color: var(--muted); margin-top: 16px; cursor: pointer; text-decoration: underline; }
+        #intro-memory { font-size: var(--fs-xs); color: var(--muted); margin-top: 40px; letter-spacing: .1em; }
+        
+        #fireworks-canvas, #petals-canvas, #particles-canvas, #map-canvas, #three-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+        #three-canvas { z-index: 1; }
+        
+        .chapter-card {
+            background: var(--bg-soft);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            transition: all .2s;
+        }
+        .chapter-card.locked { opacity: .5; }
+        .chapter-card.completed { border-color: var(--green); }
+        .ch-icon { font-size: 32px; }
+        .ch-inner { flex: 1; min-width: 0; }
+        .ch-num { font-size: var(--fs-xs); color: var(--muted); letter-spacing: .06em; }
+        .ch-title { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; margin: 4px 0; }
+        .ch-place { font-size: var(--fs-xs); color: var(--muted); }
+        .ch-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+        .ch-tag { font-size: 9px; background: rgba(255,255,255,.05); padding: 2px 6px; border-radius: 3px; }
+        .ch-right { text-align: right; }
+        .ch-badge { font-size: 20px; }
+        .ch-score { font-family: var(--head); font-size: var(--fs-sm); color: var(--accent); margin-top: 4px; }
+        
+        .cipher-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .cipher-info-left {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .cipher-chapter-label { font-size: var(--fs-xs); color: var(--muted); letter-spacing: .08em; }
+        .cipher-admin-label { 
+            font-size: var(--fs-xs); 
+            color: var(--accent); 
+            letter-spacing: .08em;
+            font-weight: 700;
+        }
+        .cipher-score-display { font-family: var(--head); font-size: var(--fs-sm); color: var(--accent); }
+        .cipher-type-label { font-size: var(--fs-xs); color: var(--accent); letter-spacing: .1em; margin-bottom: 8px; }
+        .cipher-task { font-size: var(--fs-base); color: #fdfaf0; margin-bottom: 16px; line-height: 1.5; }
+        .cipher-box {
+            background: rgba(255,224,51,.05);
+            border: 1px solid rgba(255,224,51,.2);
+            border-radius: 6px;
+            padding: 20px;
+            font-family: var(--mono);
+            font-size: var(--fs-2xl);
+            text-align: center;
+            letter-spacing: .15em;
+            margin-bottom: 16px;
+            position: relative;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            word-break: break-word;
+        }
+        .cipher-box::before {
+            content: attr(data-num);
+            position: absolute;
+            top: 6px;
+            left: 10px;
+            font-size: 10px;
+            color: var(--muted);
+            letter-spacing: .2em;
+        }
+        .cipher-input-wrap { 
+            margin-bottom: 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .cipher-input {
+            flex: 1;
             background: rgba(255,255,255,.05);
             border: 1px solid rgba(255,255,255,.15);
             border-radius: 6px;
             padding: 14px;
-            font-size: 16px;
+            font-size: var(--fs-lg);
             color: #fdfaf0;
             text-align: center;
-            margin: 12px 0;
+            letter-spacing: .1em;
+            font-family: var(--mono);
         }
+        .cipher-input.correct { border-color: var(--green); background: rgba(85,221,85,.1); }
+        .cipher-input.wrong { border-color: var(--accent2); background: rgba(255,58,58,.1); animation: shake .4s; }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+        .cipher-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .cipher-actions .btn { flex: 1; }
+        .btn-check { background: rgba(255,224,51,.15); border-color: rgba(255,224,51,.4); }
+        .btn-hint { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.15); }
+        .cipher-hint-box {
+            background: rgba(255,224,51,.08);
+            border: 1px solid rgba(255,224,51,.2);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-size: var(--fs-sm);
+            color: var(--accent);
+            display: none;
+        }
+        .cipher-hint-box.show { display: block; }
+        .cipher-ref {
+            background: rgba(0,0,0,.3);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 16px;
+            font-size: var(--fs-sm);
+            color: var(--muted);
+            max-height: none;
+            overflow-y: visible;
+        }
+        .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
+        .morse-ref {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 4px;
+            font-size: var(--fs-sm);
+        }
+        .morse-ref div {
+            background: rgba(255,224,51,.05);
+            padding: 4px;
+            border-radius: 3px;
+            text-align: center;
+        }
+        .cipher-progress { display: flex; gap: 6px; justify-content: center; margin: 16px 0; }
+        .cipher-prog-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
+        .cipher-prog-dot.done { background: var(--green); }
+        .cipher-prog-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+        .cipher-attempts-label { font-size: var(--fs-sm); text-align: center; margin: 12px 0; }
+        .cipher-timer { font-family: var(--head); font-size: var(--fs-xl); color: var(--muted); text-align: center; }
+        
         #bottom-nav {
             position: fixed;
             bottom: 0;
@@ -88,6 +284,7 @@
             display: none;
             justify-content: space-around;
             padding: 8px 0;
+            z-index: 100;
         }
         .bn-tab {
             flex: 1;
@@ -96,77 +293,47 @@
             font-size: 10px;
             color: var(--muted);
             cursor: pointer;
+            transition: all .2s;
         }
         .bn-tab.active { color: var(--accent); }
-        #splash-screen {
-            position: fixed;
-            inset: 0;
-            z-index: 9000;
-            background: #0a0a08;
+        .bn-tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+        
+        .lb-row {
             display: flex;
-            flex-direction: column;
             align-items: center;
-            justify-content: center;
-        }
-        .chapter-card {
-            background: var(--bg-soft);
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 8px;
-            padding: 16px;
-            margin: 12px 0;
-            display: flex;
             gap: 12px;
-            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255,255,255,.04);
         }
-        .chapter-card.completed { border-color: var(--green); }
-        .cipher-header { display: flex; justify-content: space-between; margin-bottom: 16px; }
-        .cipher-progress { display: flex; gap: 6px; justify-content: center; margin: 16px 0; }
-        .cipher-prog-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
-        .cipher-prog-dot.done { background: var(--green); }
-        .cipher-prog-dot.active { background: var(--accent); }
-        #cipher-box {
-            background: rgba(255,224,51,.05);
-            border: 1px solid rgba(255,224,51,.2);
-            border-radius: 6px;
-            padding: 20px;
-            font-family: var(--mono);
-            font-size: 28px;
-            text-align: center;
-            margin-bottom: 16px;
-        }
-        .cipher-actions { display: flex; gap: 8px; margin-top: 12px; }
-        .cipher-actions .btn { flex: 1; }
-        #cipher-attempts-label { font-size: 12px; text-align: center; margin: 12px 0; }
-        #cipher-timer { font-family: var(--head); font-size: 20px; color: var(--muted); text-align: center; }
-        #three-canvas, #fireworks-canvas, #petals-canvas, #particles-canvas {
+        .lb-rank { font-size: 20px; min-width: 30px; text-align: center; }
+        .lb-rank.gold { color: #ffd700; }
+        .lb-rank.silver { color: #c0c0c0; }
+        .lb-rank.bronze { color: #cd7f32; }
+        .lb-name { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; }
+        .lb-score { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
+        
+        .succ-answer { font-family: var(--mono); font-size: var(--fs-2xl); color: var(--accent); letter-spacing: .15em; margin: 20px 0; text-align: center; }
+        .succ-pts { font-family: var(--head); font-size: var(--fs-hero); color: var(--green); text-align: center; }
+        .succ-time { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 8px; }
+        .succ-fact { background: rgba(255,255,255,.03); border-left: 3px solid var(--accent); padding: 12px; margin: 20px 0; font-size: var(--fs-sm); color: #ccc; line-height: 1.6; }
+        
+        .chend-medal { font-size: 72px; text-align: center; margin: 20px 0; }
+        .chend-score { font-family: var(--head); font-size: var(--fs-2xl); color: var(--accent); text-align: center; }
+        .chend-total { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 4px; }
+        
+        .pause-info { text-align: center; padding: 40px 20px; }
+        .pause-icon { font-size: 64px; margin-bottom: 16px; }
+        
+        .confetti-piece {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 0;
+            top: -10px;
+            width: 10px;
+            height: 10px;
+            z-index: 9999;
+            animation: confetti-fall 2s linear forwards;
         }
-        #three-canvas { z-index: 1; }
-        #map-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 0;
-            opacity: .55;
-        }
-        #radar-canvas {
-            position: fixed;
-            right: 12px;
-            bottom: 120px;
-            pointer-events: none;
-            z-index: 0;
-            opacity: .9;
-        }
-        .content-wrapper { position: relative; z-index: 10; width: 100%; height: 100%; }
+        @keyframes confetti-fall { to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+        
         .quiz-container { width: 100%; margin-bottom: 12px; }
         .quiz-option {
             width: 100%;
@@ -181,6 +348,8 @@
             display: flex;
             align-items: center;
             gap: 12px;
+            transition: all .15s ease;
+            user-select: none;
         }
         .quiz-letter {
             flex-shrink: 0;
@@ -195,7 +364,9 @@
             font-family: var(--head);
             font-size: 13px;
             color: var(--accent);
+            transition: all .15s;
         }
+        
         .anagram-answer { display: flex; justify-content: center; gap: 6px; margin: 16px 0; }
         .anagram-slot {
             width: 40px;
@@ -228,95 +399,55 @@
             background: rgba(255,255,255,.05);
         }
         .anagram-letter.used { opacity: .3; pointer-events: none; }
+        .anagram-reset { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.15); color: #fdfaf0; padding: 8px 16px; border-radius: 4px; font-size: var(--fs-sm); cursor: pointer; }
+        
         .map-container { width: 100%; max-width: 340px; margin: 0 auto; }
         .map-container svg { width: 100%; height: auto; }
-        .map-city-dot { cursor: pointer; }
+        .map-city-dot { cursor: pointer; transition: all .2s; }
         .map-city-dot circle { transition: all .2s; }
+        .map-city-dot:hover circle { fill: #fff; }
         .map-city-label { font-size: 10px; fill: var(--muted); pointer-events: none; }
         .map-hint-text { text-align: center; font-size: var(--fs-sm); color: var(--muted); margin-top: 12px; }
-        .cipher-ref {
-            background: rgba(0,0,0,.3);
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 6px;
-            padding: 12px;
-            margin-top: 16px;
-            font-size: var(--fs-sm);
-            color: var(--muted);
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
-        .morse-ref {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 4px;
-            font-size: var(--fs-sm);
-        }
-        .morse-ref div {
-            background: rgba(255,224,51,.05);
-            padding: 4px;
-            border-radius: 3px;
-            text-align: center;
-        }
-        .cipher-hint-box {
-            background: rgba(255,224,51,.08);
-            border: 1px solid rgba(255,224,51,.2);
-            border-radius: 6px;
-            padding: 12px;
-            margin-top: 12px;
-            font-size: var(--fs-sm);
-            color: var(--accent);
-            display: none;
-        }
-        .cipher-hint-box.show { display: block; }
-        .succ-answer { font-family: var(--mono); font-size: var(--fs-2xl); color: var(--accent); letter-spacing: .15em; margin: 20px 0; text-align: center; }
-        .succ-pts { font-family: var(--head); font-size: var(--fs-hero); color: var(--green); text-align: center; }
-        .succ-time { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 8px; }
-        .succ-fact { background: rgba(255,255,255,.03); border-left: 3px solid var(--accent); padding: 12px; margin: 20px 0; font-size: var(--fs-sm); color: #ccc; line-height: 1.6; }
-        .chend-medal { font-size: 72px; text-align: center; margin: 20px 0; }
-        .chend-score { font-family: var(--head); font-size: var(--fs-2xl); color: var(--accent); text-align: center; }
+        
         .final-score { font-family: var(--head); font-size: var(--fs-hero); color: var(--accent); text-align: center; margin: 20px 0; }
         .final-rank { font-size: var(--fs-xl); color: var(--green); text-align: center; margin-bottom: 24px; }
         .final-stars { font-size: 48px; text-align: center; opacity: 0; transition: opacity .5s; }
         .final-stars.show { opacity: 1; }
-        .lb-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255,255,255,.04);
-        }
-        .lb-rank { font-size: 20px; min-width: 30px; text-align: center; }
-        .lb-rank.gold { color: #ffd700; }
-        .lb-rank.silver { color: #c0c0c0; }
-        .lb-rank.bronze { color: #cd7f32; }
-        .lb-name { font-family: var(--head); font-size: var(--fs-base); color: #fdfaf0; }
-        .lb-score { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
-        .nav-buttons { display: flex; gap: 8px; margin-top: 16px; }
-        .nav-buttons .btn { flex: 1; }
-        #game-toast {
+        
+        .profile-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+        .profile-stat-item { text-align: center; background: var(--bg-soft); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); }
+        .profile-stat-value { font-family: var(--head); font-size: var(--fs-xl); color: var(--accent); }
+        .profile-stat-label { font-size: 9px; color: var(--muted); letter-spacing: .06em; margin-top: 4px; }
+        
+        #splash-screen { z-index: 10000; }
+        @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        
+        .content-wrapper { position: relative; z-index: 10; width: 100%; height: 100%; }
+        
+        #page-overlay {
             position: fixed;
-            bottom: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(20,17,8,.95);
-            border: 1px solid rgba(255,224,51,.3);
-            color: #ffe033;
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-family: var(--head);
-            font-size: 12px;
-            z-index: 999;
-            pointer-events: none;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0a08;
+            z-index: 9999;
             opacity: 0;
-            transition: opacity .3s;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
         }
+        #page-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* Достижения - правый верхний угол */
         #ach-toast {
             position: fixed;
-            top: 80px;
+            top: 20px;
             right: 20px;
             z-index: 9997;
-            background: linear-gradient(135deg,#1a1508,#2a2010);
+            background: linear-gradient(135deg, #1a1508, #2a2010);
             border: 1px solid rgba(255,224,51,.4);
             border-radius: 12px;
             padding: 12px 18px;
@@ -331,18 +462,35 @@
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
-        @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-        .pause-info { text-align: center; padding: 40px 20px; }
-        .pause-icon { font-size: 64px; margin-bottom: 16px; }
-        .confetti-piece {
+
+        /* Уведомление о сохранении */
+        #save-toast {
             position: fixed;
-            top: -10px;
-            width: 10px;
-            height: 10px;
-            z-index: 9999;
-            animation: confetti-fall 2s linear forwards;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20,17,8,.85);
+            border: 1px solid rgba(255,224,51,.3);
+            color: #ffe033;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-family: var(--head);
+            font-size: 12px;
+            letter-spacing: .06em;
+            z-index: 9996;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity .3s ease;
         }
-        @keyframes confetti-fall { to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+
+        .nav-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        .nav-buttons .btn {
+            flex: 1;
+        }
     </style>
 </head>
 <body>
@@ -351,40 +499,37 @@
     <canvas id="petals-canvas"></canvas>
     <canvas id="particles-canvas"></canvas>
     <canvas id="map-canvas"></canvas>
-    <canvas id="radar-canvas" width="70" height="70"></canvas>
     
-    <div id="splash-screen" style="display:none;">
-        <div style="font-size:72px;margin-bottom:16px;animation:popIn .6s ease both;">🔐</div>
-        <div style="font-family:var(--head);font-size:var(--fs-hero);color:var(--accent);letter-spacing:.06em;text-align:center;line-height:.9;">ШИФРО<br>ВАЛЬЩИК</div>
-        <div style="margin-top:24px;width:200px;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden;">
-            <div id="splash-bar" style="height:100%;width:0%;background:var(--accent);border-radius:2px;transition:width .05s linear;box-shadow:0 0 8px var(--accent);"></div>
-        </div>
-        <div style="margin-top:10px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;">ЗАГРУЗКА...</div>
-    </div>
-
+    <div id="page-overlay"></div>
+    
     <div class="content-wrapper">
         <div id="s-intro" class="screen active">
-            <div id="intro-stamp">🔐</div>
-            <div id="intro-title">ШИФРОВАЛЬЩИК</div>
-            <div id="intro-desc">Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.</div>
-            <button class="btn btn-accent" onclick="showScreen('s-chapters'); renderChapters();" style="width:200px;">▶ НАЧАТЬ МИССИЮ</button>
+            <div id="intro-stamp" class="intro-stamp">🔐</div>
+            <div id="intro-date" class="intro-date">1941 – 1945</div>
+            <div id="intro-title" class="intro-title">ШИФРО<br>ВАЛЬЩИК</div>
+            <div id="intro-ribbon" class="intro-ribbon"></div>
+            <div id="intro-desc" class="intro-desc">Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.</div>
+            <div id="intro-quote" class="intro-quote">«Никто не забыт, ничто не забыто»</div>
+            <button id="intro-btn" class="btn btn-accent intro-btn" onclick="showScreen('s-chapters'); renderChapters();">▶ НАЧАТЬ МИССИЮ</button>
+            <div id="intro-how" class="intro-how" onclick="showScreen('s-about-tab'); switchTab('about');">❓ КАК ИГРАТЬ</div>
+            <div id="intro-memory" class="intro-memory">Помним · Чтим · Гордимся</div>
         </div>
         
         <div id="s-chapters" class="screen">
-            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:16px;">🗺 ЗАДАНИЯ</div>
-            <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:12px;">
-                <div id="ch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;">🗺 ЗАДАНИЯ</div>
+                <button id="btn-reset-header" class="btn btn-small" onclick="confirmReset()">🗑 СБРОС</button>
             </div>
-            <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted);margin-bottom:16px;">
+            <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:12px;">
+                <div id="ch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .5s;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted);margin-bottom:16px;letter-spacing:.06em;">
                 <span id="stat-completed-label">0 / 6 глав</span>
+                <span id="stat-players-label">👥 — игроков</span>
                 <span id="stat-score">0 оч</span>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:var(--fs-xs);color:var(--muted);margin-bottom:10px;gap:10px;">
-                <span id="stat-players-label">👥 — игроков</span>
-                <button id="btn-reset-header" class="btn" style="display:none;flex:0 0 auto;width:auto;padding:8px 12px;margin:0;" onclick="confirmReset()">🗑 СБРОС</button>
-            </div>
-            <button id="btn-to-final" class="btn btn-accent" style="display:none;" onclick="showFinal()">🏆 К ИТОГУ</button>
             <div id="chapters-list"></div>
+            <button id="btn-to-final" class="btn btn-accent" style="display:none;margin-top:16px;" onclick="showFinal()">🏆 СМОТРЕТЬ ИТОГ</button>
             <div class="nav-buttons">
                 <button class="btn" onclick="switchTab('profile')">👤 ПРОФИЛЬ</button>
                 <button class="btn" onclick="switchTab('about')">ℹ️ О ИГРЕ</button>
@@ -394,14 +539,14 @@
         <div id="s-briefing" class="screen">
             <div style="text-align:center;margin-bottom:20px;">
                 <div id="brief-stamp" style="font-size:48px;margin-bottom:8px;"></div>
-                <div id="brief-num" style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:4px;"></div>
-                <div id="brief-title" style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);"></div>
-                <div id="brief-place" style="font-size:var(--fs-sm);color:var(--muted);"></div>
+                <div id="brief-num" style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-bottom:4px;"></div>
+                <div id="brief-title" style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em;"></div>
+                <div id="brief-place" style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;"></div>
             </div>
             <div id="brief-meta" style="background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;padding:12px;font-size:var(--fs-xs);color:var(--accent);line-height:1.8;margin-bottom:20px;"></div>
             <div id="brief-text" style="font-size:var(--fs-base);color:#ccc;line-height:1.7;margin-bottom:20px;"></div>
             <div id="brief-mission" style="background:rgba(85,221,85,.08);border-left:3px solid var(--green);padding:12px;font-size:var(--fs-sm);color:var(--green);margin-bottom:24px;"></div>
-            <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ</button>
+            <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
             <div class="nav-buttons">
                 <button class="btn" onclick="showScreen('s-chapters');renderChapters();">← НАЗАД</button>
                 <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
@@ -410,23 +555,26 @@
         
         <div id="s-cipher" class="screen">
             <div class="cipher-header">
-                <div id="cipher-chapter-label" style="font-size:var(--fs-xs);color:var(--muted);"></div>
-                <div id="cipher-score-display" style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);">0 оч</div>
+                <div class="cipher-info-left">
+                    <div id="cipher-chapter-label" class="cipher-chapter-label"></div>
+                    <div id="cipher-admin-label" class="cipher-admin-label" style="display:none;">👑 АДМИН</div>
+                </div>
+                <div id="cipher-score-display" class="cipher-score-display">0 оч</div>
             </div>
             <div id="cipher-progress" class="cipher-progress"></div>
-            <div id="cipher-type-label" style="font-size:var(--fs-xs);color:var(--accent);margin-bottom:8px;"></div>
-            <div id="cipher-task" style="font-size:var(--fs-base);color:#fdfaf0;margin-bottom:16px;"></div>
-            <div id="cipher-box"></div>
+            <div id="cipher-type-label" class="cipher-type-label"></div>
+            <div id="cipher-task" class="cipher-task"></div>
+            <div id="cipher-box" class="cipher-box" data-num="001"></div>
             <div id="quiz-container" class="quiz-container" style="display:none;"></div>
-            <div id="cipher-input-wrap" class="cipher-input-wrap" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-                <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" style="flex:1;">
-                <button id="btn-keyboard" class="btn" style="width:48px;" onclick="toggleKeyboard()">⌨️</button>
+            <div class="cipher-input-wrap" id="cipher-input-wrap">
+                <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" autocomplete="off" autocorrect="off" spellcheck="false">
+                <button id="btn-keyboard" class="btn btn-icon" onclick="toggleKeyboard()" title="Клавиатура">⌨️</button>
             </div>
-            <div id="cipher-attempts-label"></div>
-            <div id="cipher-timer">0с</div>
+            <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
+            <div id="cipher-timer" class="cipher-timer">0с</div>
             <div class="cipher-actions">
-                <button id="btn-hint" class="btn" onclick="showHint()">💡 ПОДСКАЗКА</button>
-                <button id="btn-check" class="btn btn-accent btn-check" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
+                <button id="btn-hint" class="btn btn-hint" onclick="showHint()">💡 ПОДСКАЗКА</button>
+                <button id="btn-check" class="btn btn-check" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
             </div>
             <div id="cipher-hint-box" class="cipher-hint-box">
                 <div id="cipher-hint-text"></div>
@@ -441,7 +589,7 @@
         <div id="s-success" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div style="font-size:64px;margin-bottom:16px;">✅</div>
-                <div id="succ-cipher-name" style="font-size:var(--fs-xs);color:var(--muted);"></div>
+                <div id="succ-cipher-name" style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;"></div>
                 <div id="succ-answer" class="succ-answer"></div>
                 <div id="succ-pts" class="succ-pts"></div>
                 <div id="succ-time" class="succ-time"></div>
@@ -460,8 +608,8 @@
                 <div id="chend-medal" class="chend-medal"></div>
                 <div id="chend-chapter-name" style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:8px;"></div>
                 <div id="chend-score" class="chend-score"></div>
-                <div id="chend-total" style="font-size:var(--fs-sm);color:var(--muted);"></div>
-                <div id="chend-pct" style="font-size:var(--fs-sm);color:var(--muted);"></div>
+                <div id="chend-total" class="chend-total"></div>
+                <div id="chend-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;"></div>
             </div>
             <button id="chend-next-btn" class="btn btn-accent"></button>
             <div class="nav-buttons">
@@ -501,7 +649,7 @@
         <div id="s-final" class="screen">
             <div style="text-align:center;margin:40px 0;">
                 <div id="final-stars" class="final-stars">★★★★★</div>
-                <div style="font-size:var(--fs-xs);color:var(--muted);margin:20px 0;">МИССИЯ ВЫПОЛНЕНА</div>
+                <div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin:20px 0;">МИССИЯ ВЫПОЛНЕНА</div>
                 <div id="final-score-val" class="final-score"></div>
                 <div id="final-rank" class="final-rank"></div>
                 <div id="final-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:24px;"></div>
@@ -516,7 +664,7 @@
         </div>
         
         <div id="s-leaderboard-tab" class="screen">
-            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
+            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
             <div id="lb-list-tab"></div>
             <div class="nav-buttons">
                 <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
@@ -525,6 +673,7 @@
         </div>
         
         <div id="s-profile-tab" class="screen">
+  <canvas id="radar-canvas" style="display:none"></canvas>
             <div id="profile-tab-content"></div>
             <div class="nav-buttons">
                 <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
@@ -543,283 +692,316 @@
     
     <div id="bottom-nav">
         <div class="bn-tab active" id="bn-chapters" onclick="switchTab('chapters')">
-            <span>🗺</span><br>ЗАДАНИЯ
+            <span class="bn-tab-icon">🗺</span>
+            ЗАДАНИЯ
         </div>
         <div class="bn-tab" id="bn-leaderboard" onclick="switchTab('leaderboard')">
-            <span>🏆</span><br>РЕЙТИНГ
+            <span class="bn-tab-icon">🏆</span>
+            РЕЙТИНГ
         </div>
         <div class="bn-tab" id="bn-profile" onclick="switchTab('profile')">
-            <span>👤</span><br>ПРОФИЛЬ
+            <span class="bn-tab-icon">👤</span>
+            ПРОФИЛЬ
         </div>
         <div class="bn-tab" id="bn-about" onclick="switchTab('about')">
-            <span>ℹ️</span><br>О ИГРЕ
+            <span class="bn-tab-icon">ℹ️</span>
+            О ИГРЕ
         </div>
     </div>
 
-    <script type="text/plain">
-// ═══════════════════════════════════════════════════════
-//  ДАННЫЕ ИГРЫ — 6 ГЛАВ
-// ═══════════════════════════════════════════════════════
+    <script>
 const CHAPTERS = [
 {
 id:1, title: "ХОЙНИКИ: ОГНЕННОЕ ЛЕТО", subtitle: "Глава I",
-place: "ХОЙНИКИ · 1941", stamp: "🌿",
+place: "ХОЙНИКИ · ГОМЕЛЬСКАЯ ОБЛ. · 1941", stamp: "🌿",
+meta: "Дата: 28.08.1941\nМесто: г. Хойники, Полесье\nСтатус: ОККУПАЦИЯ",
+briefing: `Август 1941. Хойники — небольшой город на юге Гомельской области, в сердце Полесья. Немецкие войска заняли город. Местные жители уходят в леса — начинается партизанское движение. Первый связной отряда передаёт координаты явки. Ты — его преемник. Расшифруй донесения.`,
+mission: "Выполни 6 разведывательных заданий по Хойникскому региону",
+videoUrl: "https://www.youtube.com/embed/8mFDTm5OQCI",
 ciphers:[
-{ type: "quiz", typeLabel: "ИСТОРИЯ",
-task: "В какой области находится Хойникский район?",
-options:["Брестская", "Гомельская", "Витебская", "Могилёвская"],
+{ type: "quiz", typeLabel: "ИСТОРИЯ КРАЯ",
+task: "Хойники — районный центр одной из областей Беларуси. Определи по карте: в какой области находится Хойникский район?",
+options:["Брестская область", "Гомельская область", "Витебская область", "Могилёвская область"],
 correctIndex:1,
+encrypted: "Гомельская область",
 answer: "ГОМЕЛЬСКАЯ",
-hint: "Полесье — регион на юге Беларуси",
-fact: "Хойники в Гомельской области", points:100 },
+hint: "Полесье — исторический регион на юге Беларуси, граничит с Украиной.",
+fact: "Хойникский район расположен в Гомельской области в зоне Полесья. После аварии на ЧАЭС в 1986 году часть района вошла в зону отчуждения.", points:100 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Сдвиг 3 позиции. Расшифруй название реки:",
+task: "Связной передал зашифрованный отчёт из Хойник. Сдвиг 3 позиции. Расшифруй трёхбуквенное название реки вдоль которой движется отряд:",
 encrypted: "ФСЙ",
 answer: "СОЖ",
-hint: "Вычти 3 из каждой буквы",
-fact: "Река Сож", points:110 },
+hint: "Вычти 3: Ф(22)-3=19=С, С(19)-3=16=О, Й(11)-3=8=Ж. ФСЙ → СОЖ!",
+fact: "Река Сож протекает через Гомельскую область. Партизанские отряды Хойникского района часто использовали берега Сожа для переправ.", points:110 },
 { type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
-task: "Каждое число — буква (А=1). Расшифруй:",
+task: "Перехвачено донесение о численности немецкого гарнизона в Хойниках. Каждое число — буква алфавита (А=1). Расшифруй ключевое слово:",
 encrypted: "17-1-18-20-10-9-1-15",
 answer: "ПАРТИЗАН",
-hint: "П=17, А=1, Р=18...",
-fact: "Партизанское движение", points:120 },
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "3 ночи × 3 диверсии = ?",
-encrypted: "3 × 3 = ?",
-answer: "9",
-hint: "Простое умножение",
-fact: "Рельсовая война", points:140 },
+hint: "П=17, А=1, Р=18, Т=20, И=10, З=9, А=1, Н=15. Восемь букв.",
+fact: "Партизанское движение в Хойникском районе началось с первых дней оккупации. К 1943 году в районе действовало несколько крупных отрядов.", points:120 },
 { type: "anagram", typeLabel: "АНАГРАММА",
-task: "Переставь буквы — регион Беларуси:",
+task: "Переставь буквы — получишь название исторического региона, где расположены Хойники. Именно здесь плотные леса и болота стали союзниками партизан:",
 encrypted: "ЬЕЛЕСОП",
 answer: "ПОЛЕСЬЕ",
-hint: "6 букв, много болот",
-fact: "Полесье", points:130 },
-{ type: "map", typeLabel: "КАРТА",
-task: "Тапни на второй город Беларуси:",
+hint: "6 букв. Природный регион южной Беларуси. Много болот и лесов. П-О-Л...",
+fact: "Полесье — одна из крупнейших заболоченных территорий Европы. Немецкие войска избегали здесь активных действий — партизаны чувствовали себя здесь как дома.", points:130 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "За 3 ночи партизанский отряд из Хойникского района провёл по 3 диверсии каждую ночь. Сколько всего диверсий провёл отряд?",
+encrypted: "3 × 3 = ?",
+answer: "9",
+hint: "3 ночи × 3 операции = 9 операций.",
+fact: "Партизаны Хойникского района провели десятки диверсий на железной дороге. Рельсовая война была одним из главных инструментов сопротивления.", points:140 },
+{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
+task: "На карте Беларуси тапни на второй по величине город страны — административный центр южной области:",
 encrypted: "🗺",
 answer: "ГОМЕЛЬ",
-hint: "Юго-восток Беларуси",
-fact: "Гомель — второй по величине город", points:150 }
+mapCity: "ГОМЕЛЬ",
+hint: "Юго-восток Беларуси, недалеко от границы с Россией и Украиной. Второй по величине город страны.",
+fact: "Гомель — второй по величине город Беларуси. Хойники находятся в 80 км к юго-западу от Гомеля.", points:150 }
 ]
 },
 {
 id:2, title: "ПОДПОЛЬЕ МИНСКА", subtitle: "Глава II",
-place: "МИНСК · 1942", stamp: "📜",
+place: "МИНСК · ИЮЛЬ 1942", stamp: "📜",
+meta: "Дата: 14.07.1942\nМесто: Минск, оккупация\nСтатус: АКТИВНО",
+briefing: `Лето 1942 года. Минск под оккупацией уже год. Подпольная сеть «Комета» действует в городе. Перехваченные донесения содержат сведения о вражеских колоннах. Немцы меняют коды каждые 48 часов — действуй быстро.`,
+mission: "Расшифруй 6 донесений минского подполья",
+videoUrl: "https://www.youtube.com/embed/dL8DM0PfRvQ",
 ciphers:[
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Сдвиг 3. Расшифруй:",
+task: "Каждая буква сдвинута на 3 позиции вперёд. А→Г, Б→Д... Расшифруй слово:",
 encrypted: "ЁСУСЖ",
 answer: "ГОРОД",
-hint: "Ё-3=Г, С-3=О...",
-fact: "Минское подполье", points:100 },
+hint: "Ё(6)−3=3=Г. С(19)−3=16=О. У(21)−3=18=Р. С(19)−3=16=О. Ж(8)−3=5=Д. ГОРОД!",
+fact: "Минское подполье — одна из крупнейших сетей сопротивления в Европе: более 9000 участников.", points:100 },
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Расшифруй радиограмму. Буквы разделены /, слова с новой строки",
+encrypted: "....-/.-.././-...\n.-.././.-...",
+answer: "ХЛЕБ\nДОРОГ",
+hint: ".... = Х, .-.. = Л, . = Е, -... = Б → ХЛЕБ. Д=-.., О=---, Р=.-., О=---, Г=--. ДОРОГ.",
+fact: "Подпольщики рисковали жизнью при каждом выходе в эфир — немцы засекали радиосигналы за несколько минут.", points:120 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
-task: "Сдвиг 4. Найди слово:",
+task: "Сдвиг изменился — теперь 4 позиции вперёд. Найди ключевое слово:",
 encrypted: "ХОПДЗ",
 answer: "СКЛАД",
-hint: "Х-4=С, О-4=К...",
-fact: "Тайные склады", points:130 },
-{ type: "num", typeLabel: "ЧИСЛОВОЙ",
-task: "Код места встречи:",
+hint: "Х(24)−4=20=С. О(16)−4=12=К. П(17)−4=13=Л. Д(5)−4=1=А. З(9)−4=5=Д. СКЛАД!",
+fact: "Подпольщики организовывали тайные склады оружия и медикаментов для партизан.", points:130 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Каждая буква заменяется на зеркальную: А↔Я, Б↔Ю, В↔Э... Расшифруй слово:",
+encrypted: "НЭАЧГ",
+answer: "СВЯЗЬ",
+hint: "Атбаш: 34-позиция. НЭАЧГ→СВЯЗЬ.",
+fact: "Шифр Атбаш — один из древнейших, использовался ещё в библейские времена.", points:150 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
+task: "Числовой код места встречи. Каждое число — порядковый номер буквы (А=1):",
 encrypted: "33-3-12-1",
 answer: "ЯВКА",
-hint: "33=Я, 3=В...",
-fact: "Явки для встреч", points:160 },
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "Когда создано Минское подполье?",
+hint: "33=Я, 3=В, 12=К, 1=А → ЯВКА!",
+fact: "Явка — место для секретных встреч. Адрес передавали только числовым кодом.", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Минское подполье действовало под носом у оккупантов. В каком году было создано Минское антифашистское подполье?",
 options:["1939", "1941", "1943", "1944"],
 correctIndex:1,
+encrypted: "1941",
 answer: "1941",
-hint: "Оккупация началась 28 июня 1941",
-fact: "Июль 1941", points:130 },
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "12 + 24 + 24 = ?",
-encrypted: "12 + 24 + 24 = ?",
-answer: "60",
-hint: "Простое сложение",
-fact: "40 000 взрывов", points:160 },
-{ type: "anagram", typeLabel: "АНАГРАММА",
-task: "Переставь буквы — слово:",
-encrypted: "ЬЗЯВС",
-answer: "СВЯЗЬ",
-hint: "5 букв",
-fact: "Шифр Атбаш", points:150 }
+hint: "Оккупация Минска началась 28 июня 1941 года. Подполье начало формироваться сразу.",
+fact: "Минское подполье начало формироваться в июле 1941 года. За годы оккупации оно организовало тысячи актов саботажа.", points:130 }
 ]
 },
 {
 id:3, title: "РЕЛЬСОВАЯ ВОЙНА", subtitle: "Глава III",
-place: "БЕЛАРУСЬ · 1943", stamp: "💣",
+place: "БЕЛАРУСЬ · АВГУСТ 1943", stamp: "💣",
+meta: "Дата: 03.08.1943\nМесто: Вся Беларусь\nСтатус: КРИТИЧНО",
+briefing: `3 августа 1943 года — ночь «Рельсовой войны». Тысячи партизан одновременно атакуют железные дороги по всей Беларуси. Координация — через шифрованные радиограммы. Расшифруй донесения о результатах операции до рассвета.`,
+mission: "Расшифруй 6 оперативных донесений штаба",
+videoUrl: "https://www.youtube.com/embed/B2bqJSMNwOI",
 ciphers:[
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Радиограмма от партизанского отряда. Буквы разделены /, слова с новой строки",
+encrypted: "--/---/.../-\n--./---/.-./../-",
+answer: "МОСТ\nГОРИТ",
+hint: "М=--,О=---,С=...,Т=- → МОСТ. Г=--.,О=---,Р=.-.,И=..,Т=- → ГОРИТ",
+fact: "В первую ночь Рельсовой войны партизаны произвели 42 000 взрывов на железных дорогах Беларуси.", points:110 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Зашифрованный маршрут отступления. Расшифруй одно слово:",
+encrypted: "ПЛМГ",
+answer: "ПУТЬ",
+hint: "Атбаш: Л(13)→34-13=21=У✓, М(14)→34-14=20=Т✓, Г(4)→34-4=30=Ь✓. ПЛМГ → ПУТЬ!",
+fact: "Партизанские отряды знали каждую тропу в белорусских лесах. Местные проводники были бесценны.", points:130 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:7,
-task: "Сдвиг 7:",
+task: "Срочное донесение. Сдвиг 7 позиций вперёд. Расшифруй:",
 encrypted: "ХЩЧЁК",
 answer: "ОТРЯД",
-hint: "Вычти 7",
-fact: "150 000 партизан", points:140 },
-{ type: "num", typeLabel: "ЧИСЛОВОЙ",
-task: "Код:",
+hint: "Вычти 7: Х(24)-7=17=О✓, Щ(27)-7=20=Т✓, Ч(25)-7=18=Р✓, Ё(7)-7=0→33=Я✓, К(12)-7=5=Д✓. ХЩЧЁК → ОТРЯД!",
+fact: "К 1943 году в Беларуси действовало более 150 000 партизан, объединённых в 1255 отрядов.", points:140 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
+task: "Координата места закладки взрывчатки. Расшифруй кодовое слово:",
 encrypted: "3-9-18-29-3",
 answer: "ВЗРЫВ",
-hint: "В=3, З=9...",
-fact: "11 000 эшелонов", points:150 },
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "12 + 24 + 24 = ?",
+hint: "В=3, З=9, Р=18, Ы=29, В=3. 3-9-18-29-3 = ВЗРЫВ!",
+fact: "Партизаны Беларуси за годы войны уничтожили более 11 000 немецких эшелонов.", points:150 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Первый партизанский отряд подорвал 12 рельсов. Второй — в 2 раза больше. Третий — столько же сколько второй. Сколько рельсов всего?",
 encrypted: "12 + 24 + 24 = ?",
 answer: "60",
-hint: "Простое сложение",
-fact: "40 000 взрывов", points:160 },
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "Второй этап Рельсовой войны?",
-options:["Гром", "Концерт", "Взрыв", "Буря"],
+hint: "12 рельсов + 12×2=24 + 24 = 60 рельсов всего!",
+fact: "3 августа 1943 года в Беларуси было произведено более 40 000 взрывов — это координировано как ни одна другая операция партизан.", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Рельсовая война — это массовая диверсионная операция советских партизан. Как назывался второй этап Рельсовой войны, начавшийся в сентябре 1943?",
+options:["Операция «Гром»", "«Концерт»", "Операция «Взрыв»", "«Буря»"],
 correctIndex:1,
+encrypted: "Концерт",
 answer: "КОНЦЕРТ",
-hint: "Музыкальное слово",
-fact: "Сентябрь 1943", points:140 },
-{ type: "anagram", typeLabel: "АНАГРАММА",
-task: "Переставь буквы — слово:",
-encrypted: "ЬТЯУП",
-answer: "ПУТЬ",
-hint: "4 буквы",
-fact: "Лесные тропы", points:130 },
-{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
-task: "Сдвиг 4:",
-encrypted: "ФЧЕИК",
-answer: "РУБЕЖ",
-hint: "Вычти 4",
-fact: "Освобождение", points:120 }
+hint: "Второй этап назвали музыкальным словом. Он охватил уже не только Беларусь.",
+fact: "Операция «Концерт» (сентябрь–октябрь 1943) — второй этап Рельсовой войны. Охватила территории от Карелии до Крыма.", points:140 }
 ]
 },
 {
 id:4, title: "ОПЕРАЦИЯ БАГРАТИОН", subtitle: "Глава IV",
-place: "БЕЛАРУСЬ · 1944", stamp: "⚔️",
+place: "БЕЛАРУСЬ · ИЮНЬ 1944", stamp: "⚔️",
+meta: "Дата: 23.06.1944\nМесто: Вся Беларусь\nСтатус: НАСТУПЛЕНИЕ",
+briefing: `23 июня 1944 года. Начинается крупнейшая наступательная операция Второй мировой войны — «Багратион». Советские войска прорывают немецкую оборону. Партизаны наносят удар изнутри. Каждая секунда важна — расшифруй приказы командования.`,
+mission: "Выполни 6 заданий операции освобождения Беларуси",
+videoUrl: "https://www.youtube.com/embed/x86qIVm1rOc",
 ciphers:[
-{ type: "num", typeLabel: "ЧИСЛОВОЙ",
-task: "Столица:",
+{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:4,
+task: "Приказ к началу наступления. Сдвиг 4 назад. Расшифруй:",
+encrypted: "ФЧЕИК",
+answer: "РУБЕЖ",
+hint: "Вычти 4: Ф(22)-4=18=Р✓, Ч(25)-4=21=У✓, Е(6)-4=2=Б✓, И(10)-4=6=Е✓, К(12)-4=8=Ж✓. ФЧЕИК → РУБЕЖ!",
+fact: "Операция «Багратион» привела к полному освобождению Беларуси и уничтожению группы армий «Центр».", points:120 },
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Радиограмма от командира бригады. Расшифруй одно слово:",
+encrypted: ".--./.-./---/.-./-.--",
+answer: "ПРОРЫВ",
+hint: "П=.--., Р=.-., О=---, Р=.-., Ы=-.--, В=.--. ПРОРЫВ!",
+fact: "3 июля 1944 года был освобождён Минск. В окружении оказалось 100 000 немецких солдат.", points:140 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Срочное донесение от командира бригады. Шифр Атбаш. Расшифруй:",
+encrypted: "ПОРОДЭ",
+answer: "ПРОРЫВ",
+hint: "ПРОРЫВ",
+fact: "За первые 5 дней операции советские войска продвинулись на 150 км.", points:150 },
+{ type: "num", typeLabel: "ЧИСЛОВОЙ КОД",
+task: "Название освобождённой столицы — числовым кодом:",
 encrypted: "14-10-15-19-12",
 answer: "МИНСК",
-hint: "М=14...",
-fact: "3 июля 1944", points:160 },
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "23 июня → 28 июля = ? дней",
+hint: "М=14, И=10, Н=15, С=19, К=12. 14-10-15-19-12 = МИНСК!",
+fact: "Минск был освобождён 3 июля 1944 года — через 3 года и 5 дней после начала оккупации.", points:160 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Операция «Багратион» началась 23 июня 1944. Минск освобождён 3 июля. Беларусь полностью освобождена 28 июля. Сколько дней от начала операции до полного освобождения?",
 encrypted: "23 июня → 28 июля = ?",
 answer: "35",
-hint: "Июнь: 7 дней, Июль: 28",
-fact: "500 000 потерь немцев", points:180 },
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "Немецкая группа армий?",
-options:["Север", "Центр", "Юг", "А"],
+hint: "Июнь: 23→30 = 7 дней. Июль: 1→28 = 28 дней. Итого: 7+28 = 35 дней.",
+fact: "За 35 дней операции «Багратион» была полностью освобождена Беларусь. Потери немцев — 500 000 человек.", points:180 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Операция «Багратион» — крупнейшее наступление ВМВ. Как называлась немецкая группа армий, разгромленная в ходе этой операции?",
+options:["Группа «Север»", "Группа «Центр»", "Группа «Юг»", "Группа «А»"],
 correctIndex:1,
+encrypted: "Группа Центр",
 answer: "ГРУППА ЦЕНТР",
-hint: "Центральное направление",
-fact: "Крупнейшее поражение", points:150 },
-{ type: "anagram", typeLabel: "АНАГРАММА",
-task: "Переставь буквы — слово:",
-encrypted: "ЫВРОПР",
-answer: "ПРОРЫВ",
-hint: "6 букв",
-fact: "150 км за 5 дней", points:150 },
-{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Операция:",
-encrypted: "ДГЁУГХЛСР",
-answer: "БАГРАТИОН",
-hint: "Вычти 3",
-fact: "Июнь-август 1944", points:170 },
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "45000 ÷ 9000 = ?",
-encrypted: "45000 ÷ 9000 = ?",
-answer: "5",
-hint: "45 ÷ 9",
-fact: "Брестская крепость", points:140 }
+hint: "Это группа армий, которая защищала Беларусь и центральное направление.",
+fact: "Группа армий «Центр» была полностью разгромлена. Это стало крупнейшим поражением Германии во Второй мировой войне.", points:150 }
 ]
 },
 {
 id:5, title: "ЗНАЙ СВОЮ ЗЕМЛЮ", subtitle: "Глава V",
-place: "БЕЛАРУСЬ", stamp: "🗺",
+place: "БЕЛАРУСЬ · ИСТОРИЯ И ГЕОГРАФИЯ", stamp: "🗺",
+meta: "Тип: ИСТОРИЯ И ГЕОГРАФИЯ\nТема: Беларусь\nСтатус: ПРОВЕРКА ЗНАНИЙ",
+briefing: `Разведчик должен знать свою землю как себя. Города, реки, даты, имена героев. Здесь нет только шифров — есть знание. Ответь на вопросы о Беларуси и её истории. Шесть заданий — шесть проверок.`,
+mission: "Выполни 6 заданий по истории и географии Беларуси",
+videoUrl: "https://www.youtube.com/embed/WCaFD_c5J0Q",
 ciphers:[
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "Город-герой?",
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Какой город Беларуси был удостоен звания «Город-герой» наравне с Москвой и Ленинградом?",
 options:["Гомель", "Витебск", "Минск", "Брест"],
 correctIndex:2,
+encrypted: "Минск",
 answer: "МИНСК",
-hint: "Столица",
-fact: "80% зданий уничтожено", points:120 },
+hint: "Это столица Беларуси. Была полностью разрушена во время оккупации.",
+fact: "Минск получил звание «Город-герой» в 1974 году. Во время оккупации было уничтожено 80% зданий города.", points:120 },
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Брестскую крепость защищал гарнизон около 9000 человек против 45000 немцев. Во сколько раз немецких солдат было больше?",
+encrypted: "45000 ÷ 9000 = ?",
+answer: "5",
+hint: "45000 разделить на 9000. Упросим: 45 ÷ 9 = 5.",
+fact: "Несмотря на пятикратное превосходство противника, защитники Брестской крепости держались почти месяц.", points:140 },
 { type: "anagram", typeLabel: "АНАГРАММА",
-task: "Крепость:",
+task: "Переставь буквы и получи название крепости — символа стойкости, принявшей первый удар 22 июня 1941:",
 encrypted: "СТЕРБ",
 answer: "БРЕСТ",
-hint: "5 букв, река Буг",
-fact: "Держалась месяц", points:150 },
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "Потери Беларуси?",
-options:["10-й", "5-й", "3-й", "2-й"],
-correctIndex:2,
-answer: "3",
-hint: "Каждый третий",
-fact: "3 миллиона человек", points:200 },
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "1941 → 1945 = ? лет",
-encrypted: "1941 → 1945 = ?",
-answer: "4",
-hint: "1945 - 1941",
-fact: "3 года 10 месяцев", points:120 },
+hint: "5 букв. Город на реке Буг, на западной границе Беларуси. Б-Р-Е...",
+fact: "Брестская крепость держалась с 22 июня по 20 июля 1941. На стенах нашли надписи: «Умираю, но не сдаюсь!»", points:150 },
+{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
+task: "На карте тапни на город на севере Беларуси — место важнейших операций партизанской войны в годы ВОВ:",
+encrypted: "🗺",
+answer: "ВИТЕБСК",
+mapCity: "ВИТЕБСК",
+hint: "Северо-восток Беларуси, на реке Западная Двина. Четвёртый по величине город.",
+fact: "Витебск оккупирован 11 июля 1941. Освобождён 26 июня 1944 в ходе операции «Багратион».", points:160 },
 { type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Операция:",
+task: "Зашифровано имя главной военной операции освобождения Беларуси. Сдвиг 3 назад:",
 encrypted: "ДГЁУГХЛСР",
 answer: "БАГРАТИОН",
-hint: "Вычти 3",
-fact: "Крупнейшая операция", points:170 },
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "День Победы?",
-options:["7 мая", "8 мая", "9 мая", "10 мая"],
+hint: "Вычти 3: ДГЁУГХЛСР-3=БАГРАТИОН!",
+fact: "Операция «Багратион» (июнь–август 1944) — крупнейшая наступательная операция ВМВ.", points:170 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Сколько мирных жителей и солдат потеряла Беларусь в годы Второй мировой войны?",
+options:["Каждый 10-й", "Каждый 5-й", "Каждый 3-й", "Каждый 2-й"],
 correctIndex:2,
-answer: "9",
-hint: "Ночь с 8 на 9",
-fact: "Главный праздник", points:170 }
+encrypted: "Каждый 3-й",
+answer: "3",
+hint: "Беларусь — одна из наиболее пострадавших стран. Каждый третий...",
+fact: "Беларусь потеряла каждого третьего жителя — около 3 миллионов человек. Это самые высокие потери среди всех советских республик в пересчёте на долю населения.", points:200 }
 ]
 },
 {
 id:6, title: "ДОРОГА К ПОБЕДЕ", subtitle: "Глава VI",
-place: "1945", stamp: "🌟",
+place: "БЕЛАРУСЬ · БЕРЛИН · 1945", stamp: "🌟",
+meta: "Дата: 09.05.1945\nМесто: Берлин\nСтатус: ФИНАЛ",
+briefing: `Последняя глава. Апрель 1945. Советские войска идут на Берлин. Среди бойцов — солдаты из Беларуси, пережившие оккупацию, потерявшие родных. Они несут Победу. Докажи что ты достоин звания Маршала Победы.`,
+mission: "Пройди финальный экзамен — 6 заданий о Победе",
+videoUrl: "https://www.youtube.com/embed/dL8DM0PfRvQ",
 ciphers:[
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "1941 → 1945 = ? лет",
-encrypted: "1941 → 1945 = ?",
+{ type: "math", typeLabel: "РАСЧЁТ РАЗВЕДЧИКА",
+task: "Война длилась с 22 июня 1941 по 9 мая 1945. Сколько полных лет продолжалась война?",
+encrypted: "1941 → 1945 = ? лет",
 answer: "4",
-hint: "1945 - 1941",
-fact: "3 года 10 месяцев", points:120 },
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "День Победы?",
-options:["7 мая", "8 мая", "9 мая", "10 мая"],
-correctIndex:2,
-answer: "9",
-hint: "Ночь с 8 на 9",
-fact: "Главный праздник", points:170 },
-{ type: "anagram", typeLabel: "АНАГРАММА",
-task: "Город капитуляции:",
-encrypted: "ЛИНЕРБ",
-answer: "БЕРЛИН",
-hint: "Столица Германии",
-fact: "8 мая 1945", points:160 },
-{ type: "caesar", typeLabel: "ШИФР ЦЕЗАРЯ", shift:3,
-task: "Последнее слово:",
+hint: "1945 минус 1941 = 4 года. Четыре долгих года.",
+fact: "Великая Отечественная война длилась 3 года, 10 месяцев и 18 дней — с 22 июня 1941 по 9 мая 1945.", points:120 },
+{ type: "morse", typeLabel: "АЗБУКА МОРЗЕ",
+task: "Первое слово победной радиограммы. Расшифруй:",
+encrypted: ".../.-../.-/.--/.-",
+answer: "СЛАВА",
+hint: "С=..., Л=.-.., А=.-, В=.--, А=.- = СЛАВА",
+fact: "9 мая 1945 в 00:43 по московскому времени был подписан Акт о капитуляции Германии.", points:130 },
+{ type: "atbash", typeLabel: "ШИФР АТБАШ",
+task: "Последнее слово в приказе. Расшифруй:",
 encrypted: "ТЦО",
 answer: "МИР",
-hint: "Вычти 3",
-fact: "Самое долгожданное", points:150 },
-{ type: "math", typeLabel: "РАСЧЁТ",
-task: "45000 ÷ 9000 = ?",
-encrypted: "45000 ÷ 9000 = ?",
-answer: "5",
-hint: "45 ÷ 9",
-fact: "Брестская крепость", points:140 },
-{ type: "quiz", typeLabel: "ВОПРОС",
-task: "Город-сосед Хойников?",
-options:["Мозырь", "Наровля", "Припять", "Калинковичи"],
-correctIndex:1,
+hint: "Атбаш: Т(20)→34-20=14=М✓, Ц(24)→34-24=10=И✓, О(16)→34-16=18=Р✓. ТЦО → МИР!",
+fact: "Слово «МИР» — самое долгожданное слово для миллионов людей, переживших войну.", points:150 },
+{ type: "anagram", typeLabel: "АНАГРАММА",
+task: "Переставь буквы — получишь название города, где была подписана капитуляция Германии:",
+encrypted: "ЛИНЕРБ",
+answer: "БЕРЛИН",
+hint: "6 букв. Столица Германии. Б-Е-Р...",
+fact: "8 мая 1945 в Берлине был подписан Акт о безоговорочной капитуляции Германии. Для СССР дата победы — 9 мая.", points:160 },
+{ type: "quiz", typeLabel: "ВОПРОС РАЗВЕДЧИКА",
+task: "Какого числа каждый год в Беларуси и России отмечают День Победы?",
+options:["7 мая", "8 мая", "9 мая", "10 мая"],
+correctIndex:2,
+encrypted: "9 мая",
+answer: "9",
+hint: "Акт был подписан ночью с 8 на 9 мая по московскому времени.",
+fact: "9 мая — главный праздник для Беларуси. В стране его отмечают с особым торжеством — каждый третий белорус погиб в войну.", points:170 },
+{ type: "map", typeLabel: "НАЙДИ НА КАРТЕ",
+task: "На карте найди город-сосед Хойников в Гомельской области, расположенный на реке Припять:",
+encrypted: "🗺",
 answer: "НАРОВЛЯ",
-hint: "Река Припять",
-fact: "Зона ЧАЭС", points:200 }
+mapCity: "НАРОВЛЯ",
+hint: "Юг Гомельской области, рядом с Хойниками, на берегу реки Припять.",
+fact: "Наровля и Хойники — города-соседи в Гомельской области. Оба расположены в зоне влияния Чернобыльской катастрофы 1986 года.", points:200 }
 ]
 }
 ];
@@ -834,22 +1016,19 @@ const MORSE_TABLE = {
 
 const RU_ALPHA = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ';
 const MAP_CITIES = [
-{ name:'МИНСК', x:188, y:175 },
-{ name:'БРЕСТ', x:62, y:268 },
-{ name:'ГРОДНО', x:75, y:148 },
-{ name:'ВИТЕБСК', x:255, y:82 },
-{ name:'МОГИЛЁВ', x:268, y:198 },
-{ name:'ГОМЕЛЬ', x:278, y:298 },
-{ name:'ПОЛОЦК', x:215, y:72 },
-{ name:'БАРАНОВИЧИ',x:130, y:212 },
-{ name:'ПИНСК', x:110, y:285 },
-{ name:'БОБРУЙСК', x:228, y:240 },
-{ name:'НАРОВЛЯ', x:285, y:310 },
+{ name:'МИНСК', x:188, y:175, hint:'Столица' },
+{ name:'БРЕСТ', x:62, y:268, hint:'Юго-запад' },
+{ name:'ГРОДНО', x:75, y:148, hint:'Северо-запад' },
+{ name:'ВИТЕБСК', x:255, y:82, hint:'Север' },
+{ name:'МОГИЛЁВ', x:268, y:198, hint:'Восток' },
+{ name:'ГОМЕЛЬ', x:278, y:298, hint:'Юго-восток' },
+{ name:'ПОЛОЦК', x:215, y:72, hint:'Север' },
+{ name:'БАРАНОВИЧИ',x:130, y:212, hint:'Центр-запад' },
+{ name:'ПИНСК', x:110, y:285, hint:'Юг' },
+{ name:'БОБРУЙСК', x:228, y:240, hint:'Центр' },
+{ name:'НАРОВЛЯ', x:285, y:310, hint:'Юг Гомельской обл.' },
 ];
 
-// ═══════════════════════════════════════════════════════
-//  TELEGRAM
-// ═══════════════════════════════════════════════════════
 let tg = null, tgUser = null, tgInitLB = [], tgInitMe = null, tgOpenChapters = null;
 try {
 tg = window.Telegram?.WebApp;
@@ -859,14 +1038,14 @@ tg.expand();
 tgUser = tg.initDataUnsafe?.user;
 const sp = tg.initDataUnsafe?.start_param;
 if (sp) {
-try {
-const parsed = JSON.parse(decodeURIComponent(sp));
-tgInitLB = parsed.lb || [];
-tgInitMe = parsed.me || null;
-if (parsed.open) tgOpenChapters = new Set(parsed.open);
-if (parsed.sync_url) window._syncUrl = parsed.sync_url;
-if (parsed.admin_mode === true) window._adminMode = true;
-} catch(e) { console.warn('startParam parse error:', e); }
+  try {
+    const parsed = JSON.parse(decodeURIComponent(sp));
+    tgInitLB = parsed.lb || [];
+    tgInitMe = parsed.me || null;
+    if (parsed.open) tgOpenChapters = new Set(parsed.open);
+    if (parsed.sync_url) window._syncUrl = parsed.sync_url;
+    if (parsed.admin_mode === true) window._adminMode = true;
+  } catch(e) { console.warn('startParam parse error:', e); }
 }
 }
 } catch(e) {}
@@ -881,9 +1060,6 @@ if (tgUser) return tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_nam
 return 'Разведчик';
 }
 
-// ═══════════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════════
 const DEFAULT_STATE = () => ({
 lives: 5, chapter: 0, cipherIdx: 0, startTime: 0,
 chapterScore: 0, totalScore: 0,
@@ -914,13 +1090,14 @@ return uid ? `cipher_v4_${uid}` : 'cipher_v4_guest';
 function loadState() {
 try {
 const s = localStorage.getItem(storageKey());
-if (s) Object.assign(state, JSON.parse(s));
+if (s) { Object.assign(state, JSON.parse(s)); state._noptsMode = false; }
 } catch(e) {}
 }
 
 function saveState() {
 try {
-localStorage.setItem(storageKey(), JSON.stringify(state));
+const toSave = Object.assign({}, state, { _noptsMode: false });
+localStorage.setItem(storageKey(), JSON.stringify(toSave));
 } catch(e) {}
 }
 
@@ -929,48 +1106,60 @@ const myUid = getTgUserId();
 if (tgInitLB.length) {
 state.leaderboard = tgInitLB.map(r => ({
 uid: String(r.uid), name: r.name, score: r.score,
-completed: r.completed, role: r.role || 'player'
+completed: r.completed, role: r.role || 'player',
+achievementCount: r.achievementCount || 0,
+achievementPts: r.achievementPts || 0
 }));
 }
 if (tgInitMe && myUid) {
 const dbScore = tgInitMe.score || 0;
 const dbCompleted = tgInitMe.completed || 0;
 const dbGameOver = tgInitMe.game_over || false;
+const dbRestartMode = tgInitMe.restart_mode || null;
 const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
-if (dbAdminMode) {
-state.adminMode = true;
-console.log('👑 adminMode=true установлен от бота');
+if (dbAdminMode) { state.adminMode = true; console.log('👑 adminMode=true установлен от бота'); }
+if (dbRestartMode === 'penalty') {
+  state.totalScore = 0; state.completedChapters = {}; state.chapterScores = {};
+  state.gameOver = false; state.retryPenalty = true; state._noptsMode = false;
+  try { localStorage.removeItem(storageKey()); } catch(e2) {}
+} else if (dbRestartMode === 'nopts') {
+  state.totalScore = 0; state.completedChapters = {}; state.chapterScores = {};
+  state.gameOver = false; state.retryPenalty = false; state._noptsMode = true;
+  try { localStorage.removeItem(storageKey()); } catch(e2) {}
+} else {
+  state.totalScore = dbScore; state.completedChapters = {};
+  for (let i = 1; i <= dbCompleted; i++) { state.completedChapters[i] = true; }
+  const newScores = {};
+  for (let i = 1; i <= dbCompleted; i++) { if (state.chapterScores[i]) newScores[i] = state.chapterScores[i]; }
+  state.chapterScores = newScores; state.gameOver = dbGameOver;
+  try { localStorage.removeItem(storageKey()); } catch(e2) {}
 }
-state.totalScore = dbScore;
-state.completedChapters = {};
-for (let i = 1; i <= dbCompleted; i++) {
-state.completedChapters[i] = true;
-}
-const newScores = {};
-for (let i = 1; i <= dbCompleted; i++) {
-if (state.chapterScores[i]) newScores[i] = state.chapterScores[i];
-}
-state.chapterScores = newScores;
-state.gameOver = dbGameOver;
-try { localStorage.removeItem(storageKey()); } catch(e2) {}
 saveState();
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  NAVIGATION
-// ═══════════════════════════════════════════════════════
-function showScreen(id) {
+async function showScreen(id) {
 const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
 if (TAB_SCREENS.includes(id)) return;
-if (id === 's-chapters') {
-switchTab('chapters');
-return;
+if (id === 's-chapters') { switchTab('chapters'); return; }
+
+const overlay = document.getElementById('page-overlay');
+const currentScreen = document.querySelector('.screen.active');
+
+if (currentScreen) {
+  currentScreen.classList.add('exiting');
+  overlay.classList.add('active');
+  await new Promise(resolve => setTimeout(resolve, 300));
+  currentScreen.classList.remove('active', 'exiting');
 }
+
 hideBottomNav();
-document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+
 const el = document.getElementById(id);
-if (el) el.classList.add('active');
+if (el) {
+  el.classList.add('active');
+  overlay.classList.remove('active');
+}
 }
 
 function showBottomNav() {
@@ -983,55 +1172,63 @@ const nav = document.getElementById('bottom-nav');
 if (nav) nav.style.display = 'none';
 }
 
-let currentTab = 'chapters';
 function switchTab(tab) {
 currentTab = tab;
-document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
-showBottomNav();
-const screenMap = {
-'chapters': 's-chapters',
-'leaderboard': 's-leaderboard-tab',
-'profile': 's-profile-tab',
-'about': 's-about-tab',
-};
-const tabMap = {
-'chapters': 'bn-chapters',
-'leaderboard': 'bn-leaderboard',
-'profile': 'bn-profile',
-'about': 'bn-about',
-};
-const screenEl = document.getElementById(screenMap[tab]);
-const tabEl = document.getElementById(tabMap[tab]);
-if (screenEl) screenEl.classList.add('active');
-if (tabEl) tabEl.classList.add('active');
-if (tab === 'chapters') { renderChapters(); }
-if (tab === 'leaderboard') renderLeaderboardTab();
-if (tab === 'profile') renderProfileTab();
-if (tab === 'about') renderAboutTab();
+const overlay = document.getElementById('page-overlay');
+const currentScreen = document.querySelector('.screen.active');
+
+if (currentScreen) {
+  currentScreen.classList.add('exiting');
+  overlay.classList.add('active');
 }
 
-// ═══════════════════════════════════════════════════════
-//  KEYBOARD
-// ═══════════════════════════════════════════════════════
+setTimeout(() => {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'exiting'));
+  document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
+  showBottomNav();
+  
+  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
+  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
+  const screenEl = document.getElementById(screenMap[tab]);
+  const tabEl = document.getElementById(tabMap[tab]);
+  if (screenEl) screenEl.classList.add('active');
+  if (tabEl) tabEl.classList.add('active');
+  
+  overlay.classList.remove('active');
+  
+  if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
+  if (tab === 'leaderboard') renderLeaderboardTab();
+  if (tab === 'profile') renderProfileTab();
+  if (tab === 'about') renderAboutTab();
+}, 300);
+}
+
 function toggleKeyboard() {
 const inp = document.getElementById('cipher-input');
 const btn = document.getElementById('btn-keyboard');
 if (!inp) return;
-if (inp.readOnly) {
-inp.removeAttribute('readonly');
-inp.focus();
-if (btn) { btn.style.background = 'rgba(255,224,51,.25)'; btn.style.borderColor = 'rgba(255,224,51,.5)'; }
+
+if (inp.hasAttribute('readonly')) {
+  inp.removeAttribute('readonly');
+  inp.focus();
+  if (btn) { 
+    btn.style.background = 'rgba(255,224,51,.25)'; 
+    btn.style.borderColor = 'rgba(255,224,51,.5)';
+    btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+  }
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
 } else {
-inp.setAttribute('readonly', true);
-inp.blur();
-if (btn) { btn.style.background = 'rgba(255,224,51,.1)'; btn.style.borderColor = 'rgba(255,224,51,.2)'; }
+  inp.setAttribute('readonly', true);
+  inp.blur();
+  if (btn) { 
+    btn.style.background = 'rgba(255,224,51,.1)'; 
+    btn.style.borderColor = 'rgba(255,224,51,.2)';
+    btn.style.boxShadow = 'none';
+  }
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  RENDER CHAPTERS
-// ═══════════════════════════════════════════════════════
 function renderChapters() {
 const list = document.getElementById('chapters-list');
 list.innerHTML = '';
@@ -1039,25 +1236,61 @@ let completedCount = 0;
 CHAPTERS.forEach((ch, i) => {
 const isDone = !!state.completedChapters[ch.id];
 if (isDone) completedCount++;
+let isLocked, visuallyLocked;
+if (state.adminMode) { isLocked = false; visuallyLocked = false; }
+else {
+  const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
+  const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
+  isLocked = !(serverAllows && prevDone);
+  visuallyLocked = isLocked;
+}
 const card = document.createElement('div');
-card.className = 'chapter-card' + (isDone ? ' completed' : '');
+card.className = 'chapter-card' + (visuallyLocked?' locked':'') + (isDone?' completed':'');
+const typeIcons = {'caesar':'🔐','morse':'📡','atbash':'🪞','num':'🔢','anagram':'🔤','math':'➗','photo':'🖼','map':'🗺','quiz':'❓'};
+const uniqueTypes = [...new Set(ch.ciphers.map(c=>c.type))];
+const tags = uniqueTypes.map(t=>`<span class="ch-tag">${typeIcons[t]||'❓'} ${ch.ciphers.find(c=>c.type===t).typeLabel}</span>`).join('');
+let statusText, badgeIcon;
+if (isDone && state.chapterScores[ch.id] > 0) { statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅'; }
+else if (isDone) { statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔'; }
+else if (state.adminMode) { statusText='👑 ОТКРЫТО'; badgeIcon='▶'; }
+else if (!serverAllows) { statusText='🔒 НЕ ОТКРЫТА'; badgeIcon='🔒'; }
+else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
+else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
 const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
 card.innerHTML = `
-<div style="font-size:32px;">${ch.stamp || '🔐'}</div>
-<div style="flex:1;">
-<div style="font-family:var(--head);font-size:14px;color:#fdfaf0;margin:4px 0;">${ch.title}</div>
-<div style="font-size:10px;color:var(--muted);">${ch.place}</div>
-</div>
-<div style="text-align:right;">
-<div style="font-size:20px;">${isDone ? '✅' : '▶'}</div>
-${scoreVal ? `<div style="font-family:var(--head);font-size:12px;color:var(--accent);">${scoreVal}</div>` : ''}
-</div>`;
-if (!isDone) {
-card.onclick = () => { showBriefing(i); };
-card.style.cursor = 'pointer';
-}
+   <div class="ch-icon">${ch.stamp || '🔐'}</div>
+   <div class="ch-inner">
+     <div class="ch-num">${ch.subtitle} · ${statusText}</div>
+     <div class="ch-title">${ch.title}</div>
+     <div class="ch-place">${ch.place}</div>
+     <div class="ch-tags">${tags}</div>
+   </div>
+   <div class="ch-right">
+     <div class="ch-badge">${badgeIcon}</div>
+    ${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
+   </div>`;
+const canRepeat = state.retryPenalty || state._noptsMode;
+const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
+if (canPlay) { card.onclick = () => { showBriefing(i); }; card.style.cursor = 'pointer'; }
+else { card.style.cursor = isDone ? 'default' : 'not-allowed'; }
 list.appendChild(card);
 });
+if (state.adminMode) {
+const banner = document.createElement('div');
+banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.25);border-radius:8px;font-size:var(--fs-xs);color:#ffd700;letter-spacing:.06em';
+banner.textContent = '👑 РЕЖИМ АДМИНИСТРАТОРА · Все главы открыты · Рейтинг не учитывается';
+list.insertBefore(banner, list.firstChild);
+} else if (state._noptsMode) {
+const banner = document.createElement('div');
+banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(100,180,255,.06);border:1px solid rgba(100,180,255,.2);border-radius:8px;font-size:var(--fs-xs);color:#64b4ff;letter-spacing:.06em';
+banner.textContent = '👁 РЕЖИМ ПРАКТИКИ · Очки не начисляются';
+list.insertBefore(banner, list.firstChild);
+} else if (state.retryPenalty) {
+const banner = document.createElement('div');
+banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(255,100,50,.06);border:1px solid rgba(255,100,50,.2);border-radius:8px;font-size:var(--fs-xs);color:#ff6432;letter-spacing:.06em';
+banner.textContent = '🔥 ПОВТОРНОЕ ПРОХОЖДЕНИЕ · +10 сек к каждому заданию';
+list.insertBefore(banner, list.firstChild);
+}
 const total = CHAPTERS.length;
 const pct = Math.round((completedCount / total) * 100);
 const pbEl = document.getElementById('ch-progress-bar');
@@ -1066,11 +1299,15 @@ const clEl = document.getElementById('stat-completed-label');
 if (clEl) clEl.textContent = completedCount + ' / ' + total + ' глав';
 const scEl = document.getElementById('stat-score');
 if (scEl) scEl.textContent = state.totalScore;
+const resetBtn = document.getElementById('btn-reset-header');
+if (resetBtn) resetBtn.style.display = (state.adminMode || window._adminMode) ? 'inline-block' : 'none';
+const plEl = document.getElementById('stat-players-label');
+const plCount = tgInitLB.length || state.leaderboard.length;
+if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
+if (state.gameOver) { document.getElementById('btn-to-final').style.display = 'block'; }
+else { document.getElementById('btn-to-final').style.display = 'none'; }
 }
 
-// ═══════════════════════════════════════════════════════
-//  BRIEFING
-// ═══════════════════════════════════════════════════════
 function showBriefing(idx) {
 if (idx < 0 || idx >= CHAPTERS.length) { showScreen('s-chapters'); renderChapters(); return; }
 currentChapter = idx;
@@ -1079,15 +1316,12 @@ document.getElementById('brief-num').textContent = ch.subtitle + ' — ' + ch.pl
 document.getElementById('brief-title').textContent = ch.title;
 document.getElementById('brief-place').textContent = ch.place;
 document.getElementById('brief-stamp').textContent = ch.stamp;
-document.getElementById('brief-meta').innerHTML = ch.meta ? ch.meta.replace(/\n/g,'<br>') : '';
-document.getElementById('brief-text').textContent = ch.briefing || '';
-document.getElementById('brief-mission').textContent = ch.mission || '';
+document.getElementById('brief-meta').innerHTML = ch.meta.replace(/\n/g,'<br>');
+document.getElementById('brief-text').textContent = ch.briefing;
+document.getElementById('brief-mission').textContent = ch.mission;
 showScreen('s-briefing');
 }
 
-// ═══════════════════════════════════════════════════════
-//  START CHAPTER
-// ═══════════════════════════════════════════════════════
 function startChapter(idx) {
 state.chapter = idx;
 state.cipherIdx = 0;
@@ -1102,26 +1336,20 @@ loadCipher();
 showScreen('s-cipher');
 }
 
-// ═══════════════════════════════════════════════════════
-//  LOAD CIPHER
-// ═══════════════════════════════════════════════════════
 function loadCipher() {
 const ch = CHAPTERS[state.chapter];
 if (!ch) { showScreen('s-chapters'); renderChapters(); return; }
 const cipher = ch.ciphers[state.cipherIdx];
 if (!cipher) { finishChapter(); return; }
-
 const qc = document.getElementById('quiz-container');
 if (qc) qc.style.display = 'none';
-
 const inp = document.getElementById('cipher-input');
 const inpWrap = document.getElementById('cipher-input-wrap');
 const checkBtn = document.getElementById('btn-check');
 const hintBtn = document.getElementById('btn-hint');
 const boxEl = document.getElementById('cipher-box');
-
 if (cipher.type !== 'quiz') {
-if (inp) { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; }
+if (inp) { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; inp.setAttribute('readonly', true); }
 if (inpWrap) inpWrap.style.display = '';
 if (checkBtn) checkBtn.style.display = '';
 if (hintBtn) { hintBtn.style.display = ''; hintBtn.disabled = false; hintBtn.textContent = '💡 ПОДСКАЗКА'; }
@@ -1129,59 +1357,39 @@ if (boxEl) boxEl.style.display = '';
 } else {
 if (inp) inp.style.display = 'none';
 if (inpWrap) inpWrap.style.display = 'none';
-if (checkBtn) checkBtn.style.display = 'none';
+if (checkBtn) checkBtn.style.display = '';
 if (boxEl) boxEl.style.display = 'none';
 }
-
 state.startTime = Date.now();
 const prog = document.getElementById('cipher-progress');
-prog.innerHTML = ch.ciphers.map((c, i) =>
-`<div class="cipher-prog-dot ${i < state.cipherIdx ? 'done' : i === state.cipherIdx ? 'active' : ''}"></div>`
-).join('');
-
+prog.innerHTML = ch.ciphers.map((c, i) => `<div class="cipher-prog-dot ${i < state.cipherIdx ? 'done' : i === state.cipherIdx ? 'active' : ''}"></div>`).join('');
 document.getElementById('cipher-chapter-label').textContent = ch.subtitle + ' · ' + ch.place;
 const scoreEl = document.getElementById('cipher-score-display');
 if (scoreEl) scoreEl.textContent = state.chapterScore + ' оч';
 document.getElementById('cipher-type-label').textContent = cipher.typeLabel;
 document.getElementById('cipher-task').textContent = cipher.task;
-
 const box = document.getElementById('cipher-box');
-if (box) {
+if (box) { if (cipher.type !== 'quiz') box.style.display = ''; }
 box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
-if (cipher.type === 'quiz') {
-box.style.display = 'none';
-} else if (cipher.type === 'anagram') {
-box.textContent = '';
-box.style.display = 'none';
-} else if (cipher.type === 'math') {
-box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`;
-} else if (cipher.type === 'map') {
-box.innerHTML = '';
-renderMap(cipher);
-} else {
-box.textContent = cipher.encrypted || '';
-}
-}
-
+box.style.position = 'relative';
+if (cipher.type === 'morse') { box.innerHTML = ''; animateMorse(box, cipher.encrypted); }
+else if (cipher.type === 'quiz') { box.style.display = ''; box.innerHTML = ''; }
+else if (cipher.type === 'anagram') { box.textContent = ''; box.style.display = 'none'; }
+else if (cipher.type === 'math') { box.style.display = ''; box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`; }
+else if (cipher.type === 'photo') { box.style.display = ''; box.innerHTML = `<div class="photo-task-img">${cipher.image}</div><div style="font-family:var(--mono);font-size:var(--fs-2xl);text-align:center;padding:8px 0">${cipher.encrypted}</div>`; }
+else if (cipher.type === 'map') { box.style.display = ''; box.innerHTML = ''; renderMap(cipher); }
+else { box.style.display = ''; box.textContent = cipher.encrypted; }
 const inputWrap = document.querySelector('.cipher-input-wrap');
 const actions = document.querySelector('.cipher-actions');
 const btnCheck = document.querySelector('.btn-check');
-if (cipher.type === 'map' || cipher.type === 'anagram') {
-if (inputWrap) inputWrap.style.display = 'none';
-if (btnCheck) btnCheck.style.display = 'none';
-} else {
-if (inputWrap) inputWrap.style.display = '';
-if (btnCheck) btnCheck.style.display = '';
-}
-
+if (cipher.type === 'map' || cipher.type === 'anagram') { inputWrap.style.display = 'none'; btnCheck.style.display = 'none'; }
+else { inputWrap.style.display = ''; btnCheck.style.display = ''; }
 renderLives();
 startTimer();
-
 const inpReset = document.getElementById('cipher-input');
 if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
 const kbBtn = document.getElementById('btn-keyboard');
-if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; }
-
+if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; kbBtn.style.boxShadow = 'none'; }
 state.hintsUsed = false;
 const hb = document.getElementById('cipher-hint-box');
 const ht = document.getElementById('cipher-hint-text');
@@ -1189,26 +1397,32 @@ const bh = document.getElementById('btn-hint');
 if (hb) hb.className = 'cipher-hint-box';
 if (ht) ht.textContent = '';
 if (bh) { bh.disabled = false; bh.textContent = '💡 ПОДСКАЗКА'; }
-
 renderRef(cipher.type, cipher.shift);
 if (cipher.type === 'anagram') renderAnagram(cipher);
 if (cipher.type === 'map') renderMap(cipher);
 if (cipher.type === 'quiz') renderQuiz(cipher);
-if (cipher.type !== 'map' && cipher.type !== 'anagram' && inp) inp.focus();
+const adminLabel = document.getElementById('cipher-admin-label');
+if (adminLabel) adminLabel.style.display = state.adminMode ? 'block' : 'none';
 }
 
 function renderLives() {
 const el = document.getElementById('cipher-attempts-label');
 if (!el) return;
-if (state.adminMode) {
-el.innerHTML = '♾️ АДМИН';
-return;
-}
+if (state.adminMode) { el.innerHTML = '♾️ АДМИН'; return; }
 const n = state.lives;
-let hearts = '';
-for(let i=0;i<n;i++) hearts += '❤️';
-for(let i=n;i<5;i++) hearts += '🖤';
-el.innerHTML = hearts;
+let row1 = '', row2 = '';
+for(let i=0;i<3;i++) row1 += i < n ? '❤️' : '🖤';
+for(let i=3;i<5;i++) row2 += i < n ? '❤️' : '🖤';
+el.innerHTML = '<div>' + row1 + '</div><div>' + row2 + '</div>';
+}
+
+function animateLifeLoss() {
+const el = document.getElementById('cipher-attempts-label');
+if (!el) return;
+el.style.transition = 'transform .15s,filter .15s';
+el.style.transform = 'scale(1.3)';
+el.style.filter = 'drop-shadow(0 0 8px rgba(255,58,58,.9))';
+setTimeout(() => { el.style.transform = ''; el.style.filter = ''; renderLives(); }, 200);
 }
 
 function startTimer() {
@@ -1234,40 +1448,49 @@ const el = document.getElementById('cipher-timer');
 if (el) el.style.color = 'var(--muted)';
 }
 
+function animateMorse(el, text) {
+el.innerHTML = '<span style="animation:typewriter 2s steps(40);white-space:pre-line">' + text + '</span>';
+}
+
 function renderRef(type, shift) {
 const ref = document.getElementById('cipher-ref');
-if (!ref) return;
-if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) {
-ref.innerHTML = '';
-return;
-}
+if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) { if (ref) ref.innerHTML = ''; return; }
 if (type === 'morse') {
-ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div><div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">/ — разделение букв &nbsp;&nbsp; // — пробел (новое слово)</div><div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
+ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div><div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">/ — разделение букв</div><div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
 } else if (type === 'atbash') {
 const a = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА АТБАШ (зеркальный алфавит)</div><div class="caesar-ref">${a.split('').map((l,i)=>`<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${a[a.length-1-i]}</span><span style="color:var(--muted)">→${l}</span></div>`).join(' ')}</div>`;
 } else if (type === 'num') {
 const a = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// ЧИСЛОВОЙ КОД (буква = номер в алфавите)</div><div class="caesar-ref">${a.split('').map((l,i)=>`<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${i+1}</span><span style="color:var(--muted)">=${l}</span></div>`).join(' ')}</div>`;
-} else if (type === 'anagram' || type === 'map') {
-ref.innerHTML = '';
-} else if (type === 'math') {
-ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div><div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ цифрой в поле ниже.</div>`;
-} else {
+} else if (type === 'anagram' || type === 'map') { ref.innerHTML = ''; }
+else if (type === 'math') { ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div><div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ цифрой в поле ниже.</div>`; }
+else if (type === 'photo') { ref.innerHTML = `<div class="cipher-ref-title">// ПОДСКАЗКА</div><div style="font-size:var(--fs-sm);color:var(--muted);padding:8px 0;line-height:1.7">Введи ответ словами в поле ниже.</div>`; }
+else {
 const alpha = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// АЛФАВИТ ДЛЯ РАСШИФРОВКИ (сдвиг ${shift})</div><div class="caesar-ref">${alpha.split('').map((l,i)=>{ const fromIdx = (i + shift) % alpha.length; return `<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${alpha[fromIdx]}</span><span style="color:var(--muted)">→${l}</span></div>`; }).join(' ')}</div>`;
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  CHECK ANSWER
-// ═══════════════════════════════════════════════════════
+function calcPoints(cipher, elapsed) {
+const max = cipher.points;
+const secs = Math.max(0, elapsed);
+const penalty = Math.floor(Math.max(0, secs - 10) / 10) * 0.08;
+let factor = Math.max(0.20, 1 - penalty);
+if (state.retryPenalty) {
+const ch = CHAPTERS[state.chapter];
+const fails = ch && state.chapterFailCounts ? (state.chapterFailCounts[ch.id] || 1) : 1;
+const penaltyFactor = Math.max(0.50, 1 - fails * 0.05);
+factor = Math.max(0.10, factor * penaltyFactor);
+}
+const streakBonus = Math.min(0.30, (state.streak || 0) * 0.05);
+factor = Math.min(1.30, factor + streakBonus);
+return Math.round(max * factor);
+}
+
 async function checkAnswer() {
 const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
-if (cipher.type === 'quiz') {
-quizSubmit();
-return;
-}
+if (cipher.type === 'quiz') { quizSubmit(); return; }
 if (cipher.type === 'map' || cipher.type === 'anagram') return;
 
 const inp = document.getElementById('cipher-input');
@@ -1275,37 +1498,53 @@ const val = inp.value.trim().toUpperCase().replace(/\s+/g, ' ');
 if (!val) { inp.focus(); showToast('👆 Введите ответ'); return; }
 
 const elapsed = Math.round((Date.now() - state.startTime) / 1000);
+saveState();
+showSaveToast();
 
 if (val === cipher.answer) {
 inp.className = 'cipher-input correct';
 inp.disabled = true;
 state.streak = (state.streak || 0) + 1;
 playSound('correct');
-const pts = cipher.points;
+const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
 saveState();
 stopTimer();
 if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
 const isFirstTry = (state._chapterErrors || 0) === 0;
+checkAchievements({ elapsed, firstTry: isFirstTry, quizCorrect: cipher.type === 'quiz', mathCorrect: cipher.type === 'math', anagramCorrect: cipher.type === 'anagram', mapCorrect: cipher.type === 'map', morseFast: cipher.type === 'morse' && elapsed <= 10 });
 setTimeout(() => showSuccess(cipher, pts, elapsed), 400);
 } else {
 inp.className = 'cipher-input wrong';
 playSound('wrong');
 setTimeout(() => inp.className = 'cipher-input', 500);
+inp.value = '';
 state.streak = 0;
 state._chapterErrors = (state._chapterErrors || 0) + 1;
 if (!state.adminMode) {
 state.lives--;
+animateLifeLoss();
+screenPulseRed();
+playSound('life_lost');
 }
 saveState();
-renderLives();
 if (state.lives <= 0) {
-inp.disabled = true;
-stopTimer();
-setTimeout(() => failChapter(), 1200);
+  if (state.adminMode) {
+    state.lives = 5; saveState(); renderLives();
+    const hb = document.getElementById('cipher-hint-box');
+    const ht = document.getElementById('cipher-hint-text');
+    hb.className = 'cipher-hint-box show';
+    ht.textContent = '⚡ Режим админа: жизни восстановлены';
+    setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
+  } else {
+    inp.disabled = true;
+    renderLives();
+    stopTimer();
+    setTimeout(() => failChapter(), 1200);
+  }
 } else {
-showToast('❌ Неверно! Попробуйте ещё раз');
-inp.value = '';
+  renderLives();
+  showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 }
@@ -1335,9 +1574,6 @@ renderLives();
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  SUCCESS
-// ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
 document.getElementById('succ-answer').textContent = cipher.answer;
 document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
@@ -1378,27 +1614,18 @@ finishChapter();
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  FINISH CHAPTER
-// ═══════════════════════════════════════════════════════
 async function finishChapter() {
 const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
 const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
 if (!state.chapterStats) state.chapterStats = {};
-state.chapterStats[ch.id] = {
-time: chTime, errors: state._chapterErrors || 0,
-hints: state._chapterHints || 0, score: state.chapterScore,
-max: ch.ciphers.reduce((s,c) => s+c.points, 0)
-};
+state.chapterStats[ch.id] = { time: chTime, errors: state._chapterErrors || 0, hints: state._chapterHints || 0, score: state.chapterScore, max: ch.ciphers.reduce((s,c) => s+c.points, 0) };
 state.completedChapters[ch.id] = true;
 if (!alreadyDone && !state._noptsMode) {
 state.chapterScores[ch.id] = state.chapterScore;
 state.totalScore += state.chapterScore;
 if (state.retryPenalty) state.retryPenalty = false;
-} else if (state._noptsMode) {
-state.chapterScores[ch.id] = 0;
-}
+} else if (state._noptsMode) { state.chapterScores[ch.id] = 0; }
 const maxPossible = ch.ciphers.reduce((s,c)=>s+c.points, 0);
 const pct = state.chapterScore / maxPossible;
 let medal = '🥉';
@@ -1408,49 +1635,42 @@ const allDone = CHAPTERS.every(c => state.completedChapters[c.id]);
 if (allDone) state.gameOver = true;
 updateLeaderboard();
 saveState();
+sendResultToBot({ type: 'chapter_complete', chapter: ch.id, chapter_title: ch.title, score: state.chapterScore, total_score: state.totalScore, user_id: getTgUserId(), user_name: getTgUserName(), game_over: allDone });
 document.getElementById('chend-chapter-name').textContent = ch.title;
 document.getElementById('chend-medal').textContent = medal;
 document.getElementById('chend-score').textContent = state.chapterScore;
 document.getElementById('chend-total').textContent = state.totalScore;
 document.getElementById('chend-pct').textContent = Math.round(pct*100) + '%';
 const nextBtn = document.getElementById('chend-next-btn');
-if (allDone) {
-nextBtn.textContent = '🏆 СМОТРЕТЬ ИТОГ';
-nextBtn.onclick = () => { showFinal(); };
-} else {
-nextBtn.textContent = '← К ЗАДАНИЯМ';
-nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); };
-}
+if (allDone) { nextBtn.textContent = '🏆 СМОТРЕТЬ ИТОГ'; nextBtn.onclick = () => { showFinal(); }; }
+else { nextBtn.textContent = '← К ЗАДАНИЯМ'; nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); }; }
+if (state._isRetryAttempt) { state._isRetryAttempt = false; checkAchievements({ retryWin: true, comeback: true }); }
+const chNoErrors = (state._chapterErrors || 0) === 0;
+const chNoHints = (state._chapterHints || 0) === 0;
+if (chNoErrors) state._perfectChapters = (state._perfectChapters || 0) + 1;
+if (chNoHints) state._noHintChapters = (state._noHintChapters || 0) + 1;
+checkAchievements({ chapterDoneNoErrors: chNoErrors, chapterDoneNoHints: chNoHints, survived1: state.lives === 1 });
 playSound('chapter_win');
 launchConfetti(800, 20);
 showScreen('s-chapter-end');
 }
 
-// ═══════════════════════════════════════════════════════
-//  FAIL CHAPTER
-// ═══════════════════════════════════════════════════════
 async function failChapter() {
 const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
+const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
 if (!state.chapterStats) state.chapterStats = {};
-state.chapterStats[ch.id] = {
-time: 0, errors: state._chapterErrors || 0,
-hints: state._chapterHints || 0, score: state.chapterScore,
-max: ch.ciphers.reduce((s,c2) => s+c2.points, 0), failed: true
-};
+state.chapterStats[ch.id] = { time: chTime, errors: state._chapterErrors || 0, hints: state._chapterHints || 0, score: state.chapterScore, max: ch.ciphers.reduce((s,c2) => s+c2.points, 0), failed: true };
 if (!state.chapterFailCounts) state.chapterFailCounts = {};
 const failCount = (state.chapterFailCounts[ch.id] || 0) + 1;
 state.chapterFailCounts[ch.id] = failCount;
-if (!alreadyDone && !state._noptsMode) {
-state.chapterScores[ch.id] = state.chapterScore;
-state.totalScore += state.chapterScore;
-} else if (state._noptsMode) {
-state.chapterScores[ch.id] = 0;
-}
+if (!alreadyDone && !state._noptsMode) { state.chapterScores[ch.id] = state.chapterScore; state.totalScore += state.chapterScore; }
+else if (state._noptsMode) { state.chapterScores[ch.id] = 0; }
 const allDone = CHAPTERS.every(c => state.completedChapters[c.id]);
 if (allDone) state.gameOver = true;
 updateLeaderboard();
 saveState();
+sendResultToBot({ type: 'chapter_failed', chapter: ch.id, chapter_title: ch.title, score: state.chapterScore, total_score: state.totalScore, user_id: getTgUserId(), user_name: getTgUserName() });
 document.getElementById('fail-chapter-name').textContent = ch.title;
 document.getElementById('fail-score-line').textContent = `Набрано очков в этой главе: ${state.chapterScore}`;
 const nextIdx = state.chapter + 1;
@@ -1464,9 +1684,7 @@ nextBtn.style.display = 'block';
 nextBtn.textContent = '🏆 СМОТРЕТЬ ИТОГ';
 nextBtn.onclick = () => showFinal();
 nextBtn.style.display = 'block';
-} else {
-nextBtn.style.display = 'none';
-}
+} else { nextBtn.style.display = 'none'; }
 const retryBtn = document.getElementById('fail-retry-btn');
 const retryInfo = document.getElementById('fail-retry-info');
 const currentFailCount = state.chapterFailCounts[ch.id] || 1;
@@ -1478,9 +1696,7 @@ retryBtn.onclick = () => { state._isRetryAttempt = true; retryChapterWithPenalty
 }
 if (retryInfo) {
 retryInfo.style.display = 'block';
-retryInfo.innerHTML = currentFailCount === 1
-? `⚠️ Повтор: штраф <b>-${currentPenalty}%</b> от набранных очков<br>Жизни восстановятся`
-: `⚠️ Повтор #${currentFailCount}: штраф <b>-${currentPenalty}%</b> от очков<br>Жизни восстановятся`;
+retryInfo.innerHTML = currentFailCount === 1 ? `⚠️ Повтор: штраф <b>-${currentPenalty}%</b> от набранных очков<br>Жизни восстановятся` : `⚠️ Повтор #${currentFailCount}: штраф <b>-${currentPenalty}%</b> от очков<br>Жизни восстановятся`;
 }
 showScreen('s-chapter-fail');
 }
@@ -1500,25 +1716,28 @@ state.streak = 0;
 state._chapterErrors = 0;
 state._chapterHints = 0;
 saveState();
+autoSync(false);
 showBriefing(idx);
 }
 
-// ═══════════════════════════════════════════════════════
-//  QUIZ
-// ═══════════════════════════════════════════════════════
+function retryChapter(idx) { retryChapterWithPenalty(idx); }
+
 function renderQuiz(cipher) {
 _quizState = { cipher, startTime: Date.now(), selected: null, answered: false };
-const container = document.getElementById('quiz-container');
-if (!container) return;
-container.style.display = 'block';
-const letters = ['А', 'Б', 'В', 'Г', 'Д'];
-const optionsHtml = cipher.options.map((opt, i) => `<div id="quiz-opt-${i}" onclick="quizSelect(${i})" class="quiz-option"> <div id="quiz-letter-${i}" class="quiz-letter">${letters[i]}</div> <span>${opt}</span> </div>`).join('');
-container.innerHTML = `<div id="quiz-options-list">${optionsHtml}</div><div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px; margin-top:4px;font-size:13px;text-align:center;"></div>`;
-const checkBtn = document.getElementById('btn-check');
-if (checkBtn) {
-checkBtn.style.display = '';
-checkBtn.textContent = '✓ ПРОВЕРИТЬ';
+let container = document.getElementById('quiz-container');
+if (!container) {
+container = document.createElement('div');
+container.id = 'quiz-container';
+const refEl = document.getElementById('cipher-hint-box');
+if (refEl && refEl.parentNode) refEl.parentNode.insertBefore(container, refEl);
+else document.getElementById('cipher-body') && document.getElementById('cipher-body').appendChild(container);
 }
+container.style.cssText = 'display:block;width:100%;padding:0 2px;margin-bottom:12px';
+const letters = ['А', 'Б', 'В', 'Г', 'Д'];
+const optionsHtml = cipher.options.map((opt, i) => `<div id="quiz-opt-${i}" onclick="quizSelect(${i})" style="width:100%;padding:14px 16px;margin-bottom:8px; background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.1); border-radius:10px;color:#fdfaf0;font-size:14px;cursor:pointer; display:flex;align-items:center;gap:12px; transition:all .15s ease;box-sizing:border-box;user-select:none"> <div id="quiz-letter-${i}" style="flex-shrink:0;width:30px;height:30px;border-radius:50%; background:rgba(255,224,51,.08);border:1.5px solid rgba(255,224,51,.2); display:flex;align-items:center;justify-content:center; font-family:var(--head);font-size:13px;color:var(--accent); transition:all .15s">${letters[i] || String.fromCharCode(65+i)}</div> <span style="flex:1;line-height:1.5">${opt}</span> </div>`).join('');
+container.innerHTML = `<div style="font-size:10px;color:rgba(255,224,51,.5);letter-spacing:.12em; text-align:center;margin-bottom:10px;font-family:var(--head)">👆 ВЫБЕРИТЕ ВАРИАНТ И НАЖМИТЕ ПРОВЕРИТЬ</div><div id="quiz-options-list">${optionsHtml}</div><div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px; margin-top:4px;margin-bottom:8px;font-size:13px;text-align:center; font-family:var(--head);letter-spacing:.04em"></div>`;
+const checkBtn = document.getElementById('btn-check');
+if (checkBtn) { checkBtn.style.display = ''; checkBtn.textContent = '✓ ПРОВЕРИТЬ'; }
 }
 
 function quizSelect(idx) {
@@ -1531,10 +1750,12 @@ if (!opt) return;
 if (i === idx) {
 opt.style.background = 'rgba(255,224,51,.12)';
 opt.style.borderColor = 'rgba(255,224,51,.45)';
+opt.style.color = '#fdfaf0';
 if (let_) { let_.style.background = 'rgba(255,224,51,.25)'; let_.style.borderColor = 'rgba(255,224,51,.6)'; let_.style.color = '#ffe033'; }
 } else {
 opt.style.background = 'rgba(255,255,255,.04)';
 opt.style.borderColor = 'rgba(255,255,255,.1)';
+opt.style.color = '#fdfaf0';
 if (let_) { let_.style.background = 'rgba(255,224,51,.08)'; let_.style.borderColor = 'rgba(255,224,51,.2)'; let_.style.color = 'var(--accent)'; }
 }
 });
@@ -1542,7 +1763,7 @@ if (let_) { let_.style.background = 'rgba(255,224,51,.08)'; let_.style.borderCol
 
 function quizSubmit() {
 if (_quizState.answered || _quizState.selected === null) {
-showToast('👆 Выберите вариант ответа');
+if (_quizState.selected === null) showToast('👆 Выберите вариант ответа');
 return;
 }
 _quizState.answered = true;
@@ -1566,9 +1787,7 @@ opt.style.background = 'rgba(255,50,50,.12)';
 opt.style.borderColor = 'rgba(255,50,50,.45)';
 opt.style.color = '#ff7070';
 if (let_) { let_.style.background = 'rgba(255,50,50,.2)'; let_.style.borderColor = 'rgba(255,50,50,.5)'; let_.style.color = '#ff7070'; }
-} else {
-opt.style.opacity = '0.4';
-}
+} else { opt.style.opacity = '0.4'; }
 });
 const feedback = document.getElementById('quiz-feedback');
 if (isCorrect) {
@@ -1581,10 +1800,12 @@ feedback.style.color = '#50ee80';
 feedback.textContent = '✅ Верно!';
 }
 state.streak = (state.streak || 0) + 1;
-const pts = cipher.points;
+const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
 saveState();
 stopTimer();
+if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+checkAchievements({ elapsed, firstTry: (state._chapterErrors || 0) === 0, quizCorrect: true });
 setTimeout(() => {
 const qc = document.getElementById('quiz-container');
 if (qc) qc.style.display = 'none';
@@ -1594,6 +1815,7 @@ showSuccess(cipher, pts, elapsed);
 }, 900);
 } else {
 playSound('wrong');
+screenPulseRed();
 if (feedback) {
 feedback.style.display = 'block';
 feedback.style.background = 'rgba(255,50,50,.1)';
@@ -1605,44 +1827,45 @@ state.streak = 0;
 state._chapterErrors = (state._chapterErrors || 0) + 1;
 if (!state.adminMode) {
 state.lives--;
+animateLifeLoss();
+playSound('life_lost');
 }
 saveState();
 renderLives();
 if (state.lives <= 0) {
-stopTimer();
-setTimeout(() => failChapter(), 1400);
+  stopTimer();
+  setTimeout(() => failChapter(), 1400);
 } else {
-setTimeout(() => {
-_quizState.answered = false;
-_quizState.selected = null;
-cipher.options.forEach((_, i) => {
-const opt2 = document.getElementById('quiz-opt-' + i);
-const let2 = document.getElementById('quiz-letter-' + i);
-if (!opt2 || i === correct) return;
-opt2.style.background = 'rgba(255,255,255,.04)';
-opt2.style.borderColor = 'rgba(255,255,255,.1)';
-opt2.style.color = '#fdfaf0';
-opt2.style.opacity = '1';
-opt2.style.cursor = 'pointer';
-if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
-});
-if (feedback) feedback.style.display = 'none';
-}, 2000);
-showToast('❌ Неверно! Попробуйте ещё раз');
+  setTimeout(() => {
+    _quizState.answered = false;
+    _quizState.selected = null;
+    cipher.options.forEach((_, i) => {
+      const opt2 = document.getElementById('quiz-opt-' + i);
+      const let2 = document.getElementById('quiz-letter-' + i);
+      if (!opt2 || i === correct) return;
+      opt2.style.background = 'rgba(255,255,255,.04)';
+      opt2.style.borderColor = 'rgba(255,255,255,.1)';
+      opt2.style.color = '#fdfaf0';
+      opt2.style.opacity = '1';
+      opt2.style.cursor = 'pointer';
+      if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
+    });
+    if (feedback) feedback.style.display = 'none';
+  }, 2000);
+  showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  ANAGRAM
-// ═══════════════════════════════════════════════════════
+let anagramState = { letters: [], placed: [], indices: [] };
+
 function renderAnagram(cipher) {
 const box = document.getElementById('cipher-box');
 box.style.display = 'none';
 const letters = cipher.encrypted.split('');
 anagramState = { letters: [...letters], placed: Array(letters.length).fill(null), usedIdx: Array(letters.length).fill(false) };
 const ref = document.getElementById('cipher-ref');
-ref.innerHTML = `<div class="cipher-ref-title">// СОСТАВЬ СЛОВО</div><div style="font-size:var(--fs-sm);color:var(--accent);font-weight:700;margin-bottom:10px;text-align:center;">👆 Тапай на буквы ниже — составляй слово</div><div class="anagram-answer" id="ag-answer">${letters.map((_,i)=>`<div class="anagram-slot" id="ag-slot-${i}" onclick="removeFromSlot(${i})"></div>`).join('')}</div><div class="anagram-pool" id="ag-pool">${letters.map((l,i)=>`<div class="anagram-letter" id="ag-letter-${i}" onclick="addToSlot(${i})">${l}</div>`).join('')}</div><div style="text-align:center"><button class="anagram-reset" onclick="resetAnagram()">↺ Сбросить</button></div>`;
+ref.innerHTML = `<div class="cipher-ref-title">// СОСТАВЬ СЛОВО</div><div style="font-size:var(--fs-sm);color:var(--accent);font-weight:700;margin-bottom:10px;text-align:center;letter-spacing:.04em">👆 Тапай на буквы ниже — составляй слово<br><span style="color:var(--muted);font-size:var(--fs-xs);font-weight:400">(ввод вручную не рекомендуется)</span></div><div class="anagram-answer" id="ag-answer">${letters.map((_,i)=>`<div class="anagram-slot" id="ag-slot-${i}" onclick="removeFromSlot(${i})"></div>`).join('')}</div><div class="anagram-pool" id="ag-pool">${letters.map((l,i)=>`<div class="anagram-letter" id="ag-letter-${i}" onclick="addToSlot(${i})">${l}</div>`).join('')}</div><div style="text-align:center"><button class="anagram-reset" onclick="resetAnagram()">↺ Сбросить</button></div>`;
 }
 
 function addToSlot(letterIdx) {
@@ -1655,9 +1878,7 @@ document.getElementById(`ag-letter-${letterIdx}`).classList.add('used');
 const slot = document.getElementById(`ag-slot-${slotIdx}`);
 slot.textContent = anagramState.letters[letterIdx];
 slot.classList.add('filled');
-if (!anagramState.placed.includes(null)) {
-setTimeout(checkAnagram, 300);
-}
+if (!anagramState.placed.includes(null)) { setTimeout(checkAnagram, 300); }
 }
 
 function removeFromSlot(slotIdx) {
@@ -1683,7 +1904,7 @@ const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 const slots = document.querySelectorAll('.anagram-slot');
 if (answer.toUpperCase() === cipher.answer) {
 slots.forEach(s => { s.style.borderColor = '#55dd55'; s.style.background = 'rgba(85,221,85,.15)'; });
-const pts = cipher.points;
+const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
 saveState();
 setTimeout(() => showSuccess(cipher, pts, elapsed), 600);
@@ -1693,25 +1914,18 @@ setTimeout(() => slots.forEach(s => { s.style.borderColor = ''; s.style.backgrou
 state.lives--;
 saveState();
 if (state.lives <= 0) {
-if (state.adminMode) {
-state.lives = 5; saveState(); renderLives();
-setTimeout(resetAnagram, 500);
-} else {
-setTimeout(() => failChapter(), 1200);
-}
-} else {
-renderLives();
-setTimeout(resetAnagram, 900);
-}
+if (state.adminMode) { state.lives = 5; saveState(); renderLives(); setTimeout(resetAnagram, 500); }
+else { setTimeout(() => failChapter(), 1200); }
+} else { renderLives(); setTimeout(resetAnagram, 900); }
 showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  MAP
-// ═══════════════════════════════════════════════════════
+let mapAnswered = false;
+
 function renderMap(cipher) {
 mapAnswered = false;
+const target = cipher.mapCity;
 const ref = document.getElementById('cipher-ref');
 const dots = MAP_CITIES.map(c => {
 return `<g class="map-city-dot" id="mcdot-${c.name}" onclick="checkMapAnswer('${c.name}')"> <circle cx="${c.x}" cy="${c.y}" r="6" fill="#ffe033" opacity=".7" stroke="#0a0a08" stroke-width="1"/> <text class="map-city-label" x="${c.x + 9}" y="${c.y + 4}">${c.name}</text> </g>`;
@@ -1728,40 +1942,26 @@ if (clicked === cipher.answer) {
 mapAnswered = true;
 if (dotEl) dotEl.querySelector('circle').setAttribute('fill','#55dd55');
 document.getElementById('map-hint-text').textContent = '✅ Верно! ' + clicked;
-const pts = cipher.points;
+const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
 saveState();
 setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
 } else {
-if (dotEl) {
-const c = dotEl.querySelector('circle');
-c.setAttribute('fill','#ff3a3a');
-setTimeout(() => c.setAttribute('fill','#ffe033'), 700);
-}
+if (dotEl) { const c = dotEl.querySelector('circle'); c.setAttribute('fill','#ff3a3a'); setTimeout(() => c.setAttribute('fill','#ffe033'), 700); }
 document.getElementById('map-hint-text').textContent = '❌ Не здесь. Попробуй ещё раз.';
 state.lives--;
 saveState();
 if (state.lives <= 0) {
-if (state.adminMode) {
-state.lives = 5; saveState(); renderLives();
-document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
-} else {
-setTimeout(() => failChapter(), 1200);
-}
-} else {
-renderLives();
-}
+if (state.adminMode) { state.lives = 5; saveState(); renderLives(); document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены'; }
+else { setTimeout(() => failChapter(), 1200); }
+} else { renderLives(); }
 showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 
-// ═══════════════════════════════════════════════════════
-//  SOUNDS
-// ═══════════════════════════════════════════════════════
+let _audioCtx = null;
 function getAudio() {
-if (!_audioCtx) {
-try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
-}
+if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
 return _audioCtx;
 }
 
@@ -1775,70 +1975,62 @@ osc.connect(gain);
 gain.connect(ctx.destination);
 const now = ctx.currentTime;
 if (type === 'correct') {
-osc.type = 'sine';
-osc.frequency.setValueAtTime(523, now);
-osc.frequency.setValueAtTime(784, now + 0.1);
-gain.gain.setValueAtTime(0.3, now);
-gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-osc.start(now); osc.stop(now + 0.4);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(523, now);
+  osc.frequency.setValueAtTime(784, now + 0.1);
+  gain.gain.setValueAtTime(0.3, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  osc.start(now); osc.stop(now + 0.4);
 } else if (type === 'wrong') {
-osc.type = 'sawtooth';
-osc.frequency.setValueAtTime(150, now);
-osc.frequency.setValueAtTime(100, now + 0.15);
-gain.gain.setValueAtTime(0.2, now);
-gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-osc.start(now); osc.stop(now + 0.3);
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(150, now);
+  osc.frequency.setValueAtTime(100, now + 0.15);
+  gain.gain.setValueAtTime(0.2, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  osc.start(now); osc.stop(now + 0.3);
 } else if (type === 'chapter_win') {
-const freqs = [523, 659, 784, 1047];
-freqs.forEach((f, i) => {
-const o = ctx.createOscillator();
-const g = ctx.createGain();
-o.connect(g); g.connect(ctx.destination);
-o.type = 'sine';
-o.frequency.setValueAtTime(f, now + i * 0.1);
-g.gain.setValueAtTime(0.25, now + i * 0.1);
-g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.3);
-o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.3);
-});
+  const freqs = [523, 659, 784, 1047];
+  freqs.forEach((f, i) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f, now + i * 0.1);
+    g.gain.setValueAtTime(0.25, now + i * 0.1);
+    g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.3);
+    o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.3);
+  });
 } else if (type === 'life_lost') {
-osc.type = 'square';
-osc.frequency.setValueAtTime(200, now);
-osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
-gain.gain.setValueAtTime(0.15, now);
-gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-osc.start(now); osc.stop(now + 0.3);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(200, now);
+  osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+  gain.gain.setValueAtTime(0.15, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  osc.start(now); osc.stop(now + 0.3);
 } else if (type === 'hint') {
-osc.type = 'sine';
-osc.frequency.setValueAtTime(440, now);
-gain.gain.setValueAtTime(0.15, now);
-gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-osc.start(now); osc.stop(now + 0.2);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, now);
+  gain.gain.setValueAtTime(0.15, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  osc.start(now); osc.stop(now + 0.2);
 } else if (type === 'game_win') {
-[523,659,784,880,1047].forEach((f, i) => {
-const o = ctx.createOscillator();
-const g = ctx.createGain();
-o.connect(g); g.connect(ctx.destination);
-o.type = i % 2 === 0 ? 'sine' : 'triangle';
-o.frequency.setValueAtTime(f, now + i * 0.08);
-g.gain.setValueAtTime(0.2, now + i * 0.08);
-g.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
-o.start(now + i * 0.08); o.stop(now + 1.5);
-});
+  [523,659,784,880,1047].forEach((f, i) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = i % 2 === 0 ? 'sine' : 'triangle';
+    o.frequency.setValueAtTime(f, now + i * 0.08);
+    g.gain.setValueAtTime(0.2, now + i * 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+    o.start(now + i * 0.08); o.stop(now + 1.5);
+  });
 }
 } catch(e) {}
 }
 
-// ═══════════════════════════════════════════════════════
-//  CONFETTI
-// ═══════════════════════════════════════════════════════
 function launchConfetti(duration = 800, intensity = 20) {
 const colors = ['#ffe033','#ff4455','#55ee66','#4488ff','#ff88ff'];
-const positions = [
-{ left: '0', top: '20%' },
-{ left: '0', top: '50%' },
-{ right: '0', top: '20%' },
-{ right: '0', top: '50%' },
-];
+const positions = [{ left: '0', top: '20%' }, { left: '0', top: '50%' }, { right: '0', top: '20%' }, { right: '0', top: '50%' }];
 positions.forEach((pos, idx) => {
 setTimeout(() => {
 const flash = document.createElement('div');
@@ -1850,19 +2042,17 @@ setTimeout(() => flash.remove(), 700);
 });
 }
 
-// ═══════════════════════════════════════════════════════
-//  NAVIGATION & PAUSE
-// ═══════════════════════════════════════════════════════
+let pausedFromScreen = null;
+
 function pauseGame() {
 saveState();
 stopTimer();
+autoSync(false);
 pausedFromScreen = 's-cipher';
 hideBottomNav();
 const ch = CHAPTERS[state.chapter];
 const el = document.getElementById('pause-chapter-info');
-if (el && ch) {
-el.textContent = ch.subtitle + ' · ' + ch.title + ' · Задание ' + (state.cipherIdx + 1) + '/' + ch.ciphers.length;
-}
+if (el && ch) { el.textContent = ch.subtitle + ' · ' + ch.title + ' · Задание ' + (state.cipherIdx + 1) + '/' + ch.ciphers.length; }
 showScreen('s-pause');
 }
 
@@ -1879,57 +2069,55 @@ saveState();
 showScreen('s-chapters');
 renderChapters();
 showBottomNav();
+autoSync(true);
 }
 
 function exitToMain() {
 saveState();
-if (tg) {
-setTimeout(() => tg.close(), 300);
-} else {
-goToChapters();
-}
+autoSync(false);
+if (tg) { setTimeout(() => tg.close(), 300); } else { goToChapters(); }
 }
 
-// ═══════════════════════════════════════════════════════
-//  LEADERBOARD
-// ═══════════════════════════════════════════════════════
 function updateLeaderboard() {
 const name = getTgUserName();
 const uid = getTgUserId() || 'guest';
-const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length };
+const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length,
+achievementCount: Object.keys(state.achievements || {}).length,
+achievementPts: state.achievementPts || 0 };
 const idx = state.leaderboard.findIndex(e => e.uid === uid);
-if (idx >= 0) {
-if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry;
-} else {
-state.leaderboard.push(entry);
-}
+if (idx >= 0) { if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry; }
+else { state.leaderboard.push(entry); }
 state.leaderboard.sort((a,b) => b.score - a.score);
 }
 
 function renderLeaderboardTab() {
 const list = document.getElementById('lb-list-tab');
-if (!list) return;
-const myUid = getTgUserId() || 'guest';
-const lb = state.leaderboard || [];
-if (!lb.length) {
-list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
+if (!state.leaderboard.length) {
+list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
 return;
 }
+const myUid = getTgUserId() || 'guest';
+const total = tgInitLB.length || state.leaderboard.length;
+const header = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align:center;margin-bottom:16px;letter-spacing:.06em">👥 ${total || 0} уч. · 👆 нажми на себя</div>`;
 const medals = ['🥇','🥈','🥉'];
-const rows = lb.slice(0,20).map((e,i) => {
+const myRole2 = tgInitMe?.role || '';
+const isAdminUser = myRole2 === 'admin' || (tgUser && tgUser.id === 516406248);
+const filteredLb = isAdminUser ? state.leaderboard : state.leaderboard.filter(e => e.role !== 'admin' && e.role !== 'tester');
+const visibleLb = isAdminUser ? filteredLb : filteredLb.slice(0, 10);
+const rows = visibleLb.map((e,i) => {
 const isMe = e.uid === myUid;
 const pct = Math.round((e.completed / 6) * 100);
 const done = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
 const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
+const roleIcon = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
 const clickAttr = isMe ? ' onclick="showMyStats()" ' : '';
-return `<div ${clickAttr}style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);background:${isMe?'rgba(255,224,51,.06)':rankBg};${isMe?'border-left:3px solid var(--accent);cursor:pointer':''}"> <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">${medals[i] || `<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">${i+1}</span>`}</div> <div style="flex:1;min-width:0"> <div style="font-family:var(--head);font-size:var(--fs-base); color:${isMe?'var(--accent)':'#fdfaf0'}; white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.name}${isMe?' 👈':''}</div> <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em">${done}</div> </div> <div style="font-family:var(--head);font-size:var(--fs-xl); color:${isMe?'var(--accent)':'#c4b06a'}; text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">${e.score}</div> </div>`;
+return `<div ${clickAttr}style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);background:${isMe?'rgba(255,224,51,.06)':rankBg};${isMe?'border-left:3px solid var(--accent);cursor:pointer':''}"> <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">${medals[i] || `<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">${i+1}</span>`}</div> <div style="flex:1;min-width:0"> <div style="font-family:var(--head);font-size:var(--fs-base); color:${isMe?'var(--accent)':'#fdfaf0'}; white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.name}${roleIcon}${isMe?' 👈':''}</div> <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em">${done}</div> <div style="font-size:9px;color:var(--accent);margin-top:2px">🏅 ${e.achievementCount || 0} дост. (+${e.achievementPts || 0}⭐)</div> </div> <div style="font-family:var(--head);font-size:var(--fs-xl); color:${isMe?'var(--accent)':'#c4b06a'}; text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">${e.score}</div> </div>`;
 }).join('');
-list.innerHTML = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align:center;margin-bottom:16px;">👥 ${lb.length} уч. · 👆 нажми на себя</div>` + rows;
+const myInTop = visibleLb.some(e => e.uid === myUid);
+const myPos = myInTop ? '' : `<div style="margin:12px 16px;padding:12px; background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px; font-size:var(--fs-sm);color:var(--muted);text-align:center">📍 Вы не в топ-10. Нажмите на своё имя в рейтинге для статистики.</div>`;
+list.innerHTML = header + rows + myPos;
 }
 
-// ═══════════════════════════════════════════════════════
-//  PROFILE
-// ═══════════════════════════════════════════════════════
 function renderProfileTab() {
 const el = document.getElementById('profile-tab-content');
 if (!el) return;
@@ -1941,121 +2129,57 @@ const localCompleted = Object.keys(state.completedChapters).length;
 const completed = Math.max(localCompleted, dbCompleted);
 if (dbScore > state.totalScore) state.totalScore = dbScore;
 const pct = Math.round((completed / CHAPTERS.length) * 100);
-el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;">🎖</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;">РАЗВЕДЧИК</div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
+const myRole = tgInitMe?.role || (tgUser?.id === 516406248 ? 'admin' : 'player');
+const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
+const titles = [[0,'Новобранец','🎖'],[35,'Сержант связи','🏅'],[55,'Капитан подполья','🎖'],[75,'Полковник разведки','⭐'],[90,'Маршал Победы','🌟']];
+const maxScore = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
+const scorePct = Math.round((state.totalScore / maxScore) * 100);
+const rank = titles.filter(t => scorePct >= t[0]).pop() || titles[0];
+const roleLabel2 = roleLabels[myRole] || '';
+const chapterHistory = CHAPTERS.map(ch => {
+const done = !!state.completedChapters[ch.id];
+const score = state.chapterScores[ch.id] || 0;
+const icon = done ? (score > 0 ? '✅' : '💔') : '🔒';
+const color = done ? (score > 0 ? 'var(--green)' : 'var(--accent2)') : 'rgba(255,255,255,.2)';
+return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0; border-bottom:1px solid rgba(255,255,255,.04)"> <div style="font-size:18px">${icon}</div> <div style="flex:1"> <div style="font-size:var(--fs-sm);color:${done?'#fdfaf0':'rgba(255,255,255,.3)'}">${ch.title}</div> <div style="font-size:10px;color:var(--muted)">${ch.subtitle}</div> </div> <div style="font-family:var(--head);font-size:var(--fs-sm);color:${color}">${score ? score + ' оч' : done ? '—' : ''}</div> </div>`;
+}).join('');
+el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>${roleLabel2 ? `<div style="margin-top:6px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.06em">${roleLabel2}</div>` : ''}<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px; background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1); border-radius:20px;padding:5px 14px"> <span style="font-size:10px;color:var(--muted);letter-spacing:.06em">TELEGRAM ID</span> <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span> </div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><div style="margin-top:16px"> <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted); letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>${chapterHistory}</div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
 }
 
-// ═══════════════════════════════════════════════════════
-//  ABOUT
-// ═══════════════════════════════════════════════════════
 function renderAboutTab() {
 const el = document.getElementById('about-tab-content');
 if (!el) return;
-el.innerHTML = `<div style="padding:16px;text-align:center;"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ 1.0 · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>`;
+el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ 1.0 · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div></div>`;
 }
 
-// ═══════════════════════════════════════════════════════
-//  RESET
-// ═══════════════════════════════════════════════════════
 function confirmReset() {
 const isAdmin = state.adminMode || window._adminMode === true;
-if (!isAdmin) {
-if (getTgUserId()) {
-alert('Прогресс сохранён в системе и не может быть удалён.');
-}
-return;
-}
+if (!isAdmin) { if (getTgUserId()) { alert('Прогресс сохранён в системе и не может быть удалён.'); } return; }
 if (!confirm('Сбросить тестовый прогресс к нулю? Все главы останутся открытыми.')) return;
 try { localStorage.removeItem(storageKey()); } catch(e) {}
 state = DEFAULT_STATE();
 state.adminMode = true;
+const syncUrl = window._syncUrl;
+const uid = getTgUserId();
+if (syncUrl && uid) {
+const resetUrl = syncUrl.replace('/game_sync', '/game_reset');
+fetch(resetUrl, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ user_id: uid }) })
+.then(r => r.json()).then(d => console.log('✅ Прогресс сброшен в БД:', d)).catch(e => console.warn('reset sync error:', e));
+}
 renderChapters();
 showToast('🗑 Прогресс сброшен');
 }
 
-// ═══════════════════════════════════════════════════════
-//  FINAL
-// ═══════════════════════════════════════════════════════
-async function showFinal() {
-document.getElementById('final-score-val').textContent = state.totalScore;
-const uid = getTgUserId();
-const finalUidEl = document.getElementById('final-uid');
-if (finalUidEl && uid) {
-finalUidEl.textContent = 'ID: ' + uid;
-finalUidEl.style.display = 'block';
-}
-const maxAll = CHAPTERS.reduce((s,ch)=>s+ch.ciphers.reduce((a,c)=>a+c.points,0),0);
-const pct = Math.round(state.totalScore / maxAll * 100);
-let rank = 'НОВОБРАНЕЦ';
-if (pct >= 90) rank = 'МАРШАЛ ПОБЕДЫ 🌟';
-else if (pct >= 75) rank = 'ПОЛКОВНИК РАЗВЕДКИ ⭐';
-else if (pct >= 55) rank = 'КАПИТАН ПОДПОЛЬЯ 🎖';
-else if (pct >= 35) rank = 'СЕРЖАНТ СВЯЗИ 🏅';
-document.getElementById('final-rank').textContent = rank;
-document.getElementById('final-pct').textContent = pct + '% от максимума';
-let rows = '';
-CHAPTERS.forEach(ch => {
-const s = state.chapterScores[ch.id] || 0;
-const m = ch.ciphers.reduce((a,c)=>a+c.points,0);
-rows += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:17px"><span>${ch.subtitle}: ${ch.title}</span><span style="color:var(--accent)">${s}/${m}</span></div>`;
+function screenPulseRed() {
+const overlay = document.createElement('div');
+overlay.style.cssText = `position:fixed;inset:0;z-index:9998;pointer-events:none; background:rgba(255,50,50,0);transition:background .1s ease`;
+document.body.appendChild(overlay);
+requestAnimationFrame(() => {
+overlay.style.background = 'rgba(255,50,50,0.18)';
+setTimeout(() => { overlay.style.background = 'rgba(255,50,50,0)'; setTimeout(() => overlay.remove(), 200); }, 150);
 });
-document.getElementById('final-chapter-scores').innerHTML = rows;
-setTimeout(() => document.getElementById('final-stars').classList.add('show'), 800);
-setTimeout(() => playSound('game_win'), 300);
-setTimeout(() => launchConfetti(1500, 40), 500);
-showScreen('s-final');
 }
 
-// ═══════════════════════════════════════════════════════
-//  TOAST
-// ═══════════════════════════════════════════════════════
-function showToast(text, duration = 2500) {
-const old = document.getElementById('game-toast');
-if (old) old.remove();
-const toast = document.createElement('div');
-toast.id = 'game-toast';
-toast.textContent = text;
-toast.style.cssText = `position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(20,17,8,.95); border:1px solid rgba(255,224,51,.3); color:#ffe033; padding:8px 20px; border-radius:20px; font-family:var(--head); font-size:12px; z-index:999; pointer-events:none; opacity:0; transition:opacity .3s;`;
-document.body.appendChild(toast);
-requestAnimationFrame(() => { toast.style.opacity = '1'; });
-setTimeout(() => {
-toast.style.opacity = '0';
-setTimeout(() => toast.remove(), 300);
-}, duration);
-}
-
-// ═══════════════════════════════════════════════════════
-//  SPLASH
-// ═══════════════════════════════════════════════════════
-function showSplash() {
-const splash = document.getElementById('splash-screen');
-let pct = 0;
-const bar = splash.querySelector('#splash-bar');
-const interval = setInterval(() => {
-pct += Math.random() * 15;
-if (pct >= 100) {
-pct = 100;
-clearInterval(interval);
-}
-bar.style.width = pct + '%';
-if (pct >= 100) {
-setTimeout(() => {
-splash.style.opacity = '0';
-setTimeout(() => splash.remove(), 500);
-}, 200);
-}
-}, 80);
-// Timeout fallback - force show after 5 seconds
-setTimeout(() => {
-if (splash && splash.parentNode) {
-splash.style.opacity = '0';
-setTimeout(() => { if (splash.parentNode) splash.remove(); }, 500);
-}
-}, 5000);
-}
-
-// ═══════════════════════════════════════════════════════
-//  3D INTRO
-// ═══════════════════════════════════════════════════════
 function init3DIntro() {
 const canvas = document.getElementById('three-canvas');
 if (!canvas || typeof THREE === 'undefined') return;
@@ -2089,21 +2213,16 @@ camera.updateProjectionMatrix();
 });
 let active = true;
 const introEl = document.getElementById('s-intro');
-new MutationObserver(() => {
-active = introEl.classList.contains('active');
-}).observe(introEl, { attributes: true, attributeFilter: ['class'] });
+new MutationObserver(() => { active = introEl.classList.contains('active'); }).observe(introEl, { attributes: true, attributeFilter: ['class'] });
 let f = 0;
 (function loop() {
 requestAnimationFrame(loop);
 if (!active) return;
 f++;
 const t = f * 0.008;
-cube.rotation.x = t * 0.7;
-cube.rotation.y = t;
-cube2.rotation.x = -t * 0.4;
-cube2.rotation.y = t * 0.5;
-ring1.rotation.z = t * 0.3;
-ring2.rotation.x = t * 0.2;
+cube.rotation.x = t * 0.7; cube.rotation.y = t;
+cube2.rotation.x = -t * 0.4; cube2.rotation.y = t * 0.5;
+ring1.rotation.z = t * 0.3; ring2.rotation.x = t * 0.2;
 points.rotation.y = t * 0.1;
 camera.position.x = Math.sin(t * 0.3) * 0.3;
 camera.position.y = Math.cos(t * 0.2) * 0.15;
@@ -2111,9 +2230,6 @@ renderer.render(scene, camera);
 })();
 }
 
-// ═══════════════════════════════════════════════════════
-//  FIREWORKS
-// ═══════════════════════════════════════════════════════
 (function initFireworks(){
 const c = document.getElementById('fireworks-canvas');
 if(!c) return;
@@ -2121,36 +2237,22 @@ const ctx = c.getContext('2d');
 function resize(){ c.width=window.innerWidth; c.height=window.innerHeight; }
 resize();
 window.addEventListener('resize', resize);
-const COLORS = ['#ff4422','#ff8800','#ffcc00','#ffe033','#ffffff'];
+const COLORS = ['#ff4422','#ff8800','#ffcc00','#ffe033','#ffffff','#ff3388','#44aaff','#88ff44'];
 let rockets = [], particles = [], frame = 0;
 let active = true;
 const intro = document.getElementById('s-intro');
 new MutationObserver(()=>{ active = intro.classList.contains('active'); }).observe(intro, {attributes:true, attributeFilter:['class']});
 function spawnRocket(){
-rockets.push({
-x: c.width * (.2 + Math.random() * .6),
-y: c.height,
-tx: c.width * (.1 + Math.random() * .8),
-ty: c.height * (.1 + Math.random() * .45),
-color: COLORS[Math.floor(Math.random()*COLORS.length)],
-trail: []
-});
+rockets.push({ x: c.width * (.2 + Math.random() * .6), y: c.height, tx: c.width * (.1 + Math.random() * .8), ty: c.height * (.1 + Math.random() * .45), color: COLORS[Math.floor(Math.random()*COLORS.length)], trail: [] });
 }
 function explode(r){
 const n = 60 + Math.floor(Math.random()*50);
 for(let i=0;i<n;i++){
 const angle = (Math.PI*2/n)*i + Math.random()*0.3;
 const speed = 1.5 + Math.random()*2.5;
-particles.push({
-x:r.tx, y:r.ty,
-vx: Math.cos(angle)*speed,
-vy: Math.sin(angle)*speed,
-color: r.color,
-life: 1,
-decay: .012 + Math.random()*0.018,
-size: 2 + Math.random()*2
-});
+particles.push({ x:r.tx, y:r.ty, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, color: r.color, life: 1, decay: .012 + Math.random()*0.018, size: 2 + Math.random()*2 });
 }
+for(let i=0;i<12;i++){ particles.push({ x:r.tx, y:r.ty, vx: (Math.random()-.5)*1.5, vy: Math.random()*2, color:'#ffeeaa', life:1, decay:.03, size:1.5 }); }
 }
 function draw(){
 requestAnimationFrame(draw);
@@ -2159,50 +2261,38 @@ ctx.fillStyle='rgba(0,0,0,.18)';
 ctx.fillRect(0,0,c.width,c.height);
 frame++;
 if(frame > 60 && frame % 90 === 0) spawnRocket();
+if(frame > 120 && frame % 130 === 0) spawnRocket();
 rockets = rockets.filter(r=>{
-r.trail.push({x:r.x,y:r.y});
-if(r.trail.length>12) r.trail.shift();
-const dx=r.tx-r.x, dy=r.ty-r.y;
-const dist=Math.sqrt(dx*dx+dy*dy);
-if(dist < 5){ explode(r); return false; }
-const speed = Math.min(dist*.12, 14);
-r.x += dx/dist*speed; r.y += dy/dist*speed;
-r.trail.forEach((pt,i)=>{
-const a = (i/r.trail.length)*.8;
-ctx.beginPath();
-ctx.arc(pt.x,pt.y,1.5,0,Math.PI*2);
-ctx.fillStyle = r.color;
-ctx.globalAlpha = a;
-ctx.fill();
-});
-ctx.globalAlpha=1;
-ctx.beginPath();
-ctx.arc(r.x,r.y,3,0,Math.PI*2);
-ctx.fillStyle='#fff';
-ctx.fill();
-return true;
+  r.trail.push({x:r.x,y:r.y});
+  if(r.trail.length>12) r.trail.shift();
+  const dx=r.tx-r.x, dy=r.ty-r.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  if(dist < 5){ explode(r); return false; }
+  const speed = Math.min(dist*.12, 14);
+  r.x += dx/dist*speed; r.y += dy/dist*speed;
+  r.trail.forEach((pt,i)=>{
+    const a = (i/r.trail.length)*.8;
+    ctx.beginPath(); ctx.arc(pt.x,pt.y,1.5,0,Math.PI*2);
+    ctx.fillStyle = r.color; ctx.globalAlpha = a; ctx.fill();
+  });
+  ctx.globalAlpha=1;
+  ctx.beginPath(); ctx.arc(r.x,r.y,3,0,Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill();
+  return true;
 });
 particles = particles.filter(p=>{
-p.x+=p.vx; p.y+=p.vy;
-p.vy+=.04;
-p.vx*=.97; p.vy*=.97;
-p.life-=p.decay;
-if(p.life<=0) return false;
-ctx.beginPath();
-ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);
-ctx.fillStyle=p.color;
-ctx.globalAlpha=p.life*.9;
-ctx.fill();
-ctx.globalAlpha=1;
-return true;
+  p.x+=p.vx; p.y+=p.vy; p.vy+=.04; p.vx*=.97; p.vy*=.97;
+  p.life-=p.decay;
+  if(p.life<=0) return false;
+  ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);
+  ctx.fillStyle=p.color; ctx.globalAlpha=p.life*.9; ctx.fill();
+  ctx.globalAlpha=1;
+  return true;
 });
 }
 draw();
 })();
 
-// ═══════════════════════════════════════════════════════
-//  PETALS
-// ═══════════════════════════════════════════════════════
 (function initPetals(){
 const c = document.getElementById('petals-canvas');
 if(!c) return;
@@ -2215,34 +2305,15 @@ let petals=[], active=true;
 const intro = document.getElementById('s-intro');
 new MutationObserver(()=>{ active = intro.classList.contains('active'); }).observe(intro, {attributes:true, attributeFilter:['class']});
 for(let i=0;i<28;i++){
-petals.push({
-x: Math.random()*window.innerWidth,
-y: Math.random()*window.innerHeight - window.innerHeight,
-r: 3+Math.random()*5,
-vx: (Math.random()-.5)*0.6,
-vy: 0.4+Math.random()*0.7,
-rot: Math.random()*Math.PI*2,
-rotV: (Math.random()-.5)*0.06,
-color: PCOLORS[Math.floor(Math.random()*PCOLORS.length)],
-wobble: Math.random()*Math.PI*2,
-wobbleS: 0.02+Math.random()*0.03
-});
+petals.push({ x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight - window.innerHeight, r: 3+Math.random()*5, vx: (Math.random()-.5)*0.6, vy: 0.4+Math.random()*0.7, rot: Math.random()*Math.PI*2, rotV: (Math.random()-.5)*0.06, color: PCOLORS[Math.floor(Math.random()*PCOLORS.length)], wobble: Math.random()*Math.PI*2, wobbleS: 0.02+Math.random()*0.03 });
 }
 function drawPetal(p){
-ctx.save();
-ctx.translate(p.x, p.y);
-ctx.rotate(p.rot);
-ctx.beginPath();
-ctx.ellipse(0, 0, p.r, p.r*1.8, 0, 0, Math.PI*2);
-ctx.fillStyle = p.color;
-ctx.globalAlpha = .75;
-ctx.fill();
-ctx.beginPath();
-ctx.ellipse(-p.r*.2, -p.r*.3, p.r*.3, p.r*.5, -.5, 0, Math.PI*2);
-ctx.fillStyle = 'rgba(255,255,255,.3)';
-ctx.fill();
-ctx.restore();
-ctx.globalAlpha=1;
+ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r*1.8, 0, 0, Math.PI*2);
+ctx.fillStyle = p.color; ctx.globalAlpha = .75; ctx.fill();
+ctx.beginPath(); ctx.ellipse(-p.r*.2, -p.r*.3, p.r*.3, p.r*.5, -.5, 0, Math.PI*2);
+ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fill();
+ctx.restore(); ctx.globalAlpha=1;
 }
 function loop(){
 requestAnimationFrame(loop);
@@ -2253,39 +2324,23 @@ p.wobble += p.wobbleS;
 p.x += p.vx + Math.sin(p.wobble)*0.5;
 p.y += p.vy;
 p.rot += p.rotV;
-if(p.y > c.height+20){
-p.y = -20; p.x = Math.random()*c.width;
-p.color = PCOLORS[Math.floor(Math.random()*PCOLORS.length)];
-}
+if(p.y > c.height+20){ p.y = -20; p.x = Math.random()*c.width; p.color = PCOLORS[Math.floor(Math.random()*PCOLORS.length)]; }
 drawPetal(p);
 });
 }
 loop();
 })();
 
-// ═══════════════════════════════════════════════════════
-//  PARTICLES
-// ═══════════════════════════════════════════════════════
 (function initParticles(){
 const c = document.getElementById('particles-canvas');
 if(!c) return;
 const ctx = c.getContext('2d');
 let W, H, pts = [];
-function resize(){
-W = c.width = window.innerWidth;
-H = c.height = window.innerHeight;
-}
+function resize(){ W = c.width = window.innerWidth; H = c.height = window.innerHeight; }
 resize();
 window.addEventListener('resize', resize);
 const CHARS = '01-./·•✦АБВ'.split('');
-for(let i=0;i<55;i++) pts.push({
-x: Math.random()*window.innerWidth,
-y: Math.random()*window.innerHeight,
-s: Math.random()*10+8,
-v: Math.random()*0.4+0.1,
-o: Math.random()*0.5+0.1,
-c: CHARS[Math.floor(Math.random()*CHARS.length)]
-});
+for(let i=0;i<55;i++) pts.push({ x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, s: Math.random()*10+8, v: Math.random()*0.4+0.1, o: Math.random()*0.5+0.1, c: CHARS[Math.floor(Math.random()*CHARS.length)] });
 function draw(){
 ctx.clearRect(0,0,W,H);
 ctx.font = '12px monospace';
@@ -2302,26 +2357,511 @@ requestAnimationFrame(draw);
 draw();
 })();
 
-// ═══════════════════════════════════════════════════════
-//  INIT
-// ═══════════════════════════════════════════════════════
+function introEntrance(){
+const seq = [['intro-stamp',300],['intro-date',700],['intro-title',1000],['intro-ribbon',1500],['intro-desc',1900],['intro-quote',2300],['intro-btn',2700],['intro-how',2950],['intro-memory',3200],['skyline',800]];
+seq.forEach(([id, ms])=> setTimeout(()=>{ const el = document.getElementById(id); if(el) el.classList.add('intro-show'); }, ms));
+}
+
+async function autoSync(showNotification = true) {
+const syncUrl = window._syncUrl;
+const uid = getTgUserId();
+if (!syncUrl || !uid) return;
+const completed = Object.keys(state.completedChapters).length;
+if (state.totalScore === _lastSyncedScore && completed === _lastSyncedCompleted) return;
+if (_syncInFlight) return;
+_syncInFlight = true;
+const data = { type: completed > 0 ? 'chapter_complete' : 'sync', chapter: completed > 0 ? Math.max(...Object.keys(state.completedChapters).map(Number)) : 0, score: 0, total_score: state.totalScore, completed: completed, game_over: state.gameOver || false, user_id: uid, user_name: getTgUserName(),
+achievement_count: Object.keys(state.achievements || {}).length,
+achievement_pts: state.achievementPts || 0 };
+try {
+const resp = await fetch(syncUrl, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+if (resp.ok) {
+_lastSyncedScore = state.totalScore;
+_lastSyncedCompleted = completed;
+console.log('✅ autoSync OK:', state.totalScore, 'pts,', completed, 'chapters');
+if (showNotification) showToast('✅ Прогресс сохранён');
+}
+} catch(e) { console.warn('autoSync error:', e); } finally { _syncInFlight = false; }
+}
+
+document.addEventListener('visibilitychange', () => {
+if (document.hidden && state.totalScore > 0) { saveState(); autoSync(false); }
+});
+
+window.addEventListener('beforeunload', () => {
+if (state.totalScore > 0 && window._syncUrl && getTgUserId()) {
+const data = { type: 'sync', total_score: state.totalScore, completed: Object.keys(state.completedChapters).length, game_over: state.gameOver || false, user_id: getTgUserId(), user_name: getTgUserName() };
+navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
+}
+});
+
+async function showFinal() {
+document.getElementById('final-score-val').textContent = state.totalScore;
+const uid = getTgUserId();
+const finalUidEl = document.getElementById('final-uid');
+if (finalUidEl && uid) { finalUidEl.textContent = 'ID: ' + uid; finalUidEl.style.display = 'block'; }
+const maxAll = CHAPTERS.reduce((s,ch)=>s+ch.ciphers.reduce((a,c)=>a+c.points,0),0);
+const pct = Math.round(state.totalScore / maxAll * 100);
+let rank = 'НОВОБРАНЕЦ';
+if (pct >= 90) rank = 'МАРШАЛ ПОБЕДЫ 🌟';
+else if (pct >= 75) rank = 'ПОЛКОВНИК РАЗВЕДКИ ⭐';
+else if (pct >= 55) rank = 'КАПИТАН ПОДПОЛЬЯ 🎖';
+else if (pct >= 35) rank = 'СЕРЖАНТ СВЯЗИ 🏅';
+document.getElementById('final-rank').textContent = rank;
+document.getElementById('final-pct').textContent = pct + '% от максимума';
+let rows = '';
+CHAPTERS.forEach(ch => {
+const s = state.chapterScores[ch.id] || 0;
+const m = ch.ciphers.reduce((a,c)=>a+c.points,0);
+rows += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:17px"><span>${ch.subtitle}: ${ch.title}</span><span style="color:var(--accent)">${s}/${m}</span></div>`;
+});
+document.getElementById('final-chapter-scores').innerHTML = rows;
+setTimeout(() => document.getElementById('final-stars').classList.add('show'), 800);
+setTimeout(() => playSound('game_win'), 300);
+setTimeout(() => launchConfetti(1500, 40), 500);
+sendResultToBot({ type: 'game_complete', total_score: state.totalScore, rank: rank, pct: pct, user_id: getTgUserId(), user_name: getTgUserName() });
+showScreen('s-final');
+}
+
+const ACHIEVEMENTS = [
+{id:'speed_1', icon:'⚡', name:'Молния', desc:'Ответил за 5 секунд', pts:10},
+{id:'perfect_1', icon:'🎯', name:'Снайпер', desc:'Глава без единой ошибки', pts:50},
+{id:'ch1_done', icon:'🏅', name:'Первый шаг', desc:'Пройдена глава I', pts:20},
+{id:'ch6_done', icon:'🥇', name:'Победитель', desc:'Пройдена вся игра', pts:100},
+{id:'score_100', icon:'💫', name:'Первые очки', desc:'Набрал 100 очков', pts:5},
+{id:'score_500', icon:'⭐', name:'Набирает обороты', desc:'Набрал 500 очков', pts:10},
+{id:'score_1000', icon:'🌠', name:'Тысячник', desc:'Набрал 1000 очков', pts:20},
+{id:'morse_1', icon:'📡', name:'Морзист', desc:'Решил задание на азбуке Морзе', pts:10},
+{id:'caesar_5', icon:'🔐', name:'Цезарь', desc:'5 заданий шифром Цезаря', pts:20},
+{id:'atbash_3', icon:'🪞', name:'Зеркало', desc:'3 задания шифром Атбаш', pts:15},
+{id:'math_3', icon:'➗', name:'Математик', desc:'3 математических задания', pts:20},
+{id:'anagram_3', icon:'🔤', name:'Буквоед', desc:'3 анаграммы', pts:20},
+{id:'map_1', icon:'🗺', name:'Картограф', desc:'Нашёл город на карте', pts:15},
+{id:'first_try', icon:'🎊', name:'С первого раза', desc:'Правильный ответ без ошибок', pts:5},
+{id:'comeback', icon:'💪', name:'Возвращение', desc:'Прошёл главу после провала', pts:30},
+{id:'streak_3', icon:'🔥', name:'На волне', desc:'Стрик 3 правильных ответа', pts:15},
+{id:'streak_5', icon:'💥', name:'Огонь!', desc:'Стрик 5 правильных ответа', pts:30},
+{id:'streak_10', icon:'🌋', name:'Вулкан', desc:'Стрик 10 правильных ответов', pts:60},
+{id:'no_hints_1', icon:'🧠', name:'Умник', desc:'Глава без подсказок', pts:30},
+{id:'no_hints_all', icon:'🎓', name:'Мастер шифров', desc:'Все главы без подсказок', pts:150},
+{id:'perfect_all', icon:'👑', name:'Безупречный', desc:'Все главы без ошибок', pts:200},
+{id:'all_gold', icon:'👸', name:'Чемпион', desc:'80%+ во всех главах', pts:200},
+{id:'score_2500', icon:'💎', name:'Эксперт', desc:'Набрал 2500 очков', pts:40},
+{id:'score_5000', icon:'🏆', name:'Легенда', desc:'Набрал 5000+ очков', pts:80},
+{id:'morse_5', icon:'📻', name:'Радист', desc:'5 заданий на Морзе', pts:25},
+{id:'quiz_5', icon:'🧩', name:'Знаток', desc:'Правильно ответил на 5 вопросов викторины', pts:30},
+{id:'quiz_10', icon:'🎓', name:'Профессор', desc:'Правильно ответил на 10 вопросов викторины', pts:60},
+{id:'quiz_all', icon:'🏫', name:'Учёный', desc:'Все вопросы викторины правильно', pts:100},
+{id:'date_1941', icon:'📅', name:'Помню 41-й', desc:'Назвал год начала оккупации', pts:15},
+{id:'date_1945', icon:'🕊', name:'Помню 45-й', desc:'Назвал год Победы', pts:15},
+{id:'one_life', icon:'❤️', name:'На волоске', desc:'Прошёл главу с 1 оставшейся жизнью', pts:50},
+{id:'retry_win', icon:'💪', name:'Не сдаётся', desc:'После провала прошёл главу с первой попытки', pts:60},
+{id:'first_quiz', icon:'❓', name:'Первый вопрос', desc:'Ответил на первый вопрос викторины', pts:5},
+{id:'first_math', icon:'🔢', name:'Первый расчёт', desc:'Решил первую математическую задачу', pts:5},
+{id:'first_anagram', icon:'🔤', name:'Первая анаграмма', desc:'Разгадал первую анаграмму', pts:5},
+{id:'first_map_t', icon:'🧭', name:'Первая карта', desc:'Нашёл первый город на карте', pts:5},
+{id:'all_quiz', icon:'📚', name:'Эрудит', desc:'Все вопросы викторины пройдены', pts:50},
+{id:'perfect_run', icon:'🌈', name:'Идеальный забег', desc:'Глава без ошибок, без подсказок и быстро', pts:120},
+{id:'speedrun', icon:'🏁', name:'Спидран', desc:'Все 6 глав менее чем за 1 час', pts:150},
+{id:'pacifist', icon:'🕊', name:'Пацифист', desc:'Не использовал ни одной подсказки', pts:100},
+{id:'iron_will', icon:'⚙️', name:'Железная воля', desc:'5 заданий подряд без ошибок', pts:45},
+{id:'chain_6', icon:'⛓', name:'Цепная реакция', desc:'6 правильных ответов подряд (2 главы)', pts:80},
+{id:'weekend', icon:'📆', name:'Выходной разведчик', desc:'Играл в выходной день', pts:10},
+{id:'school_time', icon:'🏫', name:'Школьный час', desc:'Играл с 8 до 15 часов', pts:10},
+{id:'marathon', icon:'🏃', name:'Марафон', desc:'Прошёл 3 главы за один сеанс', pts:35},
+{id:'all_in_day', icon:'☀️', name:'День победы', desc:'Прошёл все 6 глав за один день', pts:100},
+{id:'long_game', icon:'🌙', name:'Долгая ночь', desc:'Играл более 30 минут', pts:20},
+{id:'top5', icon:'⭐', name:'В элите', desc:'Вошёл в топ-5 рейтинга', pts:60},
+{id:'beat_someone', icon:'📈', name:'Обогнал', desc:'Поднялся выше другого игрока', pts:15},
+{id:'shared', icon:'📤', name:'Поделился', desc:'Поделился результатом', pts:10},
+{id:'ach_20', icon:'🏆', name:'Достиженец', desc:'Получил 20 достижений', pts:40},
+{id:'ach_30', icon:'💠', name:'Мастер наград', desc:'Получил 30 достижений', pts:60},
+{id:'war_expert', icon:'🎗', name:'Эксперт войны', desc:'Правильно ответил на все вопросы о ВОВ', pts:75},
+{id:'geo_expert', icon:'🌍', name:'Географ', desc:'Нашёл все 3 города на карте', pts:50},
+{id:'cipher_master', icon:'🔓', name:'Взломщик', desc:'Разгадал все шифры без подсказок', pts:90},
+{id:'history_buff', icon:'📖', name:'Историк', desc:'Прочитал 15 исторических фактов', pts:30},
+{id:'memory', icon:'🎖', name:'Вечная память', desc:'Завершил игру и прочитал все факты', pts:80},
+{id:'all_100', icon:'💯', name:'Сотка!', desc:'Получил 100 достижений', pts:250},
+{id:'true_hero', icon:'🌟', name:'Настоящий герой', desc:'Прошёл все главы на золото без подсказок', pts:300},
+{id:'school_legend', icon:'👑', name:'Легенда школы', desc:'Первый кто получил все достижения', pts:500},
+{id:'peacekeeper', icon:'🕊', name:'Миротворец', desc:'Помнит и чтит историю своей Родины', pts:100},
+{id:'defender', icon:'🛡', name:'Защитник', desc:'Завершил игру — настоящий разведчик', pts:150},
+{id:'hoiki_1', icon:'🌿', name:'Сын Полесья', desc:'Завершил главу о Хойниках', pts:25},
+{id:'hoiki_quiz', icon:'📍', name:'Знаток Хойник', desc:'Ответил на все вопросы о Хойниках', pts:40},
+{id:'gomel_map', icon:'🗺', name:'Компас Гомельщины', desc:'Нашёл Гомель на карте', pts:20},
+{id:'polesia', icon:'🌲', name:'Дух Полесья', desc:'Узнал название региона', pts:15},
+{id:'soizh_river', icon:'🌊', name:'По реке Сож', desc:'Расшифровал название реки', pts:20},
+{id:'speed_any', icon:'🔥', name:'На максимуме', desc:'Любое задание за 3 секунды', pts:35},
+{id:'speed_morse', icon:'📻', name:'Телеграфист', desc:'Морзе за 10 секунд', pts:30},
+{id:'no_wrong_1', icon:'✨', name:'Без промаха', desc:'Первое задание без ошибок', pts:10},
+{id:'fast_start', icon:'⏩', name:'Быстрый старт', desc:'Первые 3 задания за 30 секунд', pts:25},
+{id:'retry_2', icon:'🔄', name:'Настойчивый', desc:'Повторил одну главу дважды', pts:25},
+{id:'comeback_3', icon:'🦅', name:'Феникс', desc:'Провалил и победил 3 раза подряд', pts:70},
+{id:'all_types', icon:'🎭', name:'Универсал', desc:'Решил все типы шифров', pts:60},
+{id:'full_game', icon:'🎮', name:'Настоящий разведчик', desc:'Прошёл игру полностью', pts:150},
+{id:'night_owl', icon:'🦉', name:'Полуночник', desc:'Играл после 23:00', pts:15},
+{id:'early_bird', icon:'🐦', name:'Ранняя пташка', desc:'Играл до 8:00', pts:15},
+{id:'dedicated', icon:'📚', name:'Усердный', desc:'Прошёл 10+ заданий', pts:20},
+{id:'veteran', icon:'🎖', name:'Ветеран', desc:'Прошёл 30 заданий', pts:50},
+{id:'collector', icon:'🗃', name:'Коллекционер', desc:'Получил 10 достижений', pts:30},
+{id:'explorer', icon:'🧭', name:'Исследователь', desc:'Открыл все 6 глав', pts:25},
+{id:'historian', icon:'📜', name:'Историк', desc:'Прочитал 10 исторических фактов', pts:20},
+{id:'survivor', icon:'🛡', name:'Выживший', desc:'Остался с 1 жизнью и победил', pts:40},
+{id:'comeback_ch', icon:'🔄', name:'Несломленный', desc:'Повторил главу и победил', pts:35},
+{id:'top3', icon:'🏅', name:'Призёр', desc:'Попал в топ-3 рейтинга', pts:50},
+{id:'top1', icon:'🥇', name:'Чемпион школы', desc:'Первое место в рейтинге', pts:100},
+{id:'ch3_done', icon:'🥈', name:'Полпути', desc:'Пройдено 3 главы', pts:40},
+{id:'ch1_gold', icon:'🌟', name:'Золото главы I', desc:'80%+ очков в главе I', pts:30},
+{id:'ch2_gold', icon:'🌟', name:'Золото главы II', desc:'80%+ очков в главе II', pts:30},
+{id:'ch3_gold', icon:'🌟', name:'Золото главы III', desc:'80%+ очков в главе III', pts:30},
+{id:'ch4_gold', icon:'🌟', name:'Золото главы IV', desc:'80%+ очков в главе IV', pts:30},
+{id:'ch5_gold', icon:'🌟', name:'Золото главы V', desc:'80%+ очков в главе V', pts:30},
+{id:'ch6_gold', icon:'🌟', name:'Золото главы VI', desc:'80%+ очков в главе VI', pts:30},
+{id:'perfect_3', icon:'💎', name:'Бриллиант', desc:'3 главы без ошибок', pts:100},
+];
+
+if (!state.achievements) state.achievements = {};
+if (!state.achievementPts) state.achievementPts = 0;
+
+function unlockAchievement(id) {
+if (!state.achievements) state.achievements = {};
+if (state.achievements[id]) return;
+const ach = ACHIEVEMENTS.find(a => a.id === id);
+if (!ach) return;
+state.achievements[id] = Date.now();
+state.achievementPts = (state.achievementPts || 0) + ach.pts;
+saveState();
+showAchievementToast(ach);
+setTimeout(() => autoSync(false), 500);
+}
+
+function showAchievementToast(ach) {
+const old = document.getElementById('ach-toast');
+if (old) old.remove();
+const el = document.createElement('div');
+el.id = 'ach-toast';
+el.innerHTML = `<div style="font-size:28px;flex-shrink:0">${ach.icon}</div><div><div style="font-size:9px;color:rgba(255,224,51,.6);letter-spacing:.1em;margin-bottom:2px">ДОСТИЖЕНИЕ</div><div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent)">${ach.name}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${ach.desc} · +${ach.pts}⭐</div></div>`;
+document.body.appendChild(el);
+setTimeout(() => { el.style.transition = 'opacity .3s,transform .3s'; el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+function checkAchievements(context = {}) {
+const done = Object.keys(state.completedChapters).length;
+const score = state.totalScore;
+const achs = state.achievements || {};
+const stats = state.chapterStats || {};
+const typesUsed = new Set();
+let totalCiphers = 0, morseCount = 0, caesarCount = 0, atbashCount = 0, mathCount = 0, anagramCount = 0, mapCount = 0;
+CHAPTERS.forEach(ch => {
+if (state.completedChapters[ch.id]) {
+ch.ciphers.forEach(c => {
+totalCiphers++;
+typesUsed.add(c.type);
+if (c.type === 'morse') morseCount++;
+if (c.type === 'caesar') caesarCount++;
+if (c.type === 'atbash') atbashCount++;
+if (c.type === 'math') mathCount++;
+if (c.type === 'anagram') anagramCount++;
+if (c.type === 'map') mapCount++;
+});
+}
+});
+if (context.elapsed <= 5) unlockAchievement('speed_1');
+if ((state._fastAnswers || 0) >= 5) unlockAchievement('speed_5');
+if ((state._fastAnswers || 0) >= 10) unlockAchievement('speed_10');
+if (context.chapterDoneNoErrors) unlockAchievement('perfect_1');
+if ((state._perfectChapters || 0) >= 3) unlockAchievement('perfect_3');
+if ((state._perfectChapters || 0) >= 6) unlockAchievement('perfect_all');
+if (context.chapterDoneNoHints) unlockAchievement('no_hints_1');
+if ((state._noHintChapters || 0) >= 6) unlockAchievement('no_hints_all');
+if ((state.streak || 0) >= 3) unlockAchievement('streak_3');
+if ((state.streak || 0) >= 5) unlockAchievement('streak_5');
+if ((state.streak || 0) >= 10) unlockAchievement('streak_10');
+if (done >= 1) unlockAchievement('ch1_done');
+if (done >= 3) unlockAchievement('ch3_done');
+if (done >= 6) { unlockAchievement('ch6_done'); unlockAchievement('full_game'); }
+if (done >= 6) unlockAchievement('explorer');
+CHAPTERS.forEach((ch, i) => {
+if (!state.completedChapters[ch.id]) return;
+const s = state.chapterStats && state.chapterStats[ch.id];
+const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0);
+const chScore = state.chapterScores[ch.id] || 0;
+if (chScore >= maxCh * 0.8) { unlockAchievement('ch' + (i+1) + '_gold'); }
+});
+const goldCount = CHAPTERS.filter((ch,i) => { const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0); return (state.chapterScores[ch.id] || 0) >= maxCh * 0.8; }).length;
+if (goldCount >= 6) unlockAchievement('all_gold');
+if (goldCount >= 6) unlockAchievement('champion');
+if (score >= 100) unlockAchievement('score_100');
+if (score >= 500) unlockAchievement('score_500');
+if (score >= 1000) unlockAchievement('score_1000');
+if (score >= 2500) unlockAchievement('score_2500');
+if (score >= 5000) unlockAchievement('score_5000');
+if (morseCount >= 1) unlockAchievement('morse_1');
+if (morseCount >= 5) unlockAchievement('morse_5');
+if (caesarCount >= 5) unlockAchievement('caesar_5');
+if (atbashCount >= 3) unlockAchievement('atbash_3');
+if (mathCount >= 3) unlockAchievement('math_3');
+if (anagramCount >= 3) unlockAchievement('anagram_3');
+if (mapCount >= 1) unlockAchievement('map_1');
+if (typesUsed.size >= 6) unlockAchievement('all_types');
+if (totalCiphers >= 10) unlockAchievement('dedicated');
+if (totalCiphers >= 30) unlockAchievement('veteran');
+const h = new Date().getHours();
+if (h >= 23 || h < 6) unlockAchievement('night_owl');
+if (h >= 5 && h < 8) unlockAchievement('early_bird');
+if (context.firstTry) unlockAchievement('first_try');
+if (context.survived1) unlockAchievement('survivor');
+if (context.comeback) unlockAchievement('comeback');
+if (context.retryWin) unlockAchievement('comeback_ch');
+const achCount = Object.keys(state.achievements || {}).length;
+if (achCount >= 10) unlockAchievement('collector');
+if (achCount >= 20) unlockAchievement('ach_20');
+if (achCount >= 30) unlockAchievement('ach_30');
+if (achCount >= 100) unlockAchievement('all_100');
+if (state.completedChapters[1]) unlockAchievement('hoiki_1');
+if (done >= 1 && context.quizCorrect) unlockAchievement('first_quiz');
+if (context.quizCorrect) { state._quizCorrect = (state._quizCorrect || 0) + 1; if (state._quizCorrect >= 5) unlockAchievement('quiz_5'); if (state._quizCorrect >= 10) unlockAchievement('quiz_10'); }
+if (context.mathCorrect) unlockAchievement('first_math');
+if (context.anagramCorrect) unlockAchievement('first_anagram');
+if (context.mapCorrect) unlockAchievement('first_map_t');
+if (context.elapsed <= 3) unlockAchievement('speed_any');
+if (context.elapsed <= 5 && !achs.no_wrong_1) unlockAchievement('no_wrong_1');
+if (context.morseFast) unlockAchievement('speed_morse');
+const hour = new Date().getHours();
+if (hour >= 8 && hour < 15) unlockAchievement('school_time');
+const day = new Date().getDay();
+if (day === 0 || day === 6) unlockAchievement('weekend');
+if (state.lives === 1 && context.chapterDoneNoErrors === false && done > 0) unlockAchievement('one_life');
+if (context.retryWin) unlockAchievement('retry_win');
+if (context.shared) unlockAchievement('shared');
+if (done >= 6) unlockAchievement('defender');
+if (done >= 6 && (state._perfectChapters || 0) >= 6 && (state._noHintChapters || 0) >= 6) unlockAchievement('true_hero');
+if (done >= 6 && context.readAllFacts) unlockAchievement('memory');
+}
+
+function showMyStats() {
+const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
+const stats = state.chapterStats || {};
+const total = state.totalScore;
+const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
+const pct = Math.round(total / maxAll * 100);
+const rows = CHAPTERS.map(ch => {
+const s = stats[ch.id];
+const score = state.chapterScores[ch.id] || 0;
+const maxCh = ch.ciphers.reduce((a,c2) => a+c2.points, 0);
+if (!state.completedChapters[ch.id]) { return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)"><div style="font-size:18px">🔒</div><div style="flex:1"><div style="font-size:var(--fs-sm);color:rgba(255,255,255,.3)">'+ch.title+'</div><div style="font-size:10px;color:var(--muted)">'+ch.subtitle+'</div></div><div style="font-family:var(--head);font-size:var(--fs-sm);color:rgba(255,255,255,.2)">не пройдена</div></div>'; }
+const sp = Math.round(score / maxCh * 100);
+const medal = sp >= 85 ? '🥇' : sp >= 60 ? '🥈' : '🥉';
+const timeTxt = s ? (s.time >= 60 ? Math.floor(s.time/60) + 'м ' + (s.time%60) + 'с' : s.time + 'с') : '—';
+const failTag = s && s.failed ? ' <span style="color:var(--accent2)">ПРОВАЛ</span>' : '';
+return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)"><div style="font-size:18px">'+medal+'</div><div style="flex:1"><div style="font-size:var(--fs-sm);color:#fdfaf0">'+ch.title+failTag+'</div><div style="font-size:10px;color:var(--muted)">'+ch.subtitle+'</div></div><div style="text-align:right"><div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent)">'+score+'</div><div style="font-size:9px;color:var(--muted)">⏱ '+timeTxt+(s?' · ❌'+s.errors+' ош.':'')+(s?' · 💡'+s.hints+' подск.':'')+'</div><div style="font-size:9px;color:var(--muted)">'+sp+'%</div></div></div>';
+}).join('');
+let modal = document.getElementById('stats-modal');
+if (!modal) {
+modal = document.createElement('div');
+modal.id = 'stats-modal';
+modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);display:flex;align-items:flex-end;justify-content:center';
+modal.onclick = (e) => { if (e.target === modal) closeMyStats(); };
+document.body.appendChild(modal);
+}
+modal.innerHTML = '<div style="background:#161612;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:0 0 32px"><div style="padding:16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center"><div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);letter-spacing:.06em">МОЯ СТАТИСТИКА</div><div style="font-size:24px;cursor:pointer" onclick="closeMyStats()">✕</div></div><div style="padding:16px"><div style="display:flex;justify-content:space-around;text-align:center;margin-bottom:16px"><div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">'+total+'</div><div style="font-size:10px;color:var(--muted)">ОЧКОВ</div></div><div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">'+Object.keys(state.completedChapters).length+'/6</div><div style="font-size:10px;color:var(--muted)">ГЛАВ</div></div><div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">'+pct+'%</div><div style="font-size:10px;color:var(--muted)">РЕЗУЛЬТАТ</div></div></div><div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:8px">// ПО ГЛАВАМ</div>'+rows+'<button onclick="shareMyTotal()" style="width:100%;margin-top:16px;background:rgba(255,224,51,.1);border:1px solid rgba(255,224,51,.3);color:var(--accent);padding:12px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">📤 ПОДЕЛИТЬСЯ РЕЗУЛЬТАТОМ</button></div></div>';
+modal.style.display = 'flex';
+}
+
+function closeMyStats() { const modal = document.getElementById('stats-modal'); if (modal) modal.style.display = 'none'; }
+
+function shareMyTotal() {
+const total = state.totalScore;
+const done = Object.keys(state.completedChapters).length;
+const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
+const pct = Math.round(total / maxAll * 100);
+const medal = pct >= 90 ? '🌟' : pct >= 75 ? '⭐' : pct >= 55 ? '🎖' : '🏅';
+const text = medal + ' ШИФРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
+if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(() => showToast('📋 Скопировано! Вставьте в чат')); } else { fallbackCopy(text); }
+}
+
+function fallbackCopy(text) {
+try { const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('📋 Скопировано! Вставьте в чат'); } catch(e) { showToast('Не удалось скопировать'); }
+}
+
+function showMyAchievements() {
+let modal = document.getElementById('ach-modal');
+if (!modal) {
+modal = document.createElement('div');
+modal.id = 'ach-modal';
+modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);display:flex;align-items:flex-end;justify-content:center';
+modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+document.body.appendChild(modal);
+}
+const inner = document.createElement('div');
+inner.style.cssText = 'background:#161612;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:0 0 32px';
+inner.innerHTML = '<div style="padding:16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center"><div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);letter-spacing:.06em">МОИ ДОСТИЖЕНИЯ</div><div style="font-size:24px;cursor:pointer" onclick="closeAchModal()">✕</div></div>';
+renderAchievementsTab(inner);
+modal.innerHTML = '';
+modal.appendChild(inner);
+modal.style.display = 'flex';
+}
+
+function closeAchModal() { const m = document.getElementById('ach-modal'); if (m) m.style.display = 'none'; }
+
+function renderAchievementsTab(container) {
+const myAchs = state.achievements || {};
+const total = ACHIEVEMENTS.length;
+const earned = Object.keys(myAchs).length;
+const earnedPts = state.achievementPts || 0;
+let html = `<div style="padding:16px"><div style="background:#141108;border:1px solid rgba(255,224,51,.12); border-radius:8px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-around;text-align:center"><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earned}</div><div style="font-size:10px;color:var(--muted)">ПОЛУЧЕНО</div></div><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${total}</div><div style="font-size:10px;color:var(--muted)">ВСЕГО</div></div><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earnedPts}</div><div style="font-size:10px;color:var(--muted)">ОЧКОВ</div></div></div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">`;
+ACHIEVEMENTS.forEach(ach => {
+const has = !!myAchs[ach.id];
+html += `<div style="background:${has ? 'linear-gradient(145deg,#1a1808,#141208)' : '#0e0c08'}; border:1px solid ${has ? 'rgba(255,224,51,.25)' : 'rgba(255,255,255,.05)'}; border-radius:8px;padding:10px;opacity:${has ? '1' : '0.35'}"><div style="font-size:22px;margin-bottom:4px">${ach.icon}</div><div style="font-family:var(--head);font-size:11px;color:${has ? 'var(--accent)' : '#fdfaf0'}; letter-spacing:.04em">${ach.name}</div><div style="font-size:9px;color:var(--muted);margin-top:2px;line-height:1.4">${ach.desc}</div><div style="font-size:9px;color:${has ? 'var(--accent)' : 'rgba(255,255,255,.2)'};margin-top:4px">+${ach.pts}⭐</div></div>`;
+});
+html += '</div></div>';
+container.innerHTML = html;
+}
+
+function showSplash() {
+const splash = document.createElement('div');
+splash.id = 'splash-screen';
+splash.style.cssText = `position:fixed;inset:0;z-index:9000;background:#0a0a08; display:flex;flex-direction:column;align-items:center;justify-content:center; transition:opacity .5s ease`;
+splash.innerHTML = `<div style="font-size:72px;margin-bottom:16px;animation:popIn .6s ease both">🔐</div><div style="font-family:var(--head);font-size:var(--fs-hero);color:var(--accent); letter-spacing:.06em;text-align:center;line-height:.9; text-shadow:0 0 40px rgba(255,224,51,.6)">ШИФРО<br>ВАЛЬЩИК</div><div style="margin-top:24px;width:200px;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden"><div id="splash-bar" style="height:100%;width:0%;background:var(--accent);border-radius:2px; transition:width .05s linear;box-shadow:0 0 8px var(--accent)"></div></div><div style="margin-top:10px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em">ЗАГРУЗКА...</div>`;
+document.body.appendChild(splash);
+let pct = 0;
+const bar = splash.querySelector('#splash-bar');
+const interval = setInterval(() => {
+pct += Math.random() * 15;
+if (pct >= 100) { pct = 100; clearInterval(interval); }
+bar.style.width = pct + '%';
+if (pct >= 100) { setTimeout(() => { splash.style.opacity = '0'; setTimeout(() => splash.remove(), 500); }, 200); }
+}, 80);
+}
+
+async function fetchAndApplyState() {
+const uid = getTgUserId();
+const syncUrl = window._syncUrl;
+if (!uid || !syncUrl) return;
+try {
+const base = syncUrl.replace('/game_sync', '');
+const resp = await fetch(base + '/game_state?user_id=' + uid);
+if (!resp.ok) return;
+const data = await resp.json();
+if (!data.ok) return;
+if (data.banned) {
+document.body.innerHTML = '<div style="text-align:center;padding:60px 20px;"><div style="font-size:64px;margin-bottom:16px;">🚫</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent2);">Доступ заблокирован</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;">Ваш аккаунт заблокирован администратором.</div></div>';
+try { localStorage.removeItem(storageKey()); } catch(e2) {}
+return;
+}
+if (typeof data.score === 'number' && data.score < state.totalScore) {
+const savedAdminMode = state.adminMode;
+state.totalScore = data.score;
+state.completedChapters = {};
+for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
+state.chapterScores = {};
+state.gameOver = data.game_over || false;
+state.adminMode = savedAdminMode;
+try { localStorage.removeItem(storageKey()); } catch(e2) {}
+saveState();
+renderChapters();
+}
+} catch(e) { console.warn('fetchAndApplyState:', e); }
+}
+
+async function sendResultToBot(data) {
+data.completed = Object.keys(state.completedChapters).length;
+data.total_score = state.totalScore;
+data.user_id = getTgUserId();
+data.user_name = tgUser ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim() : 'Игрок';
+console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score, 'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО');
+const syncUrl = window._syncUrl;
+if (syncUrl && data.user_id) {
+try {
+const resp = await fetch(syncUrl, {
+method: 'POST',
+headers: {'Content-Type': 'application/json'},
+body: JSON.stringify(data)
+});
+if (resp.ok) {
+const result = await resp.json().catch(() => ({}));
+if (result.banned) {
+document.body.innerHTML = '<div style="text-align:center;padding:60px 20px;"><div style="font-size:64px;margin-bottom:16px;">🚫</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent2);">Доступ заблокирован</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;">Ваш аккаунт заблокирован администратором.</div></div>';
+try { localStorage.removeItem(storageKey()); } catch(e2) {}
+return;
+}
+_lastSyncedScore = data.total_score;
+_lastSyncedCompleted = data.completed;
+showToast('✅ Прогресс сохранён');
+return;
+}
+} catch(e) { console.warn('game_sync fetch error:', e); }
+}
+if (tg && tg.sendData && tg.initData) {
+try { tg.sendData(JSON.stringify(data)); return; } catch(e) { console.warn('tg.sendData failed:', e); }
+}
+}
+
+function showToast(text, duration = 2500) {
+const old = document.getElementById('game-toast');
+if (old) old.remove();
+const toast = document.createElement('div');
+toast.id = 'game-toast';
+toast.textContent = text;
+toast.style.cssText = `position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(20,17,8,.95); border:1px solid rgba(255,224,51,.3); color:#ffe033; padding:8px 20px; border-radius:20px; font-family:var(--head); font-size:12px; letter-spacing:.06em; z-index:999; pointer-events:none; opacity:0; transition:opacity .3s ease;`;
+document.body.appendChild(toast);
+requestAnimationFrame(() => { toast.style.opacity = '1'; });
+setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, duration);
+}
+
+function showSaveToast() {
+const old = document.getElementById('save-toast');
+if (old) old.remove();
+const toast = document.createElement('div');
+toast.id = 'save-toast';
+toast.textContent = '💾 Прогресс сохранён';
+toast.style.cssText = `position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:rgba(20,17,8,.7); border:1px solid rgba(255,224,51,.2); color:#ffe033; padding:8px 20px; border-radius:20px; font-family:var(--head); font-size:12px; letter-spacing:.06em; z-index:9996; pointer-events:none; opacity:0; transition:opacity .3s ease;`;
+document.body.appendChild(toast);
+requestAnimationFrame(() => { toast.style.opacity = '1'; });
+setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 1500);
+}
+
 if (document.readyState === "loading") {
 document.addEventListener('DOMContentLoaded', () => {
 showSplash();
 loadState();
 mergeBotLeaderboard();
 init3DIntro();
+introEntrance();
 renderChapters();
+fetchAndApplyState();
 });
 } else {
 showSplash();
 loadState();
 mergeBotLeaderboard();
 init3DIntro();
+introEntrance();
 renderChapters();
+fetchAndApplyState();
 }
+
+document.getElementById('cipher-input').addEventListener('focus', function() {
+this.removeAttribute('readonly');
+const btn = document.getElementById('btn-keyboard');
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.25)'; 
+btn.style.borderColor = 'rgba(255,224,51,.5)';
+btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+}
+});
+
+document.getElementById('cipher-input').addEventListener('blur', function() {
+this.setAttribute('readonly', true);
+const btn = document.getElementById('btn-keyboard');
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.1)'; 
+btn.style.borderColor = 'rgba(255,224,51,.2)';
+btn.style.boxShadow = 'none';
+}
+});
     </script>
-    <script src="/game/game.js"></script>
 </body>
 </html>
 
