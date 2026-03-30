@@ -2201,7 +2201,14 @@ function init3DIntro() {
 const canvas = document.getElementById('three-canvas');
 if (!canvas || typeof THREE === 'undefined') return;
 const W = window.innerWidth, H = window.innerHeight;
-const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+} catch(e) {
+  console.warn('WebGL not available:', e);
+  canvas.style.display = 'none';
+  return;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(W, H);
 const scene = new THREE.Scene();
@@ -2844,7 +2851,7 @@ document.addEventListener('DOMContentLoaded', () => {
 showSplash();
 loadState();
 mergeBotLeaderboard();
-init3DIntro();
+try { init3DIntro(); } catch(e) { console.warn('3D init failed (WebGL unavailable?):', e); }
 introEntrance();
 renderChapters();
 fetchAndApplyState();
@@ -2853,7 +2860,7 @@ fetchAndApplyState();
 showSplash();
 loadState();
 mergeBotLeaderboard();
-init3DIntro();
+try { init3DIntro(); } catch(e) { console.warn('3D init failed (WebGL unavailable?):', e); }
 introEntrance();
 renderChapters();
 fetchAndApplyState();
