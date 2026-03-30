@@ -2672,23 +2672,38 @@ async def menu_game(query, context):
 
     from telegram import InlineKeyboardButton, WebAppInfo
 
-    # Загружаем leaderboard и открытые главы параллельно
-    lb_rows, open_chapters = await asyncio.gather(
-        asyncio.to_thread(db.get_game_leaderboard, 20),
-        asyncio.to_thread(db.get_open_chapters),
-    )
+    # Загружаем leaderboard и открытые главы параллельно — с защитой от ошибок БД
+    try:
+        lb_rows, open_chapters = await asyncio.gather(
+            asyncio.to_thread(db.get_game_leaderboard, 20),
+            asyncio.to_thread(db.get_open_chapters),
+        )
+    except Exception as e:
+        logger.warning(f"menu_game: DB error loading lb/chapters: {e}")
+        lb_rows, open_chapters = [], set()
 
     # Регистрируем при первом открытии + назначаем роль
-    reg_task = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
-    role_task = asyncio.to_thread(db.get_game_role, user.id)
-    _, current_role = await asyncio.gather(reg_task, role_task)
+    try:
+        reg_task = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
+        role_task = asyncio.to_thread(db.get_game_role, user.id)
+        _, current_role = await asyncio.gather(reg_task, role_task)
+    except Exception as e:
+        logger.warning(f"menu_game: DB error registering player: {e}")
+        current_role = None
     if not current_role:
         role = 'admin' if user.id in ADMIN_IDS else 'player'
-        await asyncio.to_thread(db.set_game_role, user.id, role)
+        try:
+            await asyncio.to_thread(db.set_game_role, user.id, role)
+        except Exception:
+            pass
         current_role = role
 
     # Читаем свежие данные игрока ПОСЛЕ регистрации — включая banned
-    my_result = await asyncio.to_thread(db.get_game_result, user.id)
+    try:
+        my_result = await asyncio.to_thread(db.get_game_result, user.id)
+    except Exception as e:
+        logger.warning(f"menu_game: DB error reading game result: {e}")
+        my_result = None
 
     # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role, ach_count, ach_pts)
     lb_data = [
@@ -2701,7 +2716,10 @@ async def menu_game(query, context):
     my_data = None
     if my_result:
         # my_result: (uid, name, total_score, completed, game_over, updated_at, banned)
-        restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id)
+        try:
+            restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id)
+        except Exception:
+            restart_mode = None
         my_data = {
             'uid': str(my_result[0]), 'name': my_result[1] or 'Игрок',
             'score': my_result[2], 'completed': my_result[3],
@@ -2711,7 +2729,11 @@ async def menu_game(query, context):
         }
 
     # Формируем данные для передачи в игру
+    # sync_url ОБЯЗАТЕЛЕН — без него игра не сохраняет прогресс
     sync_url_val = f"{BOT_PUBLIC_URL}/game_sync" if BOT_PUBLIC_URL else ''
+    if not sync_url_val:
+        logger.error("menu_game: BOT_PUBLIC_URL не задан! Прогресс игры НЕ будет сохраняться!")
+
     game_payload = {
         'lb': lb_data, 'me': my_data,
         'open': sorted(list(open_chapters)),
@@ -2726,7 +2748,20 @@ async def menu_game(query, context):
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
     if len(payload) >= 2000:
-        # Совсем минимальный — только sync_url и открытые главы
+        # Убираем lb и me, оставляем только критичные поля
+        game_payload = {
+            'sync_url': sync_url_val,
+            'open': sorted(list(open_chapters)),
+            'me': {
+                'uid': my_data['uid'], 'score': my_data['score'],
+                'completed': my_data['completed'], 'role': my_data.get('role', 'player'),
+                'banned': my_data.get('banned', False),
+            } if my_data else None,
+        }
+        payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
+
+    if len(payload) >= 2048:
+        # Абсолютный минимум — только sync_url и открытые главы
         game_payload = {'sync_url': sync_url_val, 'open': sorted(list(open_chapters))}
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
@@ -2776,7 +2811,10 @@ async def menu_game(query, context):
     else:
         # Если игрок завершил всю игру — предлагаем варианты перезапуска
         game_completed = my_result and my_result[4]  # game_over=True
-        restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id) if my_result else None
+        try:
+            restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id) if my_result else None
+        except Exception:
+            restart_mode = None
         if game_completed and not restart_mode:
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔥 Пройти снова (+10с, с очками)", callback_data=f'game_restart_penalty_{user.id}')],

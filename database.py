@@ -64,6 +64,20 @@ def _try_new_connection():
     raise last_err
 
 
+def _pool_is_dead():
+    """Проверяет, сломан ли пул (закрыт или None)."""
+    global db_pool
+    if db_pool is None:
+        return True
+    try:
+        # SimpleConnectionPool не имеет .closed, проверяем через getconn/putconn
+        conn = db_pool.getconn()
+        db_pool.putconn(conn)
+        return False
+    except Exception:
+        return True
+
+
 def get_connection():
     """Возвращает живое соединение из пула. При обрыве — пересоздаёт с retry."""
     global db_pool
@@ -74,6 +88,7 @@ def get_connection():
     except Exception:
         # Пул сломан — пересоздаём
         logger.warning("⚠️  Пул соединений сломан, пересоздаём...")
+        db_pool = None  # сбрасываем чтобы init_pool не пытался закрыть сломанный пул
         init_pool()
         conn = db_pool.getconn()
     try:
@@ -81,13 +96,14 @@ def get_connection():
         conn.cursor().execute("SELECT 1")
         return conn
     except Exception:
-        # Соединение мёртвое — закрываем и создаём новое
+        # Соединение мёртвое — закрываем и создаём новое напрямую
         try:
             db_pool.putconn(conn, close=True)
         except Exception:
             pass
         try:
             new_conn = _try_new_connection()
+            # Кладём новое соединение обратно в пул и берём его
             db_pool.putconn(new_conn)
             return db_pool.getconn()
         except Exception as e:
