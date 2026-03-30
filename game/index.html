@@ -1047,6 +1047,23 @@ if (sp) {
     if (parsed.admin_mode === true) window._adminMode = true;
   } catch(e) { console.warn('startParam parse error:', e); }
 }
+// Фоллбэк: читаем sync_url из URL query параметров (если start_param пустой или не распарсился)
+if (!window._syncUrl) {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const rawParam = urlParams.get('tgWebAppStartParam');
+    if (rawParam) {
+      const parsed2 = JSON.parse(decodeURIComponent(rawParam));
+      if (parsed2.sync_url) window._syncUrl = parsed2.sync_url;
+      if (!tgInitLB.length && parsed2.lb) tgInitLB = parsed2.lb;
+      if (!tgInitMe && parsed2.me) tgInitMe = parsed2.me;
+      if (!tgOpenChapters && parsed2.open) tgOpenChapters = new Set(parsed2.open);
+      if (parsed2.admin_mode === true) window._adminMode = true;
+    }
+  } catch(e) { console.warn('URL param parse error:', e); }
+}
+console.log('🔗 sync_url:', window._syncUrl || 'НЕ ПОЛУЧЕН');
+console.log('👤 user:', tgUser?.id, tgUser?.first_name);
 }
 } catch(e) {}
 
