@@ -1874,8 +1874,6 @@ if (state.lives <= 0) {
 }
 }
 
-let anagramState = { letters: [], placed: [], indices: [] };
-
 function renderAnagram(cipher) {
 const box = document.getElementById('cipher-box');
 box.style.display = 'none';
@@ -1938,8 +1936,6 @@ showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 
-let mapAnswered = false;
-
 function renderMap(cipher) {
 mapAnswered = false;
 const target = cipher.mapCity;
@@ -1976,7 +1972,6 @@ showToast('❌ Неверно! Попробуйте ещё раз');
 }
 }
 
-let _audioCtx = null;
 function getAudio() {
 if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
 return _audioCtx;
@@ -2058,8 +2053,6 @@ setTimeout(() => flash.remove(), 700);
 }, idx * 80);
 });
 }
-
-let pausedFromScreen = null;
 
 function pauseGame() {
 saveState();
