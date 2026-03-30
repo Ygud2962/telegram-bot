@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ШИФРОВАЛЬЩИК · 1941-1945</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" async></script>
     <style>
         :root {
             --bg: #0a0a08;
@@ -2846,6 +2846,29 @@ requestAnimationFrame(() => { toast.style.opacity = '1'; });
 setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 1500);
 }
 
+function _initCipherInputListeners() {
+const _cipherInput = document.getElementById('cipher-input');
+if (!_cipherInput) return;
+_cipherInput.addEventListener('focus', function() {
+this.removeAttribute('readonly');
+const btn = document.getElementById('btn-keyboard');
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.25)'; 
+btn.style.borderColor = 'rgba(255,224,51,.5)';
+btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+}
+});
+_cipherInput.addEventListener('blur', function() {
+this.setAttribute('readonly', true);
+const btn = document.getElementById('btn-keyboard');
+if (btn) { 
+btn.style.background = 'rgba(255,224,51,.1)'; 
+btn.style.borderColor = 'rgba(255,224,51,.2)';
+btn.style.boxShadow = 'none';
+}
+});
+}
+
 if (document.readyState === "loading") {
 document.addEventListener('DOMContentLoaded', () => {
 showSplash();
@@ -2855,6 +2878,7 @@ try { init3DIntro(); } catch(e) { console.warn('3D init failed (WebGL unavailabl
 introEntrance();
 renderChapters();
 fetchAndApplyState();
+_initCipherInputListeners();
 });
 } else {
 showSplash();
@@ -2864,9 +2888,12 @@ try { init3DIntro(); } catch(e) { console.warn('3D init failed (WebGL unavailabl
 introEntrance();
 renderChapters();
 fetchAndApplyState();
+_initCipherInputListeners();
 }
 
-document.getElementById('cipher-input').addEventListener('focus', function() {
+const _cipherInput = document.getElementById('cipher-input');
+if (_cipherInput) {
+_cipherInput.addEventListener('focus', function() {
 this.removeAttribute('readonly');
 const btn = document.getElementById('btn-keyboard');
 if (btn) { 
@@ -2876,7 +2903,7 @@ btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
 }
 });
 
-document.getElementById('cipher-input').addEventListener('blur', function() {
+_cipherInput.addEventListener('blur', function() {
 this.setAttribute('readonly', true);
 const btn = document.getElementById('btn-keyboard');
 if (btn) { 
@@ -2885,6 +2912,7 @@ btn.style.borderColor = 'rgba(255,224,51,.2)';
 btn.style.boxShadow = 'none';
 }
 });
+}
     </script>
 </body>
 </html>
