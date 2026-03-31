@@ -3663,6 +3663,7 @@ async def admin_game_panel(query, context):
     kb = [
         [btn("📋 Список игроков",      'admin_game_leaderboard')],
         [btn(beta_label,               'admin_beta_panel')],
+        [btn("🔐 Доступ к игре",        'admin_game_access_panel')],
         [btn("📖 Управление главами",    'admin_chapters_panel')],
         [btn("🎭 Роли игроков",          'admin_roles_panel')],
         [btn("🗑 Сбросить ВСЕХ",       'admin_game_reset_all')],
@@ -4514,21 +4515,26 @@ async def button_handler(update: Update, context: CallbackContext):
             "и покажет предпросмотр для подтверждения.</i>",
             [[btn("❌ Отмена", 'admin_panel')]]),
         'admin_analytics':        show_analytics,
-        'admin_game_panel':       admin_game_panel,
-        'admin_game_roles':       admin_game_roles,
-        'admin_beta_panel':       admin_beta_panel,
-        'admin_chapters_panel':   admin_chapters_panel,
-        'admin_roles_panel':      admin_roles_panel,
-        'admin_chapters_open_all': admin_chapters_open_all,
-        'admin_beta_add':         admin_beta_add,
-        'admin_beta_remove':      admin_beta_remove,
-        'admin_beta_clear_confirm': admin_beta_clear_confirm,
-        'abeta_clear_do':         admin_beta_clear_do,
-        'admin_game_leaderboard': admin_game_leaderboard,
-        'admin_game_reset_all':   admin_game_reset_all,
-        'game_leaderboard':       game_leaderboard,
-        'admin_users':            show_users_stats,
-        'noop':                   lambda q, c: asyncio.sleep(0),
+        'admin_game_panel':           admin_game_panel,
+        'admin_game_roles':           admin_game_roles,
+        'admin_beta_panel':           admin_beta_panel,
+        'admin_chapters_panel':       admin_chapters_panel,
+        'admin_roles_panel':          admin_roles_panel,
+        'admin_chapters_open_all':    admin_chapters_open_all,
+        'admin_beta_add':             admin_beta_add,
+        'admin_beta_remove':          admin_beta_remove,
+        'admin_beta_clear_confirm':   admin_beta_clear_confirm,
+        'abeta_clear_do':             admin_beta_clear_do,
+        'admin_game_leaderboard':     admin_game_leaderboard,
+        'admin_game_reset_all':       admin_game_reset_all,
+        'admin_game_access_panel':    admin_game_access_panel,
+        'admin_toggle_global_access': admin_toggle_global_access,
+        'admin_grant_access_input':   admin_grant_access_input,
+        'admin_revoke_access_input':  admin_revoke_access_input,
+        'admin_access_list':          admin_access_list,
+        'game_leaderboard':           game_leaderboard,
+        'admin_users':                show_users_stats,
+        'noop':                       lambda q, c: asyncio.sleep(0),
     }
 
     handler = routes.get(d)
@@ -4595,6 +4601,12 @@ async def handle_message(update: Update, context: CallbackContext):
     # ── Добавление тестеров (бета) ──
     if context.user_data.get('schedule_chapter') and user.id in ADMIN_IDS:
         await handle_schedule_input(update, context, text)
+        return
+
+    # ── Выдача / отзыв индивидуального доступа ──
+    if (context.user_data.get('awaiting_grant_access') or
+            context.user_data.get('awaiting_revoke_access')) and user.id in ADMIN_IDS:
+        await handle_grant_revoke_access_input(update, context, text)
         return
 
     if context.user_data.get('beta_action') == 'add' and user.id in ADMIN_IDS:
@@ -5101,7 +5113,7 @@ async def handle_game_reset(request):
 
 
 async def handle_game_state(request):
-    """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД."""
+    """GET /game_state?user_id=... — полное состояние игрока: доступ, роль, главы, прогресс."""
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -5112,19 +5124,56 @@ async def handle_game_state(request):
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
-        result = await asyncio.to_thread(db.get_game_result, user_id)
-        if not result:
-            return aiohttp_web.json_response(
-                {'ok': True, 'score': 0, 'completed': 0, 'game_over': False, 'banned': False},
-                headers=headers)
-        uid, uname, score, completed, game_over, updated, banned = result
-        return aiohttp_web.json_response({
+
+        # Параллельно получаем доступ, прогресс и статус глав
+        access_info, result, chapters_raw = await asyncio.gather(
+            asyncio.to_thread(db.check_player_game_access, user_id),
+            asyncio.to_thread(db.get_game_result, user_id),
+            asyncio.to_thread(db.get_chapters_full_status),
+        )
+
+        # Если забанен — сразу возвращаем
+        if access_info.get('banned'):
+            return aiohttp_web.json_response({'ok': True, 'banned': True}, headers=headers)
+
+        # Формируем список глав с таймерами
+        tz = pytz.timezone('Europe/Minsk')
+        role = access_info.get('role', 'player')
+        chapters = []
+        for ch_id, is_open, open_at in chapters_raw:
+            ch_data: dict = {'id': ch_id, 'open': bool(is_open)}
+            if not is_open and open_at:
+                # Таймер ещё не наступил
+                open_at_minsk = open_at.astimezone(tz)
+                ch_data['scheduled_open_at'] = open_at_minsk.isoformat()
+                ch_data['open_label'] = open_at_minsk.strftime('%d.%m в %H:%M')
+            chapters.append(ch_data)
+
+        # Для admin/tester — все главы открыты
+        if role in ('admin', 'tester'):
+            for ch in chapters:
+                ch['open'] = True
+                ch.pop('scheduled_open_at', None)
+                ch.pop('open_label', None)
+
+        score, completed, game_over = 0, 0, False
+        if result:
+            _, _, score, completed, game_over, _, _ = result
+
+        resp = {
             'ok': True,
+            'banned': False,
+            'role': role,
+            'allowed': access_info.get('allowed', True),
+            'global_access': access_info.get('global_access', True),
+            'individual_access': access_info.get('individual_access', False),
+            'access_reason': access_info.get('reason', ''),
+            'chapters': chapters,
             'score': score or 0,
             'completed': completed or 0,
             'game_over': bool(game_over),
-            'banned': bool(banned),
-        }, headers=headers)
+        }
+        return aiohttp_web.json_response(resp, headers=headers)
     except Exception as e:
         logger.error(f"handle_game_state error: {e}")
         return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
@@ -5238,6 +5287,8 @@ def start_http_server_thread():
         app_http.router.add_get('/game_state', handle_game_state)
         app_http.router.add_post('/game_sync', handle_game_sync)
         app_http.router.add_options('/game_sync', handle_game_sync)
+        app_http.router.add_post('/game_admin_action', handle_game_admin_action)
+        app_http.router.add_options('/game_admin_action', handle_game_admin_action)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)
@@ -5265,6 +5316,280 @@ def start_http_server_thread():
     t.start()
     logger.info(f"HTTP server thread started (port {PORT})")
 
+async def handle_game_admin_action(request):
+    """POST /game_admin_action — выполняет админские действия над игроками."""
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    }
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+    try:
+        data = await request.json()
+    except Exception:
+        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
+
+    admin_id = data.get('admin_id')
+    action   = data.get('action')
+    target   = data.get('target_user_id')
+
+    if not admin_id or int(admin_id) not in ADMIN_IDS:
+        return aiohttp_web.json_response({'ok': False, 'error': 'not authorized'}, status=403, headers=headers)
+
+    admin_id = int(admin_id)
+    if target:
+        target = int(target)
+
+    result = {'ok': False, 'error': 'unknown action'}
+
+    if action == 'grant_access':
+        ok = await asyncio.to_thread(db.grant_player_access, target, admin_id)
+        result = {'ok': ok}
+    elif action == 'revoke_access':
+        ok = await asyncio.to_thread(db.revoke_player_access, target)
+        result = {'ok': ok}
+    elif action == 'ban':
+        ok = await asyncio.to_thread(db.ban_player, target)
+        result = {'ok': ok}
+    elif action == 'unban':
+        ok = await asyncio.to_thread(db.unban_player, target)
+        result = {'ok': ok}
+    elif action == 'reset_progress':
+        ok = await asyncio.to_thread(db.reset_player_progress, target)
+        result = {'ok': ok}
+    elif action == 'set_role':
+        role = data.get('role', 'player')
+        ok = await asyncio.to_thread(db.set_player_role, target, role)
+        result = {'ok': ok}
+    elif action == 'set_global_access':
+        enabled = bool(data.get('enabled', True))
+        ok = await asyncio.to_thread(db.set_game_global_access, enabled)
+        result = {'ok': ok}
+
+    if result.get('ok'):
+        await asyncio.to_thread(db.log_admin_action, admin_id, action, target, str(data))
+    logger.info(f"game_admin_action: admin={admin_id}, action={action}, target={target}, ok={result.get('ok')}")
+    return aiohttp_web.json_response(result, headers=headers)
+
+
+# ══════════════════════════════════════════════════════════
+#  ФОНОВАЯ ЗАДАЧА: проверка таймеров глав
+# ══════════════════════════════════════════════════════════
+
+async def check_scheduled_chapters_task():
+    """Раз в 60 секунд открывает главы у которых наступило время открытия."""
+    while True:
+        try:
+            await asyncio.sleep(60)
+            opened = await asyncio.to_thread(db.check_scheduled_chapters)
+            if opened:
+                logger.info(f"⏰ Автоматически открыты главы: {opened}")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"check_scheduled_chapters_task error: {e}")
+
+
+# ══════════════════════════════════════════════════════════
+#  НОВЫЕ АДМИН-ХЕНДЛЕРЫ: ДОСТУП К ИГРЕ
+# ══════════════════════════════════════════════════════════
+
+async def admin_game_access_panel(query, context):
+    """Панель управления глобальным доступом к игре."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    global_on = await asyncio.to_thread(db.is_game_access_enabled)
+    players   = await asyncio.to_thread(db.get_all_players, 100)
+    total     = len(players)
+    with_access = sum(1 for p in players if p[6])  # access_granted
+
+    status_icon = "🌐" if global_on else "🔒"
+    status_text = "ОТКРЫТА для всех" if global_on else "ЗАКРЫТА (только инд. доступ)"
+
+    text = (
+        f"🔐 <b>ДОСТУП К ИГРЕ</b>\n\n"
+        f"{status_icon} Глобальный доступ: <b>{status_text}</b>\n"
+        f"👥 Зарегистрировано: <b>{total}</b>\n"
+        f"🔑 С индивидуальным доступом: <b>{with_access}</b>\n\n"
+        f"Управление:"
+    )
+    toggle_label = "🔒 Закрыть игру для всех" if global_on else "🌐 Открыть игру для всех"
+    kb = [
+        [btn(toggle_label, 'admin_toggle_global_access')],
+        [btn("🔑 Выдать доступ по ID", 'admin_grant_access_input')],
+        [btn("🚫 Отозвать доступ по ID", 'admin_revoke_access_input')],
+        [btn("📋 Список игроков с доступом", 'admin_access_list')],
+        [btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_toggle_global_access(query, context):
+    """Переключает глобальный доступ к игре."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    current = await asyncio.to_thread(db.is_game_access_enabled)
+    new_val  = not current
+    ok = await asyncio.to_thread(db.set_game_global_access, new_val)
+    await asyncio.to_thread(db.log_admin_action, query.from_user.id,
+                             'set_global_access', None, str(new_val))
+    icon = "🌐" if new_val else "🔒"
+    await safe_edit(query,
+        f"{'✅' if ok else '❌'} Глобальный доступ к игре: {icon} <b>{'ОТКРЫТ' if new_val else 'ЗАКРЫТ'}</b>",
+        [[btn("↩️ Доступ к игре", 'admin_game_access_panel'), btn("🏠 Меню", 'back_to_main')]])
+
+
+async def admin_grant_access_input(query, context):
+    """Запрашивает user_id для выдачи доступа."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    context.user_data['awaiting_grant_access'] = True
+    await safe_edit(query,
+        "🔑 <b>Выдать индивидуальный доступ</b>\n\n"
+        "Введи <b>Telegram user_id</b> игрока:\n"
+        "<i>(можно найти через @userinfobot)</i>",
+        [[btn("❌ Отмена", 'admin_game_access_panel')]])
+
+
+async def admin_revoke_access_input(query, context):
+    """Запрашивает user_id для отзыва доступа."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+    context.user_data['awaiting_revoke_access'] = True
+    await safe_edit(query,
+        "🚫 <b>Отозвать индивидуальный доступ</b>\n\n"
+        "Введи <b>Telegram user_id</b> игрока:",
+        [[btn("❌ Отмена", 'admin_game_access_panel')]])
+
+
+async def admin_access_list(query, context):
+    """Список игроков с индивидуальным доступом."""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⛔"); return
+    await query.answer()
+
+    players = await asyncio.to_thread(db.get_all_players, 100)
+    access_players = [p for p in players if p[6]]  # access_granted
+
+    if not access_players:
+        await safe_edit(query,
+            "🔑 <b>Индивидуальный доступ</b>\n\nНет игроков с индивидуальным доступом.",
+            [[btn("↩️ Доступ к игре", 'admin_game_access_panel')]])
+        return
+
+    lines = ["🔑 <b>ИГРОКИ С ИНДИВИДУАЛЬНЫМ ДОСТУПОМ</b>\n"]
+    for uid, name, role, score, comp, banned, access, _ in access_players:
+        lines.append(f"• <b>{name or uid}</b> (ID: <code>{uid}</code>) — {score} оч")
+    lines.append(f"\nВсего: {len(access_players)}")
+
+    await safe_edit(query, "\n".join(lines),
+        [[btn("↩️ Доступ к игре", 'admin_game_access_panel'), btn("🏠 Меню", 'back_to_main')]])
+
+
+async def handle_grant_revoke_access_input(update, context, text):
+    """Обрабатывает ввод user_id для выдачи/отзыва доступа."""
+    if 'awaiting_grant_access' in context.user_data:
+        context.user_data.pop('awaiting_grant_access')
+        try:
+            target_id = int(text.strip())
+            ok = await asyncio.to_thread(db.grant_player_access, target_id, update.effective_user.id)
+            await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'grant_access', target_id)
+            await update.message.reply_text(
+                f"{'✅ Доступ выдан' if ok else '❌ Ошибка'} для user_id <code>{target_id}</code>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([[btn("↩️ Доступ к игре", 'admin_game_access_panel')]]))
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID. Введи только цифры.",
+                parse_mode='HTML')
+
+    elif 'awaiting_revoke_access' in context.user_data:
+        context.user_data.pop('awaiting_revoke_access')
+        try:
+            target_id = int(text.strip())
+            ok = await asyncio.to_thread(db.revoke_player_access, target_id)
+            await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'revoke_access', target_id)
+            await update.message.reply_text(
+                f"{'✅ Доступ отозван' if ok else '❌ Ошибка'} для user_id <code>{target_id}</code>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([[btn("↩️ Доступ к игре", 'admin_game_access_panel')]]))
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID. Введи только цифры.", parse_mode='HTML')
+
+
+async def cmd_grant_access(update, context):
+    """/grant_access <user_id> — выдать индивидуальный доступ."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        await update.message.reply_text("Использование: /grant_access <user_id>")
+        return
+    try:
+        target_id = int(args[0])
+        ok = await asyncio.to_thread(db.grant_player_access, target_id, update.effective_user.id)
+        await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'grant_access', target_id)
+        await update.message.reply_text(
+            f"{'✅ Доступ выдан' if ok else '❌ Ошибка'} для <code>{target_id}</code>",
+            parse_mode='HTML')
+    except (ValueError, IndexError):
+        await update.message.reply_text("❌ Неверный user_id")
+
+
+async def cmd_revoke_access(update, context):
+    """/revoke_access <user_id> — отозвать доступ."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        await update.message.reply_text("Использование: /revoke_access <user_id>")
+        return
+    try:
+        target_id = int(args[0])
+        ok = await asyncio.to_thread(db.revoke_player_access, target_id)
+        await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'revoke_access', target_id)
+        await update.message.reply_text(
+            f"{'✅ Доступ отозван' if ok else '❌ Ошибка'} для <code>{target_id}</code>",
+            parse_mode='HTML')
+    except (ValueError, IndexError):
+        await update.message.reply_text("❌ Неверный user_id")
+
+
+async def cmd_refresh_state(update, context):
+    """/refresh_state <user_id> — принудительно сбросить кэш состояния игрока."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    args = context.args
+    if not args:
+        await update.message.reply_text("Использование: /refresh_state <user_id>")
+        return
+    try:
+        target_id = int(args[0])
+        access = await asyncio.to_thread(db.check_player_game_access, target_id)
+        result = await asyncio.to_thread(db.get_game_result, target_id)
+        role   = access.get('role', 'player')
+        score  = result[2] if result else 0
+        comp   = result[3] if result else 0
+        banned = access.get('banned', False)
+        await update.message.reply_text(
+            f"📊 <b>Состояние игрока {target_id}</b>\n\n"
+            f"Роль: <b>{role}</b>\n"
+            f"Забанен: <b>{'да' if banned else 'нет'}</b>\n"
+            f"Глобальный доступ: <b>{'да' if access.get('global_access') else 'нет'}</b>\n"
+            f"Индив. доступ: <b>{'да' if access.get('individual_access') else 'нет'}</b>\n"
+            f"Очки: <b>{score}</b>  Глав: <b>{comp}</b>\n"
+            f"Доступ разрешён: <b>{'✅ да' if access.get('allowed') else '❌ нет'}</b>",
+            parse_mode='HTML')
+    except (ValueError, IndexError):
+        await update.message.reply_text("❌ Неверный user_id")
+
+
 def main():
     # Ждём БД при старте (Railway PostgreSQL стартует чуть позже бота)
     max_wait = 60  # секунд
@@ -5274,6 +5599,8 @@ def main():
             db.init_db()
             db.init_pool()
             db.seed_teachers(ALL_TEACHERS)
+            # Мигрируем новую схему (идемпотентно)
+            db.migrate_game_schema()
             logger.info("✅ БД инициализирована успешно")
             break
         except Exception as e:
@@ -5286,10 +5613,16 @@ def main():
 
     async def post_init(application):
         await application.bot.set_my_commands([
-            ("start",   "🏠 Главное меню"),
-            ("teacher", "👨‍🏫 Зарегистрироваться как учитель"),
-            ("cancel",  "❌ Отменить текущее действие"),
+            ("start",          "🏠 Главное меню"),
+            ("teacher",        "👨‍🏫 Зарегистрироваться как учитель"),
+            ("cancel",         "❌ Отменить текущее действие"),
+            ("grant_access",   "🔑 Выдать доступ к игре [admin]"),
+            ("revoke_access",  "🚫 Отозвать доступ к игре [admin]"),
+            ("refresh_state",  "🔄 Показать состояние игрока [admin]"),
         ])
+        # Запускаем фоновую задачу проверки таймеров глав
+        asyncio.create_task(check_scheduled_chapters_task())
+        logger.info("⏰ Фоновая задача check_scheduled_chapters_task запущена")
 
     app = (
         Application.builder()
@@ -5303,9 +5636,12 @@ def main():
     )
 
     # group=-1 — /start и /cancel срабатывают ВСЕГДА, даже в середине любого флоу
-    app.add_handler(CommandHandler("start",   cmd_start),  group=-1)
-    app.add_handler(CommandHandler("cancel",  cmd_cancel), group=-1)
-    app.add_handler(CommandHandler("teacher", cmd_teacher))
+    app.add_handler(CommandHandler("start",         cmd_start),  group=-1)
+    app.add_handler(CommandHandler("cancel",        cmd_cancel), group=-1)
+    app.add_handler(CommandHandler("teacher",       cmd_teacher))
+    app.add_handler(CommandHandler("grant_access",  cmd_grant_access))
+    app.add_handler(CommandHandler("revoke_access", cmd_revoke_access))
+    app.add_handler(CommandHandler("refresh_state", cmd_refresh_state))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))

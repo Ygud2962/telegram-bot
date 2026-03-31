@@ -1099,101 +1099,6 @@ let _lastSyncedScore = -1;
 let _lastSyncedCompleted = -1;
 let _syncInFlight = false;
 
-// ── Звук и музыка ──────────────────────────────
-let _soundMuted = false;
-let _musicEnabled = false;
-let _bgmNode = null;
-let _bgmGain = null;
-let _bgmLoop = null;
-
-function loadSoundSettings() {
-  try {
-    const s = localStorage.getItem('cipher_sound_settings');
-    if (s) { const p = JSON.parse(s); _soundMuted = !!p.muted; _musicEnabled = !!p.music; }
-  } catch(e) {}
-}
-function saveSoundSettings() {
-  try { localStorage.setItem('cipher_sound_settings', JSON.stringify({ muted: _soundMuted, music: _musicEnabled })); } catch(e) {}
-}
-
-function toggleMute() {
-  _soundMuted = !_soundMuted;
-  saveSoundSettings();
-  if (_soundMuted && _bgmNode) { stopBGM(); }
-  else if (!_soundMuted && _musicEnabled) { startBGM(); }
-  renderProfileTab();
-  showToast(_soundMuted ? '🔇 Звук выключен' : '🔊 Звук включён');
-}
-
-function toggleMusic() {
-  _musicEnabled = !_musicEnabled;
-  saveSoundSettings();
-  if (_musicEnabled && !_soundMuted) { startBGM(); }
-  else { stopBGM(); }
-  renderProfileTab();
-  showToast(_musicEnabled ? '🎵 Музыка включена' : '🔕 Музыка выключена');
-}
-
-function startBGM() {
-  if (_bgmNode || _soundMuted || !_musicEnabled) return;
-  const ctx = getAudio();
-  if (!ctx) return;
-  try {
-    // Атмосферная процедурная музыка — военная тема
-    _bgmGain = ctx.createGain();
-    _bgmGain.gain.setValueAtTime(0.07, ctx.currentTime);
-    _bgmGain.connect(ctx.destination);
-
-    // Низкий дрон — основа
-    const drone = ctx.createOscillator();
-    drone.type = 'sawtooth';
-    drone.frequency.setValueAtTime(55, ctx.currentTime);
-    const droneFilter = ctx.createBiquadFilter();
-    droneFilter.type = 'lowpass';
-    droneFilter.frequency.setValueAtTime(200, ctx.currentTime);
-    const droneGain = ctx.createGain();
-    droneGain.gain.setValueAtTime(0.4, ctx.currentTime);
-    drone.connect(droneFilter);
-    droneFilter.connect(droneGain);
-    droneGain.connect(_bgmGain);
-    drone.start();
-
-    // Мелодическая линия — морзе-мотив
-    const mel = ctx.createOscillator();
-    mel.type = 'triangle';
-    const melGain = ctx.createGain();
-    melGain.gain.setValueAtTime(0.15, ctx.currentTime);
-    mel.connect(melGain);
-    melGain.connect(_bgmGain);
-
-    const notes = [220, 261, 293, 329, 261, 220, 196, 220];
-    let t = ctx.currentTime + 0.5;
-    function scheduleNotes() {
-      notes.forEach((freq, i) => {
-        mel.frequency.setValueAtTime(freq, t + i * 0.6);
-        melGain.gain.setValueAtTime(0.15, t + i * 0.6);
-        melGain.gain.setValueAtTime(0.0, t + i * 0.6 + 0.4);
-      });
-      t += notes.length * 0.6 + 1.5;
-    }
-    scheduleNotes();
-    mel.start();
-    _bgmLoop = setInterval(() => { if (ctx.state === 'running') scheduleNotes(); }, (notes.length * 0.6 + 1.5) * 1000);
-
-    _bgmNode = { drone, mel, stop() {
-      try { drone.stop(); mel.stop(); } catch(e) {}
-      if (_bgmLoop) { clearInterval(_bgmLoop); _bgmLoop = null; }
-      _bgmNode = null; _bgmGain = null;
-    }};
-  } catch(e) { console.warn('BGM error:', e); }
-}
-
-function stopBGM() {
-  if (_bgmNode) { _bgmNode.stop(); }
-}
-
-loadSoundSettings();
-
 function storageKey() {
 const uid = getTgUserId();
 return uid ? `cipher_v4_${uid}` : 'cipher_v4_guest';
@@ -1341,33 +1246,80 @@ if (inp.hasAttribute('readonly')) {
 }
 }
 
+// Хелпер: форматирует оставшееся время до открытия главы
+function _formatCountdown(isoStr) {
+  try {
+    const diff = new Date(isoStr) - Date.now();
+    if (diff <= 0) return null; // уже открылась
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    if (d > 0) return `${d}д ${h}ч ${m}м`;
+    if (h > 0) return `${h}ч ${m}м`;
+    return `${m}м`;
+  } catch(e) { return null; }
+}
+
 function renderChapters() {
 const list = document.getElementById('chapters-list');
 list.innerHTML = '';
 let completedCount = 0;
+const schedule = window._chapterSchedule || {};
+
 CHAPTERS.forEach((ch, i) => {
 const isDone = !!state.completedChapters[ch.id];
 if (isDone) completedCount++;
-let isLocked, visuallyLocked;
-if (state.adminMode) { isLocked = false; visuallyLocked = false; }
-else {
+
+let isLocked, visuallyLocked, schedInfo = null;
+if (state.adminMode) {
+  isLocked = false; visuallyLocked = false;
+} else {
   const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
   const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
   isLocked = !(serverAllows && prevDone);
   visuallyLocked = isLocked;
+  // Таймер из _chapterSchedule
+  if (isLocked && schedule[ch.id]) {
+    schedInfo = schedule[ch.id];
+  }
 }
+
 const card = document.createElement('div');
 card.className = 'chapter-card' + (visuallyLocked?' locked':'') + (isDone?' completed':'');
 const typeIcons = {'caesar':'🔐','morse':'📡','atbash':'🪞','num':'🔢','anagram':'🔤','math':'➗','photo':'🖼','map':'🗺','quiz':'❓'};
 const uniqueTypes = [...new Set(ch.ciphers.map(c=>c.type))];
 const tags = uniqueTypes.map(t=>`<span class="ch-tag">${typeIcons[t]||'❓'} ${ch.ciphers.find(c=>c.type===t).typeLabel}</span>`).join('');
-let statusText, badgeIcon;
-if (isDone && state.chapterScores[ch.id] > 0) { statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅'; }
-else if (isDone) { statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔'; }
-else if (state.adminMode) { statusText='👑 ОТКРЫТО'; badgeIcon='▶'; }
-else if (!serverAllows) { statusText='🔒 НЕ ОТКРЫТА'; badgeIcon='🔒'; }
-else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
-else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
+
+// Статус
+let statusText, badgeIcon, extraRow = '';
+if (isDone && state.chapterScores[ch.id] > 0) {
+  statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅';
+} else if (isDone) {
+  statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔';
+} else if (state.adminMode) {
+  statusText='👑 ОТКРЫТО'; badgeIcon='▶';
+} else if (schedInfo) {
+  // Таймер открытия
+  const countdown = _formatCountdown(schedInfo.iso);
+  if (countdown) {
+    statusText=`⏰ ${schedInfo.label || 'скоро'}`;
+    badgeIcon='⏰';
+    extraRow = `<div style="font-size:9px;color:rgba(255,224,51,.6);margin-top:3px;font-family:var(--mono)">
+      откроется через ${countdown}
+    </div>`;
+  } else {
+    // Время наступило — перезапросим состояние
+    statusText='🔄 ОТКРЫВАЕТСЯ'; badgeIcon='🔄';
+    setTimeout(() => fetchAndApplyState(), 1500);
+  }
+} else if (isLocked && tgOpenChapters && !tgOpenChapters.has(ch.id)) {
+  statusText='🔒 НЕ ОТКРЫТА'; badgeIcon='🔒';
+} else if (isLocked) {
+  statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒';
+} else {
+  statusText='▶ ДОСТУПНО'; badgeIcon='▶';
+}
+
 const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
 card.innerHTML = `
    <div class="ch-icon">${ch.stamp || '🔐'}</div>
@@ -1375,18 +1327,21 @@ card.innerHTML = `
      <div class="ch-num">${ch.subtitle} · ${statusText}</div>
      <div class="ch-title">${ch.title}</div>
      <div class="ch-place">${ch.place}</div>
+     ${extraRow}
      <div class="ch-tags">${tags}</div>
    </div>
    <div class="ch-right">
      <div class="ch-badge">${badgeIcon}</div>
     ${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
    </div>`;
+
 const canRepeat = state.retryPenalty || state._noptsMode;
 const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
 if (canPlay) { card.onclick = () => { showBriefing(i); }; card.style.cursor = 'pointer'; }
 else { card.style.cursor = isDone ? 'default' : 'not-allowed'; }
 list.appendChild(card);
 });
+
 if (state.adminMode) {
 const banner = document.createElement('div');
 banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.25);border-radius:8px;font-size:var(--fs-xs);color:#ffd700;letter-spacing:.06em';
@@ -1403,6 +1358,7 @@ banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(255,10
 banner.textContent = '🔥 ПОВТОРНОЕ ПРОХОЖДЕНИЕ · +10 сек к каждому заданию';
 list.insertBefore(banner, list.firstChild);
 }
+
 const total = CHAPTERS.length;
 const pct = Math.round((completedCount / total) * 100);
 const pbEl = document.getElementById('ch-progress-bar');
@@ -2073,7 +2029,6 @@ return _audioCtx;
 }
 
 function playSound(type) {
-if (_soundMuted) return;
 const ctx = getAudio();
 if (!ctx) return;
 try {
@@ -2249,40 +2204,7 @@ const icon = done ? (score > 0 ? '✅' : '💔') : '🔒';
 const color = done ? (score > 0 ? 'var(--green)' : 'var(--accent2)') : 'rgba(255,255,255,.2)';
 return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0; border-bottom:1px solid rgba(255,255,255,.04)"> <div style="font-size:18px">${icon}</div> <div style="flex:1"> <div style="font-size:var(--fs-sm);color:${done?'#fdfaf0':'rgba(255,255,255,.3)'}">${ch.title}</div> <div style="font-size:10px;color:var(--muted)">${ch.subtitle}</div> </div> <div style="font-family:var(--head);font-size:var(--fs-sm);color:${color}">${score ? score + ' оч' : done ? '—' : ''}</div> </div>`;
 }).join('');
-el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>${roleLabel2 ? `<div style="margin-top:6px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.06em">${roleLabel2}</div>` : ''}<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px; background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1); border-radius:20px;padding:5px 14px"> <span style="font-size:10px;color:var(--muted);letter-spacing:.06em">TELEGRAM ID</span> <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span> </div> </div>
-<div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div>
-
-<!-- ДОСТИЖЕНИЯ -->
-<button onclick="showMyAchievements()" style="width:100%;margin-bottom:12px;background:rgba(255,224,51,.08);border:1px solid rgba(255,224,51,.25);color:var(--accent);padding:13px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;border-radius:8px;cursor:pointer;letter-spacing:.06em;display:flex;align-items:center;justify-content:center;gap:10px">
-  <span style="font-size:18px">🏅</span>
-  <span>МОИ ДОСТИЖЕНИЯ</span>
-  <span style="background:rgba(255,224,51,.15);border-radius:12px;padding:2px 10px;font-size:11px">${Object.keys(state.achievements||{}).length}/${ACHIEVEMENTS.length}</span>
-</button>
-
-<!-- НАСТРОЙКИ ЗВУКА -->
-<div style="background:#141108;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:14px;margin-bottom:12px">
-  <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-bottom:12px">// ЗВУК И МУЗЫКА</div>
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-    <div>
-      <div style="font-size:var(--fs-sm);color:#fdfaf0">${_soundMuted ? '🔇' : '🔊'} Звуковые эффекты</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px">${_soundMuted ? 'Выключены' : 'Включены'}</div>
-    </div>
-    <div onclick="toggleMute()" style="width:48px;height:26px;border-radius:13px;background:${!_soundMuted ? 'var(--accent)' : 'rgba(255,255,255,.1)'};position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
-      <div style="width:22px;height:22px;border-radius:50%;background:#fff;position:absolute;top:2px;${!_soundMuted ? 'right:2px' : 'left:2px'};transition:all .2s;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>
-    </div>
-  </div>
-  <div style="display:flex;align-items:center;justify-content:space-between">
-    <div>
-      <div style="font-size:var(--fs-sm);color:#fdfaf0">${_musicEnabled ? '🎵' : '🔕'} Фоновая музыка</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px">${_musicEnabled && !_soundMuted ? 'Играет' : 'Выключена'}</div>
-    </div>
-    <div onclick="toggleMusic()" style="width:48px;height:26px;border-radius:13px;background:${_musicEnabled && !_soundMuted ? 'var(--accent)' : 'rgba(255,255,255,.1)'};position:relative;cursor:pointer;transition:background .2s;flex-shrink:0">
-      <div style="width:22px;height:22px;border-radius:50%;background:#fff;position:absolute;top:2px;${_musicEnabled && !_soundMuted ? 'right:2px' : 'left:2px'};transition:all .2s;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>
-    </div>
-  </div>
-</div>
-
-<div style="margin-top:4px"> <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted); letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>${chapterHistory}</div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
+el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>${roleLabel2 ? `<div style="margin-top:6px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.06em">${roleLabel2}</div>` : ''}<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px; background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1); border-radius:20px;padding:5px 14px"> <span style="font-size:10px;color:var(--muted);letter-spacing:.06em">TELEGRAM ID</span> <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span> </div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><div style="margin-top:16px"> <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted); letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>${chapterHistory}</div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
 }
 
 function renderAboutTab() {
@@ -2836,13 +2758,13 @@ let modal = document.getElementById('ach-modal');
 if (!modal) {
 modal = document.createElement('div');
 modal.id = 'ach-modal';
-modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.9);display:flex;align-items:flex-end;justify-content:center';
+modal.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);display:flex;align-items:flex-end;justify-content:center';
 modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
 document.body.appendChild(modal);
 }
 const inner = document.createElement('div');
-inner.style.cssText = 'background:#0f0e0a;border-radius:20px 20px 0 0;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;padding:0 0 40px;border-top:1px solid rgba(255,224,51,.15)';
-inner.innerHTML = '<div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#0f0e0a;z-index:10"><div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);letter-spacing:.06em">🏅 ДОСТИЖЕНИЯ</div><div style="font-size:28px;cursor:pointer;color:var(--muted);line-height:1" onclick="closeAchModal()">✕</div></div>';
+inner.style.cssText = 'background:#161612;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:0 0 32px';
+inner.innerHTML = '<div style="padding:16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center"><div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);letter-spacing:.06em">МОИ ДОСТИЖЕНИЯ</div><div style="font-size:24px;cursor:pointer" onclick="closeAchModal()">✕</div></div>';
 renderAchievementsTab(inner);
 modal.innerHTML = '';
 modal.appendChild(inner);
@@ -2856,97 +2778,13 @@ const myAchs = state.achievements || {};
 const total = ACHIEVEMENTS.length;
 const earned = Object.keys(myAchs).length;
 const earnedPts = state.achievementPts || 0;
-const maxPts = ACHIEVEMENTS.reduce((s,a) => s+a.pts, 0);
-const pct = Math.round(earned / total * 100);
-
-// Категории
-const cats = [
-  { id:'all',      label:'Все',        filter: () => true },
-  { id:'earned',   label:'Получены',   filter: (a) => !!myAchs[a.id] },
-  { id:'missing',  label:'Не получены',filter: (a) => !myAchs[a.id] },
-];
-const currentCat = window._achCat || 'all';
-
-const tabBtnStyle = (active) =>
-  `padding:6px 14px;border:none;border-radius:16px;font-family:var(--head);font-size:9px;letter-spacing:.06em;cursor:pointer;transition:all .2s;${active ? 'background:var(--accent);color:#0a0a08;' : 'background:rgba(255,255,255,.06);color:var(--muted);'}`;
-
-const tabsHtml = cats.map(c =>
-  `<button style="${tabBtnStyle(currentCat===c.id)}" onclick="window._achCat='${c.id}';rerenderAchievements()">${c.label}</button>`
-).join('');
-
-const filtered = ACHIEVEMENTS.filter(cats.find(c=>c.id===currentCat).filter);
-// Сортировка: полученные вверх, затем по pts
-const sorted = [...filtered].sort((a,b) => {
-  const ha = !!myAchs[a.id], hb = !!myAchs[b.id];
-  if (ha !== hb) return hb - ha;
-  return b.pts - a.pts;
+let html = `<div style="padding:16px"><div style="background:#141108;border:1px solid rgba(255,224,51,.12); border-radius:8px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-around;text-align:center"><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earned}</div><div style="font-size:10px;color:var(--muted)">ПОЛУЧЕНО</div></div><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${total}</div><div style="font-size:10px;color:var(--muted)">ВСЕГО</div></div><div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earnedPts}</div><div style="font-size:10px;color:var(--muted)">ОЧКОВ</div></div></div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">`;
+ACHIEVEMENTS.forEach(ach => {
+const has = !!myAchs[ach.id];
+html += `<div style="background:${has ? 'linear-gradient(145deg,#1a1808,#141208)' : '#0e0c08'}; border:1px solid ${has ? 'rgba(255,224,51,.25)' : 'rgba(255,255,255,.05)'}; border-radius:8px;padding:10px;opacity:${has ? '1' : '0.35'}"><div style="font-size:22px;margin-bottom:4px">${ach.icon}</div><div style="font-family:var(--head);font-size:11px;color:${has ? 'var(--accent)' : '#fdfaf0'}; letter-spacing:.04em">${ach.name}</div><div style="font-size:9px;color:var(--muted);margin-top:2px;line-height:1.4">${ach.desc}</div><div style="font-size:9px;color:${has ? 'var(--accent)' : 'rgba(255,255,255,.2)'};margin-top:4px">+${ach.pts}⭐</div></div>`;
 });
-
-const rows = sorted.map(ach => {
-  const has = !!myAchs[ach.id];
-  const ts = myAchs[ach.id];
-  const dateStr = ts ? new Date(ts).toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit'}) : '';
-  return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);
-    background:${has ? 'linear-gradient(90deg,rgba(255,224,51,.04) 0%,transparent 100%)' : 'transparent'};
-    opacity:${has ? '1' : '0.38'};transition:opacity .2s">
-    <div style="font-size:28px;min-width:36px;text-align:center;${has ? 'filter:drop-shadow(0 0 8px rgba(255,224,51,.5))' : 'filter:grayscale(1)'}">${ach.icon}</div>
-    <div style="flex:1;min-width:0">
-      <div style="font-family:var(--head);font-size:var(--fs-sm);color:${has ? 'var(--accent)' : '#888'};letter-spacing:.04em">${ach.name}</div>
-      <div style="font-size:10px;color:${has ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.25)'};margin-top:2px;line-height:1.4">${ach.desc}</div>
-      ${has && dateStr ? `<div style="font-size:9px;color:rgba(255,224,51,.4);margin-top:3px">✓ получено ${dateStr}</div>` : ''}
-    </div>
-    <div style="text-align:right;flex-shrink:0">
-      <div style="font-family:var(--head);font-size:var(--fs-sm);color:${has ? 'var(--accent)' : 'rgba(255,255,255,.15)'}">+${ach.pts}⭐</div>
-      ${has ? '<div style="font-size:9px;color:var(--green);margin-top:2px">✔ есть</div>' : '<div style="font-size:9px;color:rgba(255,255,255,.2);margin-top:2px">🔒 нет</div>'}
-    </div>
-  </div>`;
-}).join('');
-
-const html = `<div style="padding:16px 16px 8px">
-  <!-- Прогресс-шапка -->
-  <div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:12px;padding:16px;margin-bottom:14px">
-    <div style="display:flex;justify-content:space-around;text-align:center;margin-bottom:12px">
-      <div>
-        <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${earned}</div>
-        <div style="font-size:9px;color:var(--muted);letter-spacing:.06em">ПОЛУЧЕНО</div>
-      </div>
-      <div style="width:1px;background:rgba(255,255,255,.08)"></div>
-      <div>
-        <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--muted)">${total}</div>
-        <div style="font-size:9px;color:var(--muted);letter-spacing:.06em">ВСЕГО</div>
-      </div>
-      <div style="width:1px;background:rgba(255,255,255,.08)"></div>
-      <div>
-        <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${earnedPts}</div>
-        <div style="font-size:9px;color:var(--muted);letter-spacing:.06em">⭐ ОЧКОВ</div>
-      </div>
-    </div>
-    <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
-      <div style="height:100%;background:linear-gradient(90deg,var(--accent),#ffb800);border-radius:4px;width:${pct}%;transition:width .6s ease;box-shadow:0 0 8px rgba(255,224,51,.4)"></div>
-    </div>
-    <div style="font-size:9px;color:var(--muted);text-align:right;letter-spacing:.04em">${pct}% · осталось ${maxPts - earnedPts}⭐</div>
-  </div>
-  <!-- Вкладки фильтра -->
-  <div style="display:flex;gap:6px;margin-bottom:12px">${tabsHtml}</div>
-  <div style="font-size:9px;color:var(--muted);text-align:right;margin-bottom:8px;letter-spacing:.04em">${filtered.length} достижений</div>
-</div>
-<!-- Список -->
-<div>${rows}</div>`;
-
-const body = container.querySelector('#ach-body') || (() => {
-  const d = document.createElement('div');
-  d.id = 'ach-body';
-  container.appendChild(d);
-  return d;
-})();
-body.innerHTML = html;
-}
-
-function rerenderAchievements() {
-const modal = document.getElementById('ach-modal');
-if (!modal) return;
-const inner = modal.querySelector('#ach-body')?.closest('[style*="border-radius:20px"]') || modal.firstChild;
-if (inner) renderAchievementsTab(inner);
+html += '</div></div>';
+container.innerHTML = html;
 }
 
 function showSplash() {
@@ -2965,6 +2803,42 @@ if (pct >= 100) { setTimeout(() => { splash.style.opacity = '0'; setTimeout(() =
 }, 80);
 }
 
+// Интервал автообновления состояния (мс)
+let _stateRefreshInterval = null;
+
+function startStateRefresh() {
+  if (_stateRefreshInterval) return;
+  _stateRefreshInterval = setInterval(() => {
+    fetchAndApplyState();
+  }, 30000); // каждые 30 сек
+  // Обновляем при возврате фокуса
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) fetchAndApplyState();
+  });
+}
+
+function showAccessDeniedScreen(reason) {
+  const isBanned = reason === 'banned';
+  document.body.innerHTML = `
+    <div style="position:fixed;inset:0;background:#0a0a08;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;padding:32px;text-align:center;font-family:sans-serif">
+      <div style="font-size:72px;margin-bottom:20px">${isBanned ? '🚫' : '🔒'}</div>
+      <div style="font-family:'Courier New',monospace;font-size:22px;color:#ffe033;
+        letter-spacing:.06em;margin-bottom:12px;font-weight:700">
+        ${isBanned ? 'ДОСТУП ЗАБЛОКИРОВАН' : 'ИГРА ВРЕМЕННО ЗАКРЫТА'}
+      </div>
+      <div style="font-size:14px;color:rgba(255,255,255,.55);max-width:280px;line-height:1.6;margin-bottom:28px">
+        ${isBanned
+          ? 'Ваш аккаунт заблокирован администратором.<br>Для разблокировки обратитесь к администратору.'
+          : 'Игра временно недоступна для новых игроков.<br>Следите за новостями в боте — откроется скоро!'}
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,.3);letter-spacing:.06em">
+        Контакт администратора: <b style="color:#ffe033">@Yury_hud</b>
+      </div>
+    </div>`;
+  try { localStorage.removeItem(storageKey()); } catch(e2) {}
+}
+
 async function fetchAndApplyState() {
 const uid = getTgUserId();
 const syncUrl = window._syncUrl;
@@ -2975,23 +2849,55 @@ const resp = await fetch(base + '/game_state?user_id=' + uid);
 if (!resp.ok) return;
 const data = await resp.json();
 if (!data.ok) return;
+
+// Забанен
 if (data.banned) {
-document.body.innerHTML = '<div style="text-align:center;padding:60px 20px;"><div style="font-size:64px;margin-bottom:16px;">🚫</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent2);">Доступ заблокирован</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;">Ваш аккаунт заблокирован администратором.</div></div>';
-try { localStorage.removeItem(storageKey()); } catch(e2) {}
-return;
+  showAccessDeniedScreen('banned');
+  return;
 }
+
+// Нет доступа к игре
+if (data.allowed === false) {
+  showAccessDeniedScreen(data.access_reason || 'closed');
+  return;
+}
+
+// Обновляем роль и adminMode
+if (data.role === 'admin' || data.role === 'tester') {
+  state.adminMode = true;
+  window._adminMode = true;
+}
+
+// Обновляем открытые главы из ответа сервера
+if (data.chapters && Array.isArray(data.chapters)) {
+  const openSet = new Set();
+  const schedMap = {}; // chapter_id -> {label, iso}
+  data.chapters.forEach(ch => {
+    if (ch.open) openSet.add(ch.id);
+    else if (ch.scheduled_open_at) {
+      schedMap[ch.id] = { label: ch.open_label || '', iso: ch.scheduled_open_at };
+    }
+  });
+  tgOpenChapters = openSet;
+  window._chapterSchedule = schedMap;
+}
+
+// Синхронизируем прогресс
 if (typeof data.score === 'number' && data.score < state.totalScore) {
-const savedAdminMode = state.adminMode;
-state.totalScore = data.score;
-state.completedChapters = {};
-for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
-state.chapterScores = {};
-state.gameOver = data.game_over || false;
-state.adminMode = savedAdminMode;
-try { localStorage.removeItem(storageKey()); } catch(e2) {}
-saveState();
-renderChapters();
+  const savedAdminMode = state.adminMode;
+  state.totalScore = data.score;
+  state.completedChapters = {};
+  for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
+  state.chapterScores = {};
+  state.gameOver = data.game_over || false;
+  state.adminMode = savedAdminMode;
+  try { localStorage.removeItem(storageKey()); } catch(e2) {}
+  saveState();
 }
+
+renderChapters();
+startStateRefresh();
+
 } catch(e) { console.warn('fetchAndApplyState:', e); }
 }
 

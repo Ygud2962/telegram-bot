@@ -1918,3 +1918,422 @@ def clear_beta_list():
         return 0
     finally:
         release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  МИГРАЦИЯ СХЕМЫ — НОВЫЕ ФИЧИ
+# ══════════════════════════════════════════════════════════
+
+def migrate_game_schema():
+    """Добавляет новые таблицы и колонки для системы управления доступом."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # Глобальный доступ к игре (в bot_status)
+        cur.execute("""
+            ALTER TABLE bot_status
+            ADD COLUMN IF NOT EXISTS game_global_access BOOLEAN DEFAULT TRUE
+        """)
+
+        # Таблица индивидуального доступа
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS game_access (
+                user_id    BIGINT PRIMARY KEY,
+                granted_by BIGINT,
+                granted_at TIMESTAMPTZ DEFAULT NOW(),
+                revoked    BOOLEAN DEFAULT FALSE
+            )
+        """)
+
+        # scheduled_open_at уже есть как open_at в game_chapters, но добавим
+        # alias-колонку с правильным именем для удобства
+        cur.execute("""
+            ALTER TABLE game_chapters
+            ADD COLUMN IF NOT EXISTS scheduled_open_at TIMESTAMPTZ
+        """)
+
+        # Таблица лога админских действий
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS admin_audit_log (
+                id         SERIAL PRIMARY KEY,
+                admin_id   BIGINT NOT NULL,
+                action     TEXT NOT NULL,
+                target_id  BIGINT,
+                details    TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_admin ON admin_audit_log(admin_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts    ON admin_audit_log(created_at DESC)")
+
+        # Убедимся что в bot_status есть строка с id=1
+        cur.execute("""
+            INSERT INTO bot_status(id) VALUES(1)
+            ON CONFLICT(id) DO NOTHING
+        """)
+
+        conn.commit()
+        logger.info("✅ migrate_game_schema: выполнено")
+        return True
+    except Exception as e:
+        logger.error(f"migrate_game_schema error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  ГЛОБАЛЬНЫЙ ДОСТУП К ИГРЕ
+# ══════════════════════════════════════════════════════════
+
+def set_game_global_access(enabled: bool) -> bool:
+    """Включает / выключает доступ к игре для всех player."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE bot_status SET game_global_access = %s WHERE id = 1
+        """, (enabled,))
+        if cur.rowcount == 0:
+            cur.execute("INSERT INTO bot_status(id, game_global_access) VALUES(1, %s)", (enabled,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_game_global_access error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def is_game_access_enabled() -> bool:
+    """Возвращает True если игра открыта для всех player."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT game_global_access FROM bot_status WHERE id = 1")
+        row = cur.fetchone()
+        # Если колонки нет или строки нет — считаем открытой (обратная совместимость)
+        return bool(row[0]) if row and row[0] is not None else True
+    except Exception as e:
+        logger.error(f"is_game_access_enabled error: {e}")
+        return True  # fallback: открыто
+    finally:
+        release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  ИНДИВИДУАЛЬНЫЙ ДОСТУП К ИГРЕ
+# ══════════════════════════════════════════════════════════
+
+def grant_player_access(user_id: int, granted_by: int) -> bool:
+    """Выдаёт индивидуальный доступ игроку (даже при закрытой глобальной игре)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO game_access(user_id, granted_by, granted_at, revoked)
+            VALUES(%s, %s, NOW(), FALSE)
+            ON CONFLICT(user_id) DO UPDATE
+              SET revoked=FALSE, granted_by=%s, granted_at=NOW()
+        """, (user_id, granted_by, granted_by))
+        conn.commit()
+        _audit_log(cur, granted_by, 'grant_access', user_id, 'individual access granted')
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"grant_player_access error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def revoke_player_access(user_id: int) -> bool:
+    """Отзывает индивидуальный доступ игрока."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE game_access SET revoked=TRUE WHERE user_id=%s
+        """, (user_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"revoke_player_access error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def has_player_access(user_id: int) -> bool:
+    """Проверяет, есть ли у игрока индивидуальный доступ."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 1 FROM game_access
+            WHERE user_id=%s AND revoked=FALSE
+        """, (user_id,))
+        return cur.fetchone() is not None
+    except Exception as e:
+        logger.error(f"has_player_access error: {e}")
+        return False
+    finally:
+        release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  ТАЙМЕРЫ ГЛАВ — ПРОВЕРКА РАСПИСАНИЯ
+# ══════════════════════════════════════════════════════════
+
+def check_scheduled_chapters() -> list:
+    """
+    Возвращает список chapter_id, у которых scheduled_open_at <= NOW()
+    и они ещё не открыты. Затем открывает их.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # Ищем главы с наступившим таймером в open_at (основное поле)
+        cur.execute("""
+            SELECT chapter_id FROM game_chapters
+            WHERE is_open = FALSE
+              AND open_at IS NOT NULL
+              AND open_at <= NOW()
+        """)
+        ids = [r[0] for r in cur.fetchall()]
+        if ids:
+            cur.execute("""
+                UPDATE game_chapters
+                SET is_open=TRUE, open_at=NULL, scheduled_open_at=NULL, updated_at=NOW()
+                WHERE chapter_id = ANY(%s)
+            """, (ids,))
+            conn.commit()
+            logger.info(f"✅ Автоматически открыты главы: {ids}")
+        return ids
+    except Exception as e:
+        logger.error(f"check_scheduled_chapters error: {e}")
+        _safe_rollback(conn)
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_chapters_full_status() -> list:
+    """
+    Возвращает полный статус глав для /game_state:
+    [(chapter_id, is_open, open_at), ...]
+    Учитывает наступившие таймеры.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT chapter_id,
+                   CASE WHEN is_open OR (open_at IS NOT NULL AND open_at <= NOW())
+                        THEN TRUE ELSE FALSE END AS effectively_open,
+                   open_at
+            FROM game_chapters
+            ORDER BY chapter_id
+        """)
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_chapters_full_status error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  СПИСОК ИГРОКОВ ДЛЯ АДМИН-ПАНЕЛИ
+# ══════════════════════════════════════════════════════════
+
+def get_all_players(limit: int = 100) -> list:
+    """
+    Возвращает расширенный список игроков для админ-панели:
+    [(user_id, name, role, score, completed, banned, access_granted, updated_at), ...]
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                gr.user_id,
+                gr.user_name,
+                COALESCE(grl.role, 'player')        AS role,
+                gr.total_score,
+                gr.completed,
+                gr.banned,
+                COALESCE(ga.revoked, TRUE) = FALSE   AS access_granted,
+                gr.updated_at
+            FROM game_results gr
+            LEFT JOIN game_roles grl ON grl.user_id = gr.user_id
+            LEFT JOIN game_access ga ON ga.user_id = gr.user_id
+            ORDER BY gr.total_score DESC
+            LIMIT %s
+        """, (limit,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_all_players error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def reset_player_progress(user_id: int) -> bool:
+    """Полный сброс прогресса одного игрока."""
+    return bool(reset_game_result(user_id))
+
+
+def ban_player(user_id: int) -> bool:
+    """Бан игрока (синоним ban_game_user)."""
+    return ban_game_user(user_id)
+
+
+def unban_player(user_id: int) -> bool:
+    """Снятие бана (синоним unban_game_user)."""
+    return unban_game_user(user_id)
+
+
+def set_player_role(user_id: int, role: str) -> bool:
+    """Смена роли (синоним set_game_role с валидацией)."""
+    if role not in ('player', 'tester', 'admin'):
+        return False
+    return set_game_role(user_id, role)
+
+
+def get_player_role(user_id: int) -> str:
+    """Получить роль (синоним get_game_role)."""
+    return get_game_role(user_id) or 'player'
+
+
+# ══════════════════════════════════════════════════════════
+#  АУДИТ-ЛОГ АДМИНСКИХ ДЕЙСТВИЙ
+# ══════════════════════════════════════════════════════════
+
+def _audit_log(cur, admin_id: int, action: str, target_id: int = None, details: str = None):
+    """Внутренний хелпер — пишет в audit_log. Вызывается внутри транзакции."""
+    try:
+        cur.execute("""
+            INSERT INTO admin_audit_log(admin_id, action, target_id, details)
+            VALUES(%s, %s, %s, %s)
+        """, (admin_id, action, target_id, details))
+    except Exception as e:
+        logger.warning(f"_audit_log failed (non-critical): {e}")
+
+
+def log_admin_action(admin_id: int, action: str, target_id: int = None, details: str = None) -> bool:
+    """Публичный метод для записи лог-записи."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _audit_log(cur, admin_id, action, target_id, details)
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"log_admin_action error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_audit_log(limit: int = 50) -> list:
+    """Последние admin_audit_log записи."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT admin_id, action, target_id, details, created_at
+            FROM admin_audit_log
+            ORDER BY created_at DESC
+            LIMIT %s
+        """, (limit,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_audit_log error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  ПРОВЕРКА ПОЛНОГО ДОСТУПА ИГРОКА
+# ══════════════════════════════════════════════════════════
+
+def check_player_game_access(user_id: int) -> dict:
+    """
+    Комплексная проверка доступа игрока к игре.
+    Возвращает dict с полями:
+      allowed: bool     — может ли зайти
+      banned: bool      — забанен ли
+      role: str         — admin/tester/player
+      global_access: bool
+      individual_access: bool
+      reason: str       — причина отказа (если allowed=False)
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # banned
+        cur.execute("SELECT banned FROM game_results WHERE user_id=%s", (user_id,))
+        row = cur.fetchone()
+        banned = bool(row[0]) if row else False
+
+        # role
+        cur.execute("SELECT role FROM game_roles WHERE user_id=%s", (user_id,))
+        role_row = cur.fetchone()
+        role = role_row[0] if role_row else 'player'
+
+        # global access
+        cur.execute("SELECT game_global_access FROM bot_status WHERE id=1")
+        ga_row = cur.fetchone()
+        global_access = bool(ga_row[0]) if ga_row and ga_row[0] is not None else True
+
+        # individual access
+        cur.execute("SELECT 1 FROM game_access WHERE user_id=%s AND revoked=FALSE", (user_id,))
+        individual_access = cur.fetchone() is not None
+
+        # Логика доступа
+        if banned:
+            return {'allowed': False, 'banned': True, 'role': role,
+                    'global_access': global_access, 'individual_access': individual_access,
+                    'reason': 'banned'}
+
+        if role in ('admin', 'tester'):
+            return {'allowed': True, 'banned': False, 'role': role,
+                    'global_access': global_access, 'individual_access': individual_access,
+                    'reason': ''}
+
+        if not global_access and not individual_access:
+            return {'allowed': False, 'banned': False, 'role': role,
+                    'global_access': global_access, 'individual_access': individual_access,
+                    'reason': 'access_closed'}
+
+        return {'allowed': True, 'banned': False, 'role': role,
+                'global_access': global_access, 'individual_access': individual_access,
+                'reason': ''}
+
+    except Exception as e:
+        logger.error(f"check_player_game_access error: {e}")
+        return {'allowed': True, 'banned': False, 'role': 'player',
+                'global_access': True, 'individual_access': False, 'reason': ''}
+    finally:
+        release_connection(conn)
