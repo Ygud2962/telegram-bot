@@ -1466,7 +1466,14 @@ if (el) el.style.color = 'var(--muted)';
 }
 
 function animateMorse(el, text) {
-el.innerHTML = '<span style="animation:typewriter 2s steps(40);white-space:pre-line">' + text + '</span>';
+const lines = text.split('\n');
+const multiWord = lines.length > 1;
+el.innerHTML = '<span style="animation:typewriter 2s steps(40);white-space:pre-line;font-family:var(--mono);letter-spacing:.08em">' + text + '</span>';
+// Для многословного морзе — показываем подсказку в поле ввода
+const inp = document.getElementById('cipher-input');
+if (inp) {
+  inp.placeholder = multiWord ? 'СЛОВО1 СЛОВО2 (через пробел)' : 'ВВЕДИТЕ ОТВЕТ';
+}
 }
 
 function renderRef(type, shift) {
@@ -1518,7 +1525,9 @@ const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 saveState();
 showSaveToast();
 
-if (val === cipher.answer) {
+// Нормализуем ответ: \n заменяем на пробел для удобного ввода
+const normalizedAnswer = cipher.answer.replace(/\n/g, ' ').trim().toUpperCase();
+if (val === normalizedAnswer || val === cipher.answer.toUpperCase()) {
 inp.className = 'cipher-input correct';
 inp.disabled = true;
 state.streak = (state.streak || 0) + 1;
@@ -2103,29 +2112,83 @@ state.leaderboard.sort((a,b) => b.score - a.score);
 function renderLeaderboardTab() {
 const list = document.getElementById('lb-list-tab');
 if (!state.leaderboard.length) {
-list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
+list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px;font-family:var(--head);font-size:var(--fs-base);font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%">▶ НАЧАТЬ ИГРУ</button></div>';
 return;
 }
+const currentTab = window._ratingTab || 'score';
 const myUid = getTgUserId() || 'guest';
-const total = tgInitLB.length || state.leaderboard.length;
-const header = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align:center;margin-bottom:16px;letter-spacing:.06em">👥 ${total || 0} уч. · 👆 нажми на себя</div>`;
-const medals = ['🥇','🥈','🥉'];
 const myRole2 = tgInitMe?.role || '';
 const isAdminUser = myRole2 === 'admin' || (tgUser && tgUser.id === 516406248);
 const filteredLb = isAdminUser ? state.leaderboard : state.leaderboard.filter(e => e.role !== 'admin' && e.role !== 'tester');
-const visibleLb = isAdminUser ? filteredLb : filteredLb.slice(0, 10);
+const total = filteredLb.length;
+
+// Сортировка по выбранной вкладке
+const sortedLb = [...filteredLb].sort((a,b) => {
+  if (currentTab === 'achievements') {
+    const ap = (a.achievementPts||0), bp = (b.achievementPts||0);
+    if (bp !== ap) return bp - ap;
+    return (b.achievementCount||0) - (a.achievementCount||0);
+  }
+  return b.score - a.score;
+});
+const visibleLb = isAdminUser ? sortedLb : sortedLb.slice(0, 15);
+const medals = ['🥇','🥈','🥉'];
+
+// Вкладки
+const tabStyle = (active) => `padding:8px 18px;border:none;border-radius:20px;font-family:var(--head);font-size:var(--fs-xs);letter-spacing:.06em;cursor:pointer;transition:all .2s;${active ? 'background:var(--accent);color:#0a0a08;' : 'background:rgba(255,255,255,.06);color:var(--muted);'}`;
+const tabs = `<div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">
+  <button style="${tabStyle(currentTab==='score')}" onclick="window._ratingTab='score';renderLeaderboardTab()">⭐ ОЧКИ</button>
+  <button style="${tabStyle(currentTab==='achievements')}" onclick="window._ratingTab='achievements';renderLeaderboardTab()">🏅 ДОСТИЖЕНИЯ</button>
+</div>`;
+
+const header = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align:center;margin-bottom:12px;letter-spacing:.06em">👥 ${total} уч. · 👆 нажми на себя</div>`;
+
 const rows = visibleLb.map((e,i) => {
-const isMe = e.uid === myUid;
-const pct = Math.round((e.completed / 6) * 100);
-const done = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 глав · ${pct}%`;
-const rankBg = i===0?'rgba(255,215,0,.06)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.04)':'';
-const roleIcon = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
-const clickAttr = isMe ? ' onclick="showMyStats()" ' : '';
-return `<div ${clickAttr}style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);background:${isMe?'rgba(255,224,51,.06)':rankBg};${isMe?'border-left:3px solid var(--accent);cursor:pointer':''}"> <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">${medals[i] || `<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">${i+1}</span>`}</div> <div style="flex:1;min-width:0"> <div style="font-family:var(--head);font-size:var(--fs-base); color:${isMe?'var(--accent)':'#fdfaf0'}; white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.name}${roleIcon}${isMe?' 👈':''}</div> <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em">${done}</div> <div style="font-size:9px;color:var(--accent);margin-top:2px">🏅 ${e.achievementCount || 0} дост. (+${e.achievementPts || 0}⭐)</div> </div> <div style="font-family:var(--head);font-size:var(--fs-xl); color:${isMe?'var(--accent)':'#c4b06a'}; text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">${e.score}</div> </div>`;
+  const isMe = e.uid === myUid;
+  const pct = Math.round((e.completed / 6) * 100);
+  const done = e.completed >= 6 ? '✅ Все главы' : `${e.completed}/6 гл · ${pct}%`;
+  const rankBg = i===0?'rgba(255,215,0,.07)':i===1?'rgba(192,192,192,.04)':i===2?'rgba(205,127,50,.05)':'';
+  const roleIcon = e.role === 'admin' ? ' 👑' : e.role === 'tester' ? ' 🧪' : '';
+  const clickAttr = isMe ? ' onclick="showMyStats()" ' : '';
+
+  // Правая колонка зависит от вкладки
+  const rightCol = currentTab === 'achievements'
+    ? `<div style="text-align:right">
+        <div style="font-family:var(--head);font-size:var(--fs-xl);color:${isMe?'var(--accent)':'#c4b06a'};text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">${e.achievementPts||0}<span style="font-size:9px;color:var(--muted)">⭐</span></div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">${e.achievementCount||0} дост.</div>
+       </div>`
+    : `<div style="text-align:right">
+        <div style="font-family:var(--head);font-size:var(--fs-xl);color:${isMe?'var(--accent)':'#c4b06a'};text-shadow:${isMe?'0 0 12px rgba(255,224,51,.5)':'none'}">${e.score}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">🏅 ${e.achievementCount||0} / ${e.achievementPts||0}⭐</div>
+       </div>`;
+
+  return `<div ${clickAttr}style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);background:${isMe?'rgba(255,224,51,.06)':rankBg};${isMe?'border-left:3px solid var(--accent);cursor:pointer':''}">
+    <div style="font-size:22px;min-width:30px;text-align:center;line-height:1">${medals[i] || `<span style="font-family:var(--head);font-size:var(--fs-sm);color:var(--muted)">${i+1}</span>`}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-family:var(--head);font-size:var(--fs-base);color:${isMe?'var(--accent)':'#fdfaf0'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.name}${roleIcon}${isMe?' 👈':''}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em">${done}</div>
+    </div>
+    ${rightCol}
+  </div>`;
 }).join('');
+
 const myInTop = visibleLb.some(e => e.uid === myUid);
-const myPos = myInTop ? '' : `<div style="margin:12px 16px;padding:12px; background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px; font-size:var(--fs-sm);color:var(--muted);text-align:center">📍 Вы не в топ-10. Нажмите на своё имя в рейтинге для статистики.</div>`;
-list.innerHTML = header + rows + myPos;
+const myEntry = filteredLb.find(e => e.uid === myUid);
+const myRankScore = myEntry ? [...filteredLb].sort((a,b)=>b.score-a.score).findIndex(e=>e.uid===myUid)+1 : null;
+const myRankAch = myEntry ? [...filteredLb].sort((a,b)=>(b.achievementPts||0)-(a.achievementPts||0)).findIndex(e=>e.uid===myUid)+1 : null;
+const myPos = (!myInTop && myEntry) ? `<div style="margin:12px 16px;padding:12px 14px;background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;display:flex;align-items:center;gap:12px">
+  <div style="font-size:18px">📍</div>
+  <div style="flex:1">
+    <div style="font-size:var(--fs-sm);color:#fdfaf0;font-family:var(--head)">${myEntry.name} 👈</div>
+    <div style="font-size:10px;color:var(--muted);margin-top:2px">#${myRankScore} по очкам · #${myRankAch} по достижениям</div>
+  </div>
+  <div style="text-align:right">
+    <div style="font-family:var(--head);color:var(--accent)">${myEntry.score}</div>
+    <div style="font-size:9px;color:var(--muted)">🏅${myEntry.achievementCount||0} / ${myEntry.achievementPts||0}⭐</div>
+  </div>
+</div>` : '';
+
+list.innerHTML = tabs + header + rows + myPos;
 }
 
 function renderProfileTab() {
