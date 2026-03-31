@@ -3,7 +3,7 @@
 # 🏫 Школьный Telegram-бот
 
 [![Статус](https://img.shields.io/badge/статус-работает-brightgreen?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
-[![Версия](https://img.shields.io/badge/версия-6.0-blue?style=for-the-badge&logo=github&logoColor=white)](#)
+[![Версия](https://img.shields.io/badge/версия-7.0-blue?style=for-the-badge&logo=github&logoColor=white)](#)
 [![Python](https://img.shields.io/badge/python-3.11-yellow?style=for-the-badge&logo=python&logoColor=white)](#)
 [![Railway](https://img.shields.io/badge/railway-deployed-blueviolet?style=for-the-badge&logo=railway&logoColor=white)](#)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-15-336791?style=for-the-badge&logo=postgresql&logoColor=white)](#)
