@@ -79,7 +79,31 @@ _beta_cache_ts: float = 0
 # ══════════════════════════════════════════════════════════
 #  КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════
-ADMIN_IDS       = [516406248]
+ADMIN_IDS       = []  # Теперь права администратора выдаются через БД (game_roles: role='admin')
+
+def is_bot_admin(user_id: int) -> bool:
+    """Проверяет, является ли пользователь администратором (роль 'admin' в game_roles)."""
+    try:
+        role = db.get_game_role(user_id)
+        return role == 'admin'
+    except Exception:
+        return False
+
+async def is_bot_admin_async(user_id: int) -> bool:
+    """Асинхронная проверка роли администратора."""
+    try:
+        role = await asyncio.to_thread(db.get_game_role, user_id)
+        return role == 'admin'
+    except Exception:
+        return False
+
+async def get_admin_ids() -> list:
+    """Возвращает список user_id всех администраторов из БД."""
+    try:
+        rows = await asyncio.to_thread(db.get_game_leaderboard_with_roles, 200)
+        return [r[0] for r in rows if r[5] == 'admin']
+    except Exception:
+        return []
 REQUEST_TIMEOUT = 30.0
 TZ_MINSK        = pytz.timezone('Europe/Minsk')
 
@@ -1186,7 +1210,7 @@ async def check_maintenance(update: Update, context: CallbackContext) -> bool:
         status['last_check'] = now
         _maintenance_cache = status
 
-    if update.effective_user.id in ADMIN_IDS:
+    if update.effective_await is_bot_admin_async(user.id):
         return False
     if not _maintenance_cache.get('enabled'):
         return False
@@ -1217,7 +1241,7 @@ async def check_maintenance(update: Update, context: CallbackContext) -> bool:
 async def notify_teacher_substitution(context, teacher_name: str, sub_data: dict):
     tid = await asyncio.to_thread(db.get_teacher_telegram_id, teacher_name)
     if not tid:
-        for a in ADMIN_IDS:
+        for a in (await get_admin_ids()):
             try:
                 await context.bot.send_message(
                     chat_id=a,
@@ -1242,7 +1266,7 @@ async def notify_teacher_substitution(context, teacher_name: str, sub_data: dict
         await context.bot.send_message(chat_id=tid, text=msg, parse_mode='HTML')
     except Exception as e:
         logger.error(f"notify_teacher: {e}")
-        for a in ADMIN_IDS:
+        for a in (await get_admin_ids()):
             try:
                 await context.bot.send_message(
                     chat_id=a,
@@ -1563,7 +1587,7 @@ async def reg_save(query, context, class_name: str):
         role_labels = {'student': 'Ученик', 'parent': 'Родитель'}
 
         # Уведомляем админа
-        for a in ADMIN_IDS:
+        for a in (await get_admin_ids()):
             try:
                 await context.bot.send_message(
                     chat_id=a,
@@ -1795,7 +1819,7 @@ async def chname_confirm(query, context, idx: int):
         context.user_data.pop('profile_cache_id', None)
         context.user_data.pop('teacher_name_cache', None)
 
-        for a in ADMIN_IDS:
+        for a in (await get_admin_ids()):
             try:
                 await context.bot.send_message(
                     chat_id=a,
@@ -1846,7 +1870,7 @@ async def teacher_unlink_do(query, context):
             context.user_data.pop('profile_cache', None)
             context.user_data.pop('profile_cache_id', None)
             context.user_data.pop('teacher_name_cache', None)
-        for a in ADMIN_IDS:
+        for a in (await get_admin_ids()):
             try:
                 await context.bot.send_message(
                     chat_id=a,
@@ -1892,7 +1916,7 @@ async def show_main_menu_msg(update: Update, context: CallbackContext):
         asyncio.to_thread(db.find_teacher_by_telegram_id, user.id),
     )
     teacher_name = _tname(t_data)
-    is_admin = user.id in ADMIN_IDS
+    is_admin = await is_bot_admin_async(user.id)
     kb = get_main_menu_kb(profile, is_admin, teacher_name=teacher_name)
 
     # Персональное приветствие
@@ -1946,7 +1970,7 @@ async def show_main_menu_edit(query, context=None):
             context.user_data['profile_cache_id'] = uid
             context.user_data['teacher_name_cache'] = teacher_name
 
-    is_admin = uid in ADMIN_IDS
+    is_admin = await is_bot_admin_async(uid)
     kb = get_main_menu_kb(profile, is_admin, teacher_name=teacher_name)
 
     text = (f"🏫 <b>Школьный бот</b>\n"
@@ -2008,7 +2032,12 @@ async def global_error_handler(update: object, context: CallbackContext):
     logger.error(f"Необработанная ошибка:\n{tb}")
 
     short = str(err)[:300]
-    for admin_id in ADMIN_IDS:
+    try:
+        admin_rows = await asyncio.to_thread(db.get_game_leaderboard_with_roles, 100)
+        admin_ids_from_db = [r[0] for r in admin_rows if r[5] == 'admin']
+    except Exception:
+        admin_ids_from_db = []
+    for admin_id in admin_ids_from_db:
         try:
             await context.bot.send_message(
                 chat_id=admin_id,
@@ -2437,7 +2466,7 @@ async def menu_news(query, context, page=0):
 
     if not news_list:
         kb = [BACK_TO_MAIN[0]]
-        if uid in ADMIN_IDS:
+        if await is_bot_admin_async(uid):
             kb.insert(0, [btn("📣 Опубликовать", 'admin_publish_news')])
         await safe_edit(query, "📭 <b>Новостей пока нет</b>", kb)
         return
@@ -2461,7 +2490,7 @@ async def menu_news(query, context, page=0):
     if len(nav) > 1:
         kb.append(nav)
 
-    if uid in ADMIN_IDS:
+    if await is_bot_admin_async(uid):
         kb.append([btn("📣 Опубликовать новость", 'admin_publish_news')])
     kb.append(BACK_TO_MAIN[0])
 
@@ -2488,7 +2517,7 @@ async def show_news_full(query, context, news_id: int):
     )
 
     kb = []
-    if query.from_user.id in ADMIN_IDS:
+    if await is_bot_admin_async(query.from_user.id):
         kb.append([btn("✏️ Редактировать", f"edit_news_{news_id}"),
                    btn("🗑 Удалить",        f"del_news_{news_id}")])
 
@@ -2634,12 +2663,12 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
 #  МЕНЮ: ЗВОНКИ
 # ══════════════════════════════════════════════════════════
 async def is_game_allowed(user_id: int) -> bool:
-    """Проверяет доступ к игре: если бета включена — только белый список + ADMIN_IDS."""
+    """Проверяет доступ к игре: если бета включена — только белый список + admins."""
     import time
     global _beta_cache, _beta_cache_ts
     if not GAME_BETA:
         return True
-    if user_id in ADMIN_IDS:
+    if await is_bot_admin_async(user_id):
         return True
     # Кэш на 60 секунд чтобы не ломиться в БД при каждом тапе
     if time.time() - _beta_cache_ts > 60:
@@ -2693,7 +2722,7 @@ async def menu_game(query, context):
         logger.warning(f"menu_game: DB error registering player: {e}")
         current_role = None
     if not current_role:
-        role = 'admin' if user.id in ADMIN_IDS else 'player'
+        role = 'admin' if await is_bot_admin_async(user.id) else 'player'
         try:
             await asyncio.to_thread(db.set_game_role, user.id, role)
         except Exception:
@@ -2785,7 +2814,7 @@ async def menu_game(query, context):
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
 
     # Для админа — всегда режим администратора (всё открыто, рейтинг не учитывается)
-    is_admin_user = user.id in ADMIN_IDS
+    is_admin_user = await is_bot_admin_async(user.id)
     if is_admin_user:
         # Делаем минимальный payload — только то что нужно админу
         # Убираем leaderboard чтобы не превышать лимит 2048 символов
@@ -2959,7 +2988,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
 
     # Автоматически назначаем роль
     if not current_role or current_role == 'player':
-        if user.id in ADMIN_IDS:
+        if await is_bot_admin_async(user.id):
             await asyncio.to_thread(db.set_game_role, user.id, 'admin')
         else:
             await asyncio.to_thread(db.set_game_role, user.id, 'player')
@@ -2975,7 +3004,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
             parse_mode='HTML'
         )
         if game_over:
-            for a in ADMIN_IDS:
+            for a in (await get_admin_ids()):
                 try:
                     await context.bot.send_message(
                         chat_id=a,
@@ -3007,7 +3036,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
             f"Результат сохранён в таблице лидеров школы!",
             parse_mode='HTML'
         )
-        for a in ADMIN_IDS:
+        for a in (await get_admin_ids()):
             try:
                 await context.bot.send_message(
                     chat_id=a,
@@ -3264,7 +3293,7 @@ async def handle_sub_flow(query, context):
 
 async def admin_roles_panel(query, context):
     """Панель управления ролями игроков."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3289,7 +3318,7 @@ async def admin_roles_panel(query, context):
 
 async def admin_role_pick(query, context, uid):
     """Выбор новой роли для игрока."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3316,7 +3345,7 @@ async def admin_role_pick(query, context, uid):
 
 async def admin_role_set(query, context, uid, role):
     """Устанавливает роль игроку."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3345,7 +3374,7 @@ CHAPTER_NAMES = {
 
 async def admin_chapters_panel(query, context):
     """Панель управления открытием глав."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3381,7 +3410,7 @@ async def admin_chapters_panel(query, context):
 
 async def admin_chapters_open_all(query, context):
     """Открывает все главы сразу."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     ok = await asyncio.to_thread(db.open_all_chapters)
@@ -3392,7 +3421,7 @@ async def admin_chapters_open_all(query, context):
 
 async def handle_chapter_action(query, context, data):
     """Обрабатывает открытие/закрытие/планирование главы."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3456,7 +3485,7 @@ async def handle_schedule_input(update, context, text):
 
 async def admin_game_roles(query, context):
     """Панель управления ролями игроков."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3487,7 +3516,7 @@ async def admin_game_roles(query, context):
 
 async def handle_game_role_action(query, context, data):
     """Устанавливает роль игроку."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3507,7 +3536,7 @@ async def handle_game_role_action(query, context, data):
 
 async def admin_beta_panel(query, context):
     """Панель управления бета-доступом."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3536,7 +3565,7 @@ async def admin_beta_panel(query, context):
 
 async def admin_beta_add(query, context):
     """Начало добавления тестера — просим ввести ID."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     context.user_data['beta_action'] = 'add'
@@ -3553,7 +3582,7 @@ async def admin_beta_add(query, context):
 
 async def admin_beta_remove(query, context):
     """Начало удаления тестера."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3571,7 +3600,7 @@ async def admin_beta_remove(query, context):
 
 async def admin_beta_clear_confirm(query, context):
     """Подтверждение очистки списка."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     await safe_edit(query,
@@ -3585,7 +3614,7 @@ async def admin_beta_clear_confirm(query, context):
 
 async def admin_beta_clear_do(query, context):
     """Выполняет очистку белого списка."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     # Сбрасываем кэш
@@ -3634,7 +3663,7 @@ async def handle_beta_add_input(update, context, text):
 
 async def admin_game_panel(query, context):
     """Главная панель управления игрой."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔ Доступ запрещён"); return
     await query.answer()
 
@@ -3663,7 +3692,6 @@ async def admin_game_panel(query, context):
     kb = [
         [btn("📋 Список игроков",      'admin_game_leaderboard')],
         [btn(beta_label,               'admin_beta_panel')],
-        [btn("🔐 Доступ к игре",        'admin_game_access_panel')],
         [btn("📖 Управление главами",    'admin_chapters_panel')],
         [btn("🎭 Роли игроков",          'admin_roles_panel')],
         [btn("🗑 Сбросить ВСЕХ",       'admin_game_reset_all')],
@@ -3674,7 +3702,7 @@ async def admin_game_panel(query, context):
 
 async def admin_game_leaderboard(query, context):
     """Список всех игроков для админа."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔ Доступ запрещён"); return
     await query.answer()
 
@@ -3701,7 +3729,7 @@ async def admin_game_leaderboard(query, context):
 
 async def admin_game_view_player(query, context, uid):
     """Детальный просмотр игрока + кнопки действий."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3737,7 +3765,7 @@ async def admin_game_view_player(query, context, uid):
 
 async def admin_game_reset_player(query, context, uid):
     """Сброс прогресса конкретного игрока — сначала выбор типа сброса."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3773,7 +3801,7 @@ async def admin_game_reset_player(query, context, uid):
 
 async def admin_game_restart_penalty(query, context, uid):
     """Перезапуск с штрафом +10с — очки считаются но меньше."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     r = await asyncio.to_thread(db.get_game_result_detail, uid)
@@ -3791,7 +3819,7 @@ async def admin_game_restart_penalty(query, context, uid):
 
 async def admin_game_restart_nopts(query, context, uid):
     """Перезапуск без очков — только для практики."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     r = await asyncio.to_thread(db.get_game_result_detail, uid)
@@ -3808,7 +3836,7 @@ async def admin_game_restart_nopts(query, context, uid):
 
 async def admin_game_reset_confirm(query, context, uid):
     """Полный сброс прогресса — очки обнуляются."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     r = await asyncio.to_thread(db.get_game_result_detail, uid)
@@ -3824,7 +3852,7 @@ async def admin_game_reset_confirm(query, context, uid):
 
 async def admin_game_ban_player(query, context, uid):
     """Бан игрока (обнуление очков + флаг)."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3844,7 +3872,7 @@ async def admin_game_ban_player(query, context, uid):
 
 async def admin_game_unban_player(query, context, uid):
     """Снятие бана игрока."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3861,7 +3889,7 @@ async def admin_game_unban_player(query, context, uid):
 
 async def admin_game_reset_all(query, context):
     """Запрос подтверждения сброса всех."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     await safe_edit(query,
@@ -3877,7 +3905,7 @@ async def admin_game_reset_all(query, context):
 
 async def admin_game_reset_all_confirm(query, context):
     """Подтверждённый сброс всех игроков."""
-    if query.from_user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
@@ -3890,8 +3918,58 @@ async def admin_game_reset_all_confirm(query, context):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ADMIN PANEL
 # ══════════════════════════════════════════════════════════
+async def admin_my_game_role(query, context):
+    """Позволяет администратору выбрать свой игровой режим."""
+    uid = query.from_user.id
+    if not await is_bot_admin_async(uid):
+        await query.answer("⛔"); return
+    await query.answer()
+
+    current = await asyncio.to_thread(db.get_game_role, uid) or 'admin'
+    role_desc = {
+        'admin':  '👑 Все главы открыты, бесконечные жизни, не в рейтинге',
+        'tester': '🧪 Все главы открыты, бесконечные жизни, не в рейтинге',
+        'player': '🎮 Стандартный режим, участвует в рейтинге',
+    }
+    kb = [
+        [btn("👑 Войти как Админ",   f'admin_set_my_role_admin')],
+        [btn("🧪 Войти как Тестер",  f'admin_set_my_role_tester')],
+        [btn("🎮 Войти как Игрок",   f'admin_set_my_role_player')],
+        [btn("↩️ Назад", 'admin_panel')],
+    ]
+    await safe_edit(query,
+        f"👤 <b>МОЙ ИГРОВОЙ РЕЖИМ</b>\n\n"
+        f"Текущий режим: <b>{current}</b>\n"
+        f"{role_desc.get(current, '')}\n\n"
+        f"Выбери режим для входа в игру:\n\n"
+        f"<i>Это меняет только твою роль в игре — права администратора бота сохраняются.</i>",
+        kb)
+
+
+async def admin_set_my_role(query, context, role):
+    """Меняет игровой режим администратора."""
+    uid = query.from_user.id
+    if not await is_bot_admin_async(uid):
+        await query.answer("⛔"); return
+    await query.answer()
+
+    ok = await asyncio.to_thread(db.set_game_role, uid, role)
+    role_icons = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
+    icon = role_icons.get(role, '🎮')
+
+    await safe_edit(query,
+        f"{'✅' if ok else '❌'} Твой игровой режим изменён на {icon} <b>{role}</b>\n\n"
+        f"Теперь открой игру — она запустится в этом режиме.",
+        [
+            [btn("🎮 Открыть игру", 'menu_game')],
+            [btn("↩️ Моя роль",    'admin_my_game_role')],
+            [btn("🏠 Главное меню", 'back_to_main')],
+        ])
+
+
 async def show_admin_panel(query):
-    if query.from_user.id not in ADMIN_IDS:
+    uid = query.from_user.id
+    if not await is_bot_admin_async(uid):
         await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
         return
 
@@ -3904,6 +3982,11 @@ async def show_admin_panel(query):
     else:
         maint_btn = btn("🔧 Включить техрежим", 'admin_enable_maintenance')
 
+    # Текущий игровой режим администратора
+    my_game_role = await asyncio.to_thread(db.get_game_role, uid) or 'admin'
+    role_labels = {'admin': '👑 Режим: Админ', 'tester': '🧪 Режим: Тестер', 'player': '🎮 Режим: Игрок'}
+    my_mode_label = role_labels.get(my_game_role, '👑 Режим: Админ')
+
     kb = [
         [maint_btn],
         [btn("📣 Новость",        'admin_publish_news'),   btn("🗑 Новости",     'admin_manage_news')],
@@ -3912,6 +3995,7 @@ async def show_admin_panel(query):
         [btn("🗑 Удалить замену (ID)", 'admin_del_sub')],
         [btn("📊 Аналитика",     'admin_analytics'),        btn("👥 Пользователи",'admin_users')],
         [btn("📢 Рассылка",      'admin_broadcast'),        btn("🎮 Игра",         'admin_game_panel')],
+        [btn(f"👤 {my_mode_label}", 'admin_my_game_role')],
         [btn("🏠 Главное меню",  'back_to_main')],
     ]
     await safe_edit(query, "👑 <b>АДМИН-ПАНЕЛЬ</b>\nВыберите действие:", kb)
@@ -4195,7 +4279,7 @@ async def button_handler(update: Update, context: CallbackContext):
                 f"✅ <b>Вы зарегистрированы как {name}</b>\n\n"
                 f"Теперь при добавлении замены вы будете получать уведомление автоматически.",
                 BACK_TO_MAIN)
-            for a in ADMIN_IDS:
+            for a in (await get_admin_ids()):
                 try:
                     await context.bot.send_message(
                         chat_id=a,
@@ -4275,7 +4359,12 @@ async def button_handler(update: Update, context: CallbackContext):
         return
 
     # ── Админские колбэки игры ──
-    if user.id in ADMIN_IDS:
+    if await is_bot_admin_async(user.id):
+        if d.startswith('admin_set_my_role_'):
+            role = d.replace('admin_set_my_role_', '')
+            await admin_set_my_role(query, context, role)
+            return
+
         if d.startswith('arole_pick_'):
             uid = int(d.replace('arole_pick_', ''))
             await admin_role_pick(query, context, uid)
@@ -4349,15 +4438,15 @@ async def button_handler(update: Update, context: CallbackContext):
             await admin_game_reset_all_confirm(query, context)
             return
 
-    if d.startswith('edit_news_') and user.id in ADMIN_IDS:
+    if d.startswith('edit_news_') and await is_bot_admin_async(user.id):
         news_id = int(d.split('_')[2])
         await start_edit_news(query, context, news_id)
         return
-    if d.startswith('del_news_') and user.id in ADMIN_IDS:
+    if d.startswith('del_news_') and await is_bot_admin_async(user.id):
         news_id = int(d.split('_')[2])
         await confirm_delete_news(query, context, news_id)
         return
-    if d.startswith('confirm_del_news_') and user.id in ADMIN_IDS:
+    if d.startswith('confirm_del_news_') and await is_bot_admin_async(user.id):
         news_id = int(d.split('_')[3])
         await do_delete_news(query, context, news_id)
         return
@@ -4365,10 +4454,10 @@ async def button_handler(update: Update, context: CallbackContext):
         _clear_flow(context)
         await show_admin_panel(query)
         return
-    if d == 'pub_news_all' and user.id in ADMIN_IDS:
+    if d == 'pub_news_all' and await is_bot_admin_async(user.id):
         await do_publish_news(query, context, send_to_all=True)
         return
-    if d == 'pub_news_only' and user.id in ADMIN_IDS:
+    if d == 'pub_news_only' and await is_bot_admin_async(user.id):
         await do_publish_news(query, context, send_to_all=False)
         return
     if d == 'cancel_pub_news':
@@ -4435,24 +4524,24 @@ async def button_handler(update: Update, context: CallbackContext):
         return
 
     # ── Админ: замены ──
-    if d == 'admin_view_subs' and user.id in ADMIN_IDS:
+    if d == 'admin_view_subs' and await is_bot_admin_async(user.id):
         await admin_view_subs(query, context)
         return
-    if d == 'admin_del_sub' and user.id in ADMIN_IDS:
+    if d == 'admin_del_sub' and await is_bot_admin_async(user.id):
         await safe_edit(query,
             "🗑️ Введите ID замены для удаления\n(смотри в «Все замены»):",
             [[btn("❌ Отмена", 'admin_panel')]])
         context.user_data['deleting_sub'] = True
         return
-    if d == 'admin_clear_subs' and user.id in ADMIN_IDS:
+    if d == 'admin_clear_subs' and await is_bot_admin_async(user.id):
         await admin_confirm_clear_subs(query, context)
         return
-    if d == 'admin_clear_confirm' and user.id in ADMIN_IDS:
+    if d == 'admin_clear_confirm' and await is_bot_admin_async(user.id):
         await admin_do_clear_subs(query, context)
         return
 
     # ── Фото замен: подтверждение/отмена ──
-    if d == 'confirm_photo_subs' and user.id in ADMIN_IDS:
+    if d == 'confirm_photo_subs' and await is_bot_admin_async(user.id):
         await save_photo_subs(query, context)
         return
     if d == 'cancel_photo_subs':
@@ -4462,10 +4551,10 @@ async def button_handler(update: Update, context: CallbackContext):
         return
 
     # ── Рассылка ──
-    if d == 'admin_broadcast' and user.id in ADMIN_IDS:
+    if d == 'admin_broadcast' and await is_bot_admin_async(user.id):
         await admin_broadcast_start(query, context)
         return
-    if d == 'confirm_broadcast' and user.id in ADMIN_IDS:
+    if d == 'confirm_broadcast' and await is_bot_admin_async(user.id):
         await do_broadcast(query, context)
         return
     if d == 'cancel_broadcast':
@@ -4498,6 +4587,7 @@ async def button_handler(update: Update, context: CallbackContext):
         'menu_game':              menu_game,
         'menu_help':              menu_help,
         'admin_panel':            show_admin_panel,
+        'admin_my_game_role':     admin_my_game_role,
         'admin_enable_maintenance': admin_enable_maintenance,
         'admin_disable_maintenance': admin_disable_maintenance,
         'admin_publish_news':     start_publish_news,
@@ -4515,26 +4605,21 @@ async def button_handler(update: Update, context: CallbackContext):
             "и покажет предпросмотр для подтверждения.</i>",
             [[btn("❌ Отмена", 'admin_panel')]]),
         'admin_analytics':        show_analytics,
-        'admin_game_panel':           admin_game_panel,
-        'admin_game_roles':           admin_game_roles,
-        'admin_beta_panel':           admin_beta_panel,
-        'admin_chapters_panel':       admin_chapters_panel,
-        'admin_roles_panel':          admin_roles_panel,
-        'admin_chapters_open_all':    admin_chapters_open_all,
-        'admin_beta_add':             admin_beta_add,
-        'admin_beta_remove':          admin_beta_remove,
-        'admin_beta_clear_confirm':   admin_beta_clear_confirm,
-        'abeta_clear_do':             admin_beta_clear_do,
-        'admin_game_leaderboard':     admin_game_leaderboard,
-        'admin_game_reset_all':       admin_game_reset_all,
-        'admin_game_access_panel':    admin_game_access_panel,
-        'admin_toggle_global_access': admin_toggle_global_access,
-        'admin_grant_access_input':   admin_grant_access_input,
-        'admin_revoke_access_input':  admin_revoke_access_input,
-        'admin_access_list':          admin_access_list,
-        'game_leaderboard':           game_leaderboard,
-        'admin_users':                show_users_stats,
-        'noop':                       lambda q, c: asyncio.sleep(0),
+        'admin_game_panel':       admin_game_panel,
+        'admin_game_roles':       admin_game_roles,
+        'admin_beta_panel':       admin_beta_panel,
+        'admin_chapters_panel':   admin_chapters_panel,
+        'admin_roles_panel':      admin_roles_panel,
+        'admin_chapters_open_all': admin_chapters_open_all,
+        'admin_beta_add':         admin_beta_add,
+        'admin_beta_remove':      admin_beta_remove,
+        'admin_beta_clear_confirm': admin_beta_clear_confirm,
+        'abeta_clear_do':         admin_beta_clear_do,
+        'admin_game_leaderboard': admin_game_leaderboard,
+        'admin_game_reset_all':   admin_game_reset_all,
+        'game_leaderboard':       game_leaderboard,
+        'admin_users':            show_users_stats,
+        'noop':                   lambda q, c: asyncio.sleep(0),
     }
 
     handler = routes.get(d)
@@ -4589,32 +4674,26 @@ async def handle_message(update: Update, context: CallbackContext):
         return
 
     # ── Публикация новости ──
-    if context.user_data.get('pub_news') and user.id in ADMIN_IDS:
+    if context.user_data.get('pub_news') and await is_bot_admin_async(user.id):
         await handle_publish_news_input(update, context)
         return
 
     # ── Редактирование новости ──
-    if context.user_data.get('edit_news_id') and user.id in ADMIN_IDS:
+    if context.user_data.get('edit_news_id') and await is_bot_admin_async(user.id):
         await handle_edit_news_input(update, context)
         return
 
     # ── Добавление тестеров (бета) ──
-    if context.user_data.get('schedule_chapter') and user.id in ADMIN_IDS:
+    if context.user_data.get('schedule_chapter') and await is_bot_admin_async(user.id):
         await handle_schedule_input(update, context, text)
         return
 
-    # ── Выдача / отзыв индивидуального доступа ──
-    if (context.user_data.get('awaiting_grant_access') or
-            context.user_data.get('awaiting_revoke_access')) and user.id in ADMIN_IDS:
-        await handle_grant_revoke_access_input(update, context, text)
-        return
-
-    if context.user_data.get('beta_action') == 'add' and user.id in ADMIN_IDS:
+    if context.user_data.get('beta_action') == 'add' and await is_bot_admin_async(user.id):
         await handle_beta_add_input(update, context, text)
         return
 
     # ── Удаление замены по ID ──
-    if context.user_data.get('deleting_sub') and user.id in ADMIN_IDS:
+    if context.user_data.get('deleting_sub') and await is_bot_admin_async(user.id):
         try:
             sub_id = int(text)
             await asyncio.to_thread(db.delete_substitution, sub_id)
@@ -4631,7 +4710,7 @@ async def handle_message(update: Update, context: CallbackContext):
         return
 
     # ── Рассылка ──
-    if context.user_data.get('broadcasting') and user.id in ADMIN_IDS:
+    if context.user_data.get('broadcasting') and await is_bot_admin_async(user.id):
         await handle_broadcast_input(update, context)
         return
 
@@ -4873,7 +4952,7 @@ def fuzzy_match_teacher(name: str) -> str:
 async def handle_photo_message(update: Update, context: CallbackContext):
     """Обработчик фото — только для администраторов."""
     user = update.effective_user
-    if user.id not in ADMIN_IDS:
+    if not await is_bot_admin_async(user.id):
         return
 
     if await check_maintenance(update, context):
@@ -5113,7 +5192,7 @@ async def handle_game_reset(request):
 
 
 async def handle_game_state(request):
-    """GET /game_state?user_id=... — полное состояние игрока: доступ, роль, главы, прогресс."""
+    """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД."""
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -5124,56 +5203,19 @@ async def handle_game_state(request):
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
-
-        # Параллельно получаем доступ, прогресс и статус глав
-        access_info, result, chapters_raw = await asyncio.gather(
-            asyncio.to_thread(db.check_player_game_access, user_id),
-            asyncio.to_thread(db.get_game_result, user_id),
-            asyncio.to_thread(db.get_chapters_full_status),
-        )
-
-        # Если забанен — сразу возвращаем
-        if access_info.get('banned'):
-            return aiohttp_web.json_response({'ok': True, 'banned': True}, headers=headers)
-
-        # Формируем список глав с таймерами
-        tz = pytz.timezone('Europe/Minsk')
-        role = access_info.get('role', 'player')
-        chapters = []
-        for ch_id, is_open, open_at in chapters_raw:
-            ch_data: dict = {'id': ch_id, 'open': bool(is_open)}
-            if not is_open and open_at:
-                # Таймер ещё не наступил
-                open_at_minsk = open_at.astimezone(tz)
-                ch_data['scheduled_open_at'] = open_at_minsk.isoformat()
-                ch_data['open_label'] = open_at_minsk.strftime('%d.%m в %H:%M')
-            chapters.append(ch_data)
-
-        # Для admin/tester — все главы открыты
-        if role in ('admin', 'tester'):
-            for ch in chapters:
-                ch['open'] = True
-                ch.pop('scheduled_open_at', None)
-                ch.pop('open_label', None)
-
-        score, completed, game_over = 0, 0, False
-        if result:
-            _, _, score, completed, game_over, _, _ = result
-
-        resp = {
+        result = await asyncio.to_thread(db.get_game_result, user_id)
+        if not result:
+            return aiohttp_web.json_response(
+                {'ok': True, 'score': 0, 'completed': 0, 'game_over': False, 'banned': False},
+                headers=headers)
+        uid, uname, score, completed, game_over, updated, banned = result
+        return aiohttp_web.json_response({
             'ok': True,
-            'banned': False,
-            'role': role,
-            'allowed': access_info.get('allowed', True),
-            'global_access': access_info.get('global_access', True),
-            'individual_access': access_info.get('individual_access', False),
-            'access_reason': access_info.get('reason', ''),
-            'chapters': chapters,
             'score': score or 0,
             'completed': completed or 0,
             'game_over': bool(game_over),
-        }
-        return aiohttp_web.json_response(resp, headers=headers)
+            'banned': bool(banned),
+        }, headers=headers)
     except Exception as e:
         logger.error(f"handle_game_state error: {e}")
         return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
@@ -5222,7 +5264,7 @@ async def handle_game_sync(request):
             )
         current_role = await asyncio.to_thread(db.get_game_role, user_id)
         if not current_role:
-            role = 'admin' if user_id in ADMIN_IDS else 'player'
+            role = 'admin' if await is_bot_admin_async(user_id) else 'player'
             await asyncio.to_thread(db.set_game_role, user_id, role)
         # Проверяем бан — игра должна знать об этом сразу
         result = await asyncio.to_thread(db.get_game_result, user_id)
@@ -5287,8 +5329,6 @@ def start_http_server_thread():
         app_http.router.add_get('/game_state', handle_game_state)
         app_http.router.add_post('/game_sync', handle_game_sync)
         app_http.router.add_options('/game_sync', handle_game_sync)
-        app_http.router.add_post('/game_admin_action', handle_game_admin_action)
-        app_http.router.add_options('/game_admin_action', handle_game_admin_action)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)
@@ -5316,278 +5356,28 @@ def start_http_server_thread():
     t.start()
     logger.info(f"HTTP server thread started (port {PORT})")
 
-async def handle_game_admin_action(request):
-    """POST /game_admin_action — выполняет админские действия над игроками."""
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-    }
-    if request.method == 'OPTIONS':
-        return aiohttp_web.Response(headers=headers)
-    try:
-        data = await request.json()
-    except Exception:
-        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
-
-    admin_id = data.get('admin_id')
-    action   = data.get('action')
-    target   = data.get('target_user_id')
-
-    if not admin_id or int(admin_id) not in ADMIN_IDS:
-        return aiohttp_web.json_response({'ok': False, 'error': 'not authorized'}, status=403, headers=headers)
-
-    admin_id = int(admin_id)
-    if target:
-        target = int(target)
-
-    result = {'ok': False, 'error': 'unknown action'}
-
-    if action == 'grant_access':
-        ok = await asyncio.to_thread(db.grant_player_access, target, admin_id)
-        result = {'ok': ok}
-    elif action == 'revoke_access':
-        ok = await asyncio.to_thread(db.revoke_player_access, target)
-        result = {'ok': ok}
-    elif action == 'ban':
-        ok = await asyncio.to_thread(db.ban_player, target)
-        result = {'ok': ok}
-    elif action == 'unban':
-        ok = await asyncio.to_thread(db.unban_player, target)
-        result = {'ok': ok}
-    elif action == 'reset_progress':
-        ok = await asyncio.to_thread(db.reset_player_progress, target)
-        result = {'ok': ok}
-    elif action == 'set_role':
-        role = data.get('role', 'player')
-        ok = await asyncio.to_thread(db.set_player_role, target, role)
-        result = {'ok': ok}
-    elif action == 'set_global_access':
-        enabled = bool(data.get('enabled', True))
-        ok = await asyncio.to_thread(db.set_game_global_access, enabled)
-        result = {'ok': ok}
-
-    if result.get('ok'):
-        await asyncio.to_thread(db.log_admin_action, admin_id, action, target, str(data))
-    logger.info(f"game_admin_action: admin={admin_id}, action={action}, target={target}, ok={result.get('ok')}")
-    return aiohttp_web.json_response(result, headers=headers)
-
-
-# ══════════════════════════════════════════════════════════
-#  ФОНОВАЯ ЗАДАЧА: проверка таймеров глав
-# ══════════════════════════════════════════════════════════
-
-async def check_scheduled_chapters_task():
-    """Раз в 60 секунд открывает главы у которых наступило время открытия."""
-    while True:
-        try:
-            await asyncio.sleep(60)
-            opened = await asyncio.to_thread(db.check_scheduled_chapters)
-            if opened:
-                logger.info(f"⏰ Автоматически открыты главы: {opened}")
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"check_scheduled_chapters_task error: {e}")
-
-
-# ══════════════════════════════════════════════════════════
-#  НОВЫЕ АДМИН-ХЕНДЛЕРЫ: ДОСТУП К ИГРЕ
-# ══════════════════════════════════════════════════════════
-
-async def admin_game_access_panel(query, context):
-    """Панель управления глобальным доступом к игре."""
-    if query.from_user.id not in ADMIN_IDS:
-        await query.answer("⛔"); return
-    await query.answer()
-
-    global_on = await asyncio.to_thread(db.is_game_access_enabled)
-    players   = await asyncio.to_thread(db.get_all_players, 100)
-    total     = len(players)
-    with_access = sum(1 for p in players if p[6])  # access_granted
-
-    status_icon = "🌐" if global_on else "🔒"
-    status_text = "ОТКРЫТА для всех" if global_on else "ЗАКРЫТА (только инд. доступ)"
-
-    text = (
-        f"🔐 <b>ДОСТУП К ИГРЕ</b>\n\n"
-        f"{status_icon} Глобальный доступ: <b>{status_text}</b>\n"
-        f"👥 Зарегистрировано: <b>{total}</b>\n"
-        f"🔑 С индивидуальным доступом: <b>{with_access}</b>\n\n"
-        f"Управление:"
-    )
-    toggle_label = "🔒 Закрыть игру для всех" if global_on else "🌐 Открыть игру для всех"
-    kb = [
-        [btn(toggle_label, 'admin_toggle_global_access')],
-        [btn("🔑 Выдать доступ по ID", 'admin_grant_access_input')],
-        [btn("🚫 Отозвать доступ по ID", 'admin_revoke_access_input')],
-        [btn("📋 Список игроков с доступом", 'admin_access_list')],
-        [btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')],
-    ]
-    await safe_edit(query, text, kb)
-
-
-async def admin_toggle_global_access(query, context):
-    """Переключает глобальный доступ к игре."""
-    if query.from_user.id not in ADMIN_IDS:
-        await query.answer("⛔"); return
-    await query.answer()
-
-    current = await asyncio.to_thread(db.is_game_access_enabled)
-    new_val  = not current
-    ok = await asyncio.to_thread(db.set_game_global_access, new_val)
-    await asyncio.to_thread(db.log_admin_action, query.from_user.id,
-                             'set_global_access', None, str(new_val))
-    icon = "🌐" if new_val else "🔒"
-    await safe_edit(query,
-        f"{'✅' if ok else '❌'} Глобальный доступ к игре: {icon} <b>{'ОТКРЫТ' if new_val else 'ЗАКРЫТ'}</b>",
-        [[btn("↩️ Доступ к игре", 'admin_game_access_panel'), btn("🏠 Меню", 'back_to_main')]])
-
-
-async def admin_grant_access_input(query, context):
-    """Запрашивает user_id для выдачи доступа."""
-    if query.from_user.id not in ADMIN_IDS:
-        await query.answer("⛔"); return
-    await query.answer()
-    context.user_data['awaiting_grant_access'] = True
-    await safe_edit(query,
-        "🔑 <b>Выдать индивидуальный доступ</b>\n\n"
-        "Введи <b>Telegram user_id</b> игрока:\n"
-        "<i>(можно найти через @userinfobot)</i>",
-        [[btn("❌ Отмена", 'admin_game_access_panel')]])
-
-
-async def admin_revoke_access_input(query, context):
-    """Запрашивает user_id для отзыва доступа."""
-    if query.from_user.id not in ADMIN_IDS:
-        await query.answer("⛔"); return
-    await query.answer()
-    context.user_data['awaiting_revoke_access'] = True
-    await safe_edit(query,
-        "🚫 <b>Отозвать индивидуальный доступ</b>\n\n"
-        "Введи <b>Telegram user_id</b> игрока:",
-        [[btn("❌ Отмена", 'admin_game_access_panel')]])
-
-
-async def admin_access_list(query, context):
-    """Список игроков с индивидуальным доступом."""
-    if query.from_user.id not in ADMIN_IDS:
-        await query.answer("⛔"); return
-    await query.answer()
-
-    players = await asyncio.to_thread(db.get_all_players, 100)
-    access_players = [p for p in players if p[6]]  # access_granted
-
-    if not access_players:
-        await safe_edit(query,
-            "🔑 <b>Индивидуальный доступ</b>\n\nНет игроков с индивидуальным доступом.",
-            [[btn("↩️ Доступ к игре", 'admin_game_access_panel')]])
-        return
-
-    lines = ["🔑 <b>ИГРОКИ С ИНДИВИДУАЛЬНЫМ ДОСТУПОМ</b>\n"]
-    for uid, name, role, score, comp, banned, access, _ in access_players:
-        lines.append(f"• <b>{name or uid}</b> (ID: <code>{uid}</code>) — {score} оч")
-    lines.append(f"\nВсего: {len(access_players)}")
-
-    await safe_edit(query, "\n".join(lines),
-        [[btn("↩️ Доступ к игре", 'admin_game_access_panel'), btn("🏠 Меню", 'back_to_main')]])
-
-
-async def handle_grant_revoke_access_input(update, context, text):
-    """Обрабатывает ввод user_id для выдачи/отзыва доступа."""
-    if 'awaiting_grant_access' in context.user_data:
-        context.user_data.pop('awaiting_grant_access')
-        try:
-            target_id = int(text.strip())
-            ok = await asyncio.to_thread(db.grant_player_access, target_id, update.effective_user.id)
-            await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'grant_access', target_id)
-            await update.message.reply_text(
-                f"{'✅ Доступ выдан' if ok else '❌ Ошибка'} для user_id <code>{target_id}</code>",
-                parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup([[btn("↩️ Доступ к игре", 'admin_game_access_panel')]]))
-        except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID. Введи только цифры.",
-                parse_mode='HTML')
-
-    elif 'awaiting_revoke_access' in context.user_data:
-        context.user_data.pop('awaiting_revoke_access')
-        try:
-            target_id = int(text.strip())
-            ok = await asyncio.to_thread(db.revoke_player_access, target_id)
-            await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'revoke_access', target_id)
-            await update.message.reply_text(
-                f"{'✅ Доступ отозван' if ok else '❌ Ошибка'} для user_id <code>{target_id}</code>",
-                parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup([[btn("↩️ Доступ к игре", 'admin_game_access_panel')]]))
-        except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID. Введи только цифры.", parse_mode='HTML')
-
-
-async def cmd_grant_access(update, context):
-    """/grant_access <user_id> — выдать индивидуальный доступ."""
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    args = context.args
-    if not args:
-        await update.message.reply_text("Использование: /grant_access <user_id>")
-        return
-    try:
-        target_id = int(args[0])
-        ok = await asyncio.to_thread(db.grant_player_access, target_id, update.effective_user.id)
-        await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'grant_access', target_id)
+async def cmd_claim_admin(update: Update, context: CallbackContext):
+    """/claim_admin — получить права администратора, если в системе ещё нет ни одного админа."""
+    user = update.effective_user
+    count = await asyncio.to_thread(db.count_admins)
+    if count > 0:
         await update.message.reply_text(
-            f"{'✅ Доступ выдан' if ok else '❌ Ошибка'} для <code>{target_id}</code>",
-            parse_mode='HTML')
-    except (ValueError, IndexError):
-        await update.message.reply_text("❌ Неверный user_id")
-
-
-async def cmd_revoke_access(update, context):
-    """/revoke_access <user_id> — отозвать доступ."""
-    if update.effective_user.id not in ADMIN_IDS:
+            "⛔ Команда недоступна — в системе уже есть администратор.\n"
+            "Обратитесь к текущему администратору для получения прав."
+        )
         return
-    args = context.args
-    if not args:
-        await update.message.reply_text("Использование: /revoke_access <user_id>")
-        return
-    try:
-        target_id = int(args[0])
-        ok = await asyncio.to_thread(db.revoke_player_access, target_id)
-        await asyncio.to_thread(db.log_admin_action, update.effective_user.id, 'revoke_access', target_id)
+    # Нет ни одного — выдаём роль
+    ok = await asyncio.to_thread(db.set_game_role, user.id, 'admin')
+    if ok:
         await update.message.reply_text(
-            f"{'✅ Доступ отозван' if ok else '❌ Ошибка'} для <code>{target_id}</code>",
-            parse_mode='HTML')
-    except (ValueError, IndexError):
-        await update.message.reply_text("❌ Неверный user_id")
-
-
-async def cmd_refresh_state(update, context):
-    """/refresh_state <user_id> — принудительно сбросить кэш состояния игрока."""
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    args = context.args
-    if not args:
-        await update.message.reply_text("Использование: /refresh_state <user_id>")
-        return
-    try:
-        target_id = int(args[0])
-        access = await asyncio.to_thread(db.check_player_game_access, target_id)
-        result = await asyncio.to_thread(db.get_game_result, target_id)
-        role   = access.get('role', 'player')
-        score  = result[2] if result else 0
-        comp   = result[3] if result else 0
-        banned = access.get('banned', False)
-        await update.message.reply_text(
-            f"📊 <b>Состояние игрока {target_id}</b>\n\n"
-            f"Роль: <b>{role}</b>\n"
-            f"Забанен: <b>{'да' if banned else 'нет'}</b>\n"
-            f"Глобальный доступ: <b>{'да' if access.get('global_access') else 'нет'}</b>\n"
-            f"Индив. доступ: <b>{'да' if access.get('individual_access') else 'нет'}</b>\n"
-            f"Очки: <b>{score}</b>  Глав: <b>{comp}</b>\n"
-            f"Доступ разрешён: <b>{'✅ да' if access.get('allowed') else '❌ нет'}</b>",
-            parse_mode='HTML')
-    except (ValueError, IndexError):
-        await update.message.reply_text("❌ Неверный user_id")
+            f"✅ <b>Вы стали администратором!</b>\n\n"
+            f"Теперь кнопка «👑 Админка» появится в главном меню.\n"
+            f"Напишите /start чтобы обновить меню.",
+            parse_mode='HTML'
+        )
+        logger.info(f"Bootstrap admin: user {user.id} ({user.first_name}) claimed admin rights")
+    else:
+        await update.message.reply_text("❌ Ошибка при выдаче прав. Попробуйте снова.")
 
 
 def main():
@@ -5599,8 +5389,6 @@ def main():
             db.init_db()
             db.init_pool()
             db.seed_teachers(ALL_TEACHERS)
-            # Мигрируем новую схему (идемпотентно)
-            db.migrate_game_schema()
             logger.info("✅ БД инициализирована успешно")
             break
         except Exception as e:
@@ -5613,16 +5401,10 @@ def main():
 
     async def post_init(application):
         await application.bot.set_my_commands([
-            ("start",          "🏠 Главное меню"),
-            ("teacher",        "👨‍🏫 Зарегистрироваться как учитель"),
-            ("cancel",         "❌ Отменить текущее действие"),
-            ("grant_access",   "🔑 Выдать доступ к игре [admin]"),
-            ("revoke_access",  "🚫 Отозвать доступ к игре [admin]"),
-            ("refresh_state",  "🔄 Показать состояние игрока [admin]"),
+            ("start",   "🏠 Главное меню"),
+            ("teacher", "📝 Зарегистрироваться как учитель"),
+            ("cancel",  "❌ Отменить последнее действие"),
         ])
-        # Запускаем фоновую задачу проверки таймеров глав
-        asyncio.create_task(check_scheduled_chapters_task())
-        logger.info("⏰ Фоновая задача check_scheduled_chapters_task запущена")
 
     app = (
         Application.builder()
@@ -5636,12 +5418,10 @@ def main():
     )
 
     # group=-1 — /start и /cancel срабатывают ВСЕГДА, даже в середине любого флоу
-    app.add_handler(CommandHandler("start",         cmd_start),  group=-1)
-    app.add_handler(CommandHandler("cancel",        cmd_cancel), group=-1)
-    app.add_handler(CommandHandler("teacher",       cmd_teacher))
-    app.add_handler(CommandHandler("grant_access",  cmd_grant_access))
-    app.add_handler(CommandHandler("revoke_access", cmd_revoke_access))
-    app.add_handler(CommandHandler("refresh_state", cmd_refresh_state))
+    app.add_handler(CommandHandler("start",       cmd_start),  group=-1)
+    app.add_handler(CommandHandler("cancel",      cmd_cancel), group=-1)
+    app.add_handler(CommandHandler("teacher",     cmd_teacher))
+    app.add_handler(CommandHandler("claim_admin", cmd_claim_admin))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
@@ -5650,7 +5430,7 @@ def main():
 
     print("🤖 Бот запущен!")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
-    print(f"👑 Администраторы: {ADMIN_IDS}")
+    print("👑 Администраторы: определяются через БД (role=admin)")
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
     print(f"👥 Пользователей: {db.get_user_count()}")
     print(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
