@@ -77,10 +77,10 @@ _beta_cache_ts: float = 0
 # ══════════════════════════════════════════════════════════
 #  КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════
-ADMIN_IDS       = []  # Теперь права администратора выдаются через БД (game_roles: role='admin')
+ADMIN_IDS       = []  # Права администратора через БД (game_roles: role='admin')
 
 def is_bot_admin(user_id: int) -> bool:
-    """Проверяет, является ли пользователь администратором (роль 'admin' в game_roles)."""
+    """Синхронная проверка роли admin в game_roles."""
     try:
         role = db.get_game_role(user_id)
         return role == 'admin'
@@ -88,7 +88,7 @@ def is_bot_admin(user_id: int) -> bool:
         return False
 
 async def is_bot_admin_async(user_id: int) -> bool:
-    """Асинхронная проверка роли администратора."""
+    """Асинхронная проверка роли admin в game_roles."""
     try:
         role = await asyncio.to_thread(db.get_game_role, user_id)
         return role == 'admin'
@@ -1208,7 +1208,7 @@ async def check_maintenance(update: Update, context: CallbackContext) -> bool:
         status['last_check'] = now
         _maintenance_cache = status
 
-    if update.effective_await is_bot_admin_async(user.id):
+    if await is_bot_admin_async(update.effective_user.id):
         return False
     if not _maintenance_cache.get('enabled'):
         return False
@@ -2030,12 +2030,7 @@ async def global_error_handler(update: object, context: CallbackContext):
     logger.error(f"Необработанная ошибка:\n{tb}")
 
     short = str(err)[:300]
-    try:
-        admin_rows = await asyncio.to_thread(db.get_game_leaderboard_with_roles, 100)
-        admin_ids_from_db = [r[0] for r in admin_rows if r[5] == 'admin']
-    except Exception:
-        admin_ids_from_db = []
-    for admin_id in admin_ids_from_db:
+    for admin_id in (await get_admin_ids()):
         try:
             await context.bot.send_message(
                 chat_id=admin_id,
@@ -3914,7 +3909,7 @@ async def admin_game_reset_all_confirm(query, context):
 
 
 # ══════════════════════════════════════════════════════════
-#  МЕНЮ: ADMIN PANEL
+#  МОЙ ИГРОВОЙ РЕЖИМ (для администратора)
 # ══════════════════════════════════════════════════════════
 async def admin_my_game_role(query, context):
     """Позволяет администратору выбрать свой игровой режим."""
@@ -3922,7 +3917,6 @@ async def admin_my_game_role(query, context):
     if not await is_bot_admin_async(uid):
         await query.answer("⛔"); return
     await query.answer()
-
     current = await asyncio.to_thread(db.get_game_role, uid) or 'admin'
     role_desc = {
         'admin':  '👑 Все главы открыты, бесконечные жизни, не в рейтинге',
@@ -3930,9 +3924,9 @@ async def admin_my_game_role(query, context):
         'player': '🎮 Стандартный режим, участвует в рейтинге',
     }
     kb = [
-        [btn("👑 Войти как Админ",   f'admin_set_my_role_admin')],
-        [btn("🧪 Войти как Тестер",  f'admin_set_my_role_tester')],
-        [btn("🎮 Войти как Игрок",   f'admin_set_my_role_player')],
+        [btn("👑 Войти как Админ",  'admin_set_my_role_admin')],
+        [btn("🧪 Войти как Тестер", 'admin_set_my_role_tester')],
+        [btn("🎮 Войти как Игрок",  'admin_set_my_role_player')],
         [btn("↩️ Назад", 'admin_panel')],
     ]
     await safe_edit(query,
@@ -3940,7 +3934,7 @@ async def admin_my_game_role(query, context):
         f"Текущий режим: <b>{current}</b>\n"
         f"{role_desc.get(current, '')}\n\n"
         f"Выбери режим для входа в игру:\n\n"
-        f"<i>Это меняет только твою роль в игре — права администратора бота сохраняются.</i>",
+        f"<i>Права администратора бота сохраняются.</i>",
         kb)
 
 
@@ -3950,24 +3944,47 @@ async def admin_set_my_role(query, context, role):
     if not await is_bot_admin_async(uid):
         await query.answer("⛔"); return
     await query.answer()
-
     ok = await asyncio.to_thread(db.set_game_role, uid, role)
     role_icons = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}
     icon = role_icons.get(role, '🎮')
-
     await safe_edit(query,
-        f"{'✅' if ok else '❌'} Твой игровой режим изменён на {icon} <b>{role}</b>\n\n"
-        f"Теперь открой игру — она запустится в этом режиме.",
+        f"{'✅' if ok else '❌'} Игровой режим изменён на {icon} <b>{role}</b>\n\n"
+        f"Открой игру — она запустится в этом режиме.",
         [
             [btn("🎮 Открыть игру", 'menu_game')],
-            [btn("↩️ Моя роль",    'admin_my_game_role')],
+            [btn("↩️ Мой режим",   'admin_my_game_role')],
             [btn("🏠 Главное меню", 'back_to_main')],
         ])
 
 
+async def cmd_claim_admin(update: Update, context: CallbackContext):
+    """/claim_admin — получить права админа если в системе ещё нет ни одного."""
+    user = update.effective_user
+    count = await asyncio.to_thread(db.count_admins)
+    if count > 0:
+        await update.message.reply_text(
+            "⛔ Команда недоступна — в системе уже есть администратор.\n"
+            "Обратитесь к текущему администратору для получения прав."
+        )
+        return
+    ok = await asyncio.to_thread(db.set_game_role, user.id, 'admin')
+    if ok:
+        await update.message.reply_text(
+            f"✅ <b>Вы стали администратором!</b>\n\n"
+            f"Кнопка «👑 Админка» появится в главном меню.\n"
+            f"Напишите /start чтобы обновить меню.",
+            parse_mode='HTML'
+        )
+        logger.info(f"Bootstrap admin: user {user.id} ({user.first_name}) claimed admin rights")
+    else:
+        await update.message.reply_text("❌ Ошибка при выдаче прав. Попробуйте снова.")
+
+
+# ══════════════════════════════════════════════════════════
+#  МЕНЮ: ADMIN PANEL
+# ══════════════════════════════════════════════════════════
 async def show_admin_panel(query):
-    uid = query.from_user.id
-    if not await is_bot_admin_async(uid):
+    if not await is_bot_admin_async(query.from_user.id):
         await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
         return
 
@@ -3980,11 +3997,6 @@ async def show_admin_panel(query):
     else:
         maint_btn = btn("🔧 Включить техрежим", 'admin_enable_maintenance')
 
-    # Текущий игровой режим администратора
-    my_game_role = await asyncio.to_thread(db.get_game_role, uid) or 'admin'
-    role_labels = {'admin': '👑 Режим: Админ', 'tester': '🧪 Режим: Тестер', 'player': '🎮 Режим: Игрок'}
-    my_mode_label = role_labels.get(my_game_role, '👑 Режим: Админ')
-
     kb = [
         [maint_btn],
         [btn("📣 Новость",        'admin_publish_news'),   btn("🗑 Новости",     'admin_manage_news')],
@@ -3993,7 +4005,7 @@ async def show_admin_panel(query):
         [btn("🗑 Удалить замену (ID)", 'admin_del_sub')],
         [btn("📊 Аналитика",     'admin_analytics'),        btn("👥 Пользователи",'admin_users')],
         [btn("📢 Рассылка",      'admin_broadcast'),        btn("🎮 Игра",         'admin_game_panel')],
-        [btn(f"👤 {my_mode_label}", 'admin_my_game_role')],
+        [btn("👤 Мой игровой режим", 'admin_my_game_role')],
         [btn("🏠 Главное меню",  'back_to_main')],
     ]
     await safe_edit(query, "👑 <b>АДМИН-ПАНЕЛЬ</b>\nВыберите действие:", kb)
@@ -5353,30 +5365,6 @@ def start_http_server_thread():
     t = threading.Thread(target=_thread, daemon=True)
     t.start()
     logger.info(f"HTTP server thread started (port {PORT})")
-
-async def cmd_claim_admin(update: Update, context: CallbackContext):
-    """/claim_admin — получить права администратора, если в системе ещё нет ни одного админа."""
-    user = update.effective_user
-    count = await asyncio.to_thread(db.count_admins)
-    if count > 0:
-        await update.message.reply_text(
-            "⛔ Команда недоступна — в системе уже есть администратор.\n"
-            "Обратитесь к текущему администратору для получения прав."
-        )
-        return
-    # Нет ни одного — выдаём роль
-    ok = await asyncio.to_thread(db.set_game_role, user.id, 'admin')
-    if ok:
-        await update.message.reply_text(
-            f"✅ <b>Вы стали администратором!</b>\n\n"
-            f"Теперь кнопка «👑 Админка» появится в главном меню.\n"
-            f"Напишите /start чтобы обновить меню.",
-            parse_mode='HTML'
-        )
-        logger.info(f"Bootstrap admin: user {user.id} ({user.first_name}) claimed admin rights")
-    else:
-        await update.message.reply_text("❌ Ошибка при выдаче прав. Попробуйте снова.")
-
 
 def main():
     # Ждём БД при старте (Railway PostgreSQL стартует чуть позже бота)
