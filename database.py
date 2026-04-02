@@ -1934,3 +1934,116 @@ def count_admins() -> int:
         return 0
     finally:
         release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  БОТ-АДМИНИСТРАТОРЫ (отдельно от игровой роли)
+#  Таблица bot_admins — кто видит "Админку" в боте
+# ══════════════════════════════════════════════════════════
+
+def migrate_bot_admins_table():
+    """Создаёт таблицу bot_admins для хранения прав в боте."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_admins (
+                user_id    BIGINT PRIMARY KEY,
+                granted_by BIGINT,
+                granted_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        logger.info("✅ Таблица bot_admins создана/проверена")
+        return True
+    except Exception as e:
+        logger.error(f"migrate_bot_admins_table error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def is_bot_admin_db(user_id: int) -> bool:
+    """Проверяет есть ли пользователь в таблице bot_admins."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM bot_admins WHERE user_id = %s", (user_id,))
+        return cur.fetchone() is not None
+    except Exception as e:
+        logger.error(f"is_bot_admin_db error: {e}")
+        return False
+    finally:
+        release_connection(conn)
+
+
+def add_bot_admin(user_id: int, granted_by: int = None) -> bool:
+    """Добавляет пользователя в таблицу bot_admins."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO bot_admins(user_id, granted_by, granted_at)
+            VALUES(%s, %s, NOW())
+            ON CONFLICT(user_id) DO UPDATE SET granted_by=%s, granted_at=NOW()
+        """, (user_id, granted_by, granted_by))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"add_bot_admin error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def remove_bot_admin(user_id: int) -> bool:
+    """Убирает пользователя из bot_admins."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM bot_admins WHERE user_id = %s", (user_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"remove_bot_admin error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def count_bot_admins() -> int:
+    """Возвращает количество бот-администраторов."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM bot_admins")
+        row = cur.fetchone()
+        return row[0] if row else 0
+    except Exception as e:
+        logger.error(f"count_bot_admins error: {e}")
+        return 0
+    finally:
+        release_connection(conn)
+
+
+def get_all_bot_admins() -> list:
+    """Возвращает список всех бот-администраторов: [(user_id, granted_at), ...]."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, granted_at FROM bot_admins ORDER BY granted_at")
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_all_bot_admins error: {e}")
+        return []
+    finally:
+        release_connection(conn)
