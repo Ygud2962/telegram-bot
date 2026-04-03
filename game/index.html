@@ -719,6 +719,7 @@
     </div>
 
     <script>
+const GAME_VERSION = '1.1.0';
 const CHAPTERS = [
 {
 id:1, title: "ХОЙНИКИ: ОГНЕННОЕ ЛЕТО", subtitle: "Глава I",
@@ -2283,7 +2284,7 @@ el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="f
 function renderAboutTab() {
 const el = document.getElementById('about-tab-content');
 if (!el) return;
-el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ 1.0 · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div></div>`;
+el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ ${GAME_VERSION} · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v${GAME_VERSION} · © 2025 СШ №3 г. Хойники</div></div>`;
 }
 
 function confirmReset() {
@@ -3097,6 +3098,7 @@ _initCipherInputListeners();
     </script>
 </body>
 </html>
+
 
 
 
