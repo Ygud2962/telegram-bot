@@ -3940,27 +3940,39 @@ async def admin_game_panel(query, context):
     beta_count = len(beta_users)
 
     mode_labels = {
-        'beta': f"🧪 Режим: Бета ({beta_count})",
-        'open': "🟢 Режим: Открыта",
-        'closed': "🔒 Режим: Закрыта",
+        'beta': f"🧪 Бета-режим ({beta_count})",
+        'open': "🟢 Игра открыта",
+        'closed': "🔒 Игра закрыта",
     }
-    mode_text = mode_labels.get(access_mode, f"⚙️ Режим: {access_mode}")
+    mode_title = mode_labels.get(access_mode, f"⚙️ Режим: {access_mode}")
 
     text = (
-        "🎮 <b>Управление игрой «Шифровальщик»</b>\n\n"
-        f"👥 Всего игроков: <b>{total}</b>\n"
-        f"📊 Активных игроков: <b>{active}</b>\n"
-        f"🏁 Завершили игру: <b>{finished}</b>\n"
-        f"🚫 Заблокированы: <b>{banned}</b>\n\n"
-        f"🔖 Версии: бот <b>{BOT_VERSION}</b> · игра <b>{GAME_VERSION}</b>\n\n"
-        "Выберите действие:"
+        "\U0001f3ae <b>\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0438\u0433\u0440\u043e\u0439 \u00ab\u0428\u0438\u0444\u0440\u043e\u0432\u0430\u043b\u044c\u0449\u0438\u043a\u00bb</b>\n\n"
+        f"\U0001f465 \u0412\u0441\u0435\u0433\u043e \u0438\u0433\u0440\u043e\u043a\u043e\u0432: <b>{total}</b>\n"
+        f"\U0001f4ca \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0438\u0433\u0440\u043e\u043a\u043e\u0432: <b>{active}</b>\n"
+        f"\U0001f3c1 \u0417\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0438 \u0438\u0433\u0440\u0443: <b>{finished}</b>\n"
+        f"\U0001f6ab \u0417\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u044b: <b>{banned}</b>\n\n"
+        f"\U0001f516 \u0412\u0435\u0440\u0441\u0438\u0438: \u0431\u043e\u0442 <b>{BOT_VERSION}</b> \u00b7 \u0438\u0433\u0440\u0430 <b>{GAME_VERSION}</b>\n\n"
+        "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435:"
     )
+
+    mode_btns = {
+        'beta': btn("🧪 Бета (по списку)", 'game_mode_beta'),
+        'open': btn("🟢 Открыта", 'game_mode_open'),
+        'closed': btn("🔒 Закрыта", 'game_mode_closed'),
+    }
+
+    # Текущий режим показываем отдельной строкой + компактный выбор режимов.
+    if access_mode in mode_btns:
+        current = mode_btns.pop(access_mode)
+        mode_row = [btn(f"✅ {current.text}", 'noop')]
+    else:
+        mode_row = [btn(f"✅ {mode_title}", 'noop')]
+
     kb = [
         [btn("📋 Список игроков", 'admin_game_leaderboard')],
-        [btn(mode_text, 'noop')],
-        [btn("🧪 Бета-режим (по списку)", 'game_mode_beta')],
-        [btn("🟢 Игра открыта", 'game_mode_open')],
-        [btn("🔒 Игра закрыта", 'game_mode_closed')],
+        mode_row,
+        list(mode_btns.values()),
         [btn("🧪 Бета-список", 'admin_beta_panel')],
         [btn("🕒 Расписание глав", 'admin_chapters_panel')],
         [btn("🔓 Доступ игроков к главам", 'admin_player_chapters')],
@@ -5929,6 +5941,37 @@ def main():
         print("\n🛑 Бот остановлен")
     except Exception as e:
         logger.critical(f"Критическая ошибка: {e}")
+
+
+def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
+                     teacher_name: str | None = None) -> list:
+    """Возвращает практичное главное меню с учётом профиля."""
+    if teacher_name:
+        role_btn = btn(f"👨‍🏫 {teacher_name}", 'menu_profile')
+    elif profile:
+        role = profile.get('role', 'guest')
+        name = profile.get('display_name', '')
+        cls = profile.get('class_name', '')
+        if role == 'student':
+            role_btn = btn(f"👨‍🎓 {cls.upper()} · {name}", 'menu_profile')
+        elif role == 'parent':
+            role_btn = btn(f"👨‍👩‍👧 {cls.upper()} · {name}", 'menu_profile')
+        else:
+            role_btn = btn("👤 Мой профиль", 'menu_profile')
+    else:
+        role_btn = btn("📝 Зарегистрироваться", 'menu_register')
+
+    kb = [
+        [btn("⏰ Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
+        [btn("🔄 Замены", 'menu_substitutions'), btn("📣 Новости", 'menu_news')],
+        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
+        [btn("🕐 Звонки", 'menu_bells'), btn("⭐ Избранное", 'menu_my')],
+        [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🎮 Шифровальщик", 'menu_game')],
+        [role_btn, btn("🆘 Помощь", 'menu_help')],
+    ]
+    if is_admin:
+        kb.append([btn("👑 Админка", 'admin_panel')])
+    return kb
 
 
 if __name__ == '__main__':

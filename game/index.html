@@ -12,6 +12,7 @@
             --bg-soft: #141108;
             --accent: #ffe033;
             --accent2: #ff3a3a;
+            --red: #ff3a3a;
             --muted: #888;
             --green: #55dd55;
             --head: 'Courier New', monospace;
@@ -232,6 +233,8 @@
         .cipher-actions .btn { flex: 1; }
         .btn-check { background: rgba(255,224,51,.15); border-color: rgba(255,224,51,.4); }
         .btn-hint { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.15); }
+        .cipher-extra-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .cipher-extra-actions .btn { flex: 1; margin: 0; }
         .cipher-hint-box {
             background: rgba(255,224,51,.08);
             border: 1px solid rgba(255,224,51,.2);
@@ -607,6 +610,10 @@
             <div class="cipher-actions">
                 <button id="btn-hint" class="btn btn-hint" onclick="showHint()">💡 ПОДСКАЗКА</button>
                 <button id="btn-check" class="btn btn-check" onclick="checkAnswer()">✓ ПРОВЕРИТЬ</button>
+            </div>
+            <div class="cipher-extra-actions">
+                <button id="btn-cancel-timer" class="btn btn-small" onclick="cancelCipherTimer()">⏹ ОТМЕНИТЬ ТАЙМЕР</button>
+                <button id="btn-toggle-music" class="btn btn-small" onclick="toggleMusicEnabled()">🎵 МУЗЫКА: ON</button>
             </div>
             <div id="cipher-hint-box" class="cipher-hint-box">
                 <div id="cipher-hint-text"></div>
@@ -1131,7 +1138,8 @@ chapterFailCounts: {}, chapterStats: {},
 gameOver: false, leaderboard: [], adminMode: false, testerMode: false,
 repeatRuns: {},
 achievements: {}, achievementPts: 0,
-soundEnabled: true
+soundEnabled: true,
+musicEnabled: true
 });
 
 let state = DEFAULT_STATE();
@@ -1142,6 +1150,9 @@ let _quizState = { cipher: null, startTime: 0, selected: null, answered: false }
 let anagramState = { letters: [], placed: [], indices: [] };
 let mapAnswered = false;
 let _audioCtx = null;
+let _bgmInterval = null;
+let _bgmMaster = null;
+let _timerCanceledForCurrentCipher = false;
 let _lastSyncedScore = -1;
 let _lastSyncedCompleted = -1;
 let _syncInFlight = false;
@@ -1157,6 +1168,7 @@ try {
 const s = localStorage.getItem(storageKey());
 if (s) { Object.assign(state, JSON.parse(s)); state._noptsMode = false; }
 if (typeof state.soundEnabled !== 'boolean') state.soundEnabled = true;
+if (typeof state.musicEnabled !== 'boolean') state.musicEnabled = true;
 } catch(e) {}
 }
 
@@ -1507,6 +1519,8 @@ state._chapterHints = 0;
 saveState();
 loadCipher();
 showScreen('s-cipher');
+startBackgroundMusic();
+updateAudioButtons();
 }
 
 function loadCipher() {
@@ -1553,11 +1567,16 @@ else if (cipher.type === 'photo') { box.style.display = ''; box.innerHTML = `<di
 else if (cipher.type === 'map') { box.style.display = ''; box.innerHTML = ''; renderMap(cipher); }
 else { box.style.display = ''; box.textContent = cipher.encrypted; }
 const inputWrap = document.querySelector('.cipher-input-wrap');
-const actions = document.querySelector('.cipher-actions');
 const btnCheck = document.querySelector('.btn-check');
-if (cipher.type === 'map' || cipher.type === 'anagram') { inputWrap.style.display = 'none'; btnCheck.style.display = 'none'; }
-else { inputWrap.style.display = ''; btnCheck.style.display = ''; }
+if (cipher.type === 'map' || cipher.type === 'anagram') {
+  if (inputWrap) inputWrap.style.display = 'none';
+  if (btnCheck) btnCheck.style.display = 'none';
+} else {
+  if (inputWrap) inputWrap.style.display = '';
+  if (btnCheck) btnCheck.style.display = '';
+}
 renderLives();
+_timerCanceledForCurrentCipher = false;
 startTimer();
 const inpReset = document.getElementById('cipher-input');
 if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
@@ -1575,6 +1594,7 @@ if (cipher.type === 'map') renderMap(cipher);
 if (cipher.type === 'quiz') renderQuiz(cipher);
 const adminLabel = document.getElementById('cipher-admin-label');
 if (adminLabel) adminLabel.style.display = state.adminMode ? 'block' : 'none';
+updateAudioButtons();
 }
 
 function renderLives() {
@@ -1596,7 +1616,8 @@ el.style.filter = 'drop-shadow(0 0 8px rgba(255,58,58,.9))';
 setTimeout(() => { el.style.transform = ''; el.style.filter = ''; renderLives(); }, 200);
 }
 
-function startTimer() {
+function startTimer(force = false) {
+if (_timerCanceledForCurrentCipher && !force) return;
 if (_timerInterval) clearInterval(_timerInterval);
 const el = document.getElementById('cipher-timer');
 if (!el) return;
@@ -1613,10 +1634,19 @@ else el.style.color = 'var(--red)';
 }, 1000);
 }
 
-function stopTimer() {
+function stopTimer(resetText = false) {
 if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
 const el = document.getElementById('cipher-timer');
-if (el) el.style.color = 'var(--muted)';
+if (el) {
+  el.style.color = 'var(--muted)';
+  if (resetText) el.textContent = '—';
+}
+}
+
+function cancelCipherTimer() {
+_timerCanceledForCurrentCipher = true;
+stopTimer(true);
+showToast('⏹ Таймер отключён для текущего задания', 1400);
 }
 
 function animateMorse(el, text) {
@@ -1758,6 +1788,7 @@ renderLives();
 }
 
 function showSuccess(cipher, pts, elapsed) {
+stopBackgroundMusic();
 document.getElementById('succ-answer').textContent = cipher.answer;
 document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
 const factEl = document.getElementById('succ-fact');
@@ -1792,12 +1823,14 @@ state.cipherIdx++;
 saveState();
 loadCipher();
 showScreen('s-cipher');
+startBackgroundMusic();
 } else {
 finishChapter();
 }
 }
 
 async function finishChapter() {
+stopBackgroundMusic();
 const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
 const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
@@ -1839,6 +1872,7 @@ showScreen('s-chapter-end');
 }
 
 async function failChapter() {
+stopBackgroundMusic();
 const ch = CHAPTERS[state.chapter];
 const alreadyDone = !!state.completedChapters[ch.id];
 const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
@@ -2088,11 +2122,12 @@ slots.forEach(s => { s.style.borderColor = '#55dd55'; s.style.background = 'rgba
 const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
 saveState();
+stopTimer();
 setTimeout(() => showSuccess(cipher, pts, elapsed), 600);
 } else {
 slots.forEach(s => { s.style.borderColor = '#ff3a3a'; s.style.background = 'rgba(255,58,58,.1)'; });
 setTimeout(() => slots.forEach(s => { s.style.borderColor = ''; s.style.background = ''; }), 800);
-state.lives--;
+if (!state.adminMode) state.lives--;
 saveState();
 if (state.lives <= 0) {
 if (state.adminMode) { state.lives = 5; saveState(); renderLives(); setTimeout(resetAnagram, 500); }
@@ -2124,11 +2159,12 @@ document.getElementById('map-hint-text').textContent = '✅ Верно! ' + clic
 const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
 saveState();
+stopTimer();
 setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
 } else {
 if (dotEl) { const c = dotEl.querySelector('circle'); c.setAttribute('fill','#ff3a3a'); setTimeout(() => c.setAttribute('fill','#ffe033'), 700); }
 document.getElementById('map-hint-text').textContent = '❌ Не здесь. Попробуй ещё раз.';
-state.lives--;
+if (!state.adminMode) state.lives--;
 saveState();
 if (state.lives <= 0) {
 if (state.adminMode) { state.lives = 5; saveState(); renderLives(); document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены'; }
@@ -2141,6 +2177,59 @@ showToast('❌ Неверно! Попробуйте ещё раз');
 function getAudio() {
 if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
 return _audioCtx;
+}
+
+function stopBackgroundMusic() {
+if (_bgmInterval) {
+  clearInterval(_bgmInterval);
+  _bgmInterval = null;
+}
+if (_bgmMaster) {
+  try { _bgmMaster.disconnect(); } catch(e) {}
+  _bgmMaster = null;
+}
+}
+
+function startBackgroundMusic() {
+if (state.musicEnabled === false) return;
+const ctx = getAudio();
+if (!ctx) return;
+if (_bgmInterval && _bgmMaster) return;
+try {
+  if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); }
+  _bgmMaster = ctx.createGain();
+  _bgmMaster.gain.setValueAtTime(0.045, ctx.currentTime);
+  _bgmMaster.connect(ctx.destination);
+  const notes = [220, 247, 262, 294, 262, 247, 196, 220];
+  let idx = 0;
+  const playStep = () => {
+    if (state.musicEnabled === false || !_bgmMaster) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(notes[idx % notes.length], now);
+    idx += 1;
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.8, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+    osc.connect(gain);
+    gain.connect(_bgmMaster);
+    osc.start(now);
+    osc.stop(now + 0.45);
+  };
+  playStep();
+  _bgmInterval = setInterval(playStep, 430);
+} catch(e) {
+  stopBackgroundMusic();
+}
+}
+
+function updateAudioButtons() {
+const musicBtn = document.getElementById('btn-toggle-music');
+if (musicBtn) {
+  musicBtn.textContent = state.musicEnabled === false ? '🎵 МУЗЫКА: OFF' : '🎵 МУЗЫКА: ON';
+}
 }
 
 function playSound(type) {
@@ -2225,6 +2314,7 @@ setTimeout(() => flash.remove(), 700);
 function pauseGame() {
 saveState();
 stopTimer();
+stopBackgroundMusic();
 autoSync(false);
 pausedFromScreen = 's-cipher';
 hideBottomNav();
@@ -2239,11 +2329,16 @@ const target = pausedFromScreen || 's-cipher';
 pausedFromScreen = null;
 hideBottomNav();
 showScreen(target);
-if (target === 's-cipher') startTimer();
+if (target === 's-cipher') {
+  startTimer();
+  startBackgroundMusic();
+}
 }
 
 function goToChapters() {
 saveState();
+stopTimer();
+stopBackgroundMusic();
 showScreen('s-chapters');
 renderChapters();
 showBottomNav();
@@ -2252,6 +2347,8 @@ autoSync(true);
 
 function exitToMain() {
 saveState();
+stopTimer();
+stopBackgroundMusic();
 autoSync(false);
 if (tg) { setTimeout(() => tg.close(), 300); } else { goToChapters(); }
 }
@@ -2338,13 +2435,56 @@ showToast(state.soundEnabled ? '🔊 Звук включен' : '🔇 Звук �
 if (state.soundEnabled) playSound('hint');
 }
 
+function toggleMusicEnabled() {
+state.musicEnabled = !state.musicEnabled;
+saveState();
+if (state.musicEnabled) {
+  startBackgroundMusic();
+  showToast('🎵 Музыка включена', 1400);
+} else {
+  stopBackgroundMusic();
+  showToast('🎵 Музыка выключена', 1400);
+}
+updateAudioButtons();
+renderSettingsTab();
+}
+
 function renderSettingsTab() {
 const el = document.getElementById('settings-tab-content');
 if (!el) return;
-const isOn = state.soundEnabled !== false;
-const status = isOn ? 'ВКЛЮЧЕН' : 'ВЫКЛЮЧЕН';
-const icon = isOn ? '🔊' : '🔇';
-el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:20px"><div style="font-size:52px;margin-bottom:8px">⚙️</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">НАСТРОЙКИ</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:6px;letter-spacing:.1em">ИГРА · v${GAME_VERSION}</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.16);border-radius:10px;padding:14px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.05em">${icon} ЗВУК</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">Звуковые эффекты ответов, побед и подсказок</div></div><div style="font-family:var(--head);font-size:var(--fs-sm);color:${isOn ? 'var(--green)' : 'var(--accent2)'}">${status}</div></div><button onclick="toggleSoundEnabled()" style="width:100%;margin-top:12px;background:${isOn ? 'rgba(255,58,58,.16)' : 'rgba(85,221,85,.16)'};color:${isOn ? 'var(--accent2)' : 'var(--green)'};border:1px solid ${isOn ? 'rgba(255,58,58,.35)' : 'rgba(85,221,85,.35)'};padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">${isOn ? 'ВЫКЛЮЧИТЬ ЗВУК' : 'ВКЛЮЧИТЬ ЗВУК'}</button></div><button onclick="playSound('hint')" style="width:100%;background:rgba(255,224,51,.12);color:var(--accent);border:1px solid rgba(255,224,51,.3);padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">▶ ТЕСТ ЗВУКА</button></div>`;
+const soundOn = state.soundEnabled !== false;
+const musicOn = state.musicEnabled !== false;
+el.innerHTML = `<div style="padding:16px">
+  <div style="text-align:center;margin-bottom:20px">
+    <div style="font-size:52px;margin-bottom:8px">⚙️</div>
+    <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">НАСТРОЙКИ</div>
+    <div style="font-size:var(--fs-xs);color:var(--muted);margin-top:6px;letter-spacing:.1em">ИГРА · v${GAME_VERSION}</div>
+  </div>
+
+  <div style="background:#141108;border:1px solid rgba(255,224,51,.16);border-radius:10px;padding:14px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div>
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.05em">${soundOn ? '🔊' : '🔇'} ЗВУКОВЫЕ ЭФФЕКТЫ</div>
+        <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">Ответы, подсказки, победа</div>
+      </div>
+      <div style="font-family:var(--head);font-size:var(--fs-sm);color:${soundOn ? 'var(--green)' : 'var(--accent2)'}">${soundOn ? 'ВКЛ' : 'ВЫКЛ'}</div>
+    </div>
+    <button onclick="toggleSoundEnabled()" style="width:100%;margin-top:12px;background:${soundOn ? 'rgba(255,58,58,.16)' : 'rgba(85,221,85,.16)'};color:${soundOn ? 'var(--accent2)' : 'var(--green)'};border:1px solid ${soundOn ? 'rgba(255,58,58,.35)' : 'rgba(85,221,85,.35)'};padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">${soundOn ? 'ВЫКЛЮЧИТЬ ЗВУК' : 'ВКЛЮЧИТЬ ЗВУК'}</button>
+  </div>
+
+  <div style="background:#141108;border:1px solid rgba(255,224,51,.16);border-radius:10px;padding:14px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div>
+        <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.05em">🎵 ФОНОВАЯ МУЗЫКА</div>
+        <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">Негромкая музыка во время прохождения</div>
+      </div>
+      <div style="font-family:var(--head);font-size:var(--fs-sm);color:${musicOn ? 'var(--green)' : 'var(--accent2)'}">${musicOn ? 'ВКЛ' : 'ВЫКЛ'}</div>
+    </div>
+    <button onclick="toggleMusicEnabled()" style="width:100%;margin-top:12px;background:${musicOn ? 'rgba(255,58,58,.16)' : 'rgba(85,221,85,.16)'};color:${musicOn ? 'var(--accent2)' : 'var(--green)'};border:1px solid ${musicOn ? 'rgba(255,58,58,.35)' : 'rgba(85,221,85,.35)'};padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">${musicOn ? 'ВЫКЛЮЧИТЬ МУЗЫКУ' : 'ВКЛЮЧИТЬ МУЗЫКУ'}</button>
+  </div>
+
+  <button onclick="playSound('hint')" style="width:100%;background:rgba(255,224,51,.12);color:var(--accent);border:1px solid rgba(255,224,51,.3);padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">▶ ТЕСТ ЗВУКА</button>
+</div>`;
 }
 
 function confirmReset() {
@@ -3142,6 +3282,7 @@ introEntrance();
 renderChapters();
 fetchAndApplyState();
 _initCipherInputListeners();
+updateAudioButtons();
 });
 } else {
 showSplash();
@@ -3152,7 +3293,16 @@ introEntrance();
 renderChapters();
 fetchAndApplyState();
 _initCipherInputListeners();
+updateAudioButtons();
 }
+
+document.addEventListener('visibilitychange', () => {
+if (document.visibilityState === 'hidden') {
+  stopBackgroundMusic();
+} else if (state.musicEnabled !== false && document.getElementById('s-cipher')?.classList.contains('active')) {
+  startBackgroundMusic();
+}
+});
 
 // listeners для поля ввода и кнопки клавиатуры инициализируются в _initCipherInputListeners()
     </script>

@@ -1,53 +1,72 @@
 @echo off
+setlocal EnableExtensions
 chcp 65001 > nul
-echo.
-echo ========================================
-echo   DEPLOY - СШ №3 Шифровальщик
-echo ========================================
-echo.
-
-set /p MSG="Commit message (English): "
-if "%MSG%"=="" set MSG=update
 
 cd /d "%~dp0"
 
 echo.
-echo [1/5] Switching to dev...
-git checkout dev
+echo ========================================
+echo   DEPLOY - MAIN BRANCH
+echo ========================================
+echo.
+
+set /p MSG="Commit message (English): "
+if "%MSG%"=="" set "MSG=update"
+
+echo [1/6] Checking merge conflicts...
+for /f %%i in ('git diff --name-only --diff-filter=U') do (
+  echo ERROR: unresolved conflict in %%i
+  goto conflict_error
+)
+
+echo [2/6] Detecting current branch...
+for /f %%i in ('git rev-parse --abbrev-ref HEAD') do set "BRANCH=%%i"
+if not defined BRANCH goto error
+echo Current branch: %BRANCH%
+
+if /I not "%BRANCH%"=="main" (
+  echo [3/6] Switching to main...
+  git switch main 2>nul || git checkout main
+  if errorlevel 1 goto error
+) else (
+  echo [3/6] Already on main.
+)
+
+echo [4/6] Syncing with origin/main...
+git pull --ff-only origin main
 if errorlevel 1 goto error
 
-echo [2/5] Committing changes...
-git add .
-git commit -m "%MSG%"
+echo [5/6] Creating commit if needed...
+git add -A
+git diff --cached --quiet
+if not errorlevel 1 (
+  git commit -m "%MSG%"
+  if errorlevel 1 goto error
+) else (
+  echo No local changes to commit.
+)
 
-echo [3/5] Pushing dev...
-git push origin dev
-if errorlevel 1 goto error
-
-echo [4/5] Switching to main...
-git checkout main
-
-echo [4/5] Syncing main with remote...
-git fetch origin main
-git reset --hard origin/main
-
-echo [5/5] Merging dev into main...
-git merge dev --no-edit
-if errorlevel 1 goto error
-
-echo [5/5] Pushing main...
+echo [6/6] Pushing main...
 git push origin main
 if errorlevel 1 goto error
 
-git checkout dev
-
 echo.
 echo ========================================
-echo   Done! The bot has been updated.
+echo   Done! main is deployed.
 echo ========================================
 echo.
 pause
 exit /b 0
+
+:conflict_error
+echo.
+echo Resolve conflicts first, then run deploy.bat again.
+echo Example:
+echo   git add ^<file^>
+echo   git commit
+echo.
+pause
+exit /b 1
 
 :error
 echo.
