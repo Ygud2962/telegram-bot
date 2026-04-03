@@ -2672,7 +2672,7 @@ async def is_game_allowed(user_id: int) -> bool:
 
 
 async def menu_game(query, context):
-    """Запуск игры Шифровальщик."""
+    """Запуск игры Шифровальщик с учётом роли (admin/tester/player)."""
     await query.answer()
     user = query.from_user
 
@@ -2696,19 +2696,9 @@ async def menu_game(query, context):
 
     from telegram import InlineKeyboardButton, WebAppInfo
 
-    # Загружаем leaderboard и открытые главы параллельно — с защитой от ошибок БД
+    # Регистрируем при первом открытии + получаем роль
     try:
-        lb_rows, open_chapters = await asyncio.gather(
-            asyncio.to_thread(db.get_game_leaderboard, 20),
-            asyncio.to_thread(db.get_open_chapters),
-        )
-    except Exception as e:
-        logger.warning(f"menu_game: DB error loading lb/chapters: {e}")
-        lb_rows, open_chapters = [], set()
-
-    # Регистрируем при первом открытии + назначаем роль
-    try:
-        reg_task = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
+        reg_task  = asyncio.to_thread(db.register_game_player, user.id, user.first_name)
         role_task = asyncio.to_thread(db.get_game_role, user.id)
         _, current_role = await asyncio.gather(reg_task, role_task)
     except Exception as e:
@@ -2722,14 +2712,38 @@ async def menu_game(query, context):
             pass
         current_role = role
 
-    # Читаем свежие данные игрока ПОСЛЕ регистрации — включая banned
+    # Читаем данные игрока и расписание глав
     try:
-        my_result = await asyncio.to_thread(db.get_game_result, user.id)
+        my_result, chapter_schedule = await asyncio.gather(
+            asyncio.to_thread(db.get_game_result, user.id),
+            asyncio.to_thread(db.get_chapter_schedule_for_game),
+        )
     except Exception as e:
         logger.warning(f"menu_game: DB error reading game result: {e}")
-        my_result = None
+        my_result, chapter_schedule = None, []
 
-    # get_game_leaderboard возвращает (uid, name, score, completed, game_over, role, ach_count, ach_pts)
+    # ── Открытые главы по роли ──────────────────────────────────
+    if current_role in ('admin', 'tester'):
+        # Всё открыто
+        open_chapters_list = list(range(1, 7))
+        admin_mode   = (current_role == 'admin')
+        tester_mode  = (current_role == 'tester')
+    else:  # player
+        # Только индивидуально + глобально открытые
+        try:
+            accessible = await asyncio.to_thread(db.get_player_accessible_chapters, user.id)
+        except Exception:
+            accessible = set()
+        open_chapters_list = sorted(list(accessible))
+        admin_mode  = False
+        tester_mode = False
+
+    # Leaderboard — только для рейтинга (игроки)
+    try:
+        lb_rows = await asyncio.to_thread(db.get_game_leaderboard, 20)
+    except Exception:
+        lb_rows = []
+
     lb_data = [
         {'uid': str(r[0]), 'name': r[1] or 'Игрок', 'score': r[2],
          'completed': r[3], 'role': r[5] if len(r) > 5 else 'player',
@@ -2737,9 +2751,10 @@ async def menu_game(query, context):
          'achievementPts':   r[7] if len(r) > 7 else 0}
         for r in lb_rows
     ]
+
     my_data = None
+    restart_mode = None
     if my_result:
-        # my_result: (uid, name, total_score, completed, game_over, updated_at, banned)
         try:
             restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id)
         except Exception:
@@ -2747,54 +2762,67 @@ async def menu_game(query, context):
         my_data = {
             'uid': str(my_result[0]), 'name': my_result[1] or 'Игрок',
             'score': my_result[2], 'completed': my_result[3],
-            'game_over': my_result[4], 'role': current_role or 'player',
+            'game_over': my_result[4], 'role': current_role,
             'banned': bool(my_result[6]) if len(my_result) > 6 else False,
-            'restart_mode': restart_mode,  # 'penalty'|'nopts'|None
+            'restart_mode': restart_mode,
+            'admin_mode': admin_mode,
+            'tester_mode': tester_mode,
         }
 
-    # Формируем данные для передачи в игру
-    # sync_url ОБЯЗАТЕЛЕН — без него игра не сохраняет прогресс
+    # sync_url ОБЯЗАТЕЛЕН
     sync_url_val = f"{BOT_PUBLIC_URL}/game_sync" if BOT_PUBLIC_URL else ''
     if not sync_url_val:
-        logger.error("menu_game: BOT_PUBLIC_URL не задан! Прогресс игры НЕ будет сохраняться!")
+        logger.error("menu_game: BOT_PUBLIC_URL не задан!")
 
-    game_payload = {
-        'lb': lb_data, 'me': my_data,
-        'open': sorted(list(open_chapters)),
-        'sync_url': sync_url_val,
-    }
+    def _build_payload(lb=None, me=None, full=True):
+        p = {
+            'sync_url':         sync_url_val,
+            'open':             open_chapters_list,
+            'chapter_schedule': chapter_schedule,
+            'admin_mode':       admin_mode,
+            'tester_mode':      tester_mode,
+            'role':             current_role,
+        }
+        if me is not None:
+            p['me'] = me
+        if lb is not None and full:
+            p['lb'] = lb
+        return p
 
+    # Сборка payload с урезанием при превышении 2000 символов
+    game_payload = _build_payload(lb=lb_data, me=my_data)
     payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
-    # Если payload слишком большой — сокращаем leaderboard, но ВСЕГДА оставляем sync_url
     if len(payload) >= 2000:
-        game_payload['lb'] = lb_data[:5]  # топ-5 вместо 20
+        game_payload = _build_payload(lb=lb_data[:5], me=my_data)
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
     if len(payload) >= 2000:
-        # Убираем lb и me, оставляем только критичные поля
-        game_payload = {
-            'sync_url': sync_url_val,
-            'open': sorted(list(open_chapters)),
-            'me': {
-                'uid': my_data['uid'], 'score': my_data['score'],
-                'completed': my_data['completed'], 'role': my_data.get('role', 'player'),
-                'banned': my_data.get('banned', False),
-            } if my_data else None,
-        }
+        slim_me = {
+            'uid': my_data['uid'], 'score': my_data.get('score', 0),
+            'completed': my_data.get('completed', 0), 'role': current_role,
+            'banned': my_data.get('banned', False),
+            'admin_mode': admin_mode, 'tester_mode': tester_mode,
+        } if my_data else None
+        game_payload = _build_payload(lb=None, me=slim_me, full=False)
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
     if len(payload) >= 2048:
-        # Абсолютный минимум — только sync_url и открытые главы
-        game_payload = {'sync_url': sync_url_val, 'open': sorted(list(open_chapters))}
+        game_payload = {
+            'sync_url': sync_url_val,
+            'open': open_chapters_list,
+            'admin_mode': admin_mode,
+            'tester_mode': tester_mode,
+            'role': current_role,
+        }
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
     game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2048 else GAME_URL
-    logger.info(f"game payload size: {len(payload)} chars, sync_url: {sync_url_val[:50]}")
+    logger.info(f"game payload size: {len(payload)} chars, role={current_role}, open={open_chapters_list}")
 
-    # Формируем описание результата игрока
+    # Формируем описание результата
     if my_result:
-        uid, uname, total, comp, game_over, updated, *_ = my_result
+        uid2, uname, total, comp, game_over, updated, *_ = my_result
         updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y') if updated else '—'
         pct = round((comp / 6) * 100)
         status = " ✅ <b>ВСЕ ГЛАВЫ!</b>" if game_over else ""
@@ -2806,41 +2834,32 @@ async def menu_game(query, context):
     else:
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
 
-    # Режим игры определяется по ИГРОВОЙ роли (game_roles), а не по правам в боте.
-    # Бот-администратор может играть как обычный игрок если выбрал роль 'player'.
-    game_role_for_payload = current_role or 'player'
-    is_admin_user = game_role_for_payload in ('admin', 'tester')
-    if is_admin_user:
-        # Делаем минимальный payload — только то что нужно
-        admin_payload_data = {
-            'me': my_data,
-            'open': sorted(list(open_chapters)),
-            'sync_url': sync_url_val,
-            'admin_mode': True,
-        }
-        admin_payload_str = urllib.parse.quote(json.dumps(admin_payload_data, ensure_ascii=False))
-        # Если слишком большой — убираем me (возьмёт из БД через fetchAndApplyState)
-        if len(admin_payload_str) >= 2048:
-            admin_payload_data = {
-                'sync_url': sync_url_val,
-                'admin_mode': True,
-            }
-            admin_payload_str = urllib.parse.quote(json.dumps(admin_payload_data, ensure_ascii=False))
-        admin_game_url = f"{GAME_URL}?tgWebAppStartParam={admin_payload_str}"
-        role_label = "👑 ОТКРЫТЬ ИГРУ (АДМИН)" if game_role_for_payload == 'admin' else "🧪 ОТКРЫТЬ ИГРУ (ТЕСТЕР)"
-
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(role_label, web_app=WebAppInfo(url=admin_game_url))],
-            [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
-            [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
-        ])
+    # Роль-специфичные подсказки
+    if current_role == 'admin':
+        role_hint = "\n👑 <i>Режим администратора: все главы открыты, ∞ жизней, рейтинг не учитывается</i>"
+    elif current_role == 'tester':
+        role_hint = "\n🧪 <i>Режим тестировщика: все главы открыты, 5 жизней, рейтинг не учитывается</i>"
     else:
-        # Если игрок завершил всю игру — предлагаем варианты перезапуска
-        game_completed = my_result and my_result[4]  # game_over=True
-        try:
-            restart_mode = await asyncio.to_thread(db.get_restart_mode, user.id) if my_result else None
-        except Exception:
-            restart_mode = None
+        if not open_chapters_list:
+            role_hint = "\n🔒 <i>Главы ещё не открыты. Ожидайте — администратор откроет их по расписанию.</i>"
+        else:
+            role_hint = f"\n🎮 <i>Вам доступно глав: {len(open_chapters_list)}/6</i>"
+
+    # Кнопка сброса — только для админа
+    can_reset = (current_role == 'admin')
+
+    if current_role in ('admin', 'tester'):
+        role_label = "👑 ОТКРЫТЬ ИГРУ (АДМИН)" if current_role == 'admin' else "🧪 ОТКРЫТЬ ИГРУ (ТЕСТЕР)"
+        btn_rows = [
+            [InlineKeyboardButton(role_label, web_app=WebAppInfo(url=game_url))],
+            [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
+        ]
+        if can_reset:
+            btn_rows.append([InlineKeyboardButton("🗑 Сбросить мой рейтинг", callback_data='game_admin_self_reset')])
+        btn_rows.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
+        kb = InlineKeyboardMarkup(btn_rows)
+    else:
+        game_completed = my_result and my_result[4]
         if game_completed and not restart_mode:
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔥 Пройти снова (+10с, с очками)", callback_data=f'game_restart_penalty_{user.id}')],
@@ -2861,12 +2880,12 @@ async def menu_game(query, context):
         "Вы — советский разведчик. Расшифруйте донесения "
         "и приблизьте День Победы.\n\n"
         "🗺 <b>6 глав</b> — операции на территории Беларуси\n"
-        "📋 <b>30 заданий</b> — по 5 на каждую главу\n"
+        "📋 <b>36 заданий</b> — по 6 на каждую главу\n"
         "🔐 <b>6 типов:</b> Цезарь · Морзе · Атбаш · Числовой · Анаграмма · Математика\n"
         "❤️ <b>5 жизней</b> на каждую главу\n"
         "⚡ <b>Очки за скорость</b> — чем быстрее, тем больше\n"
         "🏆 <b>Таблица лидеров</b> всей школы"
-        + my_info,
+        + my_info + role_hint,
         parse_mode='HTML', reply_markup=kb
     )
 
@@ -2885,6 +2904,40 @@ async def game_restart_select(query, context, uid, mode):
     else:
         await safe_edit(query, "❌ Ошибка. Попробуйте ещё раз.",
             [[btn("🏠 Главное меню", 'back_to_main')]])
+
+
+async def game_admin_self_reset(query, context):
+    """Сброс собственного рейтинга для администратора."""
+    uid = query.from_user.id
+    role = await asyncio.to_thread(db.get_game_role, uid)
+    if role != 'admin':
+        await query.answer("⛔ Только администратор может сбросить свой рейтинг", show_alert=True)
+        return
+    await query.answer()
+    await safe_edit(query,
+        "⚠️ <b>Сбросить свой рейтинг?</b>\n\n"
+        "Все ваши очки и прогресс будут обнулены.\n"
+        "Это действие необратимо.\n\n"
+        "<i>Роль администратора сохранится.</i>",
+        [
+            [btn("🗑 Да, сбросить мой рейтинг", 'game_admin_self_reset_confirm')],
+            [btn("❌ Отмена",                     'menu_game')],
+        ])
+
+
+async def game_admin_self_reset_confirm(query, context):
+    """Подтверждение сброса рейтинга администратора."""
+    uid = query.from_user.id
+    role = await asyncio.to_thread(db.get_game_role, uid)
+    if role != 'admin':
+        await query.answer("⛔ Только администратор", show_alert=True)
+        return
+    await query.answer()
+    ok = await asyncio.to_thread(db.reset_game_result, uid)
+    await safe_edit(query,
+        "✅ <b>Ваш рейтинг сброшен.</b>\n\nОчки обнулены, прогресс сброшен.\nРоль администратора сохранена."
+        if ok else "❌ Не удалось сбросить рейтинг.",
+        [[btn("🎮 Открыть игру", 'menu_game')], [btn("🏠 Главное меню", 'back_to_main')]])
 
 
 async def game_leaderboard(query, context):
@@ -3475,6 +3528,152 @@ async def handle_schedule_input(update, context, text):
 
 
 # ══════════════════════════════════════════════════════════
+#  УПРАВЛЕНИЕ ДОСТУПОМ ИГРОКОВ К ГЛАВАМ
+# ══════════════════════════════════════════════════════════
+
+async def admin_player_chapters(query, context):
+    """Главная панель: выбрать игрока для управления доступом к главам."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+
+    players = await asyncio.to_thread(db.get_players_only, 50)
+    if not players:
+        await safe_edit(query,
+            "🔑 <b>ДОСТУП К ГЛАВАМ</b>\n\nОбычных игроков пока нет.",
+            [[btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
+        return
+
+    lines = ["🔑 <b>ДОСТУП ИГРОКОВ К ГЛАВАМ</b>\n",
+             "<i>Выберите игрока чтобы открыть/закрыть ему главы:</i>\n"]
+    kb = []
+    for uid, fname, uname, score, completed in players[:30]:
+        display = fname or uname or str(uid)
+        kb.append([btn(f"🎮 {display[:22]} ({completed}/6 гл)", f"apc_player_{uid}")])
+
+    kb.append([btn("↩️ Управление игрой", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_player_chapters_view(query, context, target_uid):
+    """Просмотр и управление доступом к главам конкретного игрока."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+
+    admin_uid = query.from_user.id
+    uinfo = await asyncio.to_thread(db.get_user_info, target_uid)
+    name = (uinfo.get('first_name') or uinfo.get('username') or str(target_uid)) if uinfo else str(target_uid)
+
+    # Открытые этому игроку главы (индивидуально)
+    individual = await asyncio.to_thread(db.get_player_chapter_access_map, target_uid)
+    # Глобально открытые
+    global_open = await asyncio.to_thread(db.get_open_chapters)
+    # Итоговые доступные
+    accessible = individual | global_open
+
+    tz = pytz.timezone('Europe/Minsk')
+    chapters_status = await asyncio.to_thread(db.get_chapters_status)
+    chapter_sched = {r[0]: r for r in chapters_status}
+
+    lines = [f"🔑 <b>ДОСТУП К ГЛАВАМ: {name}</b>\n",
+             f"🆔 <code>{target_uid}</code>\n"]
+
+    kb = []
+    for ch_id in range(1, 7):
+        ch_name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        in_individual = ch_id in individual
+        in_global = ch_id in global_open
+        is_open = ch_id in accessible
+
+        if in_global:
+            status = "🌐 глобально открыта"
+            # Нельзя управлять индивидуально — уже открыта для всех
+            lines.append(f"Гл.{ch_id} {ch_name}: {status}")
+        elif in_individual:
+            status = "✅ открыта вам"
+            lines.append(f"Гл.{ch_id} {ch_name}: {status}")
+            kb.append([btn(f"🔒 Закрыть гл.{ch_id} для {name[:12]}", f"apc_revoke_{target_uid}_{ch_id}")])
+        else:
+            # Проверяем есть ли расписание
+            sched = chapter_sched.get(ch_id)
+            if sched and sched[2]:  # open_at
+                dt_str = sched[2].astimezone(tz).strftime('%d.%m %H:%M')
+                status = f"⏰ откроется {dt_str}"
+            else:
+                status = "🔒 закрыта"
+            lines.append(f"Гл.{ch_id} {ch_name}: {status}")
+            kb.append([btn(f"▶ Открыть гл.{ch_id} для {name[:12]}", f"apc_grant_{target_uid}_{ch_id}")])
+
+    kb.append([btn(f"🌐 Открыть ВСЕ главы для {name[:12]}", f"apc_grant_all_{target_uid}")])
+    kb.append([btn(f"🔒 Закрыть ВСЕ для {name[:12]}", f"apc_revoke_all_{target_uid}")])
+    kb.append([btn("↩️ Список игроков", 'admin_player_chapters'), btn("🏠 Меню", 'back_to_main')])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def handle_player_chapter_action(query, context, data):
+    """Обрабатывает выдачу/отзыв доступа к главе."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    admin_uid = query.from_user.id
+
+    if data.startswith('apc_grant_all_'):
+        target_uid = int(data.replace('apc_grant_all_', ''))
+        ok = await asyncio.to_thread(db.grant_all_chapters_to_player, target_uid, admin_uid)
+        uinfo = await asyncio.to_thread(db.get_user_info, target_uid)
+        name = (uinfo.get('first_name') or str(target_uid)) if uinfo else str(target_uid)
+        await safe_edit(query,
+            f"✅ Все 6 глав открыты для игрока <b>{name}</b>." if ok else "❌ Ошибка.",
+            [[btn("↩️ Назад", f'apc_player_{target_uid}'), btn("🏠 Меню", 'back_to_main')]])
+
+    elif data.startswith('apc_revoke_all_'):
+        target_uid = int(data.replace('apc_revoke_all_', ''))
+        uinfo = await asyncio.to_thread(db.get_user_info, target_uid)
+        name = (uinfo.get('first_name') or str(target_uid)) if uinfo else str(target_uid)
+        await safe_edit(query,
+            f"⚠️ Закрыть ВСЕ индивидуальные главы для <b>{name}</b>?\n\n"
+            f"<i>Глобально открытые главы останутся доступны.</i>",
+            [
+                [btn("✅ Да, закрыть все", f'apc_revoke_all_confirm_{target_uid}')],
+                [btn("❌ Отмена", f'apc_player_{target_uid}')],
+            ])
+
+    elif data.startswith('apc_revoke_all_confirm_'):
+        target_uid = int(data.replace('apc_revoke_all_confirm_', ''))
+        ok = await asyncio.to_thread(db.revoke_all_chapters_from_player, target_uid)
+        uinfo = await asyncio.to_thread(db.get_user_info, target_uid)
+        name = (uinfo.get('first_name') or str(target_uid)) if uinfo else str(target_uid)
+        await safe_edit(query,
+            f"✅ Индивидуальный доступ к главам для <b>{name}</b> закрыт." if ok else "❌ Ошибка.",
+            [[btn("↩️ Назад", f'apc_player_{target_uid}'), btn("🏠 Меню", 'back_to_main')]])
+
+    elif data.startswith('apc_grant_'):
+        # apc_grant_{uid}_{ch_id}
+        parts = data.replace('apc_grant_', '').split('_')
+        target_uid, ch_id = int(parts[0]), int(parts[1])
+        ok = await asyncio.to_thread(db.grant_chapter_to_player, target_uid, ch_id, admin_uid)
+        uinfo = await asyncio.to_thread(db.get_user_info, target_uid)
+        name = (uinfo.get('first_name') or str(target_uid)) if uinfo else str(target_uid)
+        ch_name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        await safe_edit(query,
+            f"✅ Глава {ch_id} «{ch_name}» открыта для <b>{name}</b>." if ok else "❌ Ошибка.",
+            [[btn("↩️ Назад", f'apc_player_{target_uid}'), btn("🏠 Меню", 'back_to_main')]])
+
+    elif data.startswith('apc_revoke_'):
+        # apc_revoke_{uid}_{ch_id}
+        parts = data.replace('apc_revoke_', '').split('_')
+        target_uid, ch_id = int(parts[0]), int(parts[1])
+        ok = await asyncio.to_thread(db.revoke_chapter_from_player, target_uid, ch_id)
+        uinfo = await asyncio.to_thread(db.get_user_info, target_uid)
+        name = (uinfo.get('first_name') or str(target_uid)) if uinfo else str(target_uid)
+        ch_name = CHAPTER_NAMES.get(ch_id, f"Глава {ch_id}")
+        await safe_edit(query,
+            f"🔒 Глава {ch_id} «{ch_name}» закрыта для <b>{name}</b>." if ok else "❌ Ошибка.",
+            [[btn("↩️ Назад", f'apc_player_{target_uid}'), btn("🏠 Меню", 'back_to_main')]])
+
+
+# ══════════════════════════════════════════════════════════
 #  УПРАВЛЕНИЕ РОЛЯМИ ИГРОКОВ
 # ══════════════════════════════════════════════════════════
 
@@ -3685,11 +3884,12 @@ async def admin_game_panel(query, context):
     beta_label = f"🔒 Бета: {beta_count} тестеров" if beta_on else "🌐 Бета: ВЫКЛ (игра для всех)"
 
     kb = [
-        [btn("📋 Список игроков",      'admin_game_leaderboard')],
-        [btn(beta_label,               'admin_beta_panel')],
-        [btn("📖 Управление главами",    'admin_chapters_panel')],
-        [btn("🎭 Роли игроков",          'admin_roles_panel')],
-        [btn("🗑 Сбросить ВСЕХ",       'admin_game_reset_all')],
+        [btn("📋 Список игроков",         'admin_game_leaderboard')],
+        [btn(beta_label,                   'admin_beta_panel')],
+        [btn("📖 Управление главами",      'admin_chapters_panel')],
+        [btn("🔑 Доступ игроков к главам", 'admin_player_chapters')],
+        [btn("🎭 Роли игроков",            'admin_roles_panel')],
+        [btn("🗑 Сбросить ВСЕХ",           'admin_game_reset_all')],
         [btn("↩️ Админка", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
@@ -4453,6 +4653,16 @@ async def button_handler(update: Update, context: CallbackContext):
         await game_leaderboard(query, context)
         return
 
+    # ── Сброс рейтинга игроком (только для admin роли) ──
+    if d.startswith('game_restart_penalty_'):
+        uid = int(d.replace('game_restart_penalty_', ''))
+        await game_restart_select(query, context, uid, 'penalty')
+        return
+    if d.startswith('game_restart_nopts_'):
+        uid = int(d.replace('game_restart_nopts_', ''))
+        await game_restart_select(query, context, uid, 'nopts')
+        return
+
     # ── Админские колбэки игры ──
     if await is_bot_admin_async(user.id):
         if d.startswith('admin_set_my_role_'):
@@ -4489,17 +4699,18 @@ async def button_handler(update: Update, context: CallbackContext):
                 [[btn("↩️ Бета-панель", 'admin_beta_panel')]])
             return
 
+        # ── Доступ к главам для игроков (apc_) ──
+        if d.startswith('apc_player_'):
+            target_uid = int(d.replace('apc_player_', ''))
+            await admin_player_chapters_view(query, context, target_uid)
+            return
+        if (d.startswith('apc_grant_') or d.startswith('apc_revoke_')):
+            await handle_player_chapter_action(query, context, d)
+            return
+
         if d.startswith('agame_view_'):
             uid = int(d.replace('agame_view_', ''))
             await admin_game_view_player(query, context, uid)
-            return
-        if d.startswith('game_restart_penalty_'):
-            uid = int(d.replace('game_restart_penalty_', ''))
-            await game_restart_select(query, context, uid, 'penalty')
-            return
-        if d.startswith('game_restart_nopts_'):
-            uid = int(d.replace('game_restart_nopts_', ''))
-            await game_restart_select(query, context, uid, 'nopts')
             return
         if d.startswith('agame_restart_penalty_'):
             uid = int(d.replace('agame_restart_penalty_', ''))
@@ -4715,8 +4926,11 @@ async def button_handler(update: Update, context: CallbackContext):
         'abeta_clear_do':         admin_beta_clear_do,
         'admin_game_leaderboard': admin_game_leaderboard,
         'admin_game_reset_all':   admin_game_reset_all,
+        'admin_player_chapters':  admin_player_chapters,
         'game_leaderboard':       game_leaderboard,
         'admin_users':            show_users_stats,
+        'game_admin_self_reset':         game_admin_self_reset,
+        'game_admin_self_reset_confirm': game_admin_self_reset_confirm,
         'noop':                   lambda q, c: asyncio.sleep(0),
     }
 
@@ -5270,7 +5484,10 @@ async def save_photo_subs(query, context):
 # ══════════════════════════════════════════════════════════
 
 async def handle_game_reset(request):
-    """POST /game_reset — полный сброс прогресса игрока (только для своего аккаунта)."""
+    """POST /game_reset — полный сброс прогресса игрока.
+    Разрешено только для роли 'admin' (сброс своего рейтинга).
+    Тестировщики и игроки не могут сбрасывать сами себя.
+    """
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -5287,8 +5504,14 @@ async def handle_game_reset(request):
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
+        # Проверяем что только admin может сбросить свой рейтинг сам
+        role = await asyncio.to_thread(db.get_game_role, user_id)
+        if role != 'admin':
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'only admin can self-reset'},
+                status=403, headers=headers)
         ok = await asyncio.to_thread(db.reset_game_result, user_id)
-        logger.info(f"game_reset: user={user_id}, ok={ok}")
+        logger.info(f"game_reset (admin self-reset): user={user_id}, ok={ok}")
         return aiohttp_web.json_response({'ok': ok}, headers=headers)
     except Exception as e:
         logger.error(f"handle_game_reset error: {e}")
@@ -5296,7 +5519,9 @@ async def handle_game_reset(request):
 
 
 async def handle_game_state(request):
-    """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД."""
+    """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД.
+    Учитывает роль: admin/tester/player — разные права доступа к главам.
+    """
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -5307,19 +5532,69 @@ async def handle_game_state(request):
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
-        result = await asyncio.to_thread(db.get_game_result, user_id)
-        if not result:
+
+        # Получаем всё параллельно
+        result, role, chapter_schedule = await asyncio.gather(
+            asyncio.to_thread(db.get_game_result, user_id),
+            asyncio.to_thread(db.get_game_role, user_id),
+            asyncio.to_thread(db.get_chapter_schedule_for_game),
+        )
+
+        banned = bool(result[6]) if result and len(result) > 6 else False
+        if banned:
             return aiohttp_web.json_response(
-                {'ok': True, 'score': 0, 'completed': 0, 'game_over': False, 'banned': False},
+                {'ok': True, 'banned': True, 'score': 0, 'completed': 0, 'game_over': False},
                 headers=headers)
-        uid, uname, score, completed, game_over, updated, banned = result
-        return aiohttp_web.json_response({
-            'ok': True,
-            'score': score or 0,
-            'completed': completed or 0,
-            'game_over': bool(game_over),
-            'banned': bool(banned),
-        }, headers=headers)
+
+        score     = result[2] if result else 0
+        completed = result[3] if result else 0
+        game_over = bool(result[4]) if result else False
+        restart_mode = None
+        if result:
+            try:
+                rm = await asyncio.to_thread(db.get_restart_mode, user_id)
+                restart_mode = rm
+            except Exception:
+                pass
+
+        # ── Доступ к главам по роли ──────────────────────────────
+        if role == 'admin':
+            # Все главы открыты, бесконечные жизни
+            open_chapters = list(range(1, 7))
+            admin_mode    = True
+            tester_mode   = False
+            in_rating     = False
+        elif role == 'tester':
+            # Все главы открыты, 5 жизней (не admin_mode!), не в рейтинге
+            open_chapters = list(range(1, 7))
+            admin_mode    = False
+            tester_mode   = True
+            in_rating     = False
+        else:  # player
+            # Только открытые индивидуально + глобально
+            accessible = await asyncio.to_thread(db.get_player_accessible_chapters, user_id)
+            open_chapters = sorted(list(accessible))
+            admin_mode  = False
+            tester_mode = False
+            in_rating   = True
+
+        resp = {
+            'ok':           True,
+            'score':        score or 0,
+            'completed':    completed or 0,
+            'game_over':    game_over,
+            'banned':       False,
+            'role':         role,
+            'admin_mode':   admin_mode,
+            'tester_mode':  tester_mode,
+            'in_rating':    in_rating,
+            'open_chapters': open_chapters,
+            'chapter_schedule': chapter_schedule,  # [{id, open, open_at}, ...]
+        }
+        if restart_mode:
+            resp['restart_mode'] = restart_mode
+
+        return aiohttp_web.json_response(resp, headers=headers)
     except Exception as e:
         logger.error(f"handle_game_state error: {e}")
         return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
@@ -5367,18 +5642,22 @@ async def handle_game_sync(request):
                 db.update_achievement_stats, user_id, achievement_count, achievement_pts
             )
         current_role = await asyncio.to_thread(db.get_game_role, user_id)
-        if not current_role:
-            role = 'admin' if await is_bot_admin_async(user_id) else 'player'
-            await asyncio.to_thread(db.set_game_role, user_id, role)
+        if not current_role or current_role == 'player':
+            # Назначаем роль только при первом входе
+            if not current_role:
+                role = 'admin' if await is_bot_admin_async(user_id) else 'player'
+                await asyncio.to_thread(db.set_game_role, user_id, role)
+                current_role = role
         # Проверяем бан — игра должна знать об этом сразу
         result = await asyncio.to_thread(db.get_game_result, user_id)
         banned = bool(result[6]) if result and len(result) > 6 else False
         db_score = result[2] if result else 0
         db_completed = result[3] if result else 0
-        logger.info(f"game_sync OK: user={user_id}, score={total_score}, completed={completed}, banned={banned}")
+        logger.info(f"game_sync OK: user={user_id}, role={current_role}, score={total_score}, completed={completed}, banned={banned}")
         return aiohttp_web.json_response(
             {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
-             'banned': banned, 'db_score': db_score, 'db_completed': db_completed},
+             'banned': banned, 'db_score': db_score, 'db_completed': db_completed,
+             'role': current_role},
             headers=headers)
     except Exception as e:
         logger.error(f"game_sync error: {e}")

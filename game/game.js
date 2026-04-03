@@ -393,6 +393,8 @@ const RU_ALPHA = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭ
 //  TELEGRAM INTEGRATION
 // ═══════════════════════════════════════════════════════
 let tg = null, tgUser = null, tgInitLB = [], tgInitMe = null, tgOpenChapters = null;
+// Расписание открытия глав (для таймеров): [{id, open, open_at}, ...]
+let tgChapterSchedule = [];
 try {
   tg = window.Telegram?.WebApp;
   if (tg) {
@@ -400,18 +402,24 @@ try {
     tg.expand();
     tgUser = tg.initDataUnsafe?.user;
 
+    const _parsePayload = (parsed) => {
+      if (!parsed) return;
+      if (parsed.lb)  tgInitLB = parsed.lb;
+      if (parsed.me)  tgInitMe = parsed.me;
+      if (parsed.open) tgOpenChapters = new Set(parsed.open);
+      if (parsed.sync_url) window._syncUrl = parsed.sync_url;
+      if (parsed.chapter_schedule) tgChapterSchedule = parsed.chapter_schedule;
+      // Роль: admin_mode только для admin, tester_mode для tester
+      if (parsed.admin_mode  === true) window._adminMode  = true;
+      if (parsed.tester_mode === true) window._testerMode = true;
+      if (parsed.role) window._gameRole = parsed.role;
+    };
+
     // Таблица лидеров, прогресс и открытые главы передаются через startParam
     const sp = tg.initDataUnsafe?.start_param;
     if (sp) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(sp));
-        tgInitLB = parsed.lb || [];
-        tgInitMe = parsed.me || null;
-        if (parsed.open) tgOpenChapters = new Set(parsed.open);
-        if (parsed.sync_url) window._syncUrl = parsed.sync_url;
-        // admin_mode может быть в корне payload (не в me)
-        if (parsed.admin_mode === true) window._adminMode = true;
-      } catch(e) { console.warn('startParam parse error:', e); }
+      try { _parsePayload(JSON.parse(decodeURIComponent(sp))); }
+      catch(e) { console.warn('startParam parse error:', e); }
     }
 
     // Фоллбэк: читаем из URL query параметров (если start_param пустой)
@@ -419,19 +427,13 @@ try {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const rawParam = urlParams.get('tgWebAppStartParam');
-        if (rawParam) {
-          const parsed2 = JSON.parse(decodeURIComponent(rawParam));
-          if (parsed2.sync_url) window._syncUrl = parsed2.sync_url;
-          if (!tgInitLB.length && parsed2.lb) tgInitLB = parsed2.lb;
-          if (!tgInitMe && parsed2.me) tgInitMe = parsed2.me;
-          if (!tgOpenChapters && parsed2.open) tgOpenChapters = new Set(parsed2.open);
-          if (parsed2.admin_mode === true) window._adminMode = true;
-        }
+        if (rawParam) _parsePayload(JSON.parse(decodeURIComponent(rawParam)));
       } catch(e) { console.warn('URL param parse error:', e); }
     }
 
     console.log('🔗 sync_url:', window._syncUrl || 'НЕ ПОЛУЧЕН');
     console.log('👤 user:', tgUser?.id, tgUser?.first_name);
+    console.log('🎭 role:', window._gameRole, '| adminMode:', window._adminMode, '| testerMode:', window._testerMode);
   }
 } catch(e) {}
 
@@ -659,10 +661,11 @@ const DEFAULT_STATE = () => ({
   chapterScore: 0, totalScore: 0,
   completedChapters: {}, chapterScores: {},
   streak: 0, retryPenalty: false,
-  chapterFailCounts: {}, // {chapterId: количество провалов}
-  chapterStats: {},
+  chapterFailCounts: {}, chapterStats: {},
   gameOver: false, leaderboard: [],
   adminMode: false,
+  testerMode: false,   // 🧪 тестировщик — все главы открыты, 5 жизней, не в рейтинге
+  gameRole: 'player',  // 'admin' | 'tester' | 'player'
   achievements: {}, achievementPts: 0
 });
 
@@ -691,43 +694,38 @@ function mergeBotLeaderboard() {
     const dbCompleted   = tgInitMe.completed    || 0;
     const dbGameOver    = tgInitMe.game_over    || false;
     const dbRestartMode = tgInitMe.restart_mode || null;
-    // admin_mode: из tgInitMe или window._adminMode (установлен при парсинге startParam)
-    // После confirmReset adminMode уже в state — не перезаписываем если нет данных от бота
-    const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
+
+    // Роль из payload: admin_mode только для admin, tester_mode для tester
+    const dbAdminMode  = (tgInitMe.admin_mode  === true) || window._adminMode  === true;
+    const dbTesterMode = (tgInitMe.tester_mode === true) || window._testerMode === true;
+    const dbRole       = tgInitMe.role || window._gameRole || 'player';
+
     if (dbAdminMode) {
-      state.adminMode = true;
-      console.log('👑 adminMode=true установлен от бота');
+      state.adminMode  = true;
+      state.testerMode = false;
+      console.log('👑 adminMode=true (admin)');
+    } else if (dbTesterMode) {
+      state.adminMode  = false;
+      state.testerMode = true;
+      console.log('🧪 testerMode=true (tester)');
     }
-    // Если dbAdminMode=false, не сбрасываем — мог быть установлен через localStorage
+    state.gameRole = dbRole;
 
     // Режим перезапуска после game_over
     if (dbRestartMode === 'penalty') {
-      // Сбрасываем прогресс для нового прохождения, retryPenalty=true
-      state.totalScore = 0;
-      state.completedChapters = {};
-      state.chapterScores = {};
-      state.gameOver = false;
-      state.retryPenalty = true;
-      state._noptsMode = false;
+      state.totalScore = 0; state.completedChapters = {};
+      state.chapterScores = {}; state.gameOver = false;
+      state.retryPenalty = true; state._noptsMode = false;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     } else if (dbRestartMode === 'nopts') {
-      // Сбрасываем прогресс, но очки не будут начисляться
-      state.totalScore = 0;
-      state.completedChapters = {};
-      state.chapterScores = {};
-      state.gameOver = false;
-      state.retryPenalty = false;
-      state._noptsMode = true;
+      state.totalScore = 0; state.completedChapters = {};
+      state.chapterScores = {}; state.gameOver = false;
+      state.retryPenalty = false; state._noptsMode = true;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     } else {
-      // БД всегда приоритетнее localStorage
-      // Если dbScore < state.totalScore — был сброс через админку, берём БД
       state.totalScore = dbScore;
       state.completedChapters = {};
-      for (let i = 1; i <= dbCompleted; i++) {
-        state.completedChapters[i] = true;
-      }
-      // chapterScores — если db_completed < local, очищаем лишние
+      for (let i = 1; i <= dbCompleted; i++) state.completedChapters[i] = true;
       const newScores = {};
       for (let i = 1; i <= dbCompleted; i++) {
         if (state.chapterScores[i]) newScores[i] = state.chapterScores[i];
@@ -807,20 +805,31 @@ function renderChapters() {
   list.innerHTML = '';
   let completedCount = 0;
 
+  // Индекс расписания глав по id для быстрого доступа
+  const scheduleMap = {};
+  for (const s of tgChapterSchedule) scheduleMap[s.id] = s;
+
   CHAPTERS.forEach((ch, i) => {
     const isDone  = !!state.completedChapters[ch.id];
     if (isDone) completedCount++;
 
-    // В режиме администратора — всё всегда открыто
-    let isLocked, visuallyLocked;
-    if (state.adminMode) {
+    // Логика блокировки по роли:
+    // - admin: всё открыто, бесконечные жизни
+    // - tester: всё открыто, 5 жизней
+    // - player: только то что открыто через tgOpenChapters + прошлая глава
+    let isLocked, visuallyLocked, schedInfo = null;
+    if (state.adminMode || state.testerMode) {
       isLocked = false;
       visuallyLocked = false;
     } else {
-      const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
+      const serverAllows = tgOpenChapters && tgOpenChapters.has(ch.id);
       const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
       isLocked = !(serverAllows && prevDone);
       visuallyLocked = isLocked;
+      // Таймер — если глава не открыта но есть расписание open_at
+      if (isLocked && scheduleMap[ch.id] && scheduleMap[ch.id].open_at) {
+        schedInfo = scheduleMap[ch.id];
+      }
     }
 
     const card = document.createElement('div');
@@ -836,11 +845,18 @@ function renderChapters() {
     if (isDone && state.chapterScores[ch.id] > 0) { statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅'; }
     else if (isDone) { statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔'; }
     else if (state.adminMode) { statusText='👑 ОТКРЫТО'; badgeIcon='▶'; }
-    else if (!serverAllows) { statusText='🔒 НЕ ОТКРЫТА'; badgeIcon='🔒'; }
+    else if (state.testerMode) { statusText='🧪 ОТКРЫТО'; badgeIcon='▶'; }
+    else if (schedInfo) { statusText='⏰ СКОРО'; badgeIcon='⏰'; }
     else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
     else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
 
     const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
+
+    // HTML карточки — с опциональным таймером обратного отсчёта
+    const countdownId = `ch-countdown-${ch.id}`;
+    const countdownHtml = schedInfo
+      ? `<div id="${countdownId}" style="font-size:10px;color:#ffe033;letter-spacing:.05em;margin-top:4px">⏳ Подсчёт...</div>`
+      : '';
 
     card.innerHTML = `
       <div class="ch-icon">${ch.stamp || '🔐'}</div>
@@ -849,15 +865,21 @@ function renderChapters() {
         <div class="ch-title">${ch.title}</div>
         <div class="ch-place">${ch.place}</div>
         <div class="ch-tags">${tags}</div>
+        ${countdownHtml}
       </div>
       <div class="ch-right">
         <div class="ch-badge">${badgeIcon}</div>
         ${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
       </div>`;
 
-    // adminMode / retryPenalty / noptsMode — можно переигрывать
+    // Запускаем таймер обратного отсчёта если есть open_at
+    if (schedInfo && schedInfo.open_at) {
+      _startChapterCountdown(countdownId, schedInfo.open_at, ch.id);
+    }
+
+    // Кто может играть
     const canRepeat = state.retryPenalty || state._noptsMode;
-    const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
+    const canPlay = state.adminMode || state.testerMode || (!isLocked && (!isDone || canRepeat));
     if (canPlay) {
       card.onclick = () => { showBriefing(i); };
       card.style.cursor = 'pointer';
@@ -871,7 +893,12 @@ function renderChapters() {
   if (state.adminMode) {
     const banner = document.createElement('div');
     banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.25);border-radius:8px;font-size:var(--fs-xs);color:#ffd700;letter-spacing:.06em';
-    banner.textContent = '👑 РЕЖИМ АДМИНИСТРАТОРА · Все главы открыты · Рейтинг не учитывается';
+    banner.textContent = '👑 РЕЖИМ АДМИНИСТРАТОРА · Все главы открыты · ∞ жизней · Рейтинг не учитывается';
+    list.insertBefore(banner, list.firstChild);
+  } else if (state.testerMode) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'margin:8px 12px;padding:10px 14px;background:rgba(100,200,255,.07);border:1px solid rgba(100,200,255,.25);border-radius:8px;font-size:var(--fs-xs);color:#64c8ff;letter-spacing:.06em';
+    banner.textContent = '🧪 РЕЖИМ ТЕСТИРОВЩИКА · Все главы открыты · 5 жизней · Рейтинг не учитывается';
     list.insertBefore(banner, list.firstChild);
   } else if (state._noptsMode) {
     const banner = document.createElement('div');
@@ -894,19 +921,59 @@ function renderChapters() {
   if (clEl) clEl.textContent = completedCount + ' / ' + total + ' глав';
   const scEl = document.getElementById('stat-score');
   if (scEl) scEl.textContent = state.totalScore;
-  // Кнопка сброса — только для админа
+  // Кнопка сброса — только для admin (не тестер!)
   const resetBtn = document.getElementById('btn-reset-header');
   if (resetBtn) resetBtn.style.display = (state.adminMode || window._adminMode) ? 'inline-block' : 'none';
   const plEl = document.getElementById('stat-players-label');
   const plCount = tgInitLB.length || state.leaderboard.length;
   if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
 
-  // Если игра окончена — показываем кнопку финала
   if (state.gameOver) {
     document.getElementById('btn-to-final').style.display = 'block';
   } else {
     document.getElementById('btn-to-final').style.display = 'none';
   }
+}
+
+// ═══════════════════════════════════════════════════════
+//  ТАЙМЕР ОБРАТНОГО ОТСЧЁТА ДО ОТКРЫТИЯ ГЛАВЫ
+// ═══════════════════════════════════════════════════════
+const _countdownIntervals = {};
+
+function _startChapterCountdown(elId, openAtIso, chapterId) {
+  // Останавливаем старый если был
+  if (_countdownIntervals[chapterId]) {
+    clearInterval(_countdownIntervals[chapterId]);
+    delete _countdownIntervals[chapterId];
+  }
+  const openAt = new Date(openAtIso).getTime();
+
+  function _fmt(ms) {
+    if (ms <= 0) return '⏰ Открывается...';
+    const totalSec = Math.floor(ms / 1000);
+    const d = Math.floor(totalSec / 86400);
+    const h = Math.floor((totalSec % 86400) / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (d > 0) return `⏳ ${d}д ${h}ч ${m}м`;
+    if (h > 0) return `⏳ ${h}ч ${m}м ${s}с`;
+    return `⏳ ${m}м ${s}с`;
+  }
+
+  function _tick() {
+    const el = document.getElementById(elId);
+    if (!el) { clearInterval(_countdownIntervals[chapterId]); return; }
+    const diff = openAt - Date.now();
+    if (diff <= 0) {
+      el.textContent = '🔓 Перезагрузите для доступа';
+      clearInterval(_countdownIntervals[chapterId]);
+      delete _countdownIntervals[chapterId];
+      return;
+    }
+    el.textContent = _fmt(diff);
+  }
+  _tick();
+  _countdownIntervals[chapterId] = setInterval(_tick, 1000);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -932,14 +999,13 @@ function showBriefing(idx) {
 function startChapter(idx) {
   state.chapter           = idx;
   state.cipherIdx         = 0;
-  state.lives             = 5;
+  // Жизни: бесконечные только для adminMode, для testerMode и player — 5
+  state.lives             = state.adminMode ? Infinity : 5;
   state.chapterScore      = 0;
   state.streak            = 0;
   state._chapterStartTime = Date.now();
   state._chapterErrors    = 0;
   state._chapterHints     = 0;
-  // retryPenalty сбрасывается только если НЕ был установлен через retryChapter
-  // (retryChapter вызывает showBriefing → startChapter — флаг уже true)
   saveState();
   loadCipher();
   showScreen('s-cipher');
@@ -1073,11 +1139,15 @@ function renderLives() {
     el.innerHTML = '<div style="line-height:1.2;text-align:center;color:gold">♾️ АДМИН</div>';
     return;
   }
-  const n = state.lives;
+  // Тестировщик и игрок — обычные 5 жизней
+  const n = Math.max(0, Math.min(5, state.lives));
   let row1 = '', row2 = '';
   for(let i=0;i<3;i++) row1 += i < n ? '❤️' : '🖤';
   for(let i=3;i<5;i++) row2 += i < n ? '❤️' : '🖤';
-  el.innerHTML = '<div style="line-height:1.2;text-align:center"><div>' + row1 + '</div><div>' + row2 + '</div></div>';
+  const badge = state.testerMode
+    ? '<div style="font-size:9px;color:rgba(100,200,255,.7);letter-spacing:.06em">🧪 ТЕСТ</div>'
+    : '';
+  el.innerHTML = '<div style="line-height:1.2;text-align:center"><div>' + row1 + '</div><div>' + row2 + '</div>' + badge + '</div>';
 }
 
 function animateLifeLoss() {
@@ -3823,7 +3893,6 @@ loadState();
 mergeBotLeaderboard();
 
 async function fetchAndApplyState() {
-  // Синхронизируем всегда — включая режим администратора (для сохранения очков)
   const uid = getTgUserId();
   const syncUrl = window._syncUrl;
   if (!uid || !syncUrl) return;
@@ -3838,18 +3907,41 @@ async function fetchAndApplyState() {
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
       return;
     }
+
+    // Применяем роль из сервера
+    const savedAdminMode  = state.adminMode;
+    const savedTesterMode = state.testerMode;
+
+    if (data.admin_mode === true) {
+      state.adminMode  = true;
+      state.testerMode = false;
+    } else if (data.tester_mode === true) {
+      state.adminMode  = false;
+      state.testerMode = true;
+    }
+    if (data.role) state.gameRole = data.role;
+
+    // Обновляем tgOpenChapters из server (open_chapters приоритетнее старого)
+    if (data.open_chapters && Array.isArray(data.open_chapters)) {
+      tgOpenChapters = new Set(data.open_chapters);
+    }
+    // Обновляем расписание глав (таймеры)
+    if (data.chapter_schedule && Array.isArray(data.chapter_schedule)) {
+      tgChapterSchedule = data.chapter_schedule;
+    }
+
+    // Синхронизируем прогресс если он меньше (сброс через админку)
     if (typeof data.score === 'number' && data.score < state.totalScore) {
-      const savedAdminMode = state.adminMode; // сохраняем перед перезаписью
       state.totalScore = data.score;
       state.completedChapters = {};
       for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
       state.chapterScores = {};
       state.gameOver = data.game_over || false;
-      state.adminMode = savedAdminMode; // восстанавливаем
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
-      saveState();
-      renderChapters();
     }
+
+    saveState();
+    renderChapters();
   } catch(e) { console.warn('fetchAndApplyState:', e); }
 }
 
