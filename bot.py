@@ -74,12 +74,17 @@ GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 # Кэш тестеров (обновляется при изменениях из бота)
 _beta_cache: set = set()
 _beta_cache_ts: float = 0
+# Кэш режима доступа к игре
+_game_mode_cache: str = 'beta'
+_game_mode_cache_ts: float = 0
 
 
 # ══════════════════════════════════════════════════════════
 #  КОНСТАНТЫ
 # ══════════════════════════════════════════════════════════
 ADMIN_IDS       = []  # Права администратора через БД (таблица bot_admins)
+_bot_admin_cache: dict[int, tuple[bool, float]] = {}
+_BOT_ADMIN_TTL = 30.0
 
 def is_bot_admin(user_id: int) -> bool:
     """Проверяет права администратора БОТА (таблица bot_admins — не зависит от игровой роли)."""
@@ -90,8 +95,15 @@ def is_bot_admin(user_id: int) -> bool:
 
 async def is_bot_admin_async(user_id: int) -> bool:
     """Асинхронная проверка прав администратора БОТА (таблица bot_admins)."""
+    import time
+    now_ts = time.time()
+    cached = _bot_admin_cache.get(user_id)
+    if cached and (now_ts - cached[1] <= _BOT_ADMIN_TTL):
+        return cached[0]
     try:
-        return await asyncio.to_thread(db.is_bot_admin_db, user_id)
+        val = bool(await asyncio.to_thread(db.is_bot_admin_db, user_id))
+        _bot_admin_cache[user_id] = (val, now_ts)
+        return val
     except Exception:
         return False
 
@@ -2655,43 +2667,48 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ЗВОНКИ
 # ══════════════════════════════════════════════════════════
+async def _get_cached_game_mode() -> str:
+    import time
+    global _game_mode_cache, _game_mode_cache_ts
+    if time.time() - _game_mode_cache_ts > 30:
+        _game_mode_cache = await asyncio.to_thread(db.get_game_access_mode)
+        _game_mode_cache_ts = time.time()
+    if _game_mode_cache not in ('beta', 'open', 'closed'):
+        _game_mode_cache = 'beta'
+    return _game_mode_cache
+
+
 async def is_game_allowed(user_id: int) -> bool:
-    """Проверяет доступ к игре.
-
-    Логика:
-    - Бот-администраторы и пользователи с игровой ролью admin/tester — всегда пускаем.
-    - Если в таблице game_beta есть хотя бы один тестер → бета включена, остальных не пускаем.
-    - Если таблица game_beta пуста → игра открыта для всех (независимо от GAME_BETA env var).
-
-    Примечание: GAME_BETA env var больше не используется для блокировки —
-    управление бетой теперь полностью через бота (кнопка «Открыть для ВСЕХ»).
-    """
+    """Проверяет доступ к игре по режимам: beta/open/closed."""
     import time
     global _beta_cache, _beta_cache_ts
 
-    # Бот-администраторы всегда имеют доступ
     if await is_bot_admin_async(user_id):
         return True
 
-    # Игровые admin/tester всегда имеют доступ (даже без прав бота)
+    game_role = None
     try:
         game_role = await asyncio.to_thread(db.get_game_role, user_id)
-        if game_role in ('admin', 'tester'):
-            return True
     except Exception:
-        pass
+        game_role = None
 
-    # Кэш бета-списка (60 секунд)
+    # Игровой админ всегда имеет доступ
+    if game_role == 'admin':
+        return True
+
+    mode = await _get_cached_game_mode()
+    if mode == 'open':
+        return True
+    if mode == 'closed':
+        return False
+
+    # beta mode
+    if game_role == 'tester':
+        return True
     if time.time() - _beta_cache_ts > 60:
         rows = await asyncio.to_thread(db.get_beta_users)
         _beta_cache = {r[0] for r in rows}
         _beta_cache_ts = time.time()
-
-    # Если список пуст → игра открыта для всех
-    if not _beta_cache:
-        return True
-
-    # Список не пуст → бета включена, проверяем белый список
     return user_id in _beta_cache
 
 
@@ -2702,12 +2719,22 @@ async def menu_game(query, context):
 
     # Проверка доступа (бета-режим)
     if not await is_game_allowed(user.id):
-        await safe_edit(query,
-            "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
-            "🔒 Игра сейчас в режиме бета-тестирования.\n"
-            "Доступ открыт только для избранных участников.\n\n"
-            "<i>Следи за новостями — скоро откроется для всех!</i>",
-            [BACK_TO_MAIN[0]])
+        mode = await _get_cached_game_mode()
+        if mode == 'closed':
+            denied_text = (
+                "?? <b>????????????</b>\n\n"
+                "? ???? ?????? ??????? ???????????????.\n"
+                "????????? ???????? ???????.\n\n"
+                "<i>??????? ?? ????????? ????.</i>"
+            )
+        else:
+            denied_text = (
+                "?? <b>????????????</b>\n\n"
+                "?? ???? ?????? ? ?????? ????-????????????.\n"
+                "?????? ?????? ?????? ??? ????????? ??????????.\n\n"
+                "<i>????? ?? ????????? ? ????? ????????? ??? ????!</i>"
+            )
+        await safe_edit(query, denied_text, [BACK_TO_MAIN[0]])
         return
 
     if not GAME_URL:
@@ -3880,45 +3907,66 @@ async def handle_beta_add_input(update, context, text):
 # ══════════════════════════════════════════════════════════
 
 async def admin_game_panel(query, context):
-    """Главная панель управления игрой."""
+    """??????? ?????? ?????????? ?????."""
     if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔ Доступ запрещён"); return
+        await query.answer("? ?????? ????????"); return
     await query.answer()
 
-    rows, beta_on_raw, beta_users = await asyncio.gather(
+    rows, access_mode, beta_users = await asyncio.gather(
         asyncio.to_thread(db.get_game_leaderboard_admin, 50),
-        asyncio.to_thread(db.is_beta_enabled),
+        asyncio.to_thread(db.get_game_access_mode),
         asyncio.to_thread(db.get_beta_users),
     )
-    total    = len(rows)
+    total = len(rows)
     finished = sum(1 for r in rows if r[4])
-    banned   = sum(1 for r in rows if r[6])
-    active   = sum(1 for r in rows if r[2] > 0)
+    banned = sum(1 for r in rows if r[6])
+    active = sum(1 for r in rows if r[2] > 0)
+    beta_count = len(beta_users)
+
+    mode_labels = {
+        'beta': f"?? ?????: ???? ({beta_count})",
+        'open': "?? ?????: ???????",
+        'closed': "?? ?????: ???????",
+    }
+    mode_text = mode_labels.get(access_mode, f"?? ?????: {access_mode}")
 
     text = (
-        "🎮 <b>УПРАВЛЕНИЕ ИГРОЙ «ШИФРОВАЛЬЩИК»</b>\n\n"
-        f"👥 Всего зарегистрировано: <b>{total}</b>\n"
-        f"🎯 Активно играют:         <b>{active}</b>\n"
-        f"✅ Завершили все главы:    <b>{finished}</b>\n"
-        f"🚫 Забанено:               <b>{banned}</b>\n\n"
-        "Выберите действие:"
+        "?? <b>?????????? ????? ??????????????</b>\n\n"
+        f"?? ????? ????????????????: <b>{total}</b>\n"
+        f"?? ??????? ??????: <b>{active}</b>\n"
+        f"? ????????? ??? ?????: <b>{finished}</b>\n"
+        f"?? ????????: <b>{banned}</b>\n\n"
+        "???????? ????????:"
     )
-    beta_on = beta_on_raw
-    beta_count = len(beta_users)
-    beta_label = f"🔒 Бета: {beta_count} тестеров" if beta_on else "🌐 Бета: ВЫКЛ (игра для всех)"
-
     kb = [
-        [btn("📋 Список игроков",         'admin_game_leaderboard')],
-        [btn(beta_label,                   'admin_beta_panel')],
-        [btn("📖 Управление главами",      'admin_chapters_panel')],
-        [btn("🔑 Доступ игроков к главам", 'admin_player_chapters')],
-        [btn("🎭 Роли игроков",            'admin_roles_panel')],
-        [btn("🗑 Сбросить ВСЕХ",           'admin_game_reset_all')],
-        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+        [btn("?? ?????? ???????", 'admin_game_leaderboard')],
+        [btn(mode_text, 'noop')],
+        [btn("?? ???? (????? ??????)", 'game_mode_beta')],
+        [btn("?? ???? ???????", 'game_mode_open')],
+        [btn("?? ???? ???????", 'game_mode_closed')],
+        [btn("?? ????-??????", 'admin_beta_panel')],
+        [btn("?? ?????????? ???????", 'admin_chapters_panel')],
+        [btn("?? ?????? ??????? ? ??????", 'admin_player_chapters')],
+        [btn("?? ???? ???????", 'admin_roles_panel')],
+        [btn("?? ???????? ????", 'admin_game_reset_all')],
+        [btn("?? ???????", 'admin_panel'), btn("?? ??????? ????", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
 
+async def admin_set_game_mode(query, context, mode: str):
+    """??????????? ?????????? ????? ??????? ? ????."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("?"); return
+    await query.answer()
+    ok = await asyncio.to_thread(db.set_game_access_mode, mode)
+    global _game_mode_cache, _game_mode_cache_ts, _beta_cache, _beta_cache_ts
+    _game_mode_cache = mode if ok else _game_mode_cache
+    _game_mode_cache_ts = 0
+    _beta_cache = set(); _beta_cache_ts = 0
+    mode_names = {'beta': '?? ????-?????', 'open': '?? ???? ???????', 'closed': '?? ???? ???????'}
+    txt = f"? ?????????? ?????: <b>{mode_names.get(mode, mode)}</b>" if ok else "? ?? ??????? ???????? ?????."
+    await safe_edit(query, txt, [[btn("?? ?????????? ?????", 'admin_game_panel')]])
 async def admin_game_leaderboard(query, context):
     """Список всех игроков для админа."""
     if not await is_bot_admin_async(query.from_user.id):
@@ -4939,6 +4987,9 @@ async def button_handler(update: Update, context: CallbackContext):
             [[btn("❌ Отмена", 'admin_panel')]]),
         'admin_analytics':        show_analytics,
         'admin_game_panel':       admin_game_panel,
+        'game_mode_beta':         lambda q, c: admin_set_game_mode(q, c, 'beta'),
+        'game_mode_open':         lambda q, c: admin_set_game_mode(q, c, 'open'),
+        'game_mode_closed':       lambda q, c: admin_set_game_mode(q, c, 'closed'),
         'admin_game_roles':       admin_game_roles,
         'admin_beta_panel':       admin_beta_panel,
         'admin_chapters_panel':   admin_chapters_panel,
@@ -5528,6 +5579,7 @@ async def handle_game_reset(request):
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
+
         # Проверяем что только admin может сбросить свой рейтинг сам
         role = await asyncio.to_thread(db.get_game_role, user_id)
         if role != 'admin':
@@ -5556,6 +5608,9 @@ async def handle_game_state(request):
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
+        allowed = await is_game_allowed(user_id)
+        access_mode = await _get_cached_game_mode()
+        access_reason = access_mode if not allowed else None
 
         # Получаем всё параллельно
         result, role, chapter_schedule = await asyncio.gather(
@@ -5602,8 +5657,23 @@ async def handle_game_state(request):
             tester_mode = False
             in_rating   = True
 
+        
+        chapters_payload = []
+        for row in chapter_schedule or []:
+            ch_id = int(row.get('id', 0))
+            ch_open = bool(row.get('open'))
+            ch_open_at = row.get('open_at')
+            chapters_payload.append({
+                'id': ch_id,
+                'open': ch_open,
+                'scheduled_open_at': ch_open_at,
+                'open_label': 'по расписанию' if ch_open_at else '',
+            })
+
         resp = {
             'ok':           True,
+            'allowed':      bool(allowed),
+            'access_reason': access_reason,
             'score':        score or 0,
             'completed':    completed or 0,
             'game_over':    game_over,
@@ -5614,6 +5684,7 @@ async def handle_game_state(request):
             'in_rating':    in_rating,
             'open_chapters': open_chapters,
             'chapter_schedule': chapter_schedule,  # [{id, open, open_at}, ...]
+            'chapters': chapters_payload,
         }
         if restart_mode:
             resp['restart_mode'] = restart_mode
