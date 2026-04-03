@@ -303,6 +303,20 @@ def init_db():
                 updated_at   TIMESTAMPTZ DEFAULT NOW()
             )
         ''')
+        # Глобальный режим доступа к игре:
+        # beta (только белый список), open (для всех), closed (закрыта)
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_access_settings (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                access_mode TEXT NOT NULL DEFAULT 'beta',
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('''
+            INSERT INTO game_access_settings (id, access_mode)
+            VALUES (1, 'beta')
+            ON CONFLICT (id) DO NOTHING
+        ''')
         # Инициализируем таблицу ролей
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_roles (
@@ -1608,7 +1622,7 @@ def get_open_chapters():
         return {r[0] for r in cur.fetchall()}
     except Exception as e:
         logger.error(f"get_open_chapters error: {e}")
-        return {1}
+        return set()
     finally:
         release_connection(conn)
 
@@ -1635,9 +1649,7 @@ def open_chapter(chapter_id):
 
 
 def close_chapter(chapter_id):
-    """Закрывает главу (кроме 1-й)."""
-    if chapter_id == 1:
-        return False
+    """Закрывает главу."""
     conn = None
     try:
         conn = get_connection()
@@ -1815,6 +1827,69 @@ def init_beta_table():
     except Exception as e:
         logger.error(f"init_beta_table error: {e}")
         _safe_rollback(conn)
+    finally:
+        release_connection(conn)
+
+
+def get_game_access_mode() -> str:
+    """Возвращает глобальный режим доступа: beta/open/closed."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_access_settings (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                access_mode TEXT NOT NULL DEFAULT 'beta',
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('''
+            INSERT INTO game_access_settings (id, access_mode)
+            VALUES (1, 'beta')
+            ON CONFLICT (id) DO NOTHING
+        ''')
+        cur.execute('SELECT access_mode FROM game_access_settings WHERE id = 1')
+        row = cur.fetchone()
+        conn.commit()
+        mode = (row[0] if row and row[0] else 'beta').strip().lower()
+        return mode if mode in ('beta', 'open', 'closed') else 'beta'
+    except Exception as e:
+        logger.error(f"get_game_access_mode error: {e}")
+        return 'beta'
+    finally:
+        release_connection(conn)
+
+
+def set_game_access_mode(mode: str) -> bool:
+    """Устанавливает глобальный режим доступа: beta/open/closed."""
+    mode = (mode or '').strip().lower()
+    if mode not in ('beta', 'open', 'closed'):
+        return False
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_access_settings (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                access_mode TEXT NOT NULL DEFAULT 'beta',
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('''
+            INSERT INTO game_access_settings (id, access_mode, updated_at)
+            VALUES (1, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                access_mode = EXCLUDED.access_mode,
+                updated_at  = NOW()
+        ''', (mode,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_game_access_mode error: {e}")
+        _safe_rollback(conn)
+        return False
     finally:
         release_connection(conn)
 

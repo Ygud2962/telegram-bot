@@ -271,7 +271,14 @@
         .cipher-prog-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
         .cipher-prog-dot.done { background: var(--green); }
         .cipher-prog-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-        .cipher-attempts-label { font-size: var(--fs-sm); text-align: center; margin: 12px 0; }
+        .cipher-attempts-label {
+            font-size: 14px;
+            letter-spacing: .06em;
+            color: #ffdf6d;
+            min-width: 78px;
+            text-align: right;
+            line-height: 1;
+        }
         .cipher-timer { font-family: var(--head); font-size: var(--fs-xl); color: var(--muted); text-align: center; }
         
         #bottom-nav {
@@ -559,7 +566,10 @@
                     <div id="cipher-chapter-label" class="cipher-chapter-label"></div>
                     <div id="cipher-admin-label" class="cipher-admin-label" style="display:none;">👑 АДМИН</div>
                 </div>
-                <div id="cipher-score-display" class="cipher-score-display">0 оч</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
+                    <div id="cipher-score-display" class="cipher-score-display">0 оч</div>
+                </div>
             </div>
             <div id="cipher-progress" class="cipher-progress"></div>
             <div id="cipher-type-label" class="cipher-type-label"></div>
@@ -570,7 +580,6 @@
                 <input type="text" id="cipher-input" class="cipher-input" placeholder="ВВЕДИТЕ ОТВЕТ" autocomplete="off" autocorrect="off" spellcheck="false">
                 <button id="btn-keyboard" class="btn btn-icon" onclick="toggleKeyboard()" title="Клавиатура">⌨️</button>
             </div>
-            <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
             <div id="cipher-timer" class="cipher-timer">0с</div>
             <div class="cipher-actions">
                 <button id="btn-hint" class="btn btn-hint" onclick="showHint()">💡 ПОДСКАЗКА</button>
@@ -1083,7 +1092,8 @@ chapterScore: 0, totalScore: 0,
 completedChapters: {}, chapterScores: {},
 streak: 0, retryPenalty: false,
 chapterFailCounts: {}, chapterStats: {},
-gameOver: false, leaderboard: [], adminMode: false,
+gameOver: false, leaderboard: [], adminMode: false, testerMode: false,
+repeatRuns: {},
 achievements: {}, achievementPts: 0
 });
 
@@ -1098,6 +1108,7 @@ let _audioCtx = null;
 let _lastSyncedScore = -1;
 let _lastSyncedCompleted = -1;
 let _syncInFlight = false;
+let _chapterCountdownTick = null;
 
 function storageKey() {
 const uid = getTgUserId();
@@ -1134,7 +1145,10 @@ const dbCompleted = tgInitMe.completed || 0;
 const dbGameOver = tgInitMe.game_over || false;
 const dbRestartMode = tgInitMe.restart_mode || null;
 const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
-if (dbAdminMode) { state.adminMode = true; console.log('👑 adminMode=true установлен от бота'); }
+const dbTesterMode = (tgInitMe && tgInitMe.tester_mode === true);
+state.adminMode = !!dbAdminMode;
+state.testerMode = !!dbTesterMode && !state.adminMode;
+if (state.adminMode) { console.log('adminMode=true установлен от бота'); }
 if (dbRestartMode === 'penalty') {
   state.totalScore = 0; state.completedChapters = {}; state.chapterScores = {};
   state.gameOver = false; state.retryPenalty = true; state._noptsMode = false;
@@ -1293,8 +1307,10 @@ function _formatCountdown(isoStr) {
 function renderChapters() {
 const list = document.getElementById('chapters-list');
 list.innerHTML = '';
+if (_chapterCountdownTick) { clearTimeout(_chapterCountdownTick); _chapterCountdownTick = null; }
 let completedCount = 0;
 const schedule = window._chapterSchedule || {};
+let hasLiveCountdown = false;
 
 CHAPTERS.forEach((ch, i) => {
 const isDone = !!state.completedChapters[ch.id];
@@ -1334,6 +1350,7 @@ if (isDone && state.chapterScores[ch.id] > 0) {
   if (countdown) {
     statusText=`⏰ ${schedInfo.label || 'скоро'}`;
     badgeIcon='⏰';
+    hasLiveCountdown = true;
     extraRow = `<div style="font-size:9px;color:rgba(255,224,51,.6);margin-top:3px;font-family:var(--mono)">
       откроется через ${countdown}
     </div>`;
@@ -1365,8 +1382,7 @@ card.innerHTML = `
     ${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
    </div>`;
 
-const canRepeat = state.retryPenalty || state._noptsMode;
-const canPlay = state.adminMode || (!isLocked && (!isDone || canRepeat));
+const canPlay = state.adminMode || (!isLocked);
 if (canPlay) { card.onclick = () => { showBriefing(i); }; card.style.cursor = 'pointer'; }
 else { card.style.cursor = isDone ? 'default' : 'not-allowed'; }
 list.appendChild(card);
@@ -1404,6 +1420,10 @@ const plCount = tgInitLB.length || state.leaderboard.length;
 if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
 if (state.gameOver) { document.getElementById('btn-to-final').style.display = 'block'; }
 else { document.getElementById('btn-to-final').style.display = 'none'; }
+const isChaptersVisible = document.getElementById('s-chapters')?.classList.contains('active');
+if (hasLiveCountdown && isChaptersVisible) {
+  _chapterCountdownTick = setTimeout(() => renderChapters(), 1000);
+}
 }
 
 function showBriefing(idx) {
@@ -1416,11 +1436,30 @@ document.getElementById('brief-place').textContent = ch.place;
 document.getElementById('brief-stamp').textContent = ch.stamp;
 document.getElementById('brief-meta').innerHTML = ch.meta.replace(/\n/g,'<br>');
 document.getElementById('brief-text').textContent = ch.briefing;
-document.getElementById('brief-mission').textContent = ch.mission;
+const replayNote = (!state.adminMode && !state.testerMode && state.completedChapters[ch.id])
+  ? '\n\n⚠️ Повтор главы: новые очки за главу не добавляются, при старте будет штраф -5% от рейтинга.'
+  : '';
+document.getElementById('brief-mission').textContent = ch.mission + replayNote;
 showScreen('s-briefing');
 }
 
 function startChapter(idx) {
+const ch = CHAPTERS[idx];
+const chapterId = ch ? ch.id : (idx + 1);
+const isReplay = !!state.completedChapters[chapterId];
+state._repeatRun = isReplay && !state.adminMode && !state.testerMode;
+if (state._repeatRun) {
+  if (!state.repeatRuns) state.repeatRuns = {};
+  const runCount = (state.repeatRuns[chapterId] || 0) + 1;
+  state.repeatRuns[chapterId] = runCount;
+  const penalty = Math.floor((state.totalScore || 0) * 0.05);
+  if (penalty > 0) {
+    state.totalScore = Math.max(0, (state.totalScore || 0) - penalty);
+    showToast(`⚠️ Повтор #${runCount}: -${penalty} очков рейтинга`);
+  } else {
+    showToast(`⚠️ Повтор #${runCount}: очки за главу не начисляются`);
+  }
+}
 state.chapter = idx;
 state.cipherIdx = 0;
 state.lives = 5;
@@ -1505,12 +1544,11 @@ if (adminLabel) adminLabel.style.display = state.adminMode ? 'block' : 'none';
 function renderLives() {
 const el = document.getElementById('cipher-attempts-label');
 if (!el) return;
-if (state.adminMode) { el.innerHTML = '♾️ АДМИН'; return; }
+if (state.adminMode) { el.innerHTML = '♾️'; return; }
 const n = state.lives;
-let row1 = '', row2 = '';
-for(let i=0;i<3;i++) row1 += i < n ? '❤️' : '🖤';
-for(let i=3;i<5;i++) row2 += i < n ? '❤️' : '🖤';
-el.innerHTML = '<div>' + row1 + '</div><div>' + row2 + '</div>';
+let row = '';
+for(let i=0;i<5;i++) row += i < n ? '❤️' : '🖤';
+el.innerHTML = row;
 }
 
 function animateLifeLoss() {
@@ -1730,11 +1768,11 @@ const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now()))
 if (!state.chapterStats) state.chapterStats = {};
 state.chapterStats[ch.id] = { time: chTime, errors: state._chapterErrors || 0, hints: state._chapterHints || 0, score: state.chapterScore, max: ch.ciphers.reduce((s,c) => s+c.points, 0) };
 state.completedChapters[ch.id] = true;
-if (!alreadyDone && !state._noptsMode) {
+if (!alreadyDone && !state._noptsMode && !state._repeatRun) {
 state.chapterScores[ch.id] = state.chapterScore;
 state.totalScore += state.chapterScore;
 if (state.retryPenalty) state.retryPenalty = false;
-} else if (state._noptsMode) { state.chapterScores[ch.id] = 0; }
+} else if (state._noptsMode || state._repeatRun) { state.chapterScores[ch.id] = state.chapterScores[ch.id] || 0; }
 const maxPossible = ch.ciphers.reduce((s,c)=>s+c.points, 0);
 const pct = state.chapterScore / maxPossible;
 let medal = '🥉';
@@ -1773,8 +1811,8 @@ state.chapterStats[ch.id] = { time: chTime, errors: state._chapterErrors || 0, h
 if (!state.chapterFailCounts) state.chapterFailCounts = {};
 const failCount = (state.chapterFailCounts[ch.id] || 0) + 1;
 state.chapterFailCounts[ch.id] = failCount;
-if (!alreadyDone && !state._noptsMode) { state.chapterScores[ch.id] = state.chapterScore; state.totalScore += state.chapterScore; }
-else if (state._noptsMode) { state.chapterScores[ch.id] = 0; }
+if (!alreadyDone && !state._noptsMode && !state._repeatRun) { state.chapterScores[ch.id] = state.chapterScore; state.totalScore += state.chapterScore; }
+else if (state._noptsMode || state._repeatRun) { state.chapterScores[ch.id] = state.chapterScores[ch.id] || 0; }
 const allDone = CHAPTERS.every(c => state.completedChapters[c.id]);
 if (allDone) state.gameOver = true;
 updateLeaderboard();
@@ -2009,7 +2047,7 @@ const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
 const answer = anagramState.placed.map(i => i !== null ? anagramState.letters[i] : '').join('');
 const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 const slots = document.querySelectorAll('.anagram-slot');
-if (answer.toUpperCase() === cipher.answer) {
+if (normalizeAnswerText(answer) === normalizeAnswerText(cipher.answer)) {
 slots.forEach(s => { s.style.borderColor = '#55dd55'; s.style.background = 'rgba(85,221,85,.15)'; });
 const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
@@ -2043,7 +2081,7 @@ if (mapAnswered) return;
 const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
 const dotEl = document.getElementById(`mcdot-${clicked}`);
-if (clicked === cipher.answer) {
+if (normalizeAnswerText(clicked) === normalizeAnswerText(cipher.answer)) {
 mapAnswered = true;
 if (dotEl) dotEl.querySelector('circle').setAttribute('fill','#55dd55');
 document.getElementById('map-hint-text').textContent = '✅ Верно! ' + clicked;
@@ -2903,22 +2941,37 @@ if (data.allowed === false) {
   return;
 }
 
-// Обновляем роль и adminMode
-if (data.role === 'admin' || data.role === 'tester') {
-  state.adminMode = true;
-  window._adminMode = true;
-}
+// Обновляем роль и режимы
+state.adminMode = data.role === 'admin' || data.admin_mode === true;
+state.testerMode = !state.adminMode && (data.role === 'tester' || data.tester_mode === true);
+window._adminMode = state.adminMode;
 
-// Обновляем открытые главы из ответа сервера
-if (data.chapters && Array.isArray(data.chapters)) {
+// Обновляем открытые главы и таймеры (поддержка обоих форматов ответа)
+{
   const openSet = new Set();
-  const schedMap = {}; // chapter_id -> {label, iso}
-  data.chapters.forEach(ch => {
-    if (ch.open) openSet.add(ch.id);
-    else if (ch.scheduled_open_at) {
-      schedMap[ch.id] = { label: ch.open_label || '', iso: ch.scheduled_open_at };
-    }
-  });
+  const schedMap = {};
+
+  if (Array.isArray(data.chapters)) {
+    data.chapters.forEach(ch => {
+      const id = Number(ch.id);
+      if (!id) return;
+      if (ch.open) openSet.add(id);
+      else if (ch.scheduled_open_at) schedMap[id] = { label: ch.open_label || '', iso: ch.scheduled_open_at };
+    });
+  }
+
+  if (Array.isArray(data.open_chapters)) {
+    data.open_chapters.forEach(id => openSet.add(Number(id)));
+  }
+  if (Array.isArray(data.chapter_schedule)) {
+    data.chapter_schedule.forEach(ch => {
+      const id = Number(ch.id);
+      if (!id) return;
+      if (ch.open) openSet.add(id);
+      else if (ch.open_at) schedMap[id] = { label: 'по расписанию', iso: ch.open_at };
+    });
+  }
+
   tgOpenChapters = openSet;
   window._chapterSchedule = schedMap;
 }
@@ -3002,6 +3055,8 @@ setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 3
 function _initCipherInputListeners() {
 const _cipherInput = document.getElementById('cipher-input');
 if (!_cipherInput) return;
+if (_cipherInput.dataset.kbBound === '1') return;
+_cipherInput.dataset.kbBound = '1';
 _cipherInput.addEventListener('focus', function() {
 this.removeAttribute('readonly');
 const btn = document.getElementById('btn-keyboard');
@@ -3044,28 +3099,7 @@ fetchAndApplyState();
 _initCipherInputListeners();
 }
 
-const _cipherInput = document.getElementById('cipher-input');
-if (_cipherInput) {
-_cipherInput.addEventListener('focus', function() {
-this.removeAttribute('readonly');
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.25)'; 
-btn.style.borderColor = 'rgba(255,224,51,.5)';
-btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-}
-});
-
-_cipherInput.addEventListener('blur', function() {
-this.setAttribute('readonly', true);
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.1)'; 
-btn.style.borderColor = 'rgba(255,224,51,.2)';
-btn.style.boxShadow = 'none';
-}
-});
-}
+// listeners для поля ввода и кнопки клавиатуры инициализируются в _initCipherInputListeners()
     </script>
 </body>
 </html>
