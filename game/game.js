@@ -1368,11 +1368,20 @@ async function checkAnswer() {
         ht.textContent = '⚡ Режим админа: жизни восстановлены';
         setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
       } else {
-        // Жизни кончились — сразу завершаем главу с провалом
+        // Для tester/player: при 0 жизней начинаем эту же главу заново
         inp.disabled = true;
         renderLives();
         stopTimer();
-        setTimeout(() => failChapter(), 1200);
+        const hb = document.getElementById('cipher-hint-box');
+        const ht = document.getElementById('cipher-hint-text');
+        if (hb && ht) {
+          hb.className = 'cipher-hint-box show';
+          ht.textContent = 'Жизни закончились. Глава начата заново.';
+        }
+        setTimeout(() => {
+          if (hb) hb.className = 'cipher-hint-box';
+          restartChapterFromStart(state.chapter);
+        }, 900);
       }
     } else {
       renderLives();
@@ -1557,6 +1566,28 @@ async function finishChapter() {
   showScreen('s-chapter-end');
 }
 
+
+function restartChapterFromStart(idx) {
+  const ch = CHAPTERS[idx];
+  if (!ch) {
+    showScreen('s-chapters');
+    renderChapters();
+    return;
+  }
+  state.chapter = idx;
+  state.cipherIdx = 0;
+  state.lives = state.adminMode ? Infinity : 5;
+  state.chapterScore = 0;
+  state.streak = 0;
+  state.hintsUsed = false;
+  state.startTime = Date.now();
+  state._chapterStartTime = Date.now();
+  state._chapterErrors = 0;
+  state._chapterHints = 0;
+  saveState();
+  loadCipher();
+  showScreen('s-cipher');
+}
 
 // ═══════════════════════════════════════════════════════
 //  ПРОВАЛ ГЛАВЫ (кончились жизни)
@@ -1852,6 +1883,9 @@ async function showFinal() {
 //  ТАБЛИЦА ЛИДЕРОВ
 // ═══════════════════════════════════════════════════════
 function updateLeaderboard() {
+  if (state.adminMode || state.testerMode || state.gameRole === 'admin' || state.gameRole === 'tester') {
+    return;
+  }
   const name  = getTgUserName();
   const uid   = getTgUserId() || 'guest';
   const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length };
@@ -3027,7 +3061,7 @@ function quizSubmit() {
 
     if (state.lives <= 0 && !state.adminMode) {
       stopTimer();
-      setTimeout(() => failChapter(), 1400);
+      setTimeout(() => restartChapterFromStart(state.chapter), 900);
     } else {
       // Сбрасываем через 1.5с — убираем подсветку, даём выбрать снова
       setTimeout(() => {
@@ -3207,7 +3241,7 @@ function quizSubmit() {
 
     if (state.lives <= 0) {
       stopTimer();
-      setTimeout(() => failChapter(), 1400);
+      setTimeout(() => restartChapterFromStart(state.chapter), 900);
     } else {
       // Через 2 секунды разрешаем выбрать снова (кроме правильного)
       setTimeout(() => {
@@ -3320,7 +3354,7 @@ async function checkAnagram() {
       if (state.adminMode) {
         state.lives = 5; saveState(); renderLives();
         setTimeout(resetAnagram, 500);
-      } else { setTimeout(() => failChapter(), 1200); }
+      } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
     } else { renderLives(); setTimeout(resetAnagram, 900); }
   }
 }
@@ -3406,7 +3440,7 @@ async function checkMapAnswer(clicked, target) {
       if (state.adminMode) {
         state.lives = 5; saveState(); renderLives();
         document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
-      } else { setTimeout(() => failChapter(), 1200); }
+      } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
     } else { renderLives(); }
   }
 }

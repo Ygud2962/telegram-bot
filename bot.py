@@ -4060,7 +4060,7 @@ async def admin_game_reset_confirm(query, context, uid):
     await query.answer()
     r = await asyncio.to_thread(db.get_game_result_detail, uid)
     name = (r[1] if r else str(uid)) or str(uid)
-    ok = await asyncio.to_thread(db.reset_game_result, uid)
+    ok = await asyncio.to_thread(db.reset_game_result_full, uid)
     text = (
         f"✅ Прогресс игрока <b>{name}</b> полностью сброшен."
         if ok else "❌ Не удалось сбросить."
@@ -4224,7 +4224,7 @@ async def admin_my_game_role(query, context):
     current = await asyncio.to_thread(db.get_game_role, uid) or 'admin'
     role_desc = {
         'admin':  '👑 Все главы открыты, бесконечные жизни, не в рейтинге',
-        'tester': '🧪 Все главы открыты, бесконечные жизни, не в рейтинге',
+        'tester': '🧪 Все главы открыты, 5 жизней, не в рейтинге',
         'player': '🎮 Стандартный режим, участвует в рейтинге',
     }
     kb = [
