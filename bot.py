@@ -5974,5 +5974,38 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
     return kb
 
 
+def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
+                     teacher_name: str | None = None) -> list:
+    """Возвращает главное меню в формате плиток 2 колонки + одиночные пункты."""
+    if teacher_name:
+        role_btn = btn(f"👨‍🏫 {teacher_name}", 'menu_profile')
+    elif profile:
+        role = profile.get('role', 'guest')
+        name = profile.get('display_name', '')
+        cls = profile.get('class_name', '')
+        if role == 'student':
+            role_btn = btn(f"👨‍🎓 {cls.upper()} · {name}", 'menu_profile')
+        elif role == 'parent':
+            role_btn = btn(f"👨‍👩‍👧 {cls.upper()} · {name}", 'menu_profile')
+        else:
+            role_btn = btn("👤 Мой профиль", 'menu_profile')
+    else:
+        role_btn = btn("📝 Зарегистрироваться", 'menu_register')
+
+    kb = [
+        [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
+        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
+        [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
+        [btn("🕑 Звонки", 'menu_bells'), btn("🤖 ИИ помощник", 'menu_ai')],
+        [btn("⭐ Избранное", 'menu_my')],
+        [btn("🎮 Шивровальщик", 'menu_game')],
+        [btn("🆘 Помощь", 'menu_help')],
+        [role_btn],
+    ]
+    if is_admin:
+        kb.append([btn("🛠 Админка", 'admin_panel')])
+    return kb
+
+
 if __name__ == '__main__':
     main()
