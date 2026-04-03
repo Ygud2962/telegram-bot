@@ -69,6 +69,9 @@ BOT_PUBLIC_URL = (
 if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
 PORT = int(os.environ.get('PORT', 8080))
+# Версии релизов (показываются в /version и используются для cache-bust игры)
+BOT_VERSION = os.environ.get('BOT_VERSION', '7.1.0').strip() or '7.1.0'
+GAME_VERSION = os.environ.get('GAME_VERSION', '1.1.0').strip() or '1.1.0'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 # Кэш тестеров (обновляется при изменениях из бота)
@@ -2147,6 +2150,18 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: СЕЙЧАС
 # ══════════════════════════════════════════════════════════
+async def cmd_version(update: Update, context: CallbackContext):
+    """Показывает текущие версии бота и игры."""
+    game_url_state = "настроен" if GAME_URL else "не задан"
+    msg = (
+        "🧩 <b>Версии системы</b>\n\n"
+        f"🤖 Бот: <b>{BOT_VERSION}</b>\n"
+        f"🎮 Игра: <b>{GAME_VERSION}</b>\n"
+        f"🌐 GAME_URL: <b>{game_url_state}</b>\n"
+    )
+    await update.message.reply_text(msg, parse_mode='HTML')
+
+
 async def menu_bells(query, context):
     """Расписание звонков."""
     kb = [[btn("🏠 Главное меню", 'back_to_main')]]
@@ -2868,7 +2883,9 @@ async def menu_game(query, context):
         }
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
-    game_url = f"{GAME_URL}?tgWebAppStartParam={payload}" if len(payload) < 2048 else GAME_URL
+    sep = '&' if '?' in GAME_URL else '?'
+    game_base_url = f"{GAME_URL}{sep}v={urllib.parse.quote(GAME_VERSION)}"
+    game_url = f"{game_base_url}&tgWebAppStartParam={payload}" if len(payload) < 2048 else game_base_url
     logger.info(f"game payload size: {len(payload)} chars, role={current_role}, open={open_chapters_list}")
 
     # Формируем описание результата
@@ -3180,6 +3197,7 @@ async def menu_help(query, context):
         "🆘 <b>ПОМОЩЬ</b>\n\n"
         "<b>Команды:</b>\n"
         "• /start — главное меню\n"
+        "• /version — версии бота и игры\n"
         "• /teacher — зарегистрироваться как учитель\n\n"
         "<b>Вопросы и ошибки:</b>\n"
         "👨‍💼 Администратор: @Yury_hud\n"
@@ -3936,6 +3954,7 @@ async def admin_game_panel(query, context):
         f"📊 Активных игроков: <b>{active}</b>\n"
         f"🏁 Завершили игру: <b>{finished}</b>\n"
         f"🚫 Заблокированы: <b>{banned}</b>\n\n"
+        f"🔖 Версии: бот <b>{BOT_VERSION}</b> · игра <b>{GAME_VERSION}</b>\n\n"
         "Выберите действие:"
     )
     kb = [
@@ -5772,6 +5791,7 @@ def start_http_server_thread():
         fpath = GAME_DIR / 'index.html'
         if fpath.exists():
             return aiohttp_web.FileResponse(fpath, headers={
+                'Content-Type': 'text/html; charset=utf-8',
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
             })
         return aiohttp_web.Response(text='Game not found', status=404)
@@ -5875,6 +5895,7 @@ def main():
     # group=-1 — /start и /cancel срабатывают ВСЕГДА, даже в середине любого флоу
     app.add_handler(CommandHandler("start",       cmd_start),  group=-1)
     app.add_handler(CommandHandler("cancel",      cmd_cancel), group=-1)
+    app.add_handler(CommandHandler("version",     cmd_version))
     app.add_handler(CommandHandler("teacher",     cmd_teacher))
     app.add_handler(CommandHandler("claim_admin", cmd_claim_admin))
     app.add_handler(CallbackQueryHandler(button_handler))
@@ -5884,6 +5905,8 @@ def main():
     app.add_error_handler(global_error_handler)
 
     print("🤖 Бот запущен!")
+    print(f"🔖 Версия бота: {BOT_VERSION}")
+    print(f"🎮 Версия игры: {GAME_VERSION}")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
     print("👑 Администраторы: определяются через БД (role=admin)")
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
