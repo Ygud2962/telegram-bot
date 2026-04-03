@@ -776,34 +776,56 @@ function saveState() {
 // ═══════════════════════════════════════════════════════
 let _keyboardVisible = false;
 
-function toggleKeyboard() {
+function _normalizeForCompare(text) {
+  if (!text) return '';
+  let s = String(text).toUpperCase();
+  s = s.replace(/Ё/g, 'Е');
+  // Латинские "похожие" символы -> кириллица
+  s = s.replace(/[ABCEHKMOPTXY]/g, ch => ({
+    A:'А', B:'В', C:'С', E:'Е', H:'Н', K:'К', M:'М',
+    O:'О', P:'Р', T:'Т', X:'Х', Y:'У'
+  }[ch] || ch));
+  // Унифицируем разделители и убираем лишнюю пунктуацию
+  s = s.replace(/[‐‑‒–—−-]+/g, ' ');
+  s = s.replace(/[«»"'`.,!?;:()[\]{}\\/|_*+=~^@#$%&]/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+function _setKeyboardVisibility(visible) {
   const inp = document.getElementById('cipher-input');
   const btn = document.getElementById('btn-keyboard');
   if (!inp) return;
 
-  _keyboardVisible = !_keyboardVisible;
-
+  _keyboardVisible = !!visible;
   if (_keyboardVisible) {
-    // Показать клавиатуру
     inp.removeAttribute('readonly');
+    inp.setAttribute('inputmode', 'text');
     inp.focus();
-    // На iOS/Android — принудительно вызываем виртуальную клавиатуру
     inp.click();
-    if (btn) {
-      btn.style.background   = 'rgba(255,224,51,.25)';
-      btn.style.borderColor  = 'rgba(255,224,51,.5)';
-      btn.title = 'Скрыть клавиатуру';
-    }
   } else {
-    // Скрыть клавиатуру
     inp.setAttribute('readonly', true);
+    inp.setAttribute('inputmode', 'none');
     inp.blur();
-    if (btn) {
-      btn.style.background  = 'rgba(255,224,51,.1)';
+  }
+
+  if (btn) {
+    if (_keyboardVisible) {
+      btn.style.background = 'rgba(255,224,51,.25)';
+      btn.style.borderColor = 'rgba(255,224,51,.5)';
+      btn.title = 'Скрыть клавиатуру';
+    } else {
+      btn.style.background = 'rgba(255,224,51,.1)';
       btn.style.borderColor = 'rgba(255,224,51,.2)';
       btn.title = 'Показать клавиатуру';
     }
   }
+}
+
+function toggleKeyboard() {
+  const inp = document.getElementById('cipher-input');
+  if (!inp) return;
+  _setKeyboardVisibility(!_keyboardVisible);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1142,11 +1164,9 @@ function loadCipher() {
 
   // Сброс ввода (inp уже объявлен выше)
   const inpReset = document.getElementById('cipher-input');
-  if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
-  const kbBtn = document.getElementById('btn-keyboard');
-  if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; }
-  // Сбрасываем флаг видимости клавиатуры — каждый шифр начинается с закрытой клавиатурой
-  _keyboardVisible = false;
+  if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; }
+  // Каждый шифр начинается с закрытой клавиатурой
+  _setKeyboardVisibility(false);
   state.hintsUsed = false;
   const hb = document.getElementById('cipher-hint-box');
   const ht = document.getElementById('cipher-hint-text');
@@ -1302,24 +1322,39 @@ async function checkAnswer() {
     return;
   }
   const inp    = document.getElementById('cipher-input');
-  const val    = inp.value.trim().toUpperCase().replace(/\s+/g,' ');
+  const rawVal = inp.value || '';
+  const val = rawVal.trim().toUpperCase().replace(/\s+/g,' ');
   const correct = cipher.answer; // хеш
 
   if (!val) { inp.focus(); return; }
 
   const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 
-  // Проверяем все варианты написания:
-  // 1) точно как ввёл (с пробелами)
-  // 2) без пробелов (МОСТГОРИТ вместо МОСТ ГОРИТ)
-  // 3) с одним пробелом между словами (уже в val)
-  const valNoSpace  = val.replace(/\s+/g, '');
-  const [valHash, valHashNS] = await Promise.all([
-    sha256(val),
-    sha256(valNoSpace),
-  ]);
+  const normVal = _normalizeForCompare(rawVal);
+  const canonical = ANSWER_MAP[correct] || '';
+  const normCanonical = _normalizeForCompare(canonical);
 
-  const isCorrect = valHash === correct || valHashNS === correct;
+  // Несколько эквивалентных вариантов, чтобы убрать ложные "неверно"
+  const candidates = new Set([
+    val,
+    val.replace(/\s+/g, ''),
+    normVal,
+    normVal.replace(/\s+/g, ''),
+    rawVal.trim(),
+  ]);
+  const digitsOnly = normVal.replace(/\D/g, '');
+  if (digitsOnly) candidates.add(digitsOnly);
+
+  const hashes = await Promise.all(Array.from(candidates).filter(Boolean).map(c => sha256(c)));
+  let isCorrect = hashes.includes(correct);
+
+  // Fallback: прямое сравнение с каноническим ответом по хешу
+  if (!isCorrect && normCanonical) {
+    isCorrect = (
+      normVal === normCanonical ||
+      normVal.replace(/\s+/g, '') === normCanonical.replace(/\s+/g, '')
+    );
+  }
 
   if (isCorrect) {
     // ── ПРАВИЛЬНО ──
