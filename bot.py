@@ -2657,16 +2657,22 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 async def is_game_allowed(user_id: int) -> bool:
     """Проверяет доступ к игре.
-    Бета-режим: пропускаем бот-админов, игровых admin/tester, и белый список.
-    Если GAME_BETA=0 — доступ открыт всем.
+
+    Логика:
+    - Бот-администраторы и пользователи с игровой ролью admin/tester — всегда пускаем.
+    - Если в таблице game_beta есть хотя бы один тестер → бета включена, остальных не пускаем.
+    - Если таблица game_beta пуста → игра открыта для всех (независимо от GAME_BETA env var).
+
+    Примечание: GAME_BETA env var больше не используется для блокировки —
+    управление бетой теперь полностью через бота (кнопка «Открыть для ВСЕХ»).
     """
     import time
     global _beta_cache, _beta_cache_ts
-    if not GAME_BETA:
-        return True
+
     # Бот-администраторы всегда имеют доступ
     if await is_bot_admin_async(user_id):
         return True
+
     # Игровые admin/tester всегда имеют доступ (даже без прав бота)
     try:
         game_role = await asyncio.to_thread(db.get_game_role, user_id)
@@ -2674,11 +2680,18 @@ async def is_game_allowed(user_id: int) -> bool:
             return True
     except Exception:
         pass
-    # Белый список бета-теста
+
+    # Кэш бета-списка (60 секунд)
     if time.time() - _beta_cache_ts > 60:
         rows = await asyncio.to_thread(db.get_beta_users)
         _beta_cache = {r[0] for r in rows}
         _beta_cache_ts = time.time()
+
+    # Если список пуст → игра открыта для всех
+    if not _beta_cache:
+        return True
+
+    # Список не пуст → бета включена, проверяем белый список
     return user_id in _beta_cache
 
 
