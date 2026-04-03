@@ -692,11 +692,13 @@ function mergeBotLeaderboard() {
     const dbGameOver    = tgInitMe.game_over    || false;
     const dbRestartMode = tgInitMe.restart_mode || null;
 
-    // Роль из payload: admin_mode только для admin, tester_mode для tester
+    // Роль из payload — ВСЕГДА явно устанавливаем, не доверяем localStorage
+    // Это критично: если роль сменилась с admin на player — нужно сбросить adminMode
     const dbAdminMode  = (tgInitMe.admin_mode  === true) || window._adminMode  === true;
     const dbTesterMode = (tgInitMe.tester_mode === true) || window._testerMode === true;
     const dbRole       = tgInitMe.role || window._gameRole || 'player';
 
+    // Явно устанавливаем оба флага — не оставляем старые значения из localStorage
     if (dbAdminMode) {
       state.adminMode  = true;
       state.testerMode = false;
@@ -705,6 +707,11 @@ function mergeBotLeaderboard() {
       state.adminMode  = false;
       state.testerMode = true;
       console.log('🧪 testerMode=true (tester)');
+    } else {
+      // Роль player — явно сбрасываем оба флага
+      state.adminMode  = false;
+      state.testerMode = false;
+      console.log('🎮 player mode — adminMode/testerMode сброшены');
     }
     state.gameRole = dbRole;
 
@@ -740,9 +747,11 @@ function loadState() {
     const s = localStorage.getItem(storageKey());
     if (s) {
       Object.assign(state, JSON.parse(s));
-      // adminMode и _noptsMode всегда приходят из бота, не из кэша
-      // adminMode из localStorage оставляем (нужен после confirmReset)
-      // _noptsMode всегда берётся из бота
+      // Роль ВСЕГДА приходит от сервера — никогда не берём из кэша.
+      // Иначе при смене роли с admin на player — adminMode останется true из кэша.
+      state.adminMode  = false;
+      state.testerMode = false;
+      state.gameRole   = 'player';
       state._noptsMode = false;
     }
   } catch(e) {}
@@ -750,9 +759,14 @@ function loadState() {
 
 function saveState() {
   try {
-    // _noptsMode не сохраняем — приходит от бота
-    // adminMode сохраняем ТОЛЬКО если он true (нужен после confirmReset)
-    const toSave = Object.assign({}, state, { _noptsMode: false });
+    // Роль НИКОГДА не сохраняем в localStorage — она всегда приходит от сервера.
+    // Это предотвращает "застревание" adminMode при смене роли.
+    const toSave = Object.assign({}, state, {
+      _noptsMode:  false,
+      adminMode:   false,   // не кэшируем
+      testerMode:  false,   // не кэшируем
+      gameRole:    'player' // не кэшируем
+    });
     localStorage.setItem(storageKey(), JSON.stringify(toSave));
   } catch(e) {}
 }
@@ -3916,6 +3930,29 @@ function renderAchievementsTab(container) {
 // ═══════════════════════════════════════════════════════
 if (document.readyState === "loading") { showSplash(); } else { showSplash(); }
 loadState();
+
+// Применяем роль из window-флагов ДО mergeBotLeaderboard и renderChapters.
+// Это гарантирует что adminMode/testerMode правильны даже если tgInitMe = null.
+// window._adminMode / _testerMode / _gameRole установлены при парсинге startParam.
+(function _applyRoleFromWindow() {
+  if (window._adminMode === true) {
+    state.adminMode  = true;
+    state.testerMode = false;
+    state.gameRole   = 'admin';
+  } else if (window._testerMode === true) {
+    state.adminMode  = false;
+    state.testerMode = true;
+    state.gameRole   = 'tester';
+  } else {
+    // Роль player или не определена — сбрасываем всё
+    state.adminMode  = false;
+    state.testerMode = false;
+    state.gameRole   = window._gameRole || 'player';
+  }
+  // Обновляем tgOpenChapters из startParam 'open'
+  // (tgOpenChapters уже мог быть установлен при парсинге выше)
+})();
+
 mergeBotLeaderboard();
 
 async function fetchAndApplyState() {
@@ -3934,16 +3971,17 @@ async function fetchAndApplyState() {
       return;
     }
 
-    // Применяем роль из сервера
-    const savedAdminMode  = state.adminMode;
-    const savedTesterMode = state.testerMode;
-
+    // Применяем роль из сервера — ВСЕГДА явно, перезаписываем localStorage
     if (data.admin_mode === true) {
       state.adminMode  = true;
       state.testerMode = false;
     } else if (data.tester_mode === true) {
       state.adminMode  = false;
       state.testerMode = true;
+    } else {
+      // player — явно сбрасываем
+      state.adminMode  = false;
+      state.testerMode = false;
     }
     if (data.role) state.gameRole = data.role;
 
