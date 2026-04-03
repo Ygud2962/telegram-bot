@@ -304,6 +304,28 @@
         }
         .bn-tab.active { color: var(--accent); }
         .bn-tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+        .ch-countdown {
+            margin-top: 8px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 224, 51, .4);
+            background: linear-gradient(180deg, rgba(255,224,51,.16), rgba(255,224,51,.06));
+        }
+        .ch-countdown-label {
+            font-size: 11px;
+            color: rgba(255, 240, 168, .95);
+            letter-spacing: .08em;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        .ch-countdown-time {
+            font-family: var(--head);
+            font-size: 20px;
+            color: var(--accent);
+            letter-spacing: .04em;
+            text-shadow: 0 0 12px rgba(255, 224, 51, .45);
+            font-weight: 700;
+        }
         
         .lb-row {
             display: flex;
@@ -540,6 +562,7 @@
             <div class="nav-buttons">
                 <button class="btn" onclick="switchTab('profile')">👤 ПРОФИЛЬ</button>
                 <button class="btn" onclick="switchTab('about')">ℹ️ О ИГРЕ</button>
+                <button class="btn" onclick="switchTab('settings')">⚙️ НАСТРОЙКИ</button>
             </div>
         </div>
         
@@ -697,6 +720,14 @@
                 <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
             </div>
         </div>
+        
+        <div id="s-settings-tab" class="screen">
+            <div id="settings-tab-content"></div>
+            <div class="nav-buttons">
+                <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
+                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
+            </div>
+        </div>
     </div>
     
     <div id="bottom-nav">
@@ -715,6 +746,10 @@
         <div class="bn-tab" id="bn-about" onclick="switchTab('about')">
             <span class="bn-tab-icon">ℹ️</span>
             О ИГРЕ
+        </div>
+        <div class="bn-tab" id="bn-settings" onclick="switchTab('settings')">
+            <span class="bn-tab-icon">⚙️</span>
+            НАСТРОЙКИ
         </div>
     </div>
 
@@ -1095,7 +1130,8 @@ streak: 0, retryPenalty: false,
 chapterFailCounts: {}, chapterStats: {},
 gameOver: false, leaderboard: [], adminMode: false, testerMode: false,
 repeatRuns: {},
-achievements: {}, achievementPts: 0
+achievements: {}, achievementPts: 0,
+soundEnabled: true
 });
 
 let state = DEFAULT_STATE();
@@ -1120,6 +1156,7 @@ function loadState() {
 try {
 const s = localStorage.getItem(storageKey());
 if (s) { Object.assign(state, JSON.parse(s)); state._noptsMode = false; }
+if (typeof state.soundEnabled !== 'boolean') state.soundEnabled = true;
 } catch(e) {}
 }
 
@@ -1171,7 +1208,7 @@ saveState();
 }
 
 async function showScreen(id) {
-const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
+const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab','s-settings-tab'];
 if (TAB_SCREENS.includes(id)) return;
 if (id === 's-chapters') { switchTab('chapters'); return; }
 
@@ -1219,8 +1256,8 @@ setTimeout(() => {
   document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
   showBottomNav();
   
-  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab' };
-  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about' };
+  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab', 'settings': 's-settings-tab' };
+  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about', 'settings': 'bn-settings' };
   const screenEl = document.getElementById(screenMap[tab]);
   const tabEl = document.getElementById(tabMap[tab]);
   if (screenEl) screenEl.classList.add('active');
@@ -1232,6 +1269,7 @@ setTimeout(() => {
   if (tab === 'leaderboard') renderLeaderboardTab();
   if (tab === 'profile') renderProfileTab();
   if (tab === 'about') renderAboutTab();
+  if (tab === 'settings') renderSettingsTab();
 }, 300);
 }
 
@@ -1299,9 +1337,11 @@ function _formatCountdown(isoStr) {
     const d = Math.floor(diff / 86400000);
     const h = Math.floor((diff % 86400000) / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
     if (d > 0) return `${d}д ${h}ч ${m}м`;
-    if (h > 0) return `${h}ч ${m}м`;
-    return `${m}м`;
+    if (h > 0) return `${h}ч ${m}м ${s}с`;
+    if (m > 0) return `${m}м ${s}с`;
+    return `${Math.max(1, s)}с`;
   } catch(e) { return null; }
 }
 
@@ -1352,8 +1392,9 @@ if (isDone && state.chapterScores[ch.id] > 0) {
     statusText=`⏰ ${schedInfo.label || 'скоро'}`;
     badgeIcon='⏰';
     hasLiveCountdown = true;
-    extraRow = `<div style="font-size:9px;color:rgba(255,224,51,.6);margin-top:3px;font-family:var(--mono)">
-      откроется через ${countdown}
+    extraRow = `<div class="ch-countdown">
+      <div class="ch-countdown-label">Откроется через</div>
+      <div class="ch-countdown-time">${countdown}</div>
     </div>`;
   } else {
     // Время наступило — перезапросим состояние
@@ -2103,9 +2144,11 @@ return _audioCtx;
 }
 
 function playSound(type) {
+if (state.soundEnabled === false) return;
 const ctx = getAudio();
 if (!ctx) return;
 try {
+if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); }
 const osc = ctx.createOscillator();
 const gain = ctx.createGain();
 osc.connect(gain);
@@ -2285,6 +2328,23 @@ function renderAboutTab() {
 const el = document.getElementById('about-tab-content');
 if (!el) return;
 el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ ${GAME_VERSION} · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v${GAME_VERSION} · © 2025 СШ №3 г. Хойники</div></div>`;
+}
+
+function toggleSoundEnabled() {
+state.soundEnabled = !state.soundEnabled;
+saveState();
+renderSettingsTab();
+showToast(state.soundEnabled ? '🔊 Звук включен' : '🔇 Звук выключен', 1400);
+if (state.soundEnabled) playSound('hint');
+}
+
+function renderSettingsTab() {
+const el = document.getElementById('settings-tab-content');
+if (!el) return;
+const isOn = state.soundEnabled !== false;
+const status = isOn ? 'ВКЛЮЧЕН' : 'ВЫКЛЮЧЕН';
+const icon = isOn ? '🔊' : '🔇';
+el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:20px"><div style="font-size:52px;margin-bottom:8px">⚙️</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">НАСТРОЙКИ</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:6px;letter-spacing:.1em">ИГРА · v${GAME_VERSION}</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.16);border-radius:10px;padding:14px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.05em">${icon} ЗВУК</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">Звуковые эффекты ответов, побед и подсказок</div></div><div style="font-family:var(--head);font-size:var(--fs-sm);color:${isOn ? 'var(--green)' : 'var(--accent2)'}">${status}</div></div><button onclick="toggleSoundEnabled()" style="width:100%;margin-top:12px;background:${isOn ? 'rgba(255,58,58,.16)' : 'rgba(85,221,85,.16)'};color:${isOn ? 'var(--accent2)' : 'var(--green)'};border:1px solid ${isOn ? 'rgba(255,58,58,.35)' : 'rgba(85,221,85,.35)'};padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">${isOn ? 'ВЫКЛЮЧИТЬ ЗВУК' : 'ВКЛЮЧИТЬ ЗВУК'}</button></div><button onclick="playSound('hint')" style="width:100%;background:rgba(255,224,51,.12);color:var(--accent);border:1px solid rgba(255,224,51,.3);padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">▶ ТЕСТ ЗВУКА</button></div>`;
 }
 
 function confirmReset() {
