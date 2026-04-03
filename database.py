@@ -1279,12 +1279,18 @@ def register_game_player(user_id, user_name=None):
         release_connection(conn)
 
 def get_game_players_count():
-    """Возвращает общее количество игроков в БД."""
+    """Возвращает количество участников рейтинга (только role=player)."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('SELECT COUNT(*) FROM game_results WHERE NOT COALESCE(banned, FALSE)')
+        cur.execute('''
+            SELECT COUNT(*)
+            FROM game_results gr
+            LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
+            WHERE NOT COALESCE(gr.banned, FALSE)
+              AND COALESCE(rol.role, 'player') = 'player'
+        ''')
         return cur.fetchone()[0]
     except Exception as e:
         logger.error(f"get_game_players_count error: {e}")
@@ -1769,14 +1775,14 @@ def get_game_leaderboard_with_roles(limit=20):
             FROM game_results gr
             LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
             WHERE NOT COALESCE(gr.banned, FALSE)
-              AND COALESCE(rol.role, 'player') = 'player'
             ORDER BY
                 CASE COALESCE(rol.role, 'player')
                     WHEN 'admin'  THEN 1
                     WHEN 'tester' THEN 2
                     ELSE 3
                 END,
-                gr.total_score DESC
+                gr.total_score DESC,
+                gr.updated_at ASC
             LIMIT %s
         ''', (limit,))
         return cur.fetchall()
