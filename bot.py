@@ -2692,11 +2692,18 @@ async def _get_cached_game_mode() -> str:
 
 
 async def is_game_allowed(user_id: int) -> bool:
-    """Проверяет доступ к игре по режимам: beta/open/closed."""
+    """Строгий доступ к игре по режимам: closed / beta / open.
+    closed: нет доступа всем игрокам
+    beta: доступ только разрешённым (бета-список, tester/admin, бот-админ)
+    open: доступ всем
+    """
     import time
     global _beta_cache, _beta_cache_ts
 
-    if await is_bot_admin_async(user_id):
+    mode = await _get_cached_game_mode()
+    if mode == 'closed':
+        return False
+    if mode == 'open':
         return True
 
     game_role = None
@@ -2705,19 +2712,12 @@ async def is_game_allowed(user_id: int) -> bool:
     except Exception:
         game_role = None
 
-    # Игровой админ всегда имеет доступ
-    if game_role == 'admin':
+    if await is_bot_admin_async(user_id):
         return True
-
-    mode = await _get_cached_game_mode()
-    if mode == 'open':
+    if game_role in ('admin', 'tester'):
         return True
-    if mode == 'closed':
-        return False
 
     # beta mode
-    if game_role == 'tester':
-        return True
     if time.time() - _beta_cache_ts > 60:
         rows = await asyncio.to_thread(db.get_beta_users)
         _beta_cache = {r[0] for r in rows}
