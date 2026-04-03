@@ -1220,30 +1220,60 @@ setTimeout(() => {
 }, 300);
 }
 
-function toggleKeyboard() {
+let _keyboardVisible = false;
+
+function normalizeAnswerText(text) {
+if (!text) return '';
+let s = String(text).toUpperCase();
+s = s.replace(/Ё/g, 'Е');
+// Латинские похожие символы -> кириллица
+s = s.replace(/[ABCEHKMOPTXY]/g, ch => ({
+  A:'А', B:'В', C:'С', E:'Е', H:'Н', K:'К', M:'М',
+  O:'О', P:'Р', T:'Т', X:'Х', Y:'У'
+}[ch] || ch));
+s = s.replace(/[‐‑‒–—−-]+/g, ' ');
+s = s.replace(/[«»"'`.,!?;:()[\]{}\\/|_*+=~^@#$%&]/g, ' ');
+s = s.replace(/\s+/g, ' ').trim();
+return s;
+}
+
+function setKeyboardVisibility(visible) {
 const inp = document.getElementById('cipher-input');
 const btn = document.getElementById('btn-keyboard');
 if (!inp) return;
 
-if (inp.hasAttribute('readonly')) {
+_keyboardVisible = !!visible;
+if (_keyboardVisible) {
   inp.removeAttribute('readonly');
+  inp.setAttribute('inputmode', 'text');
   inp.focus();
-  if (btn) { 
-    btn.style.background = 'rgba(255,224,51,.25)'; 
-    btn.style.borderColor = 'rgba(255,224,51,.5)';
-    btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-  }
-  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+  inp.click();
 } else {
   inp.setAttribute('readonly', true);
+  inp.setAttribute('inputmode', 'none');
   inp.blur();
-  if (btn) { 
-    btn.style.background = 'rgba(255,224,51,.1)'; 
+}
+
+if (btn) {
+  if (_keyboardVisible) {
+    btn.style.background = 'rgba(255,224,51,.25)';
+    btn.style.borderColor = 'rgba(255,224,51,.5)';
+    btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+    btn.title = 'Скрыть клавиатуру';
+  } else {
+    btn.style.background = 'rgba(255,224,51,.1)';
     btn.style.borderColor = 'rgba(255,224,51,.2)';
     btn.style.boxShadow = 'none';
+    btn.title = 'Показать клавиатуру';
   }
-  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
 }
+}
+
+function toggleKeyboard() {
+const inp = document.getElementById('cipher-input');
+if (!inp) return;
+setKeyboardVisibility(!_keyboardVisible);
+if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
 }
 
 // Хелпер: форматирует оставшееся время до открытия главы
@@ -1456,8 +1486,7 @@ renderLives();
 startTimer();
 const inpReset = document.getElementById('cipher-input');
 if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
-const kbBtn = document.getElementById('btn-keyboard');
-if (kbBtn) { kbBtn.style.background = 'rgba(255,224,51,.1)'; kbBtn.style.borderColor = 'rgba(255,224,51,.2)'; kbBtn.style.boxShadow = 'none'; }
+setKeyboardVisibility(false);
 state.hintsUsed = false;
 const hb = document.getElementById('cipher-hint-box');
 const ht = document.getElementById('cipher-hint-text');
@@ -1562,14 +1591,26 @@ if (cipher.type === 'quiz') { quizSubmit(); return; }
 if (cipher.type === 'map' || cipher.type === 'anagram') return;
 
 const inp = document.getElementById('cipher-input');
-const val = inp.value.trim().toUpperCase().replace(/\s+/g, ' ');
+const rawVal = inp.value || '';
+const val = normalizeAnswerText(rawVal);
 if (!val) { inp.focus(); showToast('👆 Введите ответ'); return; }
 
 const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 saveState();
 showSaveToast();
 
-if (val === cipher.answer) {
+const expected = normalizeAnswerText(cipher.answer);
+const valNoSpace = val.replace(/\s+/g, '');
+const expectedNoSpace = expected.replace(/\s+/g, '');
+const digitsOnly = val.replace(/\D/g, '');
+const expectedDigits = expected.replace(/\D/g, '');
+const isCorrect = (
+  val === expected ||
+  valNoSpace === expectedNoSpace ||
+  (digitsOnly && expectedDigits && digitsOnly === expectedDigits)
+);
+
+if (isCorrect) {
 inp.className = 'cipher-input correct';
 inp.disabled = true;
 state.streak = (state.streak || 0) + 1;
