@@ -5945,7 +5945,7 @@ def main():
 
 def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
                      teacher_name: str | None = None) -> list:
-    """Возвращает практичное главное меню с учётом профиля."""
+    """Возвращает главное меню с выделенными пунктами игры и помощи."""
     if teacher_name:
         role_btn = btn(f"👨‍🏫 {teacher_name}", 'menu_profile')
     elif profile:
@@ -5962,12 +5962,12 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
         role_btn = btn("📝 Зарегистрироваться", 'menu_register')
 
     kb = [
+        [btn("🎮 ШИФРОВАЛЬЩИК", 'menu_game'), btn("🆘 ПОМОЩЬ", 'menu_help')],
         [btn("⏰ Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
         [btn("🔄 Замены", 'menu_substitutions'), btn("📣 Новости", 'menu_news')],
         [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
         [btn("🕐 Звонки", 'menu_bells'), btn("⭐ Избранное", 'menu_my')],
-        [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🎮 Шифровальщик", 'menu_game')],
-        [role_btn, btn("🆘 Помощь", 'menu_help')],
+        [btn("🤖 ИИ-помощник", 'menu_ai'), role_btn],
     ]
     if is_admin:
         kb.append([btn("👑 Админка", 'admin_panel')])
