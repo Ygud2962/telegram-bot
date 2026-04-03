@@ -2656,14 +2656,25 @@ async def handle_edit_news_input(update: Update, context: CallbackContext):
 #  МЕНЮ: ЗВОНКИ
 # ══════════════════════════════════════════════════════════
 async def is_game_allowed(user_id: int) -> bool:
-    """Проверяет доступ к игре: если бета включена — только белый список + admins."""
+    """Проверяет доступ к игре.
+    Бета-режим: пропускаем бот-админов, игровых admin/tester, и белый список.
+    Если GAME_BETA=0 — доступ открыт всем.
+    """
     import time
     global _beta_cache, _beta_cache_ts
     if not GAME_BETA:
         return True
+    # Бот-администраторы всегда имеют доступ
     if await is_bot_admin_async(user_id):
         return True
-    # Кэш на 60 секунд чтобы не ломиться в БД при каждом тапе
+    # Игровые admin/tester всегда имеют доступ (даже без прав бота)
+    try:
+        game_role = await asyncio.to_thread(db.get_game_role, user_id)
+        if game_role in ('admin', 'tester'):
+            return True
+    except Exception:
+        pass
+    # Белый список бета-теста
     if time.time() - _beta_cache_ts > 60:
         rows = await asyncio.to_thread(db.get_beta_users)
         _beta_cache = {r[0] for r in rows}
