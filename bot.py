@@ -1365,8 +1365,8 @@ MAIN_MENU_KB_REGISTERED = [
 ]
 
 
-def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
-                     teacher_name: str | None = None) -> list:
+def get_main_menu_kb_legacy(profile: dict | None, is_admin: bool = False,
+                            teacher_name: str | None = None) -> list:
     """Возвращает клавиатуру главного меню с учётом профиля."""
     role_row = []
     if teacher_name:
@@ -5942,7 +5942,7 @@ def main():
     except Exception as e:
         logger.critical(f"Критическая ошибка: {e}")
 
-
+# Canonical main menu builder used by handlers.
 def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
                      teacher_name: str | None = None) -> list:
     """Возвращает главное меню с выделенными пунктами игры и помощи."""
