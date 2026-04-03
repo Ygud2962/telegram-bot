@@ -312,9 +312,21 @@ def init_db():
             )
         ''')
 
+        # Таблица доступа к главам для конкретных игроков
+        # (для обычных игроков главы открываются индивидуально через админа)
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS player_chapter_access (
+                user_id    BIGINT NOT NULL,
+                chapter_id INTEGER NOT NULL,
+                granted_at TIMESTAMPTZ DEFAULT NOW(),
+                granted_by BIGINT,
+                PRIMARY KEY (user_id, chapter_id)
+            )
+        ''')
+
         cur.execute('''
             INSERT INTO game_chapters (chapter_id, is_open)
-            VALUES (1,TRUE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
+            VALUES (1,FALSE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
             ON CONFLICT (chapter_id) DO NOTHING
         ''')
 
@@ -1942,7 +1954,7 @@ def count_admins() -> int:
 # ══════════════════════════════════════════════════════════
 
 def migrate_bot_admins_table():
-    """Создаёт таблицу bot_admins для хранения прав в боте."""
+    """Создаёт таблицу bot_admins и player_chapter_access если не существуют."""
     conn = None
     try:
         conn = get_connection()
@@ -1954,8 +1966,18 @@ def migrate_bot_admins_table():
                 granted_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
+        # Таблица индивидуального доступа к главам для игроков
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS player_chapter_access (
+                user_id    BIGINT NOT NULL,
+                chapter_id INTEGER NOT NULL,
+                granted_at TIMESTAMPTZ DEFAULT NOW(),
+                granted_by BIGINT,
+                PRIMARY KEY (user_id, chapter_id)
+            )
+        """)
         conn.commit()
-        logger.info("✅ Таблица bot_admins создана/проверена")
+        logger.info("✅ Таблицы bot_admins и player_chapter_access созданы/проверены")
         return True
     except Exception as e:
         logger.error(f"migrate_bot_admins_table error: {e}")
@@ -2044,6 +2066,242 @@ def get_all_bot_admins() -> list:
         return cur.fetchall()
     except Exception as e:
         logger.error(f"get_all_bot_admins error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+# ══════════════════════════════════════════════════════════
+#  ИНДИВИДУАЛЬНЫЙ ДОСТУП К ГЛАВАМ ДЛЯ ИГРОКОВ
+# ══════════════════════════════════════════════════════════
+
+def get_player_accessible_chapters(user_id: int) -> set:
+    """Возвращает set chapter_id, доступных конкретному игроку.
+    Для admin/tester не нужно — у них всегда все главы.
+    Для player — индивидуально открытые + глобально открытые.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # Индивидуально открытые для этого игрока
+        cur.execute('SELECT chapter_id FROM player_chapter_access WHERE user_id = %s', (user_id,))
+        individual = {r[0] for r in cur.fetchall()}
+        # Глобально открытые (is_open=TRUE или open_at уже прошло)
+        cur.execute('''
+            SELECT chapter_id FROM game_chapters
+            WHERE is_open = TRUE OR (open_at IS NOT NULL AND open_at <= NOW())
+        ''')
+        global_open = {r[0] for r in cur.fetchall()}
+        return individual | global_open
+    except Exception as e:
+        logger.error(f"get_player_accessible_chapters error {user_id}: {e}")
+        return set()
+    finally:
+        release_connection(conn)
+
+
+def grant_chapter_to_player(user_id: int, chapter_id: int, granted_by: int = None) -> bool:
+    """Открывает конкретную главу конкретному игроку."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO player_chapter_access (user_id, chapter_id, granted_by)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, chapter_id) DO NOTHING
+        ''', (user_id, chapter_id, granted_by))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"grant_chapter_to_player error {user_id} ch{chapter_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def revoke_chapter_from_player(user_id: int, chapter_id: int) -> bool:
+    """Закрывает конкретную главу для конкретного игрока."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            'DELETE FROM player_chapter_access WHERE user_id = %s AND chapter_id = %s',
+            (user_id, chapter_id)
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"revoke_chapter_from_player error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def grant_all_chapters_to_player(user_id: int, granted_by: int = None) -> bool:
+    """Открывает все 6 глав конкретному игроку."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        for ch_id in range(1, 7):
+            cur.execute('''
+                INSERT INTO player_chapter_access (user_id, chapter_id, granted_by)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, chapter_id) DO NOTHING
+            ''', (user_id, ch_id, granted_by))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"grant_all_chapters_to_player error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def revoke_all_chapters_from_player(user_id: int) -> bool:
+    """Закрывает все главы для игрока (используется при сбросе прогресса)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM player_chapter_access WHERE user_id = %s', (user_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"revoke_all_chapters_from_player error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_player_chapter_access_map(user_id: int) -> set:
+    """Возвращает set chapter_id открытых индивидуально для игрока."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT chapter_id FROM player_chapter_access WHERE user_id = %s', (user_id,))
+        return {r[0] for r in cur.fetchall()}
+    except Exception as e:
+        logger.error(f"get_player_chapter_access_map error {user_id}: {e}")
+        return set()
+    finally:
+        release_connection(conn)
+
+
+def reset_game_result_full(user_id: int) -> bool:
+    """Полный сброс игрока: обнуляет прогресс И закрывает все индивидуальные главы."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE game_results
+            SET chapter=0, score=0, total_score=0, completed=0,
+                game_over=FALSE, failed=FALSE, restart_mode=NULL, updated_at=NOW()
+            WHERE user_id=%s
+        """, (user_id,))
+        cur.execute('DELETE FROM player_chapter_access WHERE user_id = %s', (user_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"reset_game_result_full error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_all_game_players_with_roles(limit: int = 100) -> list:
+    """Все игроки с ролями: [(user_id, user_name, role, total_score, completed), ...]"""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT gr.user_id, gr.user_name,
+                   COALESCE(rol.role, 'player') AS role,
+                   gr.total_score, gr.completed
+            FROM game_results gr
+            LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
+            WHERE NOT COALESCE(gr.banned, FALSE)
+            ORDER BY gr.updated_at DESC
+            LIMIT %s
+        ''', (limit,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_all_game_players_with_roles error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_players_only(limit: int = 200) -> list:
+    """Только обычные игроки (role='player') для выдачи доступа к главам.
+    Включает всех пользователей бота с ролью player.
+    [(user_id, first_name, username, total_score, completed), ...]
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT u.user_id,
+                   COALESCE(u.first_name, '') AS first_name,
+                   COALESCE(u.username, '') AS username,
+                   COALESCE(gr.total_score, 0) AS total_score,
+                   COALESCE(gr.completed, 0) AS completed
+            FROM users u
+            LEFT JOIN game_roles gro ON gro.user_id = u.user_id
+            LEFT JOIN game_results gr ON gr.user_id = u.user_id
+            WHERE COALESCE(gro.role, 'player') = 'player'
+            ORDER BY u.last_active DESC
+            LIMIT %s
+        ''', (limit,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_players_only error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_chapter_schedule_for_game() -> list:
+    """Возвращает расписание глав для передачи в игру (таймеры).
+    [(chapter_id, is_open, open_at_iso_string_or_null), ...]
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT chapter_id,
+                   (is_open OR (open_at IS NOT NULL AND open_at <= NOW())) AS is_effectively_open,
+                   open_at
+            FROM game_chapters
+            ORDER BY chapter_id
+        ''')
+        rows = cur.fetchall()
+        result = []
+        for ch_id, is_open, open_at in rows:
+            oa = None
+            if open_at and not is_open:
+                # Передаём как ISO строку в UTC
+                oa = open_at.astimezone(pytz.utc).isoformat()
+            result.append({
+                'id': ch_id,
+                'open': bool(is_open),
+                'open_at': oa,
+            })
+        return result
+    except Exception as e:
+        logger.error(f"get_chapter_schedule_for_game error: {e}")
         return []
     finally:
         release_connection(conn)
