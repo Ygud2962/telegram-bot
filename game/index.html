@@ -765,13 +765,13 @@
             <span class="bn-tab-icon">ℹ️</span>
             О ИГРЕ
         </div>
-        <div class="bn-tab" id="bn-settings" onclick="switchTab('settings')">
-            <span class="bn-tab-icon">⚙️</span>
-            НАСТРОЙКИ
-        </div>
         <div class="bn-tab" id="bn-achievements" onclick="switchTab('achievements')">
             <span class="bn-tab-icon">🏅</span>
             ДОСТИЖ.
+        </div>
+        <div class="bn-tab" id="bn-settings" onclick="switchTab('settings')">
+            <span class="bn-tab-icon">⚙️</span>
+            НАСТРОЙКИ
         </div>
     </div>
 
@@ -1390,9 +1390,7 @@ let isLocked, visuallyLocked, schedInfo = null;
 if (state.adminMode) {
   isLocked = false; visuallyLocked = false;
 } else {
-  const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
-  const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
-  isLocked = !(serverAllows && prevDone);
+  isLocked = !isChapterAvailableNow(i);
   visuallyLocked = isLocked;
   // Таймер из _chapterSchedule
   if (isLocked && schedule[ch.id]) {
@@ -1453,7 +1451,7 @@ card.innerHTML = `
     ${scoreVal ? `<div class="ch-score">${scoreVal}</div>` : ''}
    </div>`;
 
-const canPlay = state.adminMode || (!isLocked);
+const canPlay = isChapterAvailableNow(i);
 if (canPlay) { card.onclick = () => { showBriefing(i); }; card.style.cursor = 'pointer'; }
 else { card.style.cursor = isDone ? 'default' : 'not-allowed'; }
 list.appendChild(card);
@@ -1499,6 +1497,12 @@ if (hasLiveCountdown && isChaptersVisible) {
 
 function showBriefing(idx) {
 if (idx < 0 || idx >= CHAPTERS.length) { showScreen('s-chapters'); renderChapters(); return; }
+if (!isChapterAvailableNow(idx)) {
+showToast('🔒 Глава пока закрыта');
+showScreen('s-chapters');
+renderChapters();
+return;
+}
 currentChapter = idx;
 const ch = CHAPTERS[idx];
 document.getElementById('brief-num').textContent = ch.subtitle + ' — ' + ch.place;
@@ -1516,6 +1520,12 @@ showScreen('s-briefing');
 
 function startChapter(idx) {
 const ch = CHAPTERS[idx];
+if (!isChapterAvailableNow(idx)) {
+showToast('🔒 Глава пока закрыта');
+showScreen('s-chapters');
+renderChapters();
+return;
+}
 const chapterId = ch ? ch.id : (idx + 1);
 const isReplay = !!state.completedChapters[chapterId];
 state._repeatRun = isReplay && !state.adminMode && !state.testerMode;
@@ -1538,6 +1548,18 @@ loadCipher();
 showScreen('s-cipher');
 startBackgroundMusic();
 updateAudioButtons();
+}
+
+function isChapterAvailableNow(idx) {
+const ch = CHAPTERS[idx];
+if (!ch) return false;
+if (state.adminMode) return true;
+const serverAllows = !tgOpenChapters || tgOpenChapters.has(ch.id);
+const prevDone = idx === 0 || !!state.completedChapters[CHAPTERS[idx - 1].id];
+const schedule = window._chapterSchedule || {};
+const schedInfo = schedule[ch.id];
+const timeLocked = !!(schedInfo && schedInfo.iso && (new Date(schedInfo.iso) - Date.now() > 0));
+return !!(serverAllows && prevDone && !timeLocked);
 }
 
 function loadCipher() {
@@ -1909,7 +1931,7 @@ document.getElementById('fail-chapter-name').textContent = ch.title;
 document.getElementById('fail-score-line').textContent = `Набрано очков в этой главе: ${state.chapterScore}`;
 const nextIdx = state.chapter + 1;
 const nextBtn = document.getElementById('fail-next-btn');
-if (nextIdx < CHAPTERS.length && !allDone) {
+if (nextIdx < CHAPTERS.length && !allDone && isChapterAvailableNow(nextIdx)) {
 const nextCh = CHAPTERS[nextIdx];
 nextBtn.textContent = 'СЛЕДУЮЩАЯ ГЛАВА: ' + nextCh.title + ' →';
 nextBtn.onclick = () => showBriefing(nextIdx);
