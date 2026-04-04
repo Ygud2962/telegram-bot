@@ -24,26 +24,30 @@ set "GIT_HTTP_PROXY="
 set "GIT_HTTPS_PROXY="
 set "GIT_SSL_BACKEND=openssl"
 
-echo [1/6] Checking merge conflicts...
+echo [1/7] Checking merge conflicts...
 for /f %%i in ('git diff --name-only --diff-filter=U') do (
   echo ERROR: unresolved conflict in %%i
   goto conflict_error
 )
 
-echo [2/6] Detecting current branch...
+echo [2/7] Detecting current branch...
 for /f %%i in ('git rev-parse --abbrev-ref HEAD') do set "BRANCH=%%i"
 if not defined BRANCH goto error
 echo Current branch: %BRANCH%
 
 if /I not "%BRANCH%"=="main" (
-  echo [3/6] Switching to main...
+  echo [3/7] Switching to main...
   git switch main 2>nul || git checkout main
   if errorlevel 1 goto error
 ) else (
-  echo [3/6] Already on main.
+  echo [3/7] Already on main.
 )
 
-echo [4/6] Creating commit if needed...
+echo [4/7] Syncing README versions...
+python scripts\update_readme_versions.py
+if errorlevel 1 goto error
+
+echo [5/7] Creating commit if needed...
 echo x> ".git\__perm_test.tmp" 2>nul
 if not exist ".git\__perm_test.tmp" (
   echo INFO: local .git is read-only, switching to safe deploy mode...
@@ -61,11 +65,11 @@ if not errorlevel 1 (
   echo No local changes to commit.
 )
 
-echo [5/6] Pushing main...
+echo [6/7] Pushing main...
 call :push_with_login
 if errorlevel 1 goto error
 
-echo [6/6] Done.
+echo [7/7] Done.
 
 echo.
 echo ========================================
@@ -79,18 +83,18 @@ exit /b 0
 set "SOURCE_DIR=%CD%"
 set "TEMP_REPO=%TEMP%\telegram-bot-deploy-%RANDOM%%RANDOM%"
 
-echo [4/6] Preparing temporary clean repository...
+echo [5/7] Preparing temporary clean repository...
 for /f "delims=" %%i in ('git config --get remote.origin.url') do set "REMOTE_URL=%%i"
 if not defined REMOTE_URL goto error
 
 git -c http.sslBackend=openssl clone --branch main --single-branch "%REMOTE_URL%" "%TEMP_REPO%"
 if errorlevel 1 goto error
 
-echo [5/6] Syncing files to temporary repository...
+echo [6/7] Syncing files to temporary repository...
 robocopy "%SOURCE_DIR%" "%TEMP_REPO%" /MIR /XD ".git" "node_modules" ".venv" "venv" "__pycache__" ".pytest_cache" ".mypy_cache" >nul
 if errorlevel 8 goto error
 
-echo [6/6] Commit and push from temporary repository...
+echo [7/7] Commit and push from temporary repository...
 pushd "%TEMP_REPO%" >nul
 git add -A
 git diff --cached --quiet
