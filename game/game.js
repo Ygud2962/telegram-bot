@@ -1841,7 +1841,7 @@ function shareMyTotal() {
   const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
   const pct    = Math.round(total / maxAll * 100);
   const medal  = pct >= 90 ? '🌟' : pct >= 75 ? '⭐' : pct >= 55 ? '🎖' : '🏅';
-  const text   = medal + ' ШИФРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
+  const text   = medal + ' ШИВРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
   if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(() => showToast('📋 Скопировано! Вставьте в чат'));
@@ -2601,13 +2601,13 @@ function renderAboutTab() {
   if (!el) return;
   el.innerHTML = '<div style="background:linear-gradient(180deg,#1a1508 0%,#0d0b08 100%);padding:32px 20px 24px;text-align:center;border-bottom:1px solid rgba(255,224,51,.1)">'
     + '<div style="font-size:56px;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(255,224,51,.5))">🔐</div>'
-    + '<div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.08em;margin-bottom:4px">ШИФРОВАЛЬЩИК</div>'
+    + '<div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.08em;margin-bottom:4px">ШИВРОВАЛЬЩИК</div>'
     + '<div style="font-size:var(--fs-sm);color:var(--muted);letter-spacing:.06em">ВЕРСИЯ 1.0  ·  2025</div></div>'
     + '<div style="padding:20px 16px">'
     // О игре
     + '<div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);border-radius:8px;padding:16px;margin-bottom:14px">'
     + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:8px">📖 О ИГРЕ</div>'
-    + '<div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7"><b style="color:#fdfaf0">Шифровальщик</b> — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div>'
+    + '<div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7"><b style="color:#fdfaf0">Шивровальщик</b> — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div>'
     // Как играть
     + '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:16px;margin-bottom:14px">'
     + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:10px">🎮 КАК ИГРАТЬ</div>'
@@ -2645,7 +2645,7 @@ function renderAboutTab() {
     + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:8px"><div style="font-size:22px">💬</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Telegram</div><div style="font-size:11px;color:var(--muted)">@Yury_hud</div></div></div>'
     + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:8px"><div style="font-size:22px">📧</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Email</div><div style="font-size:11px;color:var(--muted)">uragud.2020@gmail.com</div></div></div>'
     + '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:22px">🕐</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Время ответа</div><div style="font-size:11px;color:var(--muted)">Пн–Пт, 9:00–18:00</div></div></div></div>'
-    + '<div style="text-align:center;padding:12px 0;color:var(--muted);font-size:10px;letter-spacing:.06em">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>'
+    + '<div style="text-align:center;padding:12px 0;color:var(--muted);font-size:10px;letter-spacing:.06em">ШИВРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>'
     + '</div>';
 }
 
@@ -2695,7 +2695,7 @@ function renderLeaderboardTab() {
         margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div>
       <div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">
         Никто ещё не прошёл ни одной главы.<br>
-        <b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b>
+        <b style="color:#fdfaf0">Стань первым шивровальщиком школы!</b>
       </div>
       <button onclick="showMyStats()" style="width:100%;margin-bottom:8px;background:rgba(255,224,51,.08);border:1px solid rgba(255,224,51,.2);color:var(--accent);padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">📊 ДЕТАЛЬНАЯ СТАТИСТИКА</button>
     <button onclick="showMyAchievements()" style="width:100%;margin-bottom:10px;background:rgba(255,180,0,.06);border:1px solid rgba(255,180,0,.2);color:#ffb400;padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:600;border-radius:4px;cursor:pointer;letter-spacing:.08em">🏅 МОИ ДОСТИЖЕНИЯ · ${Object.keys(state.achievements||{}).length}/${ACHIEVEMENTS.length}</button>

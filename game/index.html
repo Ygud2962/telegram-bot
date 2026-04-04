@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ШИФРОВАЛЬЩИК · 1941-1945</title>
+    <title>ШИВРОВАЛЬЩИК · 1941-1945</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" async></script>
     <style>
@@ -2355,7 +2355,7 @@ state.leaderboard.sort((a,b) => b.score - a.score);
 function renderLeaderboardTab() {
 const list = document.getElementById('lb-list-tab');
 if (!state.leaderboard.length) {
-list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шифровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
+list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шивровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
 return;
 }
 const myUid = getTgUserId() || 'guest';
@@ -2411,7 +2411,7 @@ el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="f
 function renderAboutTab() {
 const el = document.getElementById('about-tab-content');
 if (!el) return;
-el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИФРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ ${GAME_VERSION} · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шифровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИФРОВАЛЬЩИК v${GAME_VERSION} · © 2025 СШ №3 г. Хойники</div></div>`;
+el.innerHTML = `<div style="padding:16px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:56px;margin-bottom:12px">🔐</div><div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.06em">ШИВРОВАЛЬЩИК</div><div style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-top:4px">ВЕРСИЯ ${GAME_VERSION} · 2025</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">📖 О ИГРЕ</div><div style="font-size:var(--fs-sm);color:#ccc;line-height:1.7">Шивровальщик — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:16px"><div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:12px">🎮 КАК ИГРАТЬ</div>${['🗺 Выберите операцию — откройте главу и прочитайте брифинг','🔐 Расшифруйте послание — 6 типов шифров','❤️ 5 жизней на главу — каждая ошибка минус жизнь','⚡ Скорость = очки — чем быстрее, тем больше','🔥 Стрик — серия правильных ответов даёт бонус +5% за каждый','🏆 Таблица лидеров — соревнуйтесь с другими учениками'].map(t => `<div style="font-size:var(--fs-sm);color:#ccc;line-height:1.8;margin-bottom:8px">${t}</div>`).join('')}</div></div><div style="text-align:center;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.1em;margin-top:24px">ШИВРОВАЛЬЩИК v${GAME_VERSION} · © 2025 СШ №3 г. Хойники</div></div>`;
 }
 
 function toggleSoundEnabled() {
@@ -3005,7 +3005,7 @@ const done = Object.keys(state.completedChapters).length;
 const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
 const pct = Math.round(total / maxAll * 100);
 const medal = pct >= 90 ? '🌟' : pct >= 75 ? '⭐' : pct >= 55 ? '🎖' : '🏅';
-const text = medal + ' ШИФРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
+const text = medal + ' ШИВРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
 if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
 if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(() => showToast('📋 Скопировано! Вставьте в чат')); } else { fallbackCopy(text); }
 }

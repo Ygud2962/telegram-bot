@@ -271,7 +271,7 @@ def init_db():
         ''')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_class_sub_class ON class_subscriptions(class_name)')
 
-        # Результаты игры "Шифровальщик"
+        # Результаты игры "Шивровальщик"
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_results (
                 id           SERIAL PRIMARY KEY,
@@ -1236,7 +1236,7 @@ def get_peak_hours():
         release_connection(conn)
 
 # ──────────────────────────────────────────────
-#  ИГРА "ШИФРОВАЛЬЩИК"
+#  ИГРА "ШИВРОВАЛЬЩИК"
 # ──────────────────────────────────────────────
 
 def save_game_result(user_id, user_name, chapter, score, total_score,

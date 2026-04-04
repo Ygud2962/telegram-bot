@@ -1348,7 +1348,7 @@ MAIN_MENU_KB = [
     [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
     [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
     [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
-    [btn("🎮 Шифровальщик", 'menu_game')],
+    [btn("🎮 Шивровальщик", 'menu_game')],
     [btn("👤 Регистрация", 'menu_register')],
     [btn("👑 Админка", 'admin_panel')],
 ]
@@ -1359,7 +1359,7 @@ MAIN_MENU_KB_REGISTERED = [
     [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
     [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
     [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
-    [btn("🎮 Шифровальщик", 'menu_game')],
+    [btn("🎮 Шивровальщик", 'menu_game')],
     [btn("👤 Мой профиль", 'menu_profile')],
     [btn("👑 Админка", 'admin_panel')],
 ]
@@ -1392,7 +1392,7 @@ def get_main_menu_kb_legacy(profile: dict | None, is_admin: bool = False,
         [btn("🕐 Звонки", 'menu_bells'),    btn("🔄 Замены", 'menu_substitutions')],
         [btn("📣 Новости", 'menu_news'),    btn("⭐ Избранное", 'menu_my')],
         [btn("🤖 ИИ-помощник", 'menu_ai'),  btn("🆘 Помощь", 'menu_help')],
-        [btn("🎮 Шифровальщик", 'menu_game')],
+        [btn("🎮 Шивровальщик", 'menu_game')],
         role_row,
     ]
     if is_admin:
@@ -2743,7 +2743,7 @@ async def is_game_allowed(user_id: int) -> bool:
 
 
 async def menu_game(query, context):
-    """Запуск игры Шифровальщик с учётом роли (admin/tester/player)."""
+    """Запуск игры Шивровальщик с учётом роли (admin/tester/player)."""
     await query.answer()
     user = query.from_user
 
@@ -2769,7 +2769,7 @@ async def menu_game(query, context):
 
     if not GAME_URL:
         await safe_edit(query,
-            "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
+            "🔐 <b>ШИВРОВАЛЬЩИК</b>\n\n"
             "⚠️ Игра временно недоступна.\n"
             "<i>Администратор ещё не добавил GAME_URL в Railway.</i>",
             [BACK_TO_MAIN[0]])
@@ -2958,7 +2958,7 @@ async def menu_game(query, context):
                 [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
             ])
     await query.message.edit_text(
-        "🔐 <b>ШИФРОВАЛЬЩИК</b>\n"
+        "🔐 <b>ШИВРОВАЛЬЩИК</b>\n"
         "<i>1941–1945 · Беларусь</i>\n\n"
         "Вы — советский разведчик. Расшифруйте донесения "
         "и приблизьте День Победы.\n\n"
@@ -3041,13 +3041,13 @@ async def game_leaderboard(query, context):
         await safe_edit(query,
             "🏆 <b>ТАБЛИЦА ЛИДЕРОВ</b>\n\n"
             "🔒 Пока никто не прошёл ни одной главы.\n"
-            "<i>Стань первым шифровальщиком школы!</i>",
+            "<i>Стань первым шивровальщиком школы!</i>",
             kb)
         return
 
     medals     = ['🥇','🥈','🥉']
     role_label = {'admin': ' 👑 <i>админ</i>', 'tester': ' 🧪 <i>тестер</i>', 'player': ''}
-    lines      = [f"🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ</b>  👥 {total} участников\n"]
+    lines      = [f"🏆 <b>ЛУЧШИЕ ШИВРОВАЛЬЩИКИ</b>  👥 {total} участников\n"]
     prev_role  = None
     for i, (uid, name, score, completed, game_over, role) in enumerate(lb):
         # Разделитель между группами
@@ -3139,7 +3139,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
                 try:
                     await context.bot.send_message(
                         chat_id=a,
-                        text=f"🏆 <b>{user_name}</b> прошёл Шифровальщика!\nОчков: <b>{total_score}</b>",
+                        text=f"🏆 <b>{user_name}</b> прошёл Шивровальщика!\nОчков: <b>{total_score}</b>",
                         parse_mode='HTML'
                     )
                 except Exception:
@@ -3171,7 +3171,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
             try:
                 await context.bot.send_message(
                     chat_id=a,
-                    text=f"🏆 <b>{user_name}</b> завершил Шифровальщика!\n"
+                    text=f"🏆 <b>{user_name}</b> завершил Шивровальщика!\n"
                          f"Очков: <b>{total_score}</b> · {rank}",
                     parse_mode='HTML'
                 )
@@ -3826,7 +3826,7 @@ async def admin_beta_panel(query, context):
     else:
         mode_text = "🌐 <b>Игра открыта для всех</b>\nДобавьте тестеров чтобы включить бета-режим."
 
-    lines = [f"🧪 <b>БЕТА-ТЕСТ «ШИФРОВАЛЬЩИК»</b>\n\n{mode_text}"]
+    lines = [f"🧪 <b>БЕТА-ТЕСТ «ШИВРОВАЛЬЩИК»</b>\n\n{mode_text}"]
     if users:
         lines.append("\n<b>Тестеры:</b>")
         for uid, name, added, note in users[:15]:
@@ -5980,7 +5980,7 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
         role_btn = btn("📝 Зарегистрироваться", 'menu_register')
 
     kb = [
-        [btn("🎮 ШИФРОВАЛЬЩИК", 'menu_game'), btn("🆘 ПОМОЩЬ", 'menu_help')],
+        [btn("🎮 ШИВРОВАЛЬЩИК", 'menu_game'), btn("🆘 ПОМОЩЬ", 'menu_help')],
         [btn("⏰ Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
         [btn("🔄 Замены", 'menu_substitutions'), btn("📣 Новости", 'menu_news')],
         [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
@@ -6028,7 +6028,7 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
 async def menu_games(query, context):
     """Подменю игр."""
     kb = [
-        [btn("🎮 Шивроващик", 'menu_game')],
+        [btn("🎮 Шивровальщик", 'menu_game')],
         [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(
