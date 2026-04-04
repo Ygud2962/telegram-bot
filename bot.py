@@ -6060,10 +6060,10 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
         profile_label = "Юрий гуд"
 
     kb = [
-        [btn("🕰 Сайчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
+        [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
         [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
         [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
-        [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ помошник", 'menu_ai')],
+        [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ-помощник", 'menu_ai')],
         [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
         [btn("🎮 Игры", 'menu_games')],
         [btn("🆘 Помощь", 'menu_help')],
