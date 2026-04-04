@@ -722,6 +722,14 @@
                 <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
             </div>
         </div>
+
+        <div id="s-achievements-tab" class="screen">
+            <div id="achievements-tab-content"></div>
+            <div class="nav-buttons">
+                <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
+                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
+            </div>
+        </div>
         
         <div id="s-about-tab" class="screen">
             <div id="about-tab-content"></div>
@@ -760,6 +768,10 @@
         <div class="bn-tab" id="bn-settings" onclick="switchTab('settings')">
             <span class="bn-tab-icon">⚙️</span>
             НАСТРОЙКИ
+        </div>
+        <div class="bn-tab" id="bn-achievements" onclick="switchTab('achievements')">
+            <span class="bn-tab-icon">🏅</span>
+            ДОСТИЖ.
         </div>
     </div>
 
@@ -1271,8 +1283,8 @@ setTimeout(() => {
   document.querySelectorAll('.bn-tab').forEach(b => b.classList.remove('active'));
   showBottomNav();
   
-  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'about': 's-about-tab', 'settings': 's-settings-tab' };
-  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'about': 'bn-about', 'settings': 'bn-settings' };
+  const screenMap = { 'chapters': 's-chapters', 'leaderboard': 's-leaderboard-tab', 'profile': 's-profile-tab', 'achievements': 's-achievements-tab', 'about': 's-about-tab', 'settings': 's-settings-tab' };
+  const tabMap = { 'chapters': 'bn-chapters', 'leaderboard': 'bn-leaderboard', 'profile': 'bn-profile', 'achievements': 'bn-achievements', 'about': 'bn-about', 'settings': 'bn-settings' };
   const screenEl = document.getElementById(screenMap[tab]);
   const tabEl = document.getElementById(tabMap[tab]);
   if (screenEl) screenEl.classList.add('active');
@@ -1283,8 +1295,10 @@ setTimeout(() => {
   if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
   if (tab === 'leaderboard') renderLeaderboardTab();
   if (tab === 'profile') renderProfileTab();
+  if (tab === 'achievements') renderAchievementsScreenTab();
   if (tab === 'about') renderAboutTab();
   if (tab === 'settings') renderSettingsTab();
+  if (state.musicEnabled !== false) startBackgroundMusic();
 }, 300);
 }
 
@@ -2182,7 +2196,8 @@ if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAud
 return _audioCtx;
 }
 
-function stopBackgroundMusic() {
+function stopBackgroundMusic(force = false) {
+if (!force && state && state.musicEnabled !== false) return;
 if (_bgmInterval) {
   clearInterval(_bgmInterval);
   _bgmInterval = null;
@@ -2445,7 +2460,7 @@ if (state.musicEnabled) {
   startBackgroundMusic();
   showToast('🎵 Музыка включена', 1400);
 } else {
-  stopBackgroundMusic();
+  stopBackgroundMusic(true);
   showToast('🎵 Музыка выключена', 1400);
 }
 updateAudioButtons();
@@ -3064,6 +3079,12 @@ html += '</div></div>';
 container.innerHTML = html;
 }
 
+function renderAchievementsScreenTab() {
+const el = document.getElementById('achievements-tab-content');
+if (!el) return;
+renderAchievementsTab(el);
+}
+
 function showSplash() {
 const splash = document.createElement('div');
 splash.id = 'splash-screen';
@@ -3297,12 +3318,13 @@ renderChapters();
 fetchAndApplyState();
 _initCipherInputListeners();
 updateAudioButtons();
+if (state.musicEnabled !== false) startBackgroundMusic();
 }
 
 document.addEventListener('visibilitychange', () => {
 if (document.visibilityState === 'hidden') {
-  stopBackgroundMusic();
-} else if (state.musicEnabled !== false && document.getElementById('s-cipher')?.classList.contains('active')) {
+  stopBackgroundMusic(true);
+} else if (state.musicEnabled !== false) {
   startBackgroundMusic();
 }
 });
