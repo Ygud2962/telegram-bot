@@ -1908,19 +1908,37 @@ def _fmt_minutes(m: int) -> str:
     return f"{m} мин"
 
 
+def _next_school_monday_start(now: datetime | None = None) -> datetime:
+    """Возвращает ближайший учебный понедельник в 08:00 (Минск)."""
+    base = now or datetime.now(TZ_MINSK)
+    days_until_monday = (7 - base.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7
+    return (base + timedelta(days=days_until_monday)).replace(
+        hour=8, minute=0, second=0, microsecond=0
+    )
+
+
+def _main_menu_status_line(now: datetime, info: dict) -> str:
+    """Статус для шапки главного меню с красивым сценарием выходных."""
+    if now.weekday() >= 5:
+        nxt = _next_school_monday_start(now)
+        return f"🏖️ Выходные: отдыхаем. 1 урок — в понедельник, {nxt.strftime('%d.%m')} в 08:00"
+    if info['status'] == 'lesson':
+        return f"🔔 Сейчас {info['number']} урок, осталось {_fmt_minutes(info['time_left'])}"
+    if info['status'] == 'before_school':
+        return f"🌅 До первого урока: {_fmt_minutes(info['minutes_until'])} (начало {info['start']})"
+    if info['status'] == 'break':
+        return f"⏸️ Перемена, следующий урок через {_fmt_minutes(info['minutes_until'])}"
+    return "✅ Уроки закончились на сегодня"
+
+
 async def show_main_menu_msg(update: Update, context: CallbackContext):
     """Отправляет главное меню новым сообщением."""
     user = update.effective_user
     now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
-    if info['status'] == 'lesson':
-        status_line = f"🔔 Сейчас {info['number']} урок, осталось {_fmt_minutes(info['time_left'])}"
-    elif info['status'] == 'before_school':
-        status_line = f"🌅 До первого урока: {_fmt_minutes(info['minutes_until'])} (начало {info['start']})"
-    elif info['status'] == 'break':
-        status_line = f"⏸️ Перемена, следующий урок через {_fmt_minutes(info['minutes_until'])}"
-    else:
-        status_line = "✅ Уроки закончились на сегодня"
+    status_line = _main_menu_status_line(now, info)
 
     profile, t_data = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, user.id),
@@ -1957,15 +1975,7 @@ async def show_main_menu_edit(query, context=None):
     uid  = query.from_user.id
     now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
-    if info['status'] == 'lesson':
-        status_line = f"🔔 Сейчас {info['number']} урок, осталось {_fmt_minutes(info['time_left'])}"
-    elif info['status'] == 'before_school':
-        status_line = f"🌅 До первого урока: {_fmt_minutes(info['minutes_until'])} (начало {info['start']})"
-    elif info['status'] == 'break':
-        status_line = f"⏸️ Перемена, следующий урок через {_fmt_minutes(info['minutes_until'])}"
-    else:
-        status_line = "✅ Уроки закончились на сегодня"
-
+    status_line = _main_menu_status_line(now, info)
     # Кэш профиля — не лезем в БД при каждом нажатии "Назад"
     if context and context.user_data.get('profile_cache_id') == uid:
         profile      = context.user_data.get('profile_cache')
@@ -2185,14 +2195,21 @@ async def show_current_lesson(query, context):
     wd = now.weekday()
     if wd >= 5:
         day_str = "Суббота" if wd == 5 else "Воскресенье"
+        next_start = _next_school_monday_start(now)
+        minutes_left = max(0, int((next_start - now).total_seconds() // 60))
         kb = [
             [btn("🔄 Обновить", f'now_{class_name}')],
             [btn("↩️ К выбору класса", 'menu_now')],
             [btn("🏠 Главное меню", 'back_to_main')],
         ]
-        await safe_edit(query,
-            f"📅 <b>{day_str}</b>\n🏖️ Сегодня нет уроков.",
-            kb)
+        await safe_edit(
+            query,
+            f"📅 <b>{day_str}</b>\n"
+            f"🏖️ Сегодня уроков нет.\n"
+            f"🔔 Следующий учебный день: <b>понедельник, {next_start.strftime('%d.%m')} в 08:00</b>\n"
+            f"⏳ До первого урока: <b>{_fmt_minutes(minutes_left)}</b>",
+            kb,
+        )
         return
 
     day_name = DAYS_OF_WEEK[wd]
