@@ -2,33 +2,29 @@
 
 <div align="center">
 
-# 🔐 ШИФРОВАЛЬЩИК · 1941–1945
-### 🏫 Школьный Telegram-бот + Образовательная Mini App Игра
+# 🔐 ШИВРОВАЛЬЩИК · 1941–1945
+### 🏫 Школьный Telegram-бот + образовательная Mini App игра
 
 [![Статус](https://img.shields.io/badge/✅_СТАТУС-РАБОТАЕТ-brightgreen?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
-[![Версия бота](https://img.shields.io/badge/🤖_ВЕРСИЯ-7.0-2196F3?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ygud2962/telegram-bot)
-[![Версия игры](https://img.shields.io/badge/🎮_ВЕРСИЯ-1.0-FF9800?style=for-the-badge&logo=html5&logoColor=white)](https://ygud2962.github.io/telegram-bot/)
+[![Версия бота](https://img.shields.io/badge/🤖_ВЕРСИЯ-8.0.0-2196F3?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ygud2962/telegram-bot)
+[![Версия игры](https://img.shields.io/badge/🎮_ВЕРСИЯ-1.2.0-FF9800?style=for-the-badge&logo=html5&logoColor=white)](https://ygud2962.github.io/telegram-bot/)
 [![Python](https://img.shields.io/badge/🐍_PYTHON-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Deploy](https://img.shields.io/badge/🚀_DEPLOY-GitHub_Actions-6A5ACD?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/ygud2962/telegram-bot/actions)
 [![PostgreSQL](https://img.shields.io/badge/🗄_POSTGRESQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![AI](https://img.shields.io/badge/🤖_AI-Groq_llama--3.3--70b-FF6B35?style=for-the-badge&logo=openai&logoColor=white)](https://groq.com/)
 
-> **✨ Расписание · Замены · Новости · ИИ-помощник · Игра "Шифровальщик"**  
+> **✨ Расписание · Замены · Новости · ИИ-помощник · Игра "Шивровальщик"**  
 > *Всё в одном месте. Мгновенно. Бесплатно.*
 
 [📱 ОТКРЫТЬ БОТА](https://t.me/school_hoiniki_sch3_bot)
-[🎮 ИГРАТЬ В ШИФРОВАЛЬЩИКА](https://ygud2962.github.io/telegram-bot/)
-![status](https://img.shields.io/badge/status-production-22c55e?style=for-the-badge)
-![python](https://img.shields.io/badge/python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![postgres](https://img.shields.io/badge/postgresql-15-336791?style=for-the-badge&logo=postgresql&logoColor=white)
-![railway](https://img.shields.io/badge/deploy-railway-6f4cff?style=for-the-badge&logo=railway&logoColor=white)
+[🎮 ИГРАТЬ В ШИВРОВАЛЬЩИКА](https://ygud2962.github.io/telegram-bot/)
 
 ### 🔖 Current Release
 
 | Component | Version |
 |---|---|
-| 🤖 Bot | **7.1.0** |
-| 🎮 Game | **1.1.0** |
+| 🤖 Bot | **8.0.0** |
+| 🎮 Game | **1.2.0** |
 
 `/version` в боте показывает актуальные версии в рантайме.
 
@@ -63,7 +59,7 @@
 
 ---
 
-## 🎮 Игра "ШИФРОВАЛЬЩИК · 1941-1945"
+## 🎮 Игра "ШИВРОВАЛЬЩИК · 1941-1945"
 
 > **Telegram Mini App** — образовательная игра о событиях Великой Отечественной войны на территории Беларуси
 
@@ -81,7 +77,7 @@
 | 🧩 | **6 типов шифров** | Цезарь · Морзе · Атбаш · Числовой · Анаграмма · Математика |
 | ❤️ | **5 жизней** | На каждую главу — думай, прежде чем отвечать |
 | ⚡ | **Очки за скорость** | Чем быстрее решаешь, тем больше очков получаешь |
-| 🏆 | **Таблица лидеров** | Соревнуйся с одноклассниками — стань лучшим шифровальщиком |
+| 🏆 | **Таблица лидеров** | Соревнуйся с одноклассниками — стань лучшим Шивровальщиком |
 | 🎖 | **50+ достижений** | Для настоящих разведчиков — коллекционируй награды |
 
 ### 🗺 Главы игры
@@ -98,7 +94,7 @@
 ### 🚀 Играть сейчас
 
 🔗 **[Открыть игру в браузере](https://ygud2962.github.io/telegram-bot/)**  
-🔗 **Или через бота**: кнопка **"🎮 Шифровальщик"** в главном меню
+🔗 **Или через бота**: кнопка **"🎮 Шивровальщик"** в главном меню
 
 ---
 
@@ -110,7 +106,7 @@
 | ✅ Уведомления о заменах | ✅ Уведомления о заменах | ✅ Важные объявления | ✅ Замены из фото (ИИ) |
 | ✅ Новости в ленте | ✅ Регистрация `/teacher` | ✅ Прозрачность | ✅ Аналитика активности |
 | ✅ «МОЁ» — всё на экране | ✅ Упоминания в чатах | ✅ Актуальные новости | ✅ Гибкий техрежим |
-| ✅ **Игра "Шифровальщик"** | ✅ **Управление игрой** | ✅ **История для детей** | ✅ **Полный контроль** |
+| ✅ **Игра "Шивровальщик"** | ✅ **Управление игрой** | ✅ **История для детей** | ✅ **Полный контроль** |
 
 ---
 
@@ -125,15 +121,16 @@
 # 4️⃣ ✨ Готово!
 
 # 🎮 Для игры:
-# • Нажмите "🎮 Шифровальщик" в боте
+# • Нажмите "🎮 Шивровальщик" в боте
 # • Или откройте: https://ygud2962.github.io/telegram-bot/
 ```
 
 > 💡 **Про-совет:** Добавьте класс в **«🌟 МОЁ»** — расписание всегда на первом экране!
+
 ## ✨ Что это
 Единая система для школы:
 - Telegram-бот: расписание, замены, новости, уведомления, админ-панель.
-- WebApp-игра «Шифровальщик»: главы, рейтинг, достижения, роли, синхронизация с БД.
+- WebApp-игра «Шивровальщик»: главы, рейтинг, достижения, роли, синхронизация с БД.
 
 ---
 
@@ -181,6 +178,7 @@
 | 📊 Аналитика | Активность, популярные классы, пиковые часы | 🟢 Готово |
 | 🔧 Техрежим | 1ч / 3ч / 5ч / До завтра / Бессрочно | 🟢 Готово |
 | 👥 Статистика | Пользователи, логи, активность | 🟢 Готово |
+
 ## ⚙️ Переменные окружения
 | Variable | Required | Description |
 |---|---:|---|
@@ -188,8 +186,8 @@
 | `DATABASE_URL` | ✅ | Подключение к PostgreSQL |
 | `GAME_URL` | ✅ | Публичный URL WebApp-игры |
 | `BOT_PUBLIC_URL` | ✅ | Публичный URL бота для `/game_sync` и `/game_state` |
-| `BOT_VERSION` | ⛳ | Версия бота (по умолчанию `7.1.0`) |
-| `GAME_VERSION` | ⛳ | Версия игры (по умолчанию `1.1.0`) |
+| `BOT_VERSION` | ⛳ | Версия бота (по умолчанию `8.0.0`) |
+| `GAME_VERSION` | ⛳ | Версия игры (по умолчанию `1.2.0`) |
 | `GROQ_API_KEY` | ⛳ | Ключ ИИ-помощника |
 
 ---
@@ -203,6 +201,7 @@
 ⚪ Техработы             → Предупреждение при входе в бот
 🏆 Игра пройдена        → Уведомление админу о результате
 ```
+
 ## 🧭 Быстрый старт
 1. Настройте переменные окружения.
 2. Установите зависимости:
@@ -230,18 +229,6 @@
 ├── ⚙️  Procfile           — конфигурация Railway
 ├── 🔄 .github/workflows   — GitHub Actions CI/CD (544+ деплоев)
 └── 📖 README.md           — эта документация
-## 📂 Структура
-```text
-telegram-bot/
-├─ bot.py            # Telegram bot + HTTP endpoints для игры
-├─ database.py       # SQL-логика и доступ к PostgreSQL
-├─ game/
-│  └─ index.html     # WebApp-игра
-├─ requirements.txt
-├─ Procfile
-└─ README.md
-```
-
 ---
 
 ## ⚙️ Технические детали
@@ -282,9 +269,9 @@ telegram-bot/
 
 ## 🔄 История версий
 
-### 🚀 v7.0 — Апрель 2026 _(текущая)_
+### 🚀 v8.0.0 — Апрель 2026 _(текущая)_
 ```
-✅ [NEW] Mini App игра "Шифровальщик" — 6 глав, 36 заданий
+✅ [NEW] Mini App игра "Шивровальщик" — 6 глав, 36 заданий
 ✅ [NEW] GitHub Pages деплой игры
 ✅ [NEW] GitHub Actions CI/CD (544+ деплоев)
 ✅ [NEW] Таблица лидеров с синхронизацией в реальном времени
@@ -407,7 +394,6 @@ black --check bot.py database.py
 
 ---
 
-## 📞 Поддержка и контакты
 ## 🧪 Проверки перед деплоем
 ```bash
 python -m py_compile bot.py database.py
@@ -448,7 +434,7 @@ python -m py_compile bot.py database.py
 Проект создан в образовательных целях.
 Использование кода разрешено с указанием автора.
 
-Игра "Шифровальщик" посвящена памяти героев 
+Игра "Шивровальщик" посвящена памяти героев 
 Великой Отечественной войны 1941–1945 гг.
 «Никто не забыт, ничто не забыто»
 ```
@@ -478,7 +464,7 @@ python -m py_compile bot.py database.py
 ---
 
 [📱 ОТКРЫТЬ БОТА](https://t.me/school_hoiniki_sch3_bot)
-[🎮 ИГРАТЬ В ШИФРОВАЛЬЩИКА](https://ygud2962.github.io/telegram-bot/)
+[🎮 ИГРАТЬ В ШИВРОВАЛЬЩИКА](https://ygud2962.github.io/telegram-bot/)
 [🐙 ИСХОДНЫЙ КОД](https://github.com/ygud2962/telegram-bot)
 
 **🏫 Хойники · Школа №3 · Беларусь · 2026**  
