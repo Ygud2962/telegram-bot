@@ -1,8 +1,11 @@
 import re
 import logging
 import asyncio
+import functools
+import inspect
 import json as _json
 import json
+import time
 import urllib.parse
 from datetime import datetime, timedelta
 from aiohttp import web as aiohttp_web
@@ -14,6 +17,7 @@ import database as db
 import os
 import pytz
 import httpx
+import ui_texts as txt
 
 
 def _tname(t) -> str | None:
@@ -41,6 +45,48 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int((os.environ.get(name) or "").strip() or default)
+    except Exception:
+        return default
+
+
+SLOW_DB_MS = _env_int("SLOW_DB_MS", 350)
+SLOW_CALLBACK_MS = _env_int("SLOW_CALLBACK_MS", 1000)
+
+
+def _instrument_db_calls() -> None:
+    """Wrap db functions once to log slow calls globally."""
+    if getattr(db, "_slow_wrapped", False):
+        return
+    for name in dir(db):
+        if name.startswith("_"):
+            continue
+        fn = getattr(db, name, None)
+        if not inspect.isfunction(fn):
+            continue
+        if getattr(fn, "_slow_wrapped", False):
+            continue
+
+        @functools.wraps(fn)
+        def wrapped(*args, __fn=fn, __name=name, **kwargs):
+            started = time.perf_counter()
+            try:
+                return __fn(*args, **kwargs)
+            finally:
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                if elapsed_ms >= SLOW_DB_MS:
+                    logger.warning(f"slow-db {__name}: {elapsed_ms:.1f} ms")
+
+        wrapped._slow_wrapped = True
+        setattr(db, name, wrapped)
+    db._slow_wrapped = True
+
+
+_instrument_db_calls()
 
 # ══════════════════════════════════════════════════════════
 #  ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
@@ -1213,7 +1259,8 @@ async def ask_ai(question: str, user_id: int, is_teacher: bool = False) -> str:
 # ══════════════════════════════════════════════════════════
 #  ТЕХРЕЖИМ
 # ══════════════════════════════════════════════════════════
-async def check_maintenance(update: Update, context: CallbackContext) -> bool:
+async def check_maintenance(update: Update, context: CallbackContext,
+                            is_admin: bool | None = None) -> bool:
     global _maintenance_cache
     now = datetime.now()
     if (now - _maintenance_cache['last_check']).total_seconds() > MAINTENANCE_TTL:
@@ -1221,7 +1268,9 @@ async def check_maintenance(update: Update, context: CallbackContext) -> bool:
         status['last_check'] = now
         _maintenance_cache = status
 
-    if await is_bot_admin_async(update.effective_user.id):
+    if is_admin is None:
+        is_admin = await is_bot_admin_async(update.effective_user.id)
+    if is_admin:
         return False
     if not _maintenance_cache.get('enabled'):
         return False
@@ -1337,67 +1386,6 @@ async def notify_new_news(context, title: str):
             await asyncio.sleep(1)   # Соблюдение лимитов Telegram
     logger.info(f"Рассылка новости: отправлено {sent}, ошибок {failed}")
     return sent, failed
-
-
-# ══════════════════════════════════════════════════════════
-#  ГЛАВНОЕ МЕНЮ
-# ══════════════════════════════════════════════════════════
-MAIN_MENU_KB = [
-    [btn("⏰ Сейчас", 'menu_now'),     btn("📚 Классы", 'menu_schedule')],
-    [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
-    [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
-    [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
-    [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
-    [btn("🎮 Шивровальщик", 'menu_game')],
-    [btn("👤 Регистрация", 'menu_register')],
-    [btn("👑 Админка", 'admin_panel')],
-]
-
-MAIN_MENU_KB_REGISTERED = [
-    [btn("⏰ Сейчас", 'menu_now'),     btn("📚 Классы", 'menu_schedule')],
-    [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
-    [btn("🕐 Звонки", 'menu_bells'),   btn("🔄 Замены", 'menu_substitutions')],
-    [btn("📣 Новости", 'menu_news'),   btn("🌟 Моё", 'menu_my')],
-    [btn("🤖 ИИ-помощник", 'menu_ai'), btn("🆘 Помощь", 'menu_help')],
-    [btn("🎮 Шивровальщик", 'menu_game')],
-    [btn("👤 Мой профиль", 'menu_profile')],
-    [btn("👑 Админка", 'admin_panel')],
-]
-
-
-def get_main_menu_kb_legacy(profile: dict | None, is_admin: bool = False,
-                            teacher_name: str | None = None) -> list:
-    """Возвращает клавиатуру главного меню с учётом профиля."""
-    role_row = []
-    if teacher_name:
-        label = f"👨‍🏫 {teacher_name}"
-        role_row = [btn(label, 'menu_profile')]
-    elif profile:
-        role = profile.get('role', 'guest')
-        name = profile.get('display_name', '')
-        cls  = profile.get('class_name', '')
-        if role == 'student':
-            label = f"👨‍🎓 {cls.upper()} · {name}"
-        elif role == 'parent':
-            label = f"👨‍👩‍👧 {cls.upper()} · {name}"
-        else:
-            label = "👤 Мой профиль"
-        role_row = [btn(label, 'menu_profile')]
-    else:
-        role_row = [btn("📝 Зарегистрироваться", 'menu_register')]
-
-    kb = [
-        [btn("⏰ Сейчас", 'menu_now'),      btn("📚 Расписание", 'menu_schedule')],
-        [btn("👨‍🏫 Учителя", 'menu_teacher'),  btn("🔍 Поиск", 'menu_search_teacher')],
-        [btn("🕐 Звонки", 'menu_bells'),    btn("🔄 Замены", 'menu_substitutions')],
-        [btn("📣 Новости", 'menu_news'),    btn("⭐ Избранное", 'menu_my')],
-        [btn("🤖 ИИ-помощник", 'menu_ai'),  btn("🆘 Помощь", 'menu_help')],
-        [btn("🎮 Шивровальщик", 'menu_game')],
-        role_row,
-    ]
-    if is_admin:
-        kb.append([btn("👑 Админка", 'admin_panel')])
-    return kb
 
 
 # ══════════════════════════════════════════════════════════
@@ -2040,7 +2028,7 @@ async def global_error_handler(update: object, context: CallbackContext):
         # Сообщаем пользователю
         try:
             if isinstance(update, Update):
-                msg = "🔧 База данных временно недоступна. Попробуйте через 30 секунд."
+                msg = txt.ERR_DB_TEMP
                 if update.callback_query:
                     await update.callback_query.answer(msg[:200])
                 elif update.message:
@@ -2065,7 +2053,7 @@ async def global_error_handler(update: object, context: CallbackContext):
 
     try:
         if isinstance(update, Update):
-            text = "⚠️ Что-то пошло не так. Попробуйте ещё раз или нажмите /start"
+            text = txt.ERR_GENERIC
             if update.callback_query:
                 try:
                     await update.callback_query.answer("⚠️ Ошибка, попробуйте ещё раз")
@@ -4613,6 +4601,27 @@ async def do_broadcast(query, context):
 #  ГЛАВНЫЙ ОБРАБОТЧИК КНОПОК
 # ══════════════════════════════════════════════════════════
 async def button_handler(update: Update, context: CallbackContext):
+    """Тонкий wrapper: мягкие ошибки + лог медленных callback."""
+    started = time.perf_counter()
+    query = update.callback_query if isinstance(update, Update) else None
+    d = (query.data if query and query.data else "<empty>")
+    uid = (query.from_user.id if query and query.from_user else 0)
+    try:
+        await _button_handler_impl(update, context)
+    except Exception as e:
+        logger.exception(f"button_handler failed (uid={uid}, data={d}): {e}")
+        try:
+            if query and query.message:
+                await query.message.reply_text(txt.ERR_TRY_AGAIN)
+        except Exception:
+            pass
+    finally:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if elapsed_ms >= SLOW_CALLBACK_MS:
+            logger.warning(f"slow-callback uid={uid} data={d} {elapsed_ms:.1f} ms")
+
+
+async def _button_handler_impl(update: Update, context: CallbackContext):
     query = update.callback_query
     if not query or not query.data:
         return
@@ -4631,10 +4640,10 @@ async def button_handler(update: Update, context: CallbackContext):
         db.log_user_activity, user.id, f'btn_{query.data[:40]}'
     ))
 
-    if await check_maintenance(update, context):
-        return
-
     d = query.data
+    user_is_admin = await is_bot_admin_async(user.id)
+    if await check_maintenance(update, context, is_admin=user_is_admin):
+        return
 
     # ── Добавление замены (пошаговый режим) ──
     if context.user_data.get('adding_sub'):
@@ -4782,7 +4791,7 @@ async def button_handler(update: Update, context: CallbackContext):
         return
 
     # ── Админские колбэки игры ──
-    if await is_bot_admin_async(user.id):
+    if user_is_admin:
         if d.startswith('admin_set_my_role_'):
             role = d.replace('admin_set_my_role_', '')
             await admin_set_my_role(query, context, role)
@@ -4862,15 +4871,15 @@ async def button_handler(update: Update, context: CallbackContext):
             await admin_game_reset_all_confirm(query, context)
             return
 
-    if d.startswith('edit_news_') and await is_bot_admin_async(user.id):
+    if d.startswith('edit_news_') and user_is_admin:
         news_id = int(d.split('_')[2])
         await start_edit_news(query, context, news_id)
         return
-    if d.startswith('del_news_') and await is_bot_admin_async(user.id):
+    if d.startswith('del_news_') and user_is_admin:
         news_id = int(d.split('_')[2])
         await confirm_delete_news(query, context, news_id)
         return
-    if d.startswith('confirm_del_news_') and await is_bot_admin_async(user.id):
+    if d.startswith('confirm_del_news_') and user_is_admin:
         news_id = int(d.split('_')[3])
         await do_delete_news(query, context, news_id)
         return
@@ -4878,10 +4887,10 @@ async def button_handler(update: Update, context: CallbackContext):
         _clear_flow(context)
         await show_admin_panel(query)
         return
-    if d == 'pub_news_all' and await is_bot_admin_async(user.id):
+    if d == 'pub_news_all' and user_is_admin:
         await do_publish_news(query, context, send_to_all=True)
         return
-    if d == 'pub_news_only' and await is_bot_admin_async(user.id):
+    if d == 'pub_news_only' and user_is_admin:
         await do_publish_news(query, context, send_to_all=False)
         return
     if d == 'cancel_pub_news':
@@ -4948,24 +4957,24 @@ async def button_handler(update: Update, context: CallbackContext):
         return
 
     # ── Админ: замены ──
-    if d == 'admin_view_subs' and await is_bot_admin_async(user.id):
+    if d == 'admin_view_subs' and user_is_admin:
         await admin_view_subs(query, context)
         return
-    if d == 'admin_del_sub' and await is_bot_admin_async(user.id):
+    if d == 'admin_del_sub' and user_is_admin:
         await safe_edit(query,
             "🗑️ Введите ID замены для удаления\n(смотри в «Все замены»):",
             [[btn("❌ Отмена", 'admin_panel')]])
         context.user_data['deleting_sub'] = True
         return
-    if d == 'admin_clear_subs' and await is_bot_admin_async(user.id):
+    if d == 'admin_clear_subs' and user_is_admin:
         await admin_confirm_clear_subs(query, context)
         return
-    if d == 'admin_clear_confirm' and await is_bot_admin_async(user.id):
+    if d == 'admin_clear_confirm' and user_is_admin:
         await admin_do_clear_subs(query, context)
         return
 
     # ── Фото замен: подтверждение/отмена ──
-    if d == 'confirm_photo_subs' and await is_bot_admin_async(user.id):
+    if d == 'confirm_photo_subs' and user_is_admin:
         await save_photo_subs(query, context)
         return
     if d == 'cancel_photo_subs':
@@ -4975,10 +4984,10 @@ async def button_handler(update: Update, context: CallbackContext):
         return
 
     # ── Рассылка ──
-    if d == 'admin_broadcast' and await is_bot_admin_async(user.id):
+    if d == 'admin_broadcast' and user_is_admin:
         await admin_broadcast_start(query, context)
         return
-    if d == 'confirm_broadcast' and await is_bot_admin_async(user.id):
+    if d == 'confirm_broadcast' and user_is_admin:
         await do_broadcast(query, context)
         return
     if d == 'cancel_broadcast':
