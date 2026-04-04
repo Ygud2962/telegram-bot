@@ -5913,6 +5913,8 @@ def main():
         Application.builder()
         .token(TOKEN)
         .post_init(post_init)
+        # Не блокируем все кнопки одним долгим обработчиком (ИИ/админка и т.п.)
+        .concurrent_updates(64)
         .read_timeout(REQUEST_TIMEOUT)
         .write_timeout(REQUEST_TIMEOUT)
         .connect_timeout(REQUEST_TIMEOUT)
