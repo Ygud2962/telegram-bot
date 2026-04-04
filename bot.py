@@ -68,8 +68,8 @@ if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
 PORT = int(os.environ.get('PORT', 8080))
 # Версии релизов (показываются в /version и используются для cache-bust игры)
-BOT_VERSION = os.environ.get('BOT_VERSION', '7.1.0').strip() or '7.1.0'
-GAME_VERSION = os.environ.get('GAME_VERSION', '1.1.0').strip() or '1.1.0'
+BOT_VERSION = os.environ.get('BOT_VERSION', '8.0.0').strip() or '8.0.0'
+GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.0').strip() or '1.2.0'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 # Кэш тестеров (обновляется при изменениях из бота)
@@ -4991,6 +4991,7 @@ async def button_handler(update: Update, context: CallbackContext):
         'menu_news':              lambda q, c: menu_news(q, c, 0),
         'menu_my':                menu_my,
         'menu_ai':                menu_ai,
+        'menu_games':             menu_games,
         'menu_game':              menu_game,
         'menu_help':              menu_help,
         'admin_panel':                show_admin_panel,
@@ -6001,6 +6002,43 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
         [btn("🎮 Шивровальщик", 'menu_game')],
         [btn("🆘 Помощь", 'menu_help')],
         [role_btn],
+    ]
+    if is_admin:
+        kb.append([btn("🛠 Админка", 'admin_panel')])
+    return kb
+
+
+async def menu_games(query, context):
+    """Подменю игр."""
+    kb = [
+        [btn("🎮 Шивроващик", 'menu_game')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "🎮 <b>ИГРЫ</b>\n\nВыберите игру:",
+        InlineKeyboardMarkup(kb),
+    )
+
+
+def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
+                     teacher_name: str | None = None) -> list:
+    """Главное меню по текущему макету."""
+    if teacher_name:
+        profile_label = teacher_name.strip()
+    elif profile and profile.get('display_name'):
+        profile_label = str(profile.get('display_name')).strip()
+    else:
+        profile_label = "Юрий гуд"
+
+    kb = [
+        [btn("🕰 Сайчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
+        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
+        [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
+        [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ помошник", 'menu_ai')],
+        [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
+        [btn("🎮 Игры", 'menu_games')],
+        [btn("🆘 Помощь", 'menu_help')],
     ]
     if is_admin:
         kb.append([btn("🛠 Админка", 'admin_panel')])

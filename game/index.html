@@ -562,14 +562,6 @@
             </div>
             <div id="chapters-list"></div>
             <button id="btn-to-final" class="btn btn-accent" style="display:none;margin-top:16px;" onclick="showFinal()">🏆 СМОТРЕТЬ ИТОГ</button>
-            <div class="nav-buttons">
-                <button class="btn" onclick="switchTab('profile')">👤 ПРОФИЛЬ</button>
-                <button class="btn" onclick="switchTab('about')">ℹ️ О ИГРЕ</button>
-            </div>
-            <div class="nav-buttons">
-                <button class="btn" onclick="showMyAchievements()">🏅 ДОСТИЖЕНИЯ</button>
-                <button class="btn" onclick="switchTab('settings')">⚙️ НАСТРОЙКИ</button>
-            </div>
         </div>
         
         <div id="s-briefing" class="screen">
@@ -583,10 +575,6 @@
             <div id="brief-text" style="font-size:var(--fs-base);color:#ccc;line-height:1.7;margin-bottom:20px;"></div>
             <div id="brief-mission" style="background:rgba(85,221,85,.08);border-left:3px solid var(--green);padding:12px;font-size:var(--fs-sm);color:var(--green);margin-bottom:24px;"></div>
             <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
-            <div class="nav-buttons">
-                <button class="btn" onclick="showScreen('s-chapters');renderChapters();">← НАЗАД</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-cipher" class="screen">
@@ -624,7 +612,6 @@
             <div id="cipher-ref" class="cipher-ref"></div>
             <div class="nav-buttons">
                 <button class="btn" onclick="pauseGame()">⏸ ПАУЗА</button>
-                <button class="btn" onclick="goToChapters()">📖 ГЛАВЫ</button>
             </div>
         </div>
         
@@ -639,10 +626,6 @@
             </div>
             <div id="succ-fact" class="succ-fact"></div>
             <button id="succ-next-btn" class="btn btn-accent" onclick="nextCipher()"></button>
-            <div class="nav-buttons">
-                <button class="btn" onclick="goToChapters()">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-chapter-end" class="screen">
@@ -654,10 +637,6 @@
                 <div id="chend-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;"></div>
             </div>
             <button id="chend-next-btn" class="btn btn-accent"></button>
-            <div class="nav-buttons">
-                <button class="btn" onclick="showScreen('s-chapters');renderChapters();">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-chapter-fail" class="screen">
@@ -669,10 +648,6 @@
             <button id="fail-retry-btn" class="btn" style="display:none;"></button>
             <div id="fail-retry-info" style="background:rgba(255,58,58,.08);border:1px solid rgba(255,58,58,.2);border-radius:6px;padding:12px;font-size:var(--fs-xs);color:var(--accent2);margin:12px 0;display:none;"></div>
             <button id="fail-next-btn" class="btn" style="display:none;"></button>
-            <div class="nav-buttons">
-                <button class="btn" onclick="showScreen('s-chapters');renderChapters();">← К ЗАДАНИЯМ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-pause" class="screen">
@@ -681,10 +656,6 @@
                 <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);margin-bottom:8px;">ПАУЗА</div>
                 <div id="pause-chapter-info" style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:32px;"></div>
                 <button class="btn btn-accent" onclick="resumeGame()">▶ ПРОДОЛЖИТЬ</button>
-                <div class="nav-buttons">
-                    <button class="btn" onclick="goToChapters()">📖 К ГЛАВАМ</button>
-                    <button class="btn" onclick="exitToMain()">🏠 В ГЛАВНОЕ МЕНЮ</button>
-                </div>
             </div>
         </div>
         
@@ -699,52 +670,28 @@
             </div>
             <div id="final-chapter-scores" style="background:var(--bg-soft);border-radius:8px;padding:16px;margin-bottom:16px;"></div>
             <button class="btn btn-accent" onclick="showScreen('s-leaderboard-tab');switchTab('leaderboard');">🏆 ТАБЛИЦА ЛИДЕРОВ</button>
-            <div class="nav-buttons">
-                <button class="btn" onclick="showScreen('s-chapters');renderChapters();">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-leaderboard-tab" class="screen">
             <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
             <div id="lb-list-tab"></div>
-            <div class="nav-buttons">
-                <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-profile-tab" class="screen">
   <canvas id="radar-canvas" style="display:none"></canvas>
             <div id="profile-tab-content"></div>
-            <div class="nav-buttons">
-                <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
 
         <div id="s-achievements-tab" class="screen">
             <div id="achievements-tab-content"></div>
-            <div class="nav-buttons">
-                <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-about-tab" class="screen">
             <div id="about-tab-content"></div>
-            <div class="nav-buttons">
-                <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
         
         <div id="s-settings-tab" class="screen">
             <div id="settings-tab-content"></div>
-            <div class="nav-buttons">
-                <button class="btn" onclick="switchTab('chapters')">📖 ГЛАВЫ</button>
-                <button class="btn" onclick="switchTab('chapters')">🏠 ГЛАВНАЯ</button>
-            </div>
         </div>
     </div>
     
@@ -761,10 +708,6 @@
             <span class="bn-tab-icon">👤</span>
             ПРОФИЛЬ
         </div>
-        <div class="bn-tab" id="bn-about" onclick="switchTab('about')">
-            <span class="bn-tab-icon">ℹ️</span>
-            О ИГРЕ
-        </div>
         <div class="bn-tab" id="bn-achievements" onclick="switchTab('achievements')">
             <span class="bn-tab-icon">🏅</span>
             ДОСТИЖ.
@@ -773,10 +716,14 @@
             <span class="bn-tab-icon">⚙️</span>
             НАСТРОЙКИ
         </div>
+        <div class="bn-tab" id="bn-about" onclick="switchTab('about')">
+            <span class="bn-tab-icon">ℹ️</span>
+            О ИГРЕ
+        </div>
     </div>
 
     <script>
-const GAME_VERSION = '1.1.0';
+const GAME_VERSION = '1.2.0';
 const CHAPTERS = [
 {
 id:1, title: "ХОЙНИКИ: ОГНЕННОЕ ЛЕТО", subtitle: "Глава I",
@@ -2458,7 +2405,7 @@ const icon = done ? (score > 0 ? '✅' : '💔') : '🔒';
 const color = done ? (score > 0 ? 'var(--green)' : 'var(--accent2)') : 'rgba(255,255,255,.2)';
 return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0; border-bottom:1px solid rgba(255,255,255,.04)"> <div style="font-size:18px">${icon}</div> <div style="flex:1"> <div style="font-size:var(--fs-sm);color:${done?'#fdfaf0':'rgba(255,255,255,.3)'}">${ch.title}</div> <div style="font-size:10px;color:var(--muted)">${ch.subtitle}</div> </div> <div style="font-family:var(--head);font-size:var(--fs-sm);color:${color}">${score ? score + ' оч' : done ? '—' : ''}</div> </div>`;
 }).join('');
-el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>${roleLabel2 ? `<div style="margin-top:6px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.06em">${roleLabel2}</div>` : ''}<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px; background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1); border-radius:20px;padding:5px 14px"> <span style="font-size:10px;color:var(--muted);letter-spacing:.06em">TELEGRAM ID</span> <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span> </div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><div style="margin-top:16px"> <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted); letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>${chapterHistory}</div><button onclick="switchTab('chapters')" style="width:100%;margin-top:16px;background:var(--accent);color:#0a0a08; border:none;padding:12px;font-family:var(--head);font-size:var(--fs-base); font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.08em"> ▶ ПРОДОЛЖИТЬ ИГРУ </button><button onclick="showMyAchievements()" style="width:100%;margin-top:8px;background:rgba(255,224,51,.12);color:var(--accent);border:1px solid rgba(255,224,51,.35);padding:11px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;border-radius:4px;cursor:pointer;letter-spacing:.06em">🏅 Достижения</button><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
+el.innerHTML = `<div style="text-align:center;margin-bottom:20px"> <div style="font-size:52px;margin-bottom:10px;filter:drop-shadow(0 0 16px rgba(255,224,51,.4))">${rank[2]}</div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.04em">${name}</div> <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;letter-spacing:.06em">${rank[1].toUpperCase()}</div>${roleLabel2 ? `<div style="margin-top:6px;font-size:var(--fs-xs);color:var(--muted);letter-spacing:.06em">${roleLabel2}</div>` : ''}<div style="margin-top:10px;display:inline-flex;align-items:center;gap:6px; background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1); border-radius:20px;padding:5px 14px"> <span style="font-size:10px;color:var(--muted);letter-spacing:.06em">TELEGRAM ID</span> <span style="font-family:var(--mono);font-size:var(--fs-sm);color:#fdfaf0">${uid || 'гость'}</span> </div> </div><div style="background:#141108;border:1px solid rgba(255,224,51,.12);border-radius:8px;padding:16px;margin-bottom:12px"> <div style="display:flex;justify-content:space-around;text-align:center"> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${state.totalScore}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ОЧКОВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${completed}/${CHAPTERS.length}</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ГЛАВ</div> </div> <div> <div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent)">${pct}%</div> <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРОГРЕСС</div> </div> </div><div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden"> <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div> </div> </div><div style="margin-top:16px"> <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted); letter-spacing:.1em;margin-bottom:8px">// МОИ ГЛАВЫ</div>${chapterHistory}</div><div style="text-align:center;margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:.04em">💾 Прогресс сохраняется автоматически</div>${(state.adminMode || window._adminMode) ? '<button class="btn-back" onclick="confirmReset()" style="width:100%;margin-top:8px">🗑 Сбросить тестовый прогресс</button>' : ''}`;
 }
 
 function renderAboutTab() {
