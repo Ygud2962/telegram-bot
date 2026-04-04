@@ -6017,7 +6017,7 @@ async def menu_games(query, context):
     await safe_edit(
         query,
         "🎮 <b>ИГРЫ</b>\n\nВыберите игру:",
-        InlineKeyboardMarkup(kb),
+        kb,
     )
 
 
