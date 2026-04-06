@@ -1129,7 +1129,8 @@ gameOver: false, leaderboard: [], adminMode: false, testerMode: false,
 repeatRuns: {},
 achievements: {}, achievementPts: 0,
 soundEnabled: true,
-musicEnabled: true
+musicEnabled: true,
+selectedTrack: 0
 });
 
 let state = DEFAULT_STATE();
@@ -1159,6 +1160,7 @@ const s = localStorage.getItem(storageKey());
 if (s) { Object.assign(state, JSON.parse(s)); state._noptsMode = false; }
 if (typeof state.soundEnabled !== 'boolean') state.soundEnabled = true;
 if (typeof state.musicEnabled !== 'boolean') state.musicEnabled = true;
+if (typeof state.selectedTrack !== 'number') state.selectedTrack = 0;
 } catch(e) {}
 }
 
@@ -2202,15 +2204,280 @@ if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAud
 return _audioCtx;
 }
 
+// ══════════════════════════════════════════════════════
+//  EPIC MUSIC ENGINE — 4 TRACKS
+// ══════════════════════════════════════════════════════
+const BGM_TRACKS = [
+  {
+    id: 0,
+    name: '⚔️ Марш разведчика',
+    desc: 'Тревожный марш, нарастающее напряжение',
+    build: function(ctx, master) {
+      // Ominous slow march — low ostinato + string swells + war drums
+      const bpm = 72; const beat = 60 / bpm;
+      let t = ctx.currentTime + 0.1;
+      const loop = () => {
+        if (!_bgmMaster) return;
+        const now = ctx.currentTime;
+        // Bass ostinato: E2-E2-G2-E2 repeating
+        const bassNotes = [82.41, 82.41, 97.99, 82.41, 77.78, 82.41, 92.50, 82.41];
+        bassNotes.forEach((f, i) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = 'sawtooth'; o.frequency.value = f;
+          const at = now + i * beat * 0.5;
+          g.gain.setValueAtTime(0, at);
+          g.gain.linearRampToValueAtTime(0.28, at + 0.04);
+          g.gain.exponentialRampToValueAtTime(0.001, at + beat * 0.45);
+          o.connect(g); g.connect(master);
+          o.start(at); o.stop(at + beat * 0.5);
+        });
+        // Brass stabs: Am chord hits
+        const brass = [220, 261.63, 329.63];
+        [0, 2, 4, 6].forEach(i => {
+          brass.forEach(f => {
+            const o = ctx.createOscillator(); const g = ctx.createGain();
+            o.type = 'square'; o.frequency.value = f;
+            const at = now + i * beat * 0.5;
+            g.gain.setValueAtTime(0, at);
+            g.gain.linearRampToValueAtTime(0.09, at + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.001, at + 0.35);
+            o.connect(g); g.connect(master);
+            o.start(at); o.stop(at + 0.4);
+          });
+        });
+        // Snare/drum on beats 2 and 4
+        [1,3,5,7].forEach(i => {
+          const bufSize = ctx.sampleRate * 0.12;
+          const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+          const d = buf.getChannelData(0);
+          for(let k=0;k<bufSize;k++) d[k] = (Math.random()*2-1) * Math.pow(1-k/bufSize, 3);
+          const src = ctx.createBufferSource(); const g = ctx.createGain();
+          const filt = ctx.createBiquadFilter(); filt.type='highpass'; filt.frequency.value=600;
+          src.buffer = buf;
+          const at = now + i * beat * 0.5;
+          g.gain.setValueAtTime(0.22, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.12);
+          src.connect(filt); filt.connect(g); g.connect(master);
+          src.start(at); src.stop(at + 0.13);
+        });
+        // Swelling strings (pad) on every 2 beats
+        [0, 4].forEach(i => {
+          [220, 277.18, 329.63, 440].forEach((f, j) => {
+            const o = ctx.createOscillator(); const g = ctx.createGain();
+            o.type = 'triangle'; o.frequency.value = f;
+            const at = now + i * beat * 0.5;
+            g.gain.setValueAtTime(0, at);
+            g.gain.linearRampToValueAtTime(0.04 - j*0.007, at + beat);
+            g.gain.linearRampToValueAtTime(0, at + beat*4);
+            o.connect(g); g.connect(master);
+            o.start(at); o.stop(at + beat*4.1);
+          });
+        });
+        t = now + bassNotes.length * beat * 0.5;
+        _bgmInterval = setTimeout(loop, (bassNotes.length * beat * 0.5 - 0.1) * 1000);
+      };
+      loop();
+    }
+  },
+  {
+    id: 1,
+    name: '🌑 Тёмная ночь фронта',
+    desc: 'Глубокая тревога, медленное нарастание',
+    build: function(ctx, master) {
+      // Slow dark ambient — deep drones + haunting melody
+      const loop = () => {
+        if (!_bgmMaster) return;
+        const now = ctx.currentTime;
+        // Deep drone chord: Dm — D2, A2, F3
+        const drones = [73.42, 110, 174.61, 220];
+        drones.forEach((f, i) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = i % 2 === 0 ? 'sawtooth' : 'triangle';
+          o.frequency.setValueAtTime(f, now);
+          o.frequency.linearRampToValueAtTime(f * 1.002, now + 4);
+          g.gain.setValueAtTime(0, now);
+          g.gain.linearRampToValueAtTime(0.055 - i*0.01, now + 1.2);
+          g.gain.setValueAtTime(0.055 - i*0.01, now + 5);
+          g.gain.linearRampToValueAtTime(0, now + 7);
+          o.connect(g); g.connect(master);
+          o.start(now); o.stop(now + 7.1);
+        });
+        // Haunting melody: D-F-A-C-A-G-F-E (natural minor)
+        const mel = [293.66,349.23,440,523.25,440,392,349.23,329.63];
+        mel.forEach((f, i) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = 'sine';
+          const at = now + 1.5 + i * 0.72;
+          o.frequency.setValueAtTime(f, at);
+          g.gain.setValueAtTime(0, at);
+          g.gain.linearRampToValueAtTime(0.07, at + 0.18);
+          g.gain.exponentialRampToValueAtTime(0.001, at + 0.65);
+          o.connect(g); g.connect(master);
+          o.start(at); o.stop(at + 0.7);
+        });
+        // Low pulse bass
+        [0,1,2,3,4,5,6].forEach(i => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = 'sine'; o.frequency.value = 73.42;
+          const at = now + i * 1.0;
+          g.gain.setValueAtTime(0.18, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.9);
+          o.connect(g); g.connect(master);
+          o.start(at); o.stop(at + 0.95);
+        });
+        _bgmInterval = setTimeout(loop, 6800);
+      };
+      loop();
+    }
+  },
+  {
+    id: 2,
+    name: '🔥 Час расплаты',
+    desc: 'Эпический нарастающий боевой марш',
+    build: function(ctx, master) {
+      // Epic battle march — ostinato + power chords + timpani rolls
+      const bpm = 90; const beat = 60/bpm;
+      const loop = () => {
+        if (!_bgmMaster) return;
+        const now = ctx.currentTime;
+        // Timpani/kick: every beat
+        for(let i=0;i<8;i++) {
+          const bufSize = Math.floor(ctx.sampleRate * 0.25);
+          const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+          const d = buf.getChannelData(0);
+          for(let k=0;k<bufSize;k++) d[k] = (Math.random()*2-1)*Math.pow(1-k/bufSize,2)*0.7 + Math.sin(k/bufSize*Math.PI*80)*0.3*Math.pow(1-k/bufSize,1.5);
+          const src = ctx.createBufferSource(); const g = ctx.createGain();
+          const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=200;
+          src.buffer=buf;
+          const at = now + i*beat;
+          g.gain.setValueAtTime(i===0||i===4?0.55:0.3, at);
+          g.gain.exponentialRampToValueAtTime(0.001, at+0.22);
+          src.connect(filt); filt.connect(g); g.connect(master);
+          src.start(at); src.stop(at+0.25);
+        }
+        // Snare on 3 and 7
+        [2,6].forEach(i => {
+          const bufSize = Math.floor(ctx.sampleRate*0.15);
+          const buf=ctx.createBuffer(1,bufSize,ctx.sampleRate);
+          const d=buf.getChannelData(0);
+          for(let k=0;k<bufSize;k++) d[k]=(Math.random()*2-1)*Math.pow(1-k/bufSize,2);
+          const src=ctx.createBufferSource(); const g=ctx.createGain();
+          const filt=ctx.createBiquadFilter(); filt.type='bandpass'; filt.frequency.value=2000; filt.Q.value=0.8;
+          src.buffer=buf;
+          const at=now+i*beat;
+          g.gain.setValueAtTime(0.3,at); g.gain.exponentialRampToValueAtTime(0.001,at+0.14);
+          src.connect(filt); filt.connect(g); g.connect(master);
+          src.start(at); src.stop(at+0.15);
+        });
+        // Power chord stabs (Em): E2-B2-E3-G3
+        const chords = [[82.41,123.47,164.81,196],[110,164.81,220,261.63]];
+        [0,2,4,6].forEach((beat_i, j) => {
+          const chord = chords[j%2];
+          chord.forEach(f => {
+            const o=ctx.createOscillator(); const g=ctx.createGain();
+            o.type='sawtooth'; o.frequency.value=f;
+            const at=now+beat_i*beat;
+            g.gain.setValueAtTime(0,at);
+            g.gain.linearRampToValueAtTime(0.12,at+0.03);
+            g.gain.exponentialRampToValueAtTime(0.001,at+beat*1.8);
+            o.connect(g); g.connect(master);
+            o.start(at); o.stop(at+beat*1.9);
+          });
+        });
+        // Epic brass melody: E-G-A-B-A-G-E (Phrygian)
+        const mel=[164.81,196,220,246.94,220,196,164.81,174.61];
+        mel.forEach((f,i)=>{
+          const o=ctx.createOscillator(); const g=ctx.createGain();
+          o.type='square'; o.frequency.value=f*2;
+          const at=now+i*beat;
+          g.gain.setValueAtTime(0,at);
+          g.gain.linearRampToValueAtTime(0.065,at+0.05);
+          g.gain.exponentialRampToValueAtTime(0.001,at+beat*0.85);
+          o.connect(g); g.connect(master);
+          o.start(at); o.stop(at+beat*0.9);
+        });
+        _bgmInterval = setTimeout(loop, beat*8*1000-100);
+      };
+      loop();
+    }
+  },
+  {
+    id: 3,
+    name: '🕯️ Память и победа',
+    desc: 'Торжественная лирическая тема победы',
+    build: function(ctx, master) {
+      // Solemn triumphant — major key, slow hymn, goosebumps guaranteed
+      const loop = () => {
+        if (!_bgmMaster) return;
+        const now = ctx.currentTime;
+        // Hymn melody in C major: C-E-G-C-B-G-A-F-G-E
+        const mel=[261.63,329.63,392,523.25,493.88,392,440,349.23,392,329.63];
+        const durs=[1.0, 0.8, 0.8, 1.2, 0.8, 0.8, 1.0, 0.8, 0.8, 1.6];
+        let t=now+0.3;
+        mel.forEach((f,i)=>{
+          // Main voice
+          const o=ctx.createOscillator(); const g=ctx.createGain();
+          o.type='triangle'; o.frequency.value=f;
+          g.gain.setValueAtTime(0,t);
+          g.gain.linearRampToValueAtTime(0.11,t+0.12);
+          g.gain.setValueAtTime(0.11,t+durs[i]-0.15);
+          g.gain.linearRampToValueAtTime(0,t+durs[i]);
+          o.connect(g); g.connect(master);
+          o.start(t); o.stop(t+durs[i]+0.05);
+          // Harmony (third above)
+          const harm=[329.63,415.30,493.88,659.25,622.25,493.88,554.37,440,493.88,415.30];
+          const o2=ctx.createOscillator(); const g2=ctx.createGain();
+          o2.type='sine'; o2.frequency.value=harm[i];
+          g2.gain.setValueAtTime(0,t);
+          g2.gain.linearRampToValueAtTime(0.055,t+0.18);
+          g2.gain.linearRampToValueAtTime(0,t+durs[i]);
+          o2.connect(g2); g2.connect(master);
+          o2.start(t); o2.stop(t+durs[i]+0.05);
+          t+=durs[i];
+        });
+        // Bass countermelody
+        const bass=[130.81,130.81,146.83,130.81,123.47,130.81,138.59,130.81];
+        const beatLen=0.9;
+        bass.forEach((f,i)=>{
+          const o=ctx.createOscillator(); const g=ctx.createGain();
+          o.type='sawtooth'; o.frequency.value=f;
+          const at=now+i*beatLen;
+          g.gain.setValueAtTime(0,at);
+          g.gain.linearRampToValueAtTime(0.065,at+0.15);
+          g.gain.exponentialRampToValueAtTime(0.001,at+beatLen*0.85);
+          o.connect(g); g.connect(master);
+          o.start(at); o.stop(at+beatLen*0.9);
+        });
+        // Pad/strings sustain (C major chord)
+        [130.81,164.81,196,261.63].forEach((f,i)=>{
+          const o=ctx.createOscillator(); const g=ctx.createGain();
+          o.type='sine'; o.frequency.value=f;
+          g.gain.setValueAtTime(0,now);
+          g.gain.linearRampToValueAtTime(0.04-i*0.006,now+2);
+          g.gain.setValueAtTime(0.04-i*0.006,now+6);
+          g.gain.linearRampToValueAtTime(0,now+9);
+          o.connect(g); g.connect(master);
+          o.start(now); o.stop(now+9.1);
+        });
+        const loopLen = mel.reduce((a,_,i)=>a+durs[i],0)+0.5;
+        _bgmInterval = setTimeout(loop, loopLen*1000-200);
+      };
+      loop();
+    }
+  }
+];
+
 function stopBackgroundMusic(force = false) {
 if (!force && state && state.musicEnabled !== false) return;
 if (_bgmInterval) {
+  clearTimeout(_bgmInterval);
   clearInterval(_bgmInterval);
   _bgmInterval = null;
 }
 if (_bgmMaster) {
-  try { _bgmMaster.disconnect(); } catch(e) {}
-  _bgmMaster = null;
+  try {
+    _bgmMaster.gain.setValueAtTime(_bgmMaster.gain.value, _audioCtx?.currentTime || 0);
+    _bgmMaster.gain.linearRampToValueAtTime(0.001, (_audioCtx?.currentTime || 0) + 0.4);
+    setTimeout(() => { try { _bgmMaster && _bgmMaster.disconnect(); } catch(e){} _bgmMaster = null; }, 450);
+  } catch(e) { _bgmMaster = null; }
 }
 }
 
@@ -2222,31 +2489,28 @@ if (_bgmInterval && _bgmMaster) return;
 try {
   if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); }
   _bgmMaster = ctx.createGain();
-  _bgmMaster.gain.setValueAtTime(0.045, ctx.currentTime);
+  const trackIdx = typeof state.selectedTrack === 'number' ? state.selectedTrack : 0;
+  const track = BGM_TRACKS[trackIdx] || BGM_TRACKS[0];
+  _bgmMaster.gain.setValueAtTime(0, ctx.currentTime);
+  _bgmMaster.gain.linearRampToValueAtTime(0.6, ctx.currentTime + 1.5);
   _bgmMaster.connect(ctx.destination);
-  const notes = [220, 247, 262, 294, 262, 247, 196, 220];
-  let idx = 0;
-  const playStep = () => {
-    if (state.musicEnabled === false || !_bgmMaster) return;
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(notes[idx % notes.length], now);
-    idx += 1;
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.8, now + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
-    osc.connect(gain);
-    gain.connect(_bgmMaster);
-    osc.start(now);
-    osc.stop(now + 0.45);
-  };
-  playStep();
-  _bgmInterval = setInterval(playStep, 430);
+  track.build(ctx, _bgmMaster);
 } catch(e) {
-  stopBackgroundMusic();
+  console.warn('BGM error:', e);
+  stopBackgroundMusic(true);
 }
+}
+
+function switchTrack(idx) {
+state.selectedTrack = idx;
+saveState();
+const wasPlaying = !!_bgmMaster;
+stopBackgroundMusic(true);
+_bgmMaster = null; _bgmInterval = null;
+setTimeout(() => {
+  if (wasPlaying && state.musicEnabled !== false) startBackgroundMusic();
+  renderSettingsTab();
+}, 500);
 }
 
 function updateAudioButtons() {
@@ -2502,11 +2766,13 @@ function toggleMusicEnabled() {
 state.musicEnabled = !state.musicEnabled;
 saveState();
 if (state.musicEnabled) {
-  startBackgroundMusic();
+  stopBackgroundMusic(true);
+  _bgmMaster = null; _bgmInterval = null;
+  setTimeout(() => { startBackgroundMusic(); }, 300);
   showToast('🎵 Музыка включена', 1400);
 } else {
   stopBackgroundMusic(true);
-  showToast('🎵 Музыка выключена', 1400);
+  showToast('🔇 Музыка выключена', 1400);
 }
 updateAudioButtons();
 renderSettingsTab();
@@ -2517,6 +2783,26 @@ const el = document.getElementById('settings-tab-content');
 if (!el) return;
 const soundOn = state.soundEnabled !== false;
 const musicOn = state.musicEnabled !== false;
+const curTrack = typeof state.selectedTrack === 'number' ? state.selectedTrack : 0;
+
+const trackCards = BGM_TRACKS.map(tr => {
+  const active = tr.id === curTrack;
+  return `<div onclick="switchTrack(${tr.id})" style="
+    display:flex;align-items:center;gap:12px;
+    padding:12px 14px;border-radius:8px;cursor:pointer;
+    border:1.5px solid ${active?'var(--accent)':'rgba(255,255,255,.08)'};
+    background:${active?'rgba(255,224,51,.1)':'rgba(255,255,255,.02)'};
+    margin-bottom:8px;transition:all .2s;
+  ">
+    <div style="font-size:26px;flex-shrink:0">${tr.name.split(' ')[0]}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-family:var(--head);font-size:var(--fs-sm);color:${active?'var(--accent)':'#fdfaf0'};letter-spacing:.04em">${tr.name.slice(tr.name.indexOf(' ')+1)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px">${tr.desc}</div>
+    </div>
+    <div style="font-size:18px">${active?'▶️':'⬜'}</div>
+  </div>`;
+}).join('');
+
 el.innerHTML = `<div style="padding:16px">
   <div style="text-align:center;margin-bottom:20px">
     <div style="font-size:52px;margin-bottom:8px">⚙️</div>
@@ -2536,18 +2822,39 @@ el.innerHTML = `<div style="padding:16px">
   </div>
 
   <div style="background:#141108;border:1px solid rgba(255,224,51,.16);border-radius:10px;padding:14px;margin-bottom:12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px">
       <div>
         <div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.05em">🎵 ФОНОВАЯ МУЗЫКА</div>
-        <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">Негромкая музыка во время прохождения</div>
+        <div style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px">Эпические мелодии во время игры</div>
       </div>
       <div style="font-family:var(--head);font-size:var(--fs-sm);color:${musicOn ? 'var(--green)' : 'var(--accent2)'}">${musicOn ? 'ВКЛ' : 'ВЫКЛ'}</div>
     </div>
-    <button onclick="toggleMusicEnabled()" style="width:100%;margin-top:12px;background:${musicOn ? 'rgba(255,58,58,.16)' : 'rgba(85,221,85,.16)'};color:${musicOn ? 'var(--accent2)' : 'var(--green)'};border:1px solid ${musicOn ? 'rgba(255,58,58,.35)' : 'rgba(85,221,85,.35)'};padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">${musicOn ? 'ВЫКЛЮЧИТЬ МУЗЫКУ' : 'ВКЛЮЧИТЬ МУЗЫКУ'}</button>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;color:var(--muted);letter-spacing:.1em;margin-bottom:10px;font-family:var(--head)">// ВЫБОР МЕЛОДИИ</div>
+      ${trackCards}
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button onclick="toggleMusicEnabled()" style="flex:1;background:${musicOn ? 'rgba(255,58,58,.16)' : 'rgba(85,221,85,.16)'};color:${musicOn ? 'var(--accent2)' : 'var(--green)'};border:1px solid ${musicOn ? 'rgba(255,58,58,.35)' : 'rgba(85,221,85,.35)'};padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">${musicOn ? '🔇 ВЫКЛ. МУЗЫКУ' : '🎵 ВКЛ. МУЗЫКУ'}</button>
+      <button onclick="previewTrack()" style="flex:0 0 auto;background:rgba(255,224,51,.12);color:var(--accent);border:1px solid rgba(255,224,51,.3);padding:11px 16px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;cursor:pointer">▶ СЛУШАТЬ</button>
+    </div>
   </div>
 
-  <button onclick="playSound('hint')" style="width:100%;background:rgba(255,224,51,.12);color:var(--accent);border:1px solid rgba(255,224,51,.3);padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">▶ ТЕСТ ЗВУКА</button>
+  <button onclick="playSound('hint')" style="width:100%;background:rgba(255,224,51,.07);color:var(--accent);border:1px solid rgba(255,224,51,.2);padding:11px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">▶ ТЕСТ ЗВУКОВЫХ ЭФФЕКТОВ</button>
 </div>`;
+}
+
+function previewTrack() {
+const ctx = getAudio();
+if (!ctx) return;
+if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+stopBackgroundMusic(true);
+_bgmMaster = null; _bgmInterval = null;
+setTimeout(() => {
+  startBackgroundMusic();
+  showToast('▶ ' + (BGM_TRACKS[state.selectedTrack||0]?.name || 'Мелодия'), 2000);
+}, 300);
 }
 
 function confirmReset() {
