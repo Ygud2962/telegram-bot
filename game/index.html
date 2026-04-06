@@ -552,6 +552,14 @@
                 <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;">🗺 ЗАДАНИЯ</div>
                 <button id="btn-reset-header" class="btn btn-small" onclick="confirmReset()">🗑 СБРОС</button>
             </div>
+            <div id="chapters-status-bar" style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,224,51,.06);border:1px solid rgba(255,224,51,.18);border-radius:8px;padding:10px 14px;margin-bottom:14px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span id="chapters-lives-display" style="font-size:18px;letter-spacing:2px;"></span>
+                </div>
+                <div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);letter-spacing:.06em;">
+                    ⭐ <span id="chapters-score-display">0</span> <span style="font-size:10px;color:var(--muted)">оч</span>
+                </div>
+            </div>
             <div style="background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden;margin-bottom:12px;">
                 <div id="ch-progress-bar" style="height:100%;background:var(--accent);border-radius:4px;width:0%;transition:width .5s;"></div>
             </div>
@@ -565,6 +573,14 @@
         </div>
         
         <div id="s-briefing" class="screen">
+            <div id="briefing-status-bar" style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,224,51,.06);border:1px solid rgba(255,224,51,.18);border-radius:8px;padding:10px 14px;margin-bottom:16px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span id="briefing-lives-display" style="font-size:18px;letter-spacing:2px;"></span>
+                </div>
+                <div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);letter-spacing:.06em;">
+                    ⭐ <span id="briefing-score-display">0</span> <span style="font-size:10px;color:var(--muted)">оч</span>
+                </div>
+            </div>
             <div style="text-align:center;margin-bottom:20px;">
                 <div id="brief-stamp" style="font-size:48px;margin-bottom:8px;"></div>
                 <div id="brief-num" style="font-size:var(--fs-xs);color:var(--muted);letter-spacing:.15em;margin-bottom:4px;"></div>
@@ -579,13 +595,16 @@
         
         <div id="s-cipher" class="screen">
             <div class="cipher-header">
-                <div class="cipher-info-left">
-                    <div id="cipher-chapter-label" class="cipher-chapter-label"></div>
-                    <div id="cipher-admin-label" class="cipher-admin-label" style="display:none;">👑 АДМИН</div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="btn btn-small btn-danger" onclick="goToChapters()" style="margin:0;padding:6px 12px;font-size:10px;">← ВЫЙТИ</button>
+                    <div class="cipher-info-left">
+                        <div id="cipher-chapter-label" class="cipher-chapter-label"></div>
+                        <div id="cipher-admin-label" class="cipher-admin-label" style="display:none;">👑 АДМИН</div>
+                    </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;">
-                    <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
                     <div id="cipher-score-display" class="cipher-score-display">0 оч</div>
+                    <div id="cipher-attempts-label" class="cipher-attempts-label"></div>
                 </div>
             </div>
             <div id="cipher-progress" class="cipher-progress"></div>
@@ -611,6 +630,7 @@
             </div>
             <div id="cipher-ref" class="cipher-ref"></div>
             <div class="nav-buttons">
+                <button class="btn" onclick="goToChapters()">🏠 ГЛАВНОЕ МЕНЮ</button>
                 <button class="btn" onclick="pauseGame()">⏸ ПАУЗА</button>
             </div>
         </div>
@@ -673,7 +693,15 @@
         </div>
         
         <div id="s-leaderboard-tab" class="screen">
-            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:16px;text-align:center;">🏆 РЕЙТИНГ</div>
+            <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:12px;text-align:center;">🏆 РЕЙТИНГ</div>
+            <div id="lb-my-stats-bar" style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,224,51,.06);border:1px solid rgba(255,224,51,.18);border-radius:8px;padding:10px 14px;margin-bottom:14px;">
+                <div style="font-size:10px;color:var(--muted);letter-spacing:.06em;">МОЙ ПРОГРЕСС</div>
+                <div style="display:flex;align-items:center;gap:14px;">
+                    <div style="font-size:10px;color:var(--muted);">❤️ <span id="lb-lives-display" style="color:#fdfaf0;font-family:var(--head)"></span></div>
+                    <div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent);">⭐ <span id="lb-score-display">0</span> оч</div>
+                    <div style="font-size:10px;color:var(--muted);"><span id="lb-chapters-display">0</span>/<span id="lb-chapters-total">6</span> глав</div>
+                </div>
+            </div>
             <div id="lb-list-tab"></div>
         </div>
         
@@ -1440,6 +1468,7 @@ const isChaptersVisible = document.getElementById('s-chapters')?.classList.conta
 if (hasLiveCountdown && isChaptersVisible) {
   _chapterCountdownTick = setTimeout(() => renderChapters(), 1000);
 }
+updateStatusBars();
 }
 
 function showBriefing(idx) {
@@ -1463,6 +1492,7 @@ const replayNote = (!state.adminMode && !state.testerMode && state.completedChap
   : '';
 document.getElementById('brief-mission').textContent = ch.mission + replayNote;
 showScreen('s-briefing');
+updateStatusBars();
 }
 
 function startChapter(idx) {
@@ -1591,6 +1621,13 @@ const n = state.lives;
 let row = '';
 for(let i=0;i<5;i++) row += i < n ? '❤️' : '🖤';
 el.innerHTML = row;
+// Sync status bars on other screens
+const clDisp = document.getElementById('chapters-lives-display');
+const blDisp = document.getElementById('briefing-lives-display');
+const lbLives = document.getElementById('lb-lives-display');
+if (clDisp) clDisp.innerHTML = row;
+if (blDisp) blDisp.innerHTML = row;
+if (lbLives) lbLives.textContent = n + '/5';
 }
 
 function animateLifeLoss() {
@@ -2298,6 +2335,43 @@ setTimeout(() => flash.remove(), 700);
 });
 }
 
+function updateStatusBars() {
+const lives = state.lives || 5;
+const score = state.totalScore || 0;
+const completed = Object.keys(state.completedChapters).length;
+
+// Chapters screen
+const clDisp = document.getElementById('chapters-lives-display');
+const csDisp = document.getElementById('chapters-score-display');
+if (clDisp) {
+  if (state.adminMode) { clDisp.innerHTML = '♾️'; }
+  else { let r=''; for(let i=0;i<5;i++) r += i<lives?'❤️':'🖤'; clDisp.innerHTML = r; }
+}
+if (csDisp) csDisp.textContent = score;
+
+// Briefing screen
+const blDisp = document.getElementById('briefing-lives-display');
+const bsDisp = document.getElementById('briefing-score-display');
+if (blDisp) {
+  if (state.adminMode) { blDisp.innerHTML = '♾️'; }
+  else { let r=''; for(let i=0;i<5;i++) r += i<lives?'❤️':'🖤'; blDisp.innerHTML = r; }
+}
+if (bsDisp) bsDisp.textContent = score;
+
+// Leaderboard screen
+const lbLives = document.getElementById('lb-lives-display');
+const lbScore = document.getElementById('lb-score-display');
+const lbChaps = document.getElementById('lb-chapters-display');
+const lbTotal = document.getElementById('lb-chapters-total');
+if (lbLives) {
+  if (state.adminMode) { lbLives.textContent = '♾'; }
+  else lbLives.textContent = lives + '/5';
+}
+if (lbScore) lbScore.textContent = score;
+if (lbChaps) lbChaps.textContent = completed;
+if (lbTotal) lbTotal.textContent = CHAPTERS.length;
+}
+
 function pauseGame() {
 saveState();
 stopTimer();
@@ -2353,6 +2427,7 @@ state.leaderboard.sort((a,b) => b.score - a.score);
 }
 
 function renderLeaderboardTab() {
+updateStatusBars();
 const list = document.getElementById('lb-list-tab');
 if (!state.leaderboard.length) {
 list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="font-size:56px;margin-bottom:16px;filter:drop-shadow(0 0 20px rgba(255,224,51,.3))">🏆</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent); margin-bottom:8px;letter-spacing:.06em">ПОКА ПУСТО</div><div style="font-size:var(--fs-sm);color:var(--muted);line-height:1.6;margin-bottom:24px">Никто ещё не прошёл ни одной главы.<br><b style="color:#fdfaf0">Стань первым шивровальщиком школы!</b></div><button onclick="switchTab(\'chapters\')" style="background:var(--accent);color:#0a0a08;border:none;padding:12px 24px; font-family:var(--head);font-size:var(--fs-base);font-weight:700; border-radius:4px;cursor:pointer;letter-spacing:.08em;width:100%"> ▶ НАЧАТЬ ИГРУ </button></div>';
@@ -2381,6 +2456,7 @@ list.innerHTML = header + rows + myPos;
 }
 
 function renderProfileTab() {
+updateStatusBars();
 const el = document.getElementById('profile-tab-content');
 if (!el) return;
 const uid = getTgUserId();
