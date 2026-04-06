@@ -1652,9 +1652,9 @@ el.style.color = 'var(--muted)';
 _timerInterval = setInterval(() => {
 const sec = Math.round((Date.now() - start) / 1000);
 el.textContent = sec + 'с';
-if (sec <= 10) el.style.color = 'var(--green)';
-else if (sec <= 30) el.style.color = 'var(--accent)';
-else if (sec <= 60) el.style.color = 'var(--accent2)';
+if (sec <= 25) el.style.color = 'var(--green)';
+else if (sec <= 50) el.style.color = 'var(--accent)';
+else if (sec <= 90) el.style.color = 'var(--accent2)';
 else el.style.color = 'var(--red)';
 }, 1000);
 }
@@ -1701,8 +1701,9 @@ ref.innerHTML = `<div class="cipher-ref-title">// АЛФАВИТ ДЛЯ РАСШ
 function calcPoints(cipher, elapsed) {
 const max = cipher.points;
 const secs = Math.max(0, elapsed);
-const penalty = Math.floor(Math.max(0, secs - 10) / 10) * 0.08;
-let factor = Math.max(0.20, 1 - penalty);
+// Полные очки первые 25 секунд, затем плавное снижение
+const penalty = Math.floor(Math.max(0, secs - 25) / 10) * 0.07;
+let factor = Math.max(0.25, 1 - penalty);
 if (state.retryPenalty) {
 const ch = CHAPTERS[state.chapter];
 const fails = ch && state.chapterFailCounts ? (state.chapterFailCounts[ch.id] || 1) : 1;
@@ -1748,9 +1749,10 @@ const pts = calcPoints(cipher, elapsed);
 state.chapterScore += pts;
 saveState();
 stopTimer();
-if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+if (elapsed <= 8) state._fastAnswers = (state._fastAnswers || 0) + 1;
 const isFirstTry = (state._chapterErrors || 0) === 0;
-checkAchievements({ elapsed, firstTry: isFirstTry, quizCorrect: cipher.type === 'quiz', mathCorrect: cipher.type === 'math', anagramCorrect: cipher.type === 'anagram', mapCorrect: cipher.type === 'map', morseFast: cipher.type === 'morse' && elapsed <= 10 });
+const morseNoError = cipher.type === 'morse' && (state._chapterErrors||0) === 0;
+checkAchievements({ elapsed, firstTry: isFirstTry, quizCorrect: cipher.type === 'quiz', mathCorrect: cipher.type === 'math', anagramCorrect: cipher.type === 'anagram', mapCorrect: cipher.type === 'map', morseFast: cipher.type === 'morse' && elapsed <= 20, morseCorrectNoError: morseNoError });
 setTimeout(() => showSuccess(cipher, pts, elapsed), 400);
 } else {
 inp.className = 'cipher-input wrong';
@@ -3136,100 +3138,134 @@ showScreen('s-final');
 }
 
 const ACHIEVEMENTS = [
-{id:'speed_1', icon:'⚡', name:'Молния', desc:'Ответил за 5 секунд', pts:10},
-{id:'perfect_1', icon:'🎯', name:'Снайпер', desc:'Глава без единой ошибки', pts:50},
-{id:'ch1_done', icon:'🏅', name:'Первый шаг', desc:'Пройдена глава I', pts:20},
-{id:'ch6_done', icon:'🥇', name:'Победитель', desc:'Пройдена вся игра', pts:100},
-{id:'score_100', icon:'💫', name:'Первые очки', desc:'Набрал 100 очков', pts:5},
-{id:'score_500', icon:'⭐', name:'Набирает обороты', desc:'Набрал 500 очков', pts:10},
-{id:'score_1000', icon:'🌠', name:'Тысячник', desc:'Набрал 1000 очков', pts:20},
-{id:'morse_1', icon:'📡', name:'Морзист', desc:'Решил задание на азбуке Морзе', pts:10},
-{id:'caesar_5', icon:'🔐', name:'Цезарь', desc:'5 заданий шифром Цезаря', pts:20},
-{id:'atbash_3', icon:'🪞', name:'Зеркало', desc:'3 задания шифром Атбаш', pts:15},
-{id:'math_3', icon:'➗', name:'Математик', desc:'3 математических задания', pts:20},
-{id:'anagram_3', icon:'🔤', name:'Буквоед', desc:'3 анаграммы', pts:20},
-{id:'map_1', icon:'🗺', name:'Картограф', desc:'Нашёл город на карте', pts:15},
-{id:'first_try', icon:'🎊', name:'С первого раза', desc:'Правильный ответ без ошибок', pts:5},
-{id:'comeback', icon:'💪', name:'Возвращение', desc:'Прошёл главу после провала', pts:30},
-{id:'streak_3', icon:'🔥', name:'На волне', desc:'Стрик 3 правильных ответа', pts:15},
-{id:'streak_5', icon:'💥', name:'Огонь!', desc:'Стрик 5 правильных ответа', pts:30},
-{id:'streak_10', icon:'🌋', name:'Вулкан', desc:'Стрик 10 правильных ответов', pts:60},
-{id:'no_hints_1', icon:'🧠', name:'Умник', desc:'Глава без подсказок', pts:30},
-{id:'no_hints_all', icon:'🎓', name:'Мастер шифров', desc:'Все главы без подсказок', pts:150},
-{id:'perfect_all', icon:'👑', name:'Безупречный', desc:'Все главы без ошибок', pts:200},
-{id:'all_gold', icon:'👸', name:'Чемпион', desc:'80%+ во всех главах', pts:200},
-{id:'score_2500', icon:'💎', name:'Эксперт', desc:'Набрал 2500 очков', pts:40},
-{id:'score_5000', icon:'🏆', name:'Легенда', desc:'Набрал 5000+ очков', pts:80},
-{id:'morse_5', icon:'📻', name:'Радист', desc:'5 заданий на Морзе', pts:25},
-{id:'quiz_5', icon:'🧩', name:'Знаток', desc:'Правильно ответил на 5 вопросов викторины', pts:30},
-{id:'quiz_10', icon:'🎓', name:'Профессор', desc:'Правильно ответил на 10 вопросов викторины', pts:60},
-{id:'quiz_all', icon:'🏫', name:'Учёный', desc:'Все вопросы викторины правильно', pts:100},
-{id:'date_1941', icon:'📅', name:'Помню 41-й', desc:'Назвал год начала оккупации', pts:15},
-{id:'date_1945', icon:'🕊', name:'Помню 45-й', desc:'Назвал год Победы', pts:15},
-{id:'one_life', icon:'❤️', name:'На волоске', desc:'Прошёл главу с 1 оставшейся жизнью', pts:50},
-{id:'retry_win', icon:'💪', name:'Не сдаётся', desc:'После провала прошёл главу с первой попытки', pts:60},
-{id:'first_quiz', icon:'❓', name:'Первый вопрос', desc:'Ответил на первый вопрос викторины', pts:5},
-{id:'first_math', icon:'🔢', name:'Первый расчёт', desc:'Решил первую математическую задачу', pts:5},
-{id:'first_anagram', icon:'🔤', name:'Первая анаграмма', desc:'Разгадал первую анаграмму', pts:5},
-{id:'first_map_t', icon:'🧭', name:'Первая карта', desc:'Нашёл первый город на карте', pts:5},
-{id:'all_quiz', icon:'📚', name:'Эрудит', desc:'Все вопросы викторины пройдены', pts:50},
-{id:'perfect_run', icon:'🌈', name:'Идеальный забег', desc:'Глава без ошибок, без подсказок и быстро', pts:120},
-{id:'speedrun', icon:'🏁', name:'Спидран', desc:'Все 6 глав менее чем за 1 час', pts:150},
-{id:'pacifist', icon:'🕊', name:'Пацифист', desc:'Не использовал ни одной подсказки', pts:100},
-{id:'iron_will', icon:'⚙️', name:'Железная воля', desc:'5 заданий подряд без ошибок', pts:45},
-{id:'chain_6', icon:'⛓', name:'Цепная реакция', desc:'6 правильных ответов подряд (2 главы)', pts:80},
-{id:'weekend', icon:'📆', name:'Выходной разведчик', desc:'Играл в выходной день', pts:10},
-{id:'school_time', icon:'🏫', name:'Школьный час', desc:'Играл с 8 до 15 часов', pts:10},
-{id:'marathon', icon:'🏃', name:'Марафон', desc:'Прошёл 3 главы за один сеанс', pts:35},
-{id:'all_in_day', icon:'☀️', name:'День победы', desc:'Прошёл все 6 глав за один день', pts:100},
-{id:'long_game', icon:'🌙', name:'Долгая ночь', desc:'Играл более 30 минут', pts:20},
-{id:'top5', icon:'⭐', name:'В элите', desc:'Вошёл в топ-5 рейтинга', pts:60},
-{id:'beat_someone', icon:'📈', name:'Обогнал', desc:'Поднялся выше другого игрока', pts:15},
-{id:'shared', icon:'📤', name:'Поделился', desc:'Поделился результатом', pts:10},
-{id:'ach_20', icon:'🏆', name:'Достиженец', desc:'Получил 20 достижений', pts:40},
-{id:'ach_30', icon:'💠', name:'Мастер наград', desc:'Получил 30 достижений', pts:60},
-{id:'war_expert', icon:'🎗', name:'Эксперт войны', desc:'Правильно ответил на все вопросы о ВОВ', pts:75},
-{id:'geo_expert', icon:'🌍', name:'Географ', desc:'Нашёл все 3 города на карте', pts:50},
-{id:'cipher_master', icon:'🔓', name:'Взломщик', desc:'Разгадал все шифры без подсказок', pts:90},
-{id:'history_buff', icon:'📖', name:'Историк', desc:'Прочитал 15 исторических фактов', pts:30},
-{id:'memory', icon:'🎖', name:'Вечная память', desc:'Завершил игру и прочитал все факты', pts:80},
-{id:'all_100', icon:'💯', name:'Сотка!', desc:'Получил 100 достижений', pts:250},
-{id:'true_hero', icon:'🌟', name:'Настоящий герой', desc:'Прошёл все главы на золото без подсказок', pts:300},
-{id:'school_legend', icon:'👑', name:'Легенда школы', desc:'Первый кто получил все достижения', pts:500},
-{id:'peacekeeper', icon:'🕊', name:'Миротворец', desc:'Помнит и чтит историю своей Родины', pts:100},
-{id:'defender', icon:'🛡', name:'Защитник', desc:'Завершил игру — настоящий разведчик', pts:150},
-{id:'hoiki_1', icon:'🌿', name:'Сын Полесья', desc:'Завершил главу о Хойниках', pts:25},
-{id:'hoiki_quiz', icon:'📍', name:'Знаток Хойник', desc:'Ответил на все вопросы о Хойниках', pts:40},
-{id:'gomel_map', icon:'🗺', name:'Компас Гомельщины', desc:'Нашёл Гомель на карте', pts:20},
-{id:'polesia', icon:'🌲', name:'Дух Полесья', desc:'Узнал название региона', pts:15},
-{id:'soizh_river', icon:'🌊', name:'По реке Сож', desc:'Расшифровал название реки', pts:20},
-{id:'speed_any', icon:'🔥', name:'На максимуме', desc:'Любое задание за 3 секунды', pts:35},
-{id:'speed_morse', icon:'📻', name:'Телеграфист', desc:'Морзе за 10 секунд', pts:30},
-{id:'no_wrong_1', icon:'✨', name:'Без промаха', desc:'Первое задание без ошибок', pts:10},
-{id:'fast_start', icon:'⏩', name:'Быстрый старт', desc:'Первые 3 задания за 30 секунд', pts:25},
-{id:'retry_2', icon:'🔄', name:'Настойчивый', desc:'Повторил одну главу дважды', pts:25},
-{id:'comeback_3', icon:'🦅', name:'Феникс', desc:'Провалил и победил 3 раза подряд', pts:70},
-{id:'all_types', icon:'🎭', name:'Универсал', desc:'Решил все типы шифров', pts:60},
-{id:'full_game', icon:'🎮', name:'Настоящий разведчик', desc:'Прошёл игру полностью', pts:150},
-{id:'night_owl', icon:'🦉', name:'Полуночник', desc:'Играл после 23:00', pts:15},
-{id:'early_bird', icon:'🐦', name:'Ранняя пташка', desc:'Играл до 8:00', pts:15},
-{id:'dedicated', icon:'📚', name:'Усердный', desc:'Прошёл 10+ заданий', pts:20},
-{id:'veteran', icon:'🎖', name:'Ветеран', desc:'Прошёл 30 заданий', pts:50},
-{id:'collector', icon:'🗃', name:'Коллекционер', desc:'Получил 10 достижений', pts:30},
-{id:'explorer', icon:'🧭', name:'Исследователь', desc:'Открыл все 6 глав', pts:25},
-{id:'historian', icon:'📜', name:'Историк', desc:'Прочитал 10 исторических фактов', pts:20},
-{id:'survivor', icon:'🛡', name:'Выживший', desc:'Остался с 1 жизнью и победил', pts:40},
-{id:'comeback_ch', icon:'🔄', name:'Несломленный', desc:'Повторил главу и победил', pts:35},
-{id:'top3', icon:'🏅', name:'Призёр', desc:'Попал в топ-3 рейтинга', pts:50},
-{id:'top1', icon:'🥇', name:'Чемпион школы', desc:'Первое место в рейтинге', pts:100},
-{id:'ch3_done', icon:'🥈', name:'Полпути', desc:'Пройдено 3 главы', pts:40},
-{id:'ch1_gold', icon:'🌟', name:'Золото главы I', desc:'80%+ очков в главе I', pts:30},
-{id:'ch2_gold', icon:'🌟', name:'Золото главы II', desc:'80%+ очков в главе II', pts:30},
-{id:'ch3_gold', icon:'🌟', name:'Золото главы III', desc:'80%+ очков в главе III', pts:30},
-{id:'ch4_gold', icon:'🌟', name:'Золото главы IV', desc:'80%+ очков в главе IV', pts:30},
-{id:'ch5_gold', icon:'🌟', name:'Золото главы V', desc:'80%+ очков в главе V', pts:30},
-{id:'ch6_gold', icon:'🌟', name:'Золото главы VI', desc:'80%+ очков в главе VI', pts:30},
-{id:'perfect_3', icon:'💎', name:'Бриллиант', desc:'3 главы без ошибок', pts:100},
+// ── СКОРОСТЬ (увеличены пороги) ──────────────────────────────
+{id:'speed_1',      icon:'⚡', name:'Молния',          desc:'Ответил за 8 секунд',                pts:20},
+{id:'speed_5',      icon:'⚡', name:'Пять молний',      desc:'5 ответов менее 8 секунд',            pts:40},
+{id:'speed_10',     icon:'🌩', name:'Гром и молния',    desc:'10 быстрых ответов (до 8с)',          pts:80},
+{id:'speed_any',    icon:'🔥', name:'На максимуме',     desc:'Любое задание за 8 секунд',           pts:35},
+{id:'speed_morse',  icon:'📻', name:'Телеграфист',      desc:'Азбука Морзе за 20 секунд',           pts:30},
+{id:'fast_start',   icon:'⏩', name:'Быстрый старт',    desc:'Первые 3 задания за 60 секунд',       pts:25},
+{id:'speedrun',     icon:'🏁', name:'Спидран',          desc:'Все 6 глав менее чем за 1 час',       pts:150},
+// ── ТОЧНОСТЬ ─────────────────────────────────────────────────
+{id:'perfect_1',    icon:'🎯', name:'Снайпер',          desc:'Глава без единой ошибки',             pts:50},
+{id:'perfect_3',    icon:'💎', name:'Бриллиант',        desc:'3 главы без ошибок',                  pts:100},
+{id:'perfect_all',  icon:'👑', name:'Безупречный',      desc:'Все главы без ошибок',                pts:200},
+{id:'no_wrong_1',   icon:'✨', name:'Без промаха',      desc:'Первое задание без ошибок',           pts:10},
+{id:'first_try',    icon:'🎊', name:'С первого раза',   desc:'Правильный ответ без ошибок',         pts:5},
+// ── СЕРИИ ────────────────────────────────────────────────────
+{id:'streak_3',     icon:'🔥', name:'На волне',         desc:'Стрик 3 правильных ответа',           pts:15},
+{id:'streak_5',     icon:'💥', name:'Огонь!',           desc:'Стрик 5 правильных ответов',          pts:30},
+{id:'streak_10',    icon:'🌋', name:'Вулкан',           desc:'Стрик 10 правильных ответов',         pts:60},
+{id:'iron_will',    icon:'⚙️', name:'Железная воля',    desc:'5 заданий подряд без ошибок',         pts:45},
+{id:'chain_6',      icon:'⛓', name:'Цепная реакция',   desc:'6 правильных ответов подряд',         pts:80},
+// ── ПРОГРЕСС ─────────────────────────────────────────────────
+{id:'ch1_done',     icon:'🏅', name:'Первый шаг',       desc:'Пройдена глава I',                    pts:20},
+{id:'ch3_done',     icon:'🥈', name:'Полпути',          desc:'Пройдено 3 главы',                    pts:40},
+{id:'ch6_done',     icon:'🥇', name:'Победитель',       desc:'Пройдена вся игра',                   pts:100},
+{id:'full_game',    icon:'🎮', name:'Настоящий разведчик', desc:'Прошёл игру полностью',            pts:150},
+{id:'explorer',     icon:'🧭', name:'Исследователь',    desc:'Открыл все 6 глав',                   pts:25},
+{id:'marathon',     icon:'🏃', name:'Марафон',          desc:'Прошёл 3 главы за один сеанс',        pts:35},
+{id:'all_in_day',   icon:'☀️', name:'День победы',      desc:'Прошёл все 6 глав за один день',      pts:100},
+// ── ЗОЛОТО ГЛАВ ──────────────────────────────────────────────
+{id:'ch1_gold',     icon:'🌟', name:'Золото главы I',   desc:'80%+ очков в главе I',                pts:30},
+{id:'ch2_gold',     icon:'🌟', name:'Золото главы II',  desc:'80%+ очков в главе II',               pts:30},
+{id:'ch3_gold',     icon:'🌟', name:'Золото главы III', desc:'80%+ очков в главе III',              pts:30},
+{id:'ch4_gold',     icon:'🌟', name:'Золото главы IV',  desc:'80%+ очков в главе IV',               pts:30},
+{id:'ch5_gold',     icon:'🌟', name:'Золото главы V',   desc:'80%+ очков в главе V',                pts:30},
+{id:'ch6_gold',     icon:'🌟', name:'Золото главы VI',  desc:'80%+ очков в главе VI',               pts:30},
+{id:'all_gold',     icon:'👸', name:'Чемпион',          desc:'80%+ во всех 6 главах',               pts:200},
+{id:'perfect_run',  icon:'🌈', name:'Идеальный забег',  desc:'Глава без ошибок и подсказок',        pts:120},
+// ── ОЧКИ ─────────────────────────────────────────────────────
+{id:'score_100',    icon:'💫', name:'Первые очки',      desc:'Набрал 100 очков',                    pts:5},
+{id:'score_500',    icon:'⭐', name:'Набирает обороты', desc:'Набрал 500 очков',                    pts:10},
+{id:'score_1000',   icon:'🌠', name:'Тысячник',         desc:'Набрал 1000 очков',                   pts:20},
+{id:'score_2500',   icon:'💎', name:'Эксперт',          desc:'Набрал 2500 очков',                   pts:40},
+{id:'score_5000',   icon:'🏆', name:'Легенда',          desc:'Набрал 5000+ очков',                  pts:80},
+{id:'score_7500',   icon:'🔱', name:'Герой',            desc:'Набрал 7500+ очков',                  pts:120},
+// ── ТИПЫ ШИФРОВ ──────────────────────────────────────────────
+{id:'morse_1',      icon:'📡', name:'Морзист',          desc:'Решил задание на азбуке Морзе',       pts:10},
+{id:'morse_5',      icon:'📻', name:'Радист',           desc:'5 заданий на Морзе',                  pts:25},
+{id:'caesar_5',     icon:'🔐', name:'Цезарь',           desc:'5 заданий шифром Цезаря',             pts:20},
+{id:'atbash_3',     icon:'🪞', name:'Зеркало',          desc:'3 задания шифром Атбаш',              pts:15},
+{id:'math_3',       icon:'➗', name:'Математик',        desc:'3 математических задания',            pts:20},
+{id:'anagram_3',    icon:'🔤', name:'Буквоед',          desc:'3 анаграммы разгаданы',               pts:20},
+{id:'map_1',        icon:'🗺', name:'Картограф',         desc:'Нашёл город на карте',                pts:15},
+{id:'all_types',    icon:'🎭', name:'Универсал',         desc:'Решил все типы шифров',               pts:60},
+{id:'cipher_master',icon:'🔓', name:'Взломщик',         desc:'Разгадал все шифры без подсказок',    pts:90},
+// ── ВИКТОРИНЫ И ИСТОРИЯ ───────────────────────────────────────
+{id:'first_quiz',   icon:'❓', name:'Первый вопрос',    desc:'Ответил на первый вопрос викторины',  pts:5},
+{id:'first_math',   icon:'🔢', name:'Первый расчёт',    desc:'Решил первую математическую задачу',  pts:5},
+{id:'first_anagram',icon:'🔤', name:'Первая анаграмма', desc:'Разгадал первую анаграмму',           pts:5},
+{id:'first_map_t',  icon:'🧭', name:'Первая карта',     desc:'Нашёл первый город на карте',         pts:5},
+{id:'quiz_5',       icon:'🧩', name:'Знаток',           desc:'Правильно ответил на 5 вопросов',     pts:30},
+{id:'quiz_10',      icon:'🎓', name:'Профессор',        desc:'Правильно ответил на 10 вопросов',    pts:60},
+{id:'all_quiz',     icon:'📚', name:'Эрудит',           desc:'Все вопросы викторины пройдены',       pts:50},
+{id:'war_expert',   icon:'🎗', name:'Эксперт войны',    desc:'Правильно ответил на все вопросы о ВОВ', pts:75},
+{id:'geo_expert',   icon:'🌍', name:'Географ',          desc:'Нашёл все 3 города на карте',         pts:50},
+{id:'history_buff', icon:'📖', name:'Историк',          desc:'Прочитал 15 исторических фактов',     pts:30},
+// ── БЕЛАРУСЬ И ХОЙНИКИ ───────────────────────────────────────
+{id:'hoiki_1',      icon:'🌿', name:'Сын Полесья',      desc:'Завершил главу о Хойниках',           pts:25},
+{id:'hoiki_quiz',   icon:'📍', name:'Знаток Хойник',    desc:'Ответил на все вопросы о Хойниках',   pts:40},
+{id:'gomel_map',    icon:'🗺', name:'Компас Гомельщины', desc:'Нашёл Гомель на карте',               pts:20},
+{id:'polesia',      icon:'🌲', name:'Дух Полесья',      desc:'Узнал название региона',              pts:15},
+{id:'soizh_river',  icon:'🌊', name:'По реке Сож',      desc:'Расшифровал название реки',           pts:20},
+{id:'minsk_free',   icon:'🏙', name:'Минск освобождён', desc:'Прошёл главу об операции Багратион',  pts:30},
+{id:'rail_war',     icon:'💥', name:'Рельсовая война',  desc:'Прошёл главу о диверсиях на ж/д',     pts:30},
+{id:'underground',  icon:'📜', name:'Подпольщик',       desc:'Прошёл главу о Минском подполье',     pts:30},
+// ── ЖИЗНИ И ВЫЖИВАНИЕ ────────────────────────────────────────
+{id:'one_life',     icon:'❤️', name:'На волоске',       desc:'Прошёл главу с 1 оставшейся жизнью',  pts:50},
+{id:'survivor',     icon:'🛡', name:'Выживший',         desc:'Остался с 1 жизнью и победил',        pts:40},
+{id:'full_lives',   icon:'💚', name:'Неуязвимый',       desc:'Завершил главу со всеми 5 жизнями',   pts:35},
+{id:'iron_heart',   icon:'🫀', name:'Железное сердце',  desc:'2 главы подряд без потери жизни',     pts:60},
+// ── ПОДСКАЗКИ ────────────────────────────────────────────────
+{id:'no_hints_1',   icon:'🧠', name:'Умник',            desc:'Глава без подсказок',                 pts:30},
+{id:'no_hints_all', icon:'🎓', name:'Мастер шифров',    desc:'Все главы без подсказок',             pts:150},
+{id:'pacifist',     icon:'🕊', name:'Пацифист',         desc:'Не использовал ни одной подсказки',   pts:100},
+// ── ПОВТОРЫ И ВОЗВРАЩЕНИЕ ────────────────────────────────────
+{id:'comeback',     icon:'💪', name:'Возвращение',      desc:'Прошёл главу после провала',          pts:30},
+{id:'comeback_ch',  icon:'🔄', name:'Несломленный',     desc:'Повторил главу и победил',            pts:35},
+{id:'retry_win',    icon:'💪', name:'Не сдаётся',       desc:'После провала прошёл главу',          pts:60},
+{id:'retry_2',      icon:'🔄', name:'Настойчивый',      desc:'Повторил одну главу дважды',          pts:25},
+{id:'comeback_3',   icon:'🦅', name:'Феникс',           desc:'Провалил и победил 3 раза подряд',    pts:70},
+// ── РЕЙТИНГ ──────────────────────────────────────────────────
+{id:'top5',         icon:'⭐', name:'В элите',          desc:'Вошёл в топ-5 рейтинга',             pts:60},
+{id:'top3',         icon:'🏅', name:'Призёр',           desc:'Попал в топ-3 рейтинга',              pts:50},
+{id:'top1',         icon:'🥇', name:'Чемпион школы',    desc:'Первое место в рейтинге',             pts:100},
+{id:'beat_someone', icon:'📈', name:'Обогнал',          desc:'Поднялся выше другого игрока',        pts:15},
+// ── ВРЕМЯ ИГРЫ ───────────────────────────────────────────────
+{id:'night_owl',    icon:'🦉', name:'Полуночник',       desc:'Играл после 23:00',                   pts:15},
+{id:'early_bird',   icon:'🐦', name:'Ранняя пташка',    desc:'Играл до 8:00',                       pts:15},
+{id:'school_time',  icon:'🏫', name:'Школьный час',     desc:'Играл с 8 до 15 часов',               pts:10},
+{id:'weekend',      icon:'📆', name:'Выходной разведчик', desc:'Играл в выходной день',             pts:10},
+{id:'long_game',    icon:'🌙', name:'Долгая ночь',      desc:'Играл более 30 минут',                pts:20},
+// ── КОЛИЧЕСТВО ЗАДАНИЙ ───────────────────────────────────────
+{id:'dedicated',    icon:'📚', name:'Усердный',         desc:'Прошёл 10+ заданий',                  pts:20},
+{id:'veteran',      icon:'🎖', name:'Ветеран',          desc:'Прошёл 30 заданий',                   pts:50},
+{id:'centurion',    icon:'💯', name:'Центурион',        desc:'Прошёл 36 заданий (всю игру)',        pts:70},
+// ── МЕТА-ДОСТИЖЕНИЯ ──────────────────────────────────────────
+{id:'collector',    icon:'🗃', name:'Коллекционер',     desc:'Получил 10 достижений',               pts:30},
+{id:'ach_20',       icon:'🏆', name:'Достиженец',       desc:'Получил 20 достижений',               pts:40},
+{id:'ach_30',       icon:'💠', name:'Мастер наград',    desc:'Получил 30 достижений',               pts:60},
+{id:'ach_50',       icon:'🔮', name:'Легенда наград',   desc:'Получил 50 достижений',               pts:120},
+{id:'all_100',      icon:'💯', name:'Сотка!',           desc:'Получил 100 достижений',              pts:250},
+// ── ОСОБЫЕ И ФИНАЛЬНЫЕ ───────────────────────────────────────
+{id:'true_hero',    icon:'🌟', name:'Настоящий герой',  desc:'Все главы на золото без подсказок',   pts:300},
+{id:'school_legend',icon:'👑', name:'Легенда школы',    desc:'Получил все достижения',              pts:500},
+{id:'peacekeeper',  icon:'🕊', name:'Миротворец',       desc:'Помнит и чтит историю Родины',        pts:100},
+{id:'defender',     icon:'🛡', name:'Защитник',         desc:'Завершил игру — настоящий разведчик', pts:150},
+{id:'memory',       icon:'🎖', name:'Вечная память',    desc:'Завершил игру и прочитал все факты',  pts:80},
+{id:'shared',       icon:'📤', name:'Поделился',        desc:'Поделился результатом',               pts:10},
+// ── НОВЫЕ УНИКАЛЬНЫЕ ─────────────────────────────────────────
+{id:'no_wrong_chapter',icon:'🏹',name:'Точный выстрел', desc:'Вся глава — первые попытки',          pts:40},
+{id:'five_gold',    icon:'🌠', name:'Созвездие',        desc:'5 глав с золотом',                    pts:120},
+{id:'morse_perfect',icon:'🔊', name:'Чистый эфир',      desc:'3 задания Морзе без ошибок',          pts:45},
+{id:'chapter_ace',  icon:'🃏', name:'Туз',              desc:'Глава без ошибок и меньше 3 минут',   pts:80},
+{id:'all_caesar',   icon:'🏛', name:'Цезарь Великий',   desc:'Все шифры Цезаря без ошибок',         pts:60},
+{id:'decoded_all',  icon:'🔑', name:'Мастер-ключ',      desc:'Всего 36 расшифровок завершено',      pts:90},
+{id:'login_streak', icon:'📅', name:'Верный воин',      desc:'3 дня игры подряд',                   pts:25},
+{id:'no_hint_ch6',  icon:'🧩', name:'Без помощи',       desc:'Последняя глава без подсказок',       pts:50},
+{id:'perfect_ch1',  icon:'🌿', name:'Хойники без потерь', desc:'Глава I без ошибок и подсказок',    pts:45},
+{id:'comeback_win', icon:'🦁', name:'Лев',              desc:'Провалил 2 главы — и всё равно победил', pts:85},
 ];
 
 if (!state.achievements) state.achievements = {};
@@ -3264,6 +3300,7 @@ const achs = state.achievements || {};
 const stats = state.chapterStats || {};
 const typesUsed = new Set();
 let totalCiphers = 0, morseCount = 0, caesarCount = 0, atbashCount = 0, mathCount = 0, anagramCount = 0, mapCount = 0;
+let morsePerfect = 0;
 CHAPTERS.forEach(ch => {
 if (state.completedChapters[ch.id]) {
 ch.ciphers.forEach(c => {
@@ -3278,36 +3315,74 @@ if (c.type === 'map') mapCount++;
 });
 }
 });
-if (context.elapsed <= 5) unlockAchievement('speed_1');
+
+// ── СКОРОСТЬ (пороги 8с) ──────────────────────
+if (context.elapsed !== undefined && context.elapsed <= 8) unlockAchievement('speed_1');
 if ((state._fastAnswers || 0) >= 5) unlockAchievement('speed_5');
 if ((state._fastAnswers || 0) >= 10) unlockAchievement('speed_10');
-if (context.chapterDoneNoErrors) unlockAchievement('perfect_1');
+if (context.elapsed !== undefined && context.elapsed <= 8) unlockAchievement('speed_any');
+if (context.morseFast) unlockAchievement('speed_morse'); // теперь 20с в loadCipher
+// fast_start: первые 3 задания за 60с — трекается через state._firstCipherTimes
+if (!state._firstCipherTimes) state._firstCipherTimes = [];
+if (context.elapsed !== undefined && state._firstCipherTimes.length < 3) {
+  state._firstCipherTimes.push(context.elapsed);
+  if (state._firstCipherTimes.length === 3) {
+    const total3 = state._firstCipherTimes.reduce((a,b)=>a+b,0);
+    if (total3 <= 60) unlockAchievement('fast_start');
+  }
+}
+
+// ── ТОЧНОСТЬ ──────────────────────────────────
+if (context.chapterDoneNoErrors) { unlockAchievement('perfect_1'); unlockAchievement('no_wrong_chapter'); }
 if ((state._perfectChapters || 0) >= 3) unlockAchievement('perfect_3');
 if ((state._perfectChapters || 0) >= 6) unlockAchievement('perfect_all');
 if (context.chapterDoneNoHints) unlockAchievement('no_hints_1');
-if ((state._noHintChapters || 0) >= 6) unlockAchievement('no_hints_all');
+if ((state._noHintChapters || 0) >= 6) { unlockAchievement('no_hints_all'); unlockAchievement('pacifist'); }
+if (context.chapterDoneNoErrors && context.chapterDoneNoHints) unlockAchievement('perfect_run');
+// perfect_ch1
+if (state.completedChapters[1] && (state.chapterStats[1]?.errors||0)===0 && (state.chapterStats[1]?.hints||0)===0) unlockAchievement('perfect_ch1');
+// no_hint_ch6
+if (state.completedChapters[6] && (state.chapterStats[6]?.hints||0)===0) unlockAchievement('no_hint_ch6');
+
+// ── СЕРИИ ──────────────────────────────────────
 if ((state.streak || 0) >= 3) unlockAchievement('streak_3');
 if ((state.streak || 0) >= 5) unlockAchievement('streak_5');
 if ((state.streak || 0) >= 10) unlockAchievement('streak_10');
+
+// ── ПРОГРЕСС ГЛАВ ──────────────────────────────
 if (done >= 1) unlockAchievement('ch1_done');
 if (done >= 3) unlockAchievement('ch3_done');
-if (done >= 6) { unlockAchievement('ch6_done'); unlockAchievement('full_game'); }
-if (done >= 6) unlockAchievement('explorer');
+if (done >= 6) { unlockAchievement('ch6_done'); unlockAchievement('full_game'); unlockAchievement('explorer'); unlockAchievement('centurion'); unlockAchievement('decoded_all'); }
+// Беларусь-специфичные
+if (state.completedChapters[1]) unlockAchievement('hoiki_1');
+if (state.completedChapters[2]) unlockAchievement('underground');
+if (state.completedChapters[3]) unlockAchievement('rail_war');
+if (state.completedChapters[4]) unlockAchievement('minsk_free');
+
+// ── ЗОЛОТО ГЛАВ ────────────────────────────────
 CHAPTERS.forEach((ch, i) => {
 if (!state.completedChapters[ch.id]) return;
-const s = state.chapterStats && state.chapterStats[ch.id];
 const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0);
 const chScore = state.chapterScores[ch.id] || 0;
-if (chScore >= maxCh * 0.8) { unlockAchievement('ch' + (i+1) + '_gold'); }
+if (chScore >= maxCh * 0.8) unlockAchievement('ch' + (i+1) + '_gold');
 });
-const goldCount = CHAPTERS.filter((ch,i) => { const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0); return (state.chapterScores[ch.id] || 0) >= maxCh * 0.8; }).length;
-if (goldCount >= 6) unlockAchievement('all_gold');
-if (goldCount >= 6) unlockAchievement('champion');
+const goldCount = CHAPTERS.filter((ch,i) => {
+const maxCh = ch.ciphers.reduce((a,c)=>a+c.points,0);
+return (state.chapterScores[ch.id]||0) >= maxCh * 0.8;
+}).length;
+if (goldCount >= 5) unlockAchievement('five_gold');
+if (goldCount >= 6) { unlockAchievement('all_gold'); unlockAchievement('champion'); }
+if (goldCount >= 6 && (state._noHintChapters||0) >= 6) unlockAchievement('true_hero');
+
+// ── ОЧКИ ───────────────────────────────────────
 if (score >= 100) unlockAchievement('score_100');
 if (score >= 500) unlockAchievement('score_500');
 if (score >= 1000) unlockAchievement('score_1000');
 if (score >= 2500) unlockAchievement('score_2500');
 if (score >= 5000) unlockAchievement('score_5000');
+if (score >= 7500) unlockAchievement('score_7500');
+
+// ── ТИПЫ ШИФРОВ ────────────────────────────────
 if (morseCount >= 1) unlockAchievement('morse_1');
 if (morseCount >= 5) unlockAchievement('morse_5');
 if (caesarCount >= 5) unlockAchievement('caesar_5');
@@ -3318,37 +3393,64 @@ if (mapCount >= 1) unlockAchievement('map_1');
 if (typesUsed.size >= 6) unlockAchievement('all_types');
 if (totalCiphers >= 10) unlockAchievement('dedicated');
 if (totalCiphers >= 30) unlockAchievement('veteran');
+if (totalCiphers >= 36) unlockAchievement('centurion');
+
+// ── МОРЗЕ БЕЗ ОШИБОК ──────────────────────────
+if (context.morseCorrectNoError) {
+  state._morsePerfect = (state._morsePerfect || 0) + 1;
+  if (state._morsePerfect >= 3) unlockAchievement('morse_perfect');
+}
+
+// ── ВРЕМЯ ИГРЫ ─────────────────────────────────
 const h = new Date().getHours();
 if (h >= 23 || h < 6) unlockAchievement('night_owl');
 if (h >= 5 && h < 8) unlockAchievement('early_bird');
+if (h >= 8 && h < 15) unlockAchievement('school_time');
+const day = new Date().getDay();
+if (day === 0 || day === 6) unlockAchievement('weekend');
+
+// ── ПЕРВЫЕ РЕШЕНИЯ ─────────────────────────────
 if (context.firstTry) unlockAchievement('first_try');
+if (context.quizCorrect) {
+  unlockAchievement('first_quiz');
+  state._quizCorrect = (state._quizCorrect || 0) + 1;
+  if (state._quizCorrect >= 5) unlockAchievement('quiz_5');
+  if (state._quizCorrect >= 10) unlockAchievement('quiz_10');
+}
+if (context.mathCorrect) unlockAchievement('first_math');
+if (context.anagramCorrect) unlockAchievement('first_anagram');
+if (context.mapCorrect) { unlockAchievement('first_map_t'); unlockAchievement('gomel_map'); }
+
+// ── ЖИЗНИ ──────────────────────────────────────
 if (context.survived1) unlockAchievement('survivor');
+if (state.lives === 1 && done > 0) unlockAchievement('one_life');
+if (state.lives === 5 && context.chapterDoneNoErrors) {
+  unlockAchievement('full_lives');
+  state._fullLivesChapters = (state._fullLivesChapters||0)+1;
+  if (state._fullLivesChapters >= 2) unlockAchievement('iron_heart');
+}
+
+// ── ВОЗВРАЩЕНИЕ ────────────────────────────────
 if (context.comeback) unlockAchievement('comeback');
-if (context.retryWin) unlockAchievement('comeback_ch');
+if (context.retryWin) { unlockAchievement('comeback_ch'); unlockAchievement('retry_win'); }
+if ((state._retryWins||0) >= 2) unlockAchievement('comeback_3');
+
+// comeback_win: провалил 2 главы — и всё равно победил
+const totalFails = Object.values(state.chapterFailCounts||{}).reduce((a,b)=>a+b,0);
+if (totalFails >= 2 && done >= 6) unlockAchievement('comeback_win');
+
+// ── МЕТА ───────────────────────────────────────
 const achCount = Object.keys(state.achievements || {}).length;
 if (achCount >= 10) unlockAchievement('collector');
 if (achCount >= 20) unlockAchievement('ach_20');
 if (achCount >= 30) unlockAchievement('ach_30');
+if (achCount >= 50) unlockAchievement('ach_50');
 if (achCount >= 100) unlockAchievement('all_100');
-if (state.completedChapters[1]) unlockAchievement('hoiki_1');
-if (done >= 1 && context.quizCorrect) unlockAchievement('first_quiz');
-if (context.quizCorrect) { state._quizCorrect = (state._quizCorrect || 0) + 1; if (state._quizCorrect >= 5) unlockAchievement('quiz_5'); if (state._quizCorrect >= 10) unlockAchievement('quiz_10'); }
-if (context.mathCorrect) unlockAchievement('first_math');
-if (context.anagramCorrect) unlockAchievement('first_anagram');
-if (context.mapCorrect) unlockAchievement('first_map_t');
-if (context.elapsed <= 3) unlockAchievement('speed_any');
-if (context.elapsed <= 5 && !achs.no_wrong_1) unlockAchievement('no_wrong_1');
-if (context.morseFast) unlockAchievement('speed_morse');
-const hour = new Date().getHours();
-if (hour >= 8 && hour < 15) unlockAchievement('school_time');
-const day = new Date().getDay();
-if (day === 0 || day === 6) unlockAchievement('weekend');
-if (state.lives === 1 && context.chapterDoneNoErrors === false && done > 0) unlockAchievement('one_life');
-if (context.retryWin) unlockAchievement('retry_win');
-if (context.shared) unlockAchievement('shared');
-if (done >= 6) unlockAchievement('defender');
-if (done >= 6 && (state._perfectChapters || 0) >= 6 && (state._noHintChapters || 0) >= 6) unlockAchievement('true_hero');
+
+// ── ФИНАЛЬНЫЕ ──────────────────────────────────
+if (done >= 6) { unlockAchievement('defender'); unlockAchievement('peacekeeper'); }
 if (done >= 6 && context.readAllFacts) unlockAchievement('memory');
+if (context.shared) unlockAchievement('shared');
 }
 
 function showMyStats() {
@@ -3547,7 +3649,8 @@ window._adminMode = state.adminMode;
   window._chapterSchedule = schedMap;
 }
 
-// Синхронизируем прогресс
+// Синхронизируем прогресс — принудительно применяем если БД-счёт ниже локального
+// (включая сброс до 0 администратором)
 if (typeof data.score === 'number' && data.score < state.totalScore) {
   const savedAdminMode = state.adminMode;
   state.totalScore = data.score;
@@ -3556,8 +3659,25 @@ if (typeof data.score === 'number' && data.score < state.totalScore) {
   state.chapterScores = {};
   state.gameOver = data.game_over || false;
   state.adminMode = savedAdminMode;
+  // Если сброс до нуля — сбрасываем и достижения
+  if (data.score === 0 && (data.completed || 0) === 0) {
+    state.achievements = {};
+    state.achievementPts = 0;
+    state._fastAnswers = 0;
+    state._perfectChapters = 0;
+    state._noHintChapters = 0;
+    state._quizCorrect = 0;
+    state.chapterStats = {};
+    state.chapterFailCounts = {};
+    state.repeatRuns = {};
+    state.streak = 0;
+    state.lives = 5;
+  }
   try { localStorage.removeItem(storageKey()); } catch(e2) {}
   saveState();
+  renderChapters();
+  updateStatusBars();
+  showToast('🔄 Прогресс синхронизирован', 2000);
 }
 
 renderChapters();

@@ -1473,7 +1473,7 @@ def clear_restart_mode(user_id):
 
 
 def reset_all_game_results():
-    """Сбрасывает прогресс всех игроков (обнуляет, не удаляет)."""
+    """Сбрасывает прогресс всех игроков (обнуляет, не удаляет), включая достижения."""
     conn = None
     try:
         conn = get_connection()
@@ -1481,9 +1481,13 @@ def reset_all_game_results():
         cur.execute("""
             UPDATE game_results
             SET chapter=0, score=0, total_score=0, completed=0,
-                game_over=FALSE, failed=FALSE, updated_at=NOW()
+                game_over=FALSE, failed=FALSE,
+                achievement_count=0, achievement_pts=0,
+                updated_at=NOW()
         """)
         updated = cur.rowcount
+        # Также закрываем все индивидуально открытые главы
+        cur.execute("DELETE FROM player_chapter_access")
         conn.commit()
         return updated
     except Exception as e:
@@ -2277,7 +2281,7 @@ def get_player_chapter_access_map(user_id: int) -> set:
 
 
 def reset_game_result_full(user_id: int) -> bool:
-    """Полный сброс игрока: обнуляет прогресс И закрывает все индивидуальные главы."""
+    """Полный сброс игрока: обнуляет прогресс, достижения И закрывает все индивидуальные главы."""
     conn = None
     try:
         conn = get_connection()
@@ -2285,7 +2289,9 @@ def reset_game_result_full(user_id: int) -> bool:
         cur.execute("""
             UPDATE game_results
             SET chapter=0, score=0, total_score=0, completed=0,
-                game_over=FALSE, failed=FALSE, restart_mode=NULL, updated_at=NOW()
+                game_over=FALSE, failed=FALSE, restart_mode=NULL,
+                achievement_count=0, achievement_pts=0,
+                updated_at=NOW()
             WHERE user_id=%s
         """, (user_id,))
         cur.execute('DELETE FROM player_chapter_access WHERE user_id = %s', (user_id,))
