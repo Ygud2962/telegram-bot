@@ -2206,261 +2206,414 @@ if (!_audioCtx) { try { _audioCtx = new (window.AudioContext || window.webkitAud
 return _audioCtx;
 }
 
-// ══════════════════════════════════════════════════════
-//  EPIC MUSIC ENGINE — 4 TRACKS
-// ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+//  EPIC MUSIC ENGINE v3 — Modern Cinematic Procedural Soundtracks
+//  Стиль: Hans Zimmer / Two Steps From Hell / Audiomachine
+// ══════════════════════════════════════════════════════════════════
+
 const BGM_TRACKS = [
   {
     id: 0,
-    name: '⚔️ Марш разведчика',
-    desc: 'Тревожный марш, нарастающее напряжение',
+    name: '⚔️ Тёмный герой',
+    desc: 'Мощный эпик в стиле Hans Zimmer — мурашки с первых секунд',
     build: function(ctx, master) {
-      // Ominous slow march — low ostinato + string swells + war drums
-      const bpm = 72; const beat = 60 / bpm;
-      let t = ctx.currentTime + 0.1;
+      // DARK HERO — heavy ostinato bass, choir-like pads, epic brass hits, war drums
+      // Key: D minor, BPM: 80
+      const BPM = 80, B = 60/BPM;
+
+      function note(freq, type, startT, dur, vol, attack=0.02, release=0.15) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = type; o.frequency.value = freq;
+        g.gain.setValueAtTime(0, startT);
+        g.gain.linearRampToValueAtTime(vol, startT + attack);
+        g.gain.setValueAtTime(vol, startT + dur - release);
+        g.gain.linearRampToValueAtTime(0, startT + dur);
+        o.connect(g); g.connect(master);
+        o.start(startT); o.stop(startT + dur + 0.05);
+      }
+
+      function noise(startT, dur, vol, lpFreq=800, hpFreq=200) {
+        const bufLen = Math.floor(ctx.sampleRate * dur);
+        const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/bufLen, 1.2);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=lpFreq;
+        const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=hpFreq;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(vol, startT);
+        g.gain.exponentialRampToValueAtTime(0.001, startT + dur);
+        src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
+        src.start(startT); src.stop(startT + dur + 0.05);
+      }
+
       const loop = () => {
         if (!_bgmMaster) return;
-        const now = ctx.currentTime;
-        // Bass ostinato: E2-E2-G2-E2 repeating
-        const bassNotes = [82.41, 82.41, 97.99, 82.41, 77.78, 82.41, 92.50, 82.41];
-        bassNotes.forEach((f, i) => {
-          const o = ctx.createOscillator(); const g = ctx.createGain();
-          o.type = 'sawtooth'; o.frequency.value = f;
-          const at = now + i * beat * 0.5;
-          g.gain.setValueAtTime(0, at);
-          g.gain.linearRampToValueAtTime(0.28, at + 0.04);
-          g.gain.exponentialRampToValueAtTime(0.001, at + beat * 0.45);
-          o.connect(g); g.connect(master);
-          o.start(at); o.stop(at + beat * 0.5);
+        const N = ctx.currentTime + 0.05;
+
+        // ── Контрабас-остинато (D2–A2–F2–C2) ──
+        const bassLine = [73.42,73.42,110,73.42, 87.31,73.42,65.41,73.42];
+        bassLine.forEach((f,i) => {
+          note(f, 'sawtooth', N+i*B*0.5, B*0.45, 0.18, 0.01, 0.08);
+          // Sub octave
+          note(f/2, 'sine', N+i*B*0.5, B*0.45, 0.12, 0.01, 0.12);
         });
-        // Brass stabs: Am chord hits
-        const brass = [220, 261.63, 329.63];
-        [0, 2, 4, 6].forEach(i => {
-          brass.forEach(f => {
-            const o = ctx.createOscillator(); const g = ctx.createGain();
-            o.type = 'square'; o.frequency.value = f;
-            const at = now + i * beat * 0.5;
-            g.gain.setValueAtTime(0, at);
-            g.gain.linearRampToValueAtTime(0.09, at + 0.02);
-            g.gain.exponentialRampToValueAtTime(0.001, at + 0.35);
-            o.connect(g); g.connect(master);
-            o.start(at); o.stop(at + 0.4);
+
+        // ── Хоровые пэды (Dm–Am–Bb–Gm) ──
+        const padChords = [
+          [146.83, 174.61, 220, 261.63],   // Dm
+          [110,    146.83, 220, 261.63],   // Am
+          [116.54, 146.83, 174.61, 233.08],// Bb
+          [98,     146.83, 174.61, 220],   // Gm
+        ];
+        padChords.forEach((chord, ci) => {
+          const t = N + ci * B * 2;
+          chord.forEach(f => {
+            note(f, 'triangle', t, B*2.2, 0.04, 0.3, 0.4);
+            note(f*2, 'sine',   t, B*2.2, 0.025, 0.4, 0.5);
           });
         });
-        // Snare/drum on beats 2 and 4
-        [1,3,5,7].forEach(i => {
-          const bufSize = ctx.sampleRate * 0.12;
-          const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-          const d = buf.getChannelData(0);
-          for(let k=0;k<bufSize;k++) d[k] = (Math.random()*2-1) * Math.pow(1-k/bufSize, 3);
-          const src = ctx.createBufferSource(); const g = ctx.createGain();
-          const filt = ctx.createBiquadFilter(); filt.type='highpass'; filt.frequency.value=600;
-          src.buffer = buf;
-          const at = now + i * beat * 0.5;
-          g.gain.setValueAtTime(0.22, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.12);
-          src.connect(filt); filt.connect(g); g.connect(master);
-          src.start(at); src.stop(at + 0.13);
-        });
-        // Swelling strings (pad) on every 2 beats
-        [0, 4].forEach(i => {
-          [220, 277.18, 329.63, 440].forEach((f, j) => {
-            const o = ctx.createOscillator(); const g = ctx.createGain();
-            o.type = 'triangle'; o.frequency.value = f;
-            const at = now + i * beat * 0.5;
-            g.gain.setValueAtTime(0, at);
-            g.gain.linearRampToValueAtTime(0.04 - j*0.007, at + beat);
-            g.gain.linearRampToValueAtTime(0, at + beat*4);
-            o.connect(g); g.connect(master);
-            o.start(at); o.stop(at + beat*4.1);
+
+        // ── Медные духовые (брасс-удары) ──
+        const brassHits = [
+          {t:0,   freqs:[146.83,220,293.66]},
+          {t:B*2, freqs:[110,   164.81,220]},
+          {t:B*4, freqs:[116.54,174.61,233.08]},
+          {t:B*6, freqs:[98,    146.83,196]},
+        ];
+        brassHits.forEach(h => {
+          h.freqs.forEach(f => {
+            note(f*2, 'square', N+h.t, B*0.6, 0.07, 0.015, 0.2);
+            note(f*2, 'sawtooth', N+h.t, B*0.6, 0.04, 0.015, 0.2);
           });
         });
-        t = now + bassNotes.length * beat * 0.5;
-        _bgmInterval = setTimeout(loop, (bassNotes.length * beat * 0.5 - 0.1) * 1000);
+
+        // ── Военные барабаны ──
+        // Kick on 1, 3, 5, 7
+        [0,2,4,6].forEach(i => noise(N+i*B*0.5, 0.28, 0.45, 120, 30));
+        // Snare on 2, 6
+        [1,5].forEach(i => noise(N+i*B*0.5, 0.15, 0.32, 3000, 500));
+        // Hi-hat 8th notes
+        for (let i=0; i<16; i++) noise(N+i*B*0.25, 0.06, 0.08, 12000, 6000);
+
+        // ── Виолончельное пиццикато ──
+        [0,3,4,7].forEach(i => note(73.42*(i%2===0?1:1.5), 'triangle', N+i*B*0.5, B*0.3, 0.06, 0.005, 0.1));
+
+        _bgmInterval = setTimeout(loop, B*8*1000 - 80);
       };
       loop();
     }
   },
+
   {
     id: 1,
-    name: '🌑 Тёмная ночь фронта',
-    desc: 'Глубокая тревога, медленное нарастание',
+    name: '🌌 Рассвет победы',
+    desc: 'Торжественный кинематографический эпик — нарастание и мурашки',
     build: function(ctx, master) {
-      // Slow dark ambient — deep drones + haunting melody
+      // DAWN OF VICTORY — Two Steps from Hell style: slow build, epic swell
+      // Key: C minor → C major resolve, BPM: 66
+      const BPM = 66, B = 60/BPM;
+
+      function chord(freqs, startT, dur, vol, type='triangle', attack=0.4, release=0.5) {
+        freqs.forEach(f => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = type; o.frequency.value = f;
+          g.gain.setValueAtTime(0, startT);
+          g.gain.linearRampToValueAtTime(vol, startT + attack);
+          g.gain.setValueAtTime(vol, startT + dur - release);
+          g.gain.linearRampToValueAtTime(0, startT + dur);
+          o.connect(g); g.connect(master);
+          o.start(startT); o.stop(startT + dur + 0.05);
+        });
+      }
+
+      function heroMelody(startT) {
+        // C minor heroic melody: C4-Eb4-G4-C5-Bb4-G4-Ab4-G4-F4-G4-C5
+        const mel = [
+          {f:261.63, d:B*1.5}, {f:311.13, d:B},    {f:392, d:B},
+          {f:523.25, d:B*2},   {f:466.16, d:B},    {f:392, d:B},
+          {f:415.30, d:B*1.5}, {f:392, d:B},       {f:349.23, d:B},
+          {f:392, d:B},        {f:523.25, d:B*2.5},
+        ];
+        let t = startT;
+        mel.forEach(n => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'triangle'; o.frequency.value = n.f;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.13, t + 0.08);
+          g.gain.setValueAtTime(0.13, t + n.d - 0.12);
+          g.gain.linearRampToValueAtTime(0, t + n.d);
+          o.connect(g); g.connect(master);
+          o.start(t); o.stop(t + n.d + 0.05);
+          // Октавное удвоение
+          const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+          o2.type = 'sine'; o2.frequency.value = n.f * 2;
+          g2.gain.setValueAtTime(0, t);
+          g2.gain.linearRampToValueAtTime(0.055, t + 0.12);
+          g2.gain.linearRampToValueAtTime(0, t + n.d);
+          o2.connect(g2); g2.connect(master);
+          o2.start(t); o2.stop(t + n.d + 0.05);
+          t += n.d;
+        });
+      }
+
+      function timpani(startT, freq, vol) {
+        const bufLen = Math.floor(ctx.sampleRate * 0.5);
+        const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i=0; i<bufLen; i++) d[i] = (Math.random()*2-1)*0.4*Math.pow(1-i/bufLen,0.8) + Math.sin(i/bufLen*Math.PI*freq*0.03)*0.6*Math.pow(1-i/bufLen,1.2);
+        const src = ctx.createBufferSource(), g = ctx.createGain();
+        src.buffer = buf;
+        g.gain.setValueAtTime(vol, startT);
+        g.gain.exponentialRampToValueAtTime(0.001, startT + 0.5);
+        src.connect(g); g.connect(master);
+        src.start(startT); src.stop(startT + 0.55);
+      }
+
       const loop = () => {
         if (!_bgmMaster) return;
-        const now = ctx.currentTime;
-        // Deep drone chord: Dm — D2, A2, F3
-        const drones = [73.42, 110, 174.61, 220];
-        drones.forEach((f, i) => {
-          const o = ctx.createOscillator(); const g = ctx.createGain();
-          o.type = i % 2 === 0 ? 'sawtooth' : 'triangle';
-          o.frequency.setValueAtTime(f, now);
-          o.frequency.linearRampToValueAtTime(f * 1.002, now + 4);
-          g.gain.setValueAtTime(0, now);
-          g.gain.linearRampToValueAtTime(0.055 - i*0.01, now + 1.2);
-          g.gain.setValueAtTime(0.055 - i*0.01, now + 5);
-          g.gain.linearRampToValueAtTime(0, now + 7);
+        const N = ctx.currentTime + 0.05;
+        const loopLen = B * 12;
+
+        // Струнные пэды — медленные аккорды
+        chord([130.81,164.81,196,261.63],    N,        B*3, 0.055, 'triangle', 0.5, 0.6); // Cm
+        chord([146.83,196,246.94,293.66],    N+B*3,    B*3, 0.055, 'triangle', 0.5, 0.6); // Gm
+        chord([116.54,155.56,185,233.08],    N+B*6,    B*3, 0.06,  'triangle', 0.5, 0.6); // Bb
+        chord([130.81,174.61,207.65,261.63], N+B*9,    B*3, 0.07,  'triangle', 0.5, 0.6); // Cm/G
+
+        // Медные — брасс свеллы на каждый аккорд
+        chord([261.63,392,523.25],           N,        B*2.5, 0.05, 'square', 0.3, 0.6);
+        chord([293.66,392,587.33],           N+B*3,    B*2.5, 0.05, 'square', 0.3, 0.6);
+        chord([233.08,349.23,466.16],        N+B*6,    B*2.5, 0.055,'square', 0.3, 0.6);
+        chord([261.63,392,523.25],           N+B*9,    B*2.5, 0.065,'square', 0.3, 0.6);
+
+        // Героическая мелодия (с 3-го такта)
+        heroMelody(N + B);
+
+        // Тимпани
+        timpani(N, 65, 0.5);
+        timpani(N+B*3, 73, 0.45);
+        timpani(N+B*6, 65, 0.5);
+        timpani(N+B*9, 73, 0.55);
+        timpani(N+B*11, 65, 0.6);
+
+        // Контрабас
+        [0,1,2,3,4,5,6,7,8,9,10,11].forEach(i => {
+          const bassF = [130.81,130.81,146.83,130.81, 116.54,116.54,110,116.54, 130.81,130.81,130.81,130.81][i];
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'sawtooth'; o.frequency.value = bassF;
+          const t = N + i*B;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.14, t+0.05);
+          g.gain.exponentialRampToValueAtTime(0.001, t+B*0.85);
           o.connect(g); g.connect(master);
-          o.start(now); o.stop(now + 7.1);
+          o.start(t); o.stop(t + B);
         });
-        // Haunting melody: D-F-A-C-A-G-F-E (natural minor)
-        const mel = [293.66,349.23,440,523.25,440,392,349.23,329.63];
-        mel.forEach((f, i) => {
-          const o = ctx.createOscillator(); const g = ctx.createGain();
-          o.type = 'sine';
-          const at = now + 1.5 + i * 0.72;
-          o.frequency.setValueAtTime(f, at);
-          g.gain.setValueAtTime(0, at);
-          g.gain.linearRampToValueAtTime(0.07, at + 0.18);
-          g.gain.exponentialRampToValueAtTime(0.001, at + 0.65);
-          o.connect(g); g.connect(master);
-          o.start(at); o.stop(at + 0.7);
-        });
-        // Low pulse bass
-        [0,1,2,3,4,5,6].forEach(i => {
-          const o = ctx.createOscillator(); const g = ctx.createGain();
-          o.type = 'sine'; o.frequency.value = 73.42;
-          const at = now + i * 1.0;
-          g.gain.setValueAtTime(0.18, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.9);
-          o.connect(g); g.connect(master);
-          o.start(at); o.stop(at + 0.95);
-        });
-        _bgmInterval = setTimeout(loop, 6800);
+
+        _bgmInterval = setTimeout(loop, loopLen*1000 - 100);
       };
       loop();
     }
   },
+
   {
     id: 2,
-    name: '🔥 Час расплаты',
-    desc: 'Эпический нарастающий боевой марш',
+    name: '🔥 Сердце войны',
+    desc: 'Агрессивный боевой ритм — адреналин и напряжение',
     build: function(ctx, master) {
-      // Epic battle march — ostinato + power chords + timpani rolls
-      const bpm = 90; const beat = 60/bpm;
+      // HEART OF WAR — aggressive battle theme, pounding drums, dark ostinato
+      // Key: E minor, BPM: 95
+      const BPM = 95, B = 60/BPM;
+
+      function drum(startT, freq, dur, vol, type='kick') {
+        const bufLen = Math.floor(ctx.sampleRate * dur);
+        const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        if (type === 'kick') {
+          for (let i=0;i<bufLen;i++) d[i]=Math.sin(i/bufLen*Math.PI*2*freq*Math.pow(1-i/bufLen,3))*Math.pow(1-i/bufLen,1.2)*0.9 + (Math.random()*2-1)*0.1*Math.pow(1-i/bufLen,3);
+        } else if (type === 'snare') {
+          for (let i=0;i<bufLen;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,1.5)*0.8 + Math.sin(i/bufLen*200)*0.2*Math.pow(1-i/bufLen,2);
+        } else {
+          for (let i=0;i<bufLen;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,3);
+        }
+        const src = ctx.createBufferSource(), g = ctx.createGain();
+        src.buffer = buf;
+        g.gain.setValueAtTime(vol, startT);
+        g.gain.exponentialRampToValueAtTime(0.001, startT+dur);
+        const filt = ctx.createBiquadFilter();
+        if (type==='hihat') { filt.type='highpass'; filt.frequency.value=8000; }
+        else { filt.type='lowpass'; filt.frequency.value=type==='kick'?200:3000; }
+        src.connect(filt); filt.connect(g); g.connect(master);
+        src.start(startT); src.stop(startT+dur+0.02);
+      }
+
       const loop = () => {
         if (!_bgmMaster) return;
-        const now = ctx.currentTime;
-        // Timpani/kick: every beat
-        for(let i=0;i<8;i++) {
-          const bufSize = Math.floor(ctx.sampleRate * 0.25);
-          const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-          const d = buf.getChannelData(0);
-          for(let k=0;k<bufSize;k++) d[k] = (Math.random()*2-1)*Math.pow(1-k/bufSize,2)*0.7 + Math.sin(k/bufSize*Math.PI*80)*0.3*Math.pow(1-k/bufSize,1.5);
-          const src = ctx.createBufferSource(); const g = ctx.createGain();
-          const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=200;
-          src.buffer=buf;
-          const at = now + i*beat;
-          g.gain.setValueAtTime(i===0||i===4?0.55:0.3, at);
-          g.gain.exponentialRampToValueAtTime(0.001, at+0.22);
-          src.connect(filt); filt.connect(g); g.connect(master);
-          src.start(at); src.stop(at+0.25);
+        const N = ctx.currentTime + 0.05;
+
+        // ── Тяжёлые барабаны (16 восьмых) ──
+        for (let i=0; i<16; i++) {
+          // Kick: 1, 3, 7, 9, 13
+          if ([0,2,6,8,12].includes(i)) drum(N+i*B*0.5, 55, 0.3, 0.6, 'kick');
+          // Snare: 4, 12
+          if ([4,12].includes(i)) drum(N+i*B*0.5, 220, 0.18, 0.5, 'snare');
+          // Hi-hat every 8th
+          drum(N+i*B*0.5, 0, 0.08, i%2===0?0.15:0.08, 'hihat');
         }
-        // Snare on 3 and 7
-        [2,6].forEach(i => {
-          const bufSize = Math.floor(ctx.sampleRate*0.15);
-          const buf=ctx.createBuffer(1,bufSize,ctx.sampleRate);
-          const d=buf.getChannelData(0);
-          for(let k=0;k<bufSize;k++) d[k]=(Math.random()*2-1)*Math.pow(1-k/bufSize,2);
-          const src=ctx.createBufferSource(); const g=ctx.createGain();
-          const filt=ctx.createBiquadFilter(); filt.type='bandpass'; filt.frequency.value=2000; filt.Q.value=0.8;
-          src.buffer=buf;
-          const at=now+i*beat;
-          g.gain.setValueAtTime(0.3,at); g.gain.exponentialRampToValueAtTime(0.001,at+0.14);
-          src.connect(filt); filt.connect(g); g.connect(master);
-          src.start(at); src.stop(at+0.15);
+
+        // ── Остинато в стиле Inception ──
+        // E2-E2-G2-B2-A2-G2-F#2-E2 с октавой ниже
+        const ost = [82.41,82.41,98,123.47,110,98,92.50,82.41];
+        ost.forEach((f,i) => {
+          const t = N + i*B*0.5;
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'sawtooth'; o.frequency.value = f;
+          g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.20,t+0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t+B*0.45);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t+B*0.5);
+          // Sub bass
+          const o2=ctx.createOscillator(),g2=ctx.createGain();
+          o2.type='sine'; o2.frequency.value=f/2;
+          g2.gain.setValueAtTime(0.14,t); g2.gain.exponentialRampToValueAtTime(0.001,t+B*0.45);
+          o2.connect(g2); g2.connect(master); o2.start(t); o2.stop(t+B*0.5);
         });
-        // Power chord stabs (Em): E2-B2-E3-G3
-        const chords = [[82.41,123.47,164.81,196],[110,164.81,220,261.63]];
-        [0,2,4,6].forEach((beat_i, j) => {
-          const chord = chords[j%2];
-          chord.forEach(f => {
-            const o=ctx.createOscillator(); const g=ctx.createGain();
-            o.type='sawtooth'; o.frequency.value=f;
-            const at=now+beat_i*beat;
-            g.gain.setValueAtTime(0,at);
-            g.gain.linearRampToValueAtTime(0.12,at+0.03);
-            g.gain.exponentialRampToValueAtTime(0.001,at+beat*1.8);
-            o.connect(g); g.connect(master);
-            o.start(at); o.stop(at+beat*1.9);
+
+        // ── Брасс паверы (E-minor chord hits) ──
+        const brass = [164.81, 246.94, 329.63, 392];
+        [0,2,4,6].forEach((bi,j) => {
+          const t = N + bi*B*0.5;
+          brass.forEach(f => {
+            const o=ctx.createOscillator(),g=ctx.createGain();
+            o.type='square'; o.frequency.value=f*(j%2===0?2:1.5);
+            g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.06,t+0.025);
+            g.gain.exponentialRampToValueAtTime(0.001,t+B*0.7);
+            o.connect(g); g.connect(master); o.start(t); o.stop(t+B*0.75);
           });
         });
-        // Epic brass melody: E-G-A-B-A-G-E (Phrygian)
-        const mel=[164.81,196,220,246.94,220,196,164.81,174.61];
-        mel.forEach((f,i)=>{
-          const o=ctx.createOscillator(); const g=ctx.createGain();
-          o.type='square'; o.frequency.value=f*2;
-          const at=now+i*beat;
-          g.gain.setValueAtTime(0,at);
-          g.gain.linearRampToValueAtTime(0.065,at+0.05);
-          g.gain.exponentialRampToValueAtTime(0.001,at+beat*0.85);
-          o.connect(g); g.connect(master);
-          o.start(at); o.stop(at+beat*0.9);
+
+        // ── Тревожные виолончели (arpeggio) ──
+        const arp = [164.81,196,246.94,329.63,246.94,196,246.94,329.63];
+        arp.forEach((f,i) => {
+          const t = N + i*B*0.5;
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.type='triangle'; o.frequency.value=f;
+          g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.07,t+0.03);
+          g.gain.exponentialRampToValueAtTime(0.001,t+B*0.4);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t+B*0.45);
         });
-        _bgmInterval = setTimeout(loop, beat*8*1000-100);
+
+        _bgmInterval = setTimeout(loop, B*8*1000 - 80);
       };
       loop();
     }
   },
+
   {
     id: 3,
-    name: '🕯️ Память и победа',
-    desc: 'Торжественная лирическая тема победы',
+    name: '🕯️ Вечная память',
+    desc: 'Торжественный гимн Победы — слёзы и гордость',
     build: function(ctx, master) {
-      // Solemn triumphant — major key, slow hymn, goosebumps guaranteed
+      // ETERNAL MEMORY — slow, majestic, deeply emotional
+      // Key: D major (resolve from minor), BPM: 58
+      const BPM = 58, B = 60/BPM;
+
+      function stringPad(freq, startT, dur, vol) {
+        // Rich string simulation: multiple detuned saws
+        [-0.5, 0, 0.5].forEach(detune => {
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.type='sawtooth'; o.frequency.value=freq*(1+detune*0.002);
+          g.gain.setValueAtTime(0,startT);
+          g.gain.linearRampToValueAtTime(vol/3,startT+0.6);
+          g.gain.setValueAtTime(vol/3,startT+dur-0.7);
+          g.gain.linearRampToValueAtTime(0,startT+dur);
+          o.connect(g); g.connect(master); o.start(startT); o.stop(startT+dur+0.05);
+        });
+      }
+
       const loop = () => {
         if (!_bgmMaster) return;
-        const now = ctx.currentTime;
-        // Hymn melody in C major: C-E-G-C-B-G-A-F-G-E
-        const mel=[261.63,329.63,392,523.25,493.88,392,440,349.23,392,329.63];
-        const durs=[1.0, 0.8, 0.8, 1.2, 0.8, 0.8, 1.0, 0.8, 0.8, 1.6];
-        let t=now+0.3;
-        mel.forEach((f,i)=>{
-          // Main voice
-          const o=ctx.createOscillator(); const g=ctx.createGain();
+        const N = ctx.currentTime + 0.05;
+        const loopLen = B * 16;
+
+        // ── Струнный хор — D major прогрессия ──
+        // D – Bm – G – A – D – F#m – Bm – A–D
+        const progression = [
+          {freqs:[146.83,185,220,293.66], t:0},    // D
+          {freqs:[123.47,185,246.94,293.66], t:B*2},// Bm
+          {freqs:[98,146.83,196,246.94], t:B*4},    // G
+          {freqs:[110,164.81,220,293.66], t:B*6},   // A
+          {freqs:[146.83,185,220,293.66], t:B*8},   // D
+          {freqs:[123.47,155.56,185,246.94], t:B*10},// F#m
+          {freqs:[123.47,185,246.94,293.66], t:B*12},// Bm
+          {freqs:[110,146.83,220,293.66], t:B*14},  // A
+        ];
+        progression.forEach(c => {
+          c.freqs.forEach(f => {
+            stringPad(f, N+c.t, B*2.1, 0.055);
+            stringPad(f*2, N+c.t, B*2.1, 0.025);
+          });
+        });
+
+        // ── Гимн-мелодия (D major, торжественная) ──
+        // D4-F#4-A4-D5 | C#5-A4-B4-G4 | A4-D4-F#4-A4 | G4-E4-F#4-D4
+        const hymn = [
+          [293.66,B],[369.99,B],[440,B],[587.33,B*1.5],
+          [554.37,B*0.5],[440,B],[493.88,B],[392,B*1.5],
+          [440,B*0.5],[293.66,B],[369.99,B],[440,B*1.5],
+          [392,B*0.5],[329.63,B],[369.99,B],[293.66,B*2.5],
+        ];
+        let t = N + B*0.25;
+        hymn.forEach(([f,d]) => {
+          const o=ctx.createOscillator(),g=ctx.createGain();
           o.type='triangle'; o.frequency.value=f;
-          g.gain.setValueAtTime(0,t);
-          g.gain.linearRampToValueAtTime(0.11,t+0.12);
-          g.gain.setValueAtTime(0.11,t+durs[i]-0.15);
-          g.gain.linearRampToValueAtTime(0,t+durs[i]);
-          o.connect(g); g.connect(master);
-          o.start(t); o.stop(t+durs[i]+0.05);
-          // Harmony (third above)
-          const harm=[329.63,415.30,493.88,659.25,622.25,493.88,554.37,440,493.88,415.30];
-          const o2=ctx.createOscillator(); const g2=ctx.createGain();
-          o2.type='sine'; o2.frequency.value=harm[i];
-          g2.gain.setValueAtTime(0,t);
-          g2.gain.linearRampToValueAtTime(0.055,t+0.18);
-          g2.gain.linearRampToValueAtTime(0,t+durs[i]);
-          o2.connect(g2); g2.connect(master);
-          o2.start(t); o2.stop(t+durs[i]+0.05);
-          t+=durs[i];
+          g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.14,t+0.1);
+          g.gain.setValueAtTime(0.14,t+d-0.15); g.gain.linearRampToValueAtTime(0,t+d);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t+d+0.05);
+          // Унисон с флейтой
+          const o2=ctx.createOscillator(),g2=ctx.createGain();
+          o2.type='sine'; o2.frequency.value=f*2;
+          g2.gain.setValueAtTime(0,t); g2.gain.linearRampToValueAtTime(0.06,t+0.15);
+          g2.gain.linearRampToValueAtTime(0,t+d);
+          o2.connect(g2); g2.connect(master); o2.start(t); o2.stop(t+d+0.05);
+          t+=d;
         });
-        // Bass countermelody
-        const bass=[130.81,130.81,146.83,130.81,123.47,130.81,138.59,130.81];
-        const beatLen=0.9;
-        bass.forEach((f,i)=>{
-          const o=ctx.createOscillator(); const g=ctx.createGain();
-          o.type='sawtooth'; o.frequency.value=f;
-          const at=now+i*beatLen;
-          g.gain.setValueAtTime(0,at);
-          g.gain.linearRampToValueAtTime(0.065,at+0.15);
-          g.gain.exponentialRampToValueAtTime(0.001,at+beatLen*0.85);
-          o.connect(g); g.connect(master);
-          o.start(at); o.stop(at+beatLen*0.9);
+
+        // ── Орган / Хор (долгий пэд) ──
+        [146.83,185,220,277.18,369.99].forEach((f,i) => {
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.type='triangle'; o.frequency.value=f;
+          g.gain.setValueAtTime(0,N); g.gain.linearRampToValueAtTime(0.035-i*0.005,N+2);
+          g.gain.setValueAtTime(0.035-i*0.005,N+loopLen-2); g.gain.linearRampToValueAtTime(0,N+loopLen);
+          o.connect(g); g.connect(master); o.start(N); o.stop(N+loopLen+0.05);
         });
-        // Pad/strings sustain (C major chord)
-        [130.81,164.81,196,261.63].forEach((f,i)=>{
-          const o=ctx.createOscillator(); const g=ctx.createGain();
-          o.type='sine'; o.frequency.value=f;
-          g.gain.setValueAtTime(0,now);
-          g.gain.linearRampToValueAtTime(0.04-i*0.006,now+2);
-          g.gain.setValueAtTime(0.04-i*0.006,now+6);
-          g.gain.linearRampToValueAtTime(0,now+9);
-          o.connect(g); g.connect(master);
-          o.start(now); o.stop(now+9.1);
+
+        // ── Торжественный контрабас ──
+        [0,2,4,6,8,10,12,14].forEach(i => {
+          const bassF=[146.83,123.47,98,110,146.83,123.47,110,110][i/2|0];
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.type='sawtooth'; o.frequency.value=bassF/2;
+          const t=N+i*B;
+          g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.12,t+0.1);
+          g.gain.exponentialRampToValueAtTime(0.001,t+B*1.8);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t+B*2);
         });
-        const loopLen = mel.reduce((a,_,i)=>a+durs[i],0)+0.5;
-        _bgmInterval = setTimeout(loop, loopLen*1000-200);
+
+        // ── Тимпани ──
+        [0,4,8,12,14,15].forEach(i => {
+          const bufLen=Math.floor(ctx.sampleRate*0.6);
+          const buf=ctx.createBuffer(1,bufLen,ctx.sampleRate);
+          const dd=buf.getChannelData(0);
+          const fq=[2,2,2,2,2.5,2][i/4|0]*20;
+          for(let k=0;k<bufLen;k++) dd[k]=(Math.random()*2-1)*0.35*Math.pow(1-k/bufLen,0.8)+Math.sin(k/bufLen*fq*Math.PI)*0.65*Math.pow(1-k/bufLen,1.4);
+          const src=ctx.createBufferSource(),g=ctx.createGain();
+          src.buffer=buf;
+          const vol=[0.4,0.35,0.4,0.45,0.5,0.65][i/4|0] || 0.4;
+          g.gain.setValueAtTime(vol,N+i*B); g.gain.exponentialRampToValueAtTime(0.001,N+i*B+0.6);
+          src.connect(g); g.connect(master); src.start(N+i*B); src.stop(N+i*B+0.65);
+        });
+
+        _bgmInterval = setTimeout(loop, loopLen*1000 - 100);
       };
       loop();
     }
@@ -2476,9 +2629,13 @@ if (_bgmInterval) {
 }
 if (_bgmMaster) {
   try {
-    _bgmMaster.gain.setValueAtTime(_bgmMaster.gain.value, _audioCtx?.currentTime || 0);
-    _bgmMaster.gain.linearRampToValueAtTime(0.001, (_audioCtx?.currentTime || 0) + 0.4);
-    setTimeout(() => { try { _bgmMaster && _bgmMaster.disconnect(); } catch(e){} _bgmMaster = null; }, 450);
+    const t = _audioCtx?.currentTime || 0;
+    _bgmMaster.gain.cancelScheduledValues(t);
+    _bgmMaster.gain.setValueAtTime(_bgmMaster.gain.value || 0.001, t);
+    _bgmMaster.gain.linearRampToValueAtTime(0.0001, t + 0.6);
+    const ref = _bgmMaster;
+    setTimeout(() => { try { ref.disconnect(); } catch(e){} }, 700);
+    _bgmMaster = null;
   } catch(e) { _bgmMaster = null; }
 }
 }
@@ -2489,13 +2646,14 @@ const ctx = getAudio();
 if (!ctx) return;
 if (_bgmInterval && _bgmMaster) return;
 try {
-  if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); }
+  if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   _bgmMaster = ctx.createGain();
-  const trackIdx = typeof state.selectedTrack === 'number' ? state.selectedTrack : 0;
-  const track = BGM_TRACKS[trackIdx] || BGM_TRACKS[0];
-  _bgmMaster.gain.setValueAtTime(0, ctx.currentTime);
-  _bgmMaster.gain.linearRampToValueAtTime(0.6, ctx.currentTime + 1.5);
+  // Fade in
+  _bgmMaster.gain.setValueAtTime(0.0001, ctx.currentTime);
+  _bgmMaster.gain.linearRampToValueAtTime(0.55, ctx.currentTime + 2.5);
   _bgmMaster.connect(ctx.destination);
+  const trackIdx = typeof state.selectedTrack === 'number' ? state.selectedTrack : 0;
+  const track = BGM_TRACKS[Math.min(trackIdx, BGM_TRACKS.length-1)];
   track.build(ctx, _bgmMaster);
 } catch(e) {
   console.warn('BGM error:', e);
@@ -2506,20 +2664,18 @@ try {
 function switchTrack(idx) {
 state.selectedTrack = idx;
 saveState();
-const wasPlaying = !!_bgmMaster;
+const wasPlaying = !!(_bgmMaster || _bgmInterval);
 stopBackgroundMusic(true);
 _bgmMaster = null; _bgmInterval = null;
 setTimeout(() => {
   if (wasPlaying && state.musicEnabled !== false) startBackgroundMusic();
   renderSettingsTab();
-}, 500);
+}, 700);
 }
 
 function updateAudioButtons() {
 const musicBtn = document.getElementById('btn-toggle-music');
-if (musicBtn) {
-  musicBtn.textContent = state.musicEnabled === false ? '🎵 МУЗЫКА: OFF' : '🎵 МУЗЫКА: ON';
-}
+if (musicBtn) musicBtn.textContent = state.musicEnabled === false ? '🎵 МУЗЫКА: OFF' : '🎵 МУЗЫКА: ON';
 }
 
 function playSound(type) {
@@ -3649,35 +3805,69 @@ window._adminMode = state.adminMode;
   window._chapterSchedule = schedMap;
 }
 
-// Синхронизируем прогресс — принудительно применяем если БД-счёт ниже локального
-// (включая сброс до 0 администратором)
-if (typeof data.score === 'number' && data.score < state.totalScore) {
+// ── СИНХРОНИЗАЦИЯ ПРОГРЕССА С СЕРВЕРОМ ─────────────────────────────────────
+// Сервер — единственный источник правды.
+// Храним последний известный серверный счёт чтобы детектировать сброс.
+const serverScore     = typeof data.score     === 'number' ? data.score     : null;
+const serverCompleted = typeof data.completed === 'number' ? data.completed : null;
+
+// Если сервер вернул данные — применяем если они НИЖЕ локальных
+// ИЛИ если последний сохранённый серверный счёт изменился (сброс администратором)
+const prevServerScore = state._lastServerScore;
+const serverScoreDropped = (
+  prevServerScore !== undefined &&
+  serverScore !== null &&
+  serverScore < prevServerScore
+);
+const localAheadOfServer = serverScore !== null && serverScore < state.totalScore;
+const needSync = localAheadOfServer || serverScoreDropped;
+
+// Сохраняем последний серверный счёт всегда
+if (serverScore !== null) state._lastServerScore = serverScore;
+
+if (needSync) {
   const savedAdminMode = state.adminMode;
-  state.totalScore = data.score;
+  state.totalScore     = serverScore;
   state.completedChapters = {};
-  for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
-  state.chapterScores = {};
-  state.gameOver = data.game_over || false;
-  state.adminMode = savedAdminMode;
-  // Если сброс до нуля — сбрасываем и достижения
-  if (data.score === 0 && (data.completed || 0) === 0) {
-    state.achievements = {};
-    state.achievementPts = 0;
-    state._fastAnswers = 0;
-    state._perfectChapters = 0;
-    state._noHintChapters = 0;
-    state._quizCorrect = 0;
-    state.chapterStats = {};
-    state.chapterFailCounts = {};
-    state.repeatRuns = {};
-    state.streak = 0;
-    state.lives = 5;
+  if (serverCompleted && serverCompleted > 0) {
+    for (let i = 1; i <= serverCompleted; i++) state.completedChapters[i] = true;
   }
+  state.chapterScores  = {};
+  state.gameOver       = data.game_over || false;
+  state.adminMode      = savedAdminMode;
+
+  // Полный сброс (score=0, completed=0) — очищаем всё включая достижения
+  if (serverScore === 0 && (!serverCompleted || serverCompleted === 0)) {
+    state.achievements       = {};
+    state.achievementPts     = 0;
+    state._fastAnswers       = 0;
+    state._perfectChapters   = 0;
+    state._noHintChapters    = 0;
+    state._quizCorrect       = 0;
+    state._morsePerfect      = 0;
+    state._fullLivesChapters = 0;
+    state._firstCipherTimes  = [];
+    state._retryWins         = 0;
+    state.chapterStats       = {};
+    state.chapterFailCounts  = {};
+    state.repeatRuns         = {};
+    state.streak             = 0;
+    state.lives              = 5;
+    state._lastServerScore   = 0;
+  }
+
   try { localStorage.removeItem(storageKey()); } catch(e2) {}
   saveState();
   renderChapters();
   updateStatusBars();
-  showToast('🔄 Прогресс синхронизирован', 2000);
+  // Обновить рейтинг и профиль если открыты
+  const activeScreen = document.querySelector('.screen.active');
+  if (activeScreen) {
+    if (activeScreen.id === 's-leaderboard-tab') renderLeaderboardTab();
+    if (activeScreen.id === 's-profile-tab') renderProfileTab();
+    if (activeScreen.id === 's-achievements-tab') renderAchievementsScreenTab();
+  }
+  showToast('🔄 Прогресс обновлён', 2000);
 }
 
 renderChapters();
