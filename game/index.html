@@ -2861,7 +2861,9 @@ const header = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align
 const medals = ['🥇','🥈','🥉'];
 const myRole2 = tgInitMe?.role || '';
 const isAdminUser = myRole2 === 'admin' || (tgUser && tgUser.id === 516406248);
-const filteredLb = isAdminUser ? state.leaderboard : state.leaderboard.filter(e => e.role !== 'admin' && e.role !== 'tester');
+const filteredLb = isAdminUser
+  ? state.leaderboard
+  : state.leaderboard.filter(e => e.role !== 'admin' && e.role !== 'tester' && (e.score || 0) > 0);
 const visibleLb = isAdminUser ? filteredLb : filteredLb.slice(0, 10);
 const rows = visibleLb.map((e,i) => {
 const isMe = e.uid === myUid;
@@ -3805,29 +3807,33 @@ window._adminMode = state.adminMode;
   window._chapterSchedule = schedMap;
 }
 
-// ── СИНХРОНИЗАЦИЯ ПРОГРЕССА С СЕРВЕРОМ ─────────────────────────────────────
+// ── СИНХРОНИЗАЦИЯ ПРОГРЕССА С СЕРВЕРОМ ──────────────────────────────
 // Сервер — единственный источник правды.
-// Храним последний известный серверный счёт чтобы детектировать сброс.
+// reset_token = unix timestamp обновления записи в БД.
+// Если токен изменился И score/completed стали меньше — это сброс.
+
 const serverScore     = typeof data.score     === 'number' ? data.score     : null;
 const serverCompleted = typeof data.completed === 'number' ? data.completed : null;
+const serverToken     = data.reset_token || 0;
 
-// Если сервер вернул данные — применяем если они НИЖЕ локальных
-// ИЛИ если последний сохранённый серверный счёт изменился (сброс администратором)
-const prevServerScore = state._lastServerScore;
-const serverScoreDropped = (
-  prevServerScore !== undefined &&
-  serverScore !== null &&
-  serverScore < prevServerScore
-);
-const localAheadOfServer = serverScore !== null && serverScore < state.totalScore;
-const needSync = localAheadOfServer || serverScoreDropped;
+const prevToken       = state._resetToken || 0;
+const prevScore       = state._lastServerScore;
 
-// Сохраняем последний серверный счёт всегда
-if (serverScore !== null) state._lastServerScore = serverScore;
+// Сброс детектируем по изменению токена + уменьшению счёта
+const tokenChanged    = serverToken > 0 && serverToken !== prevToken;
+const scoreDropped    = serverScore !== null && prevScore !== undefined && serverScore < prevScore;
+const localAhead      = serverScore !== null && serverScore < state.totalScore;
 
-if (needSync) {
+const isReset = (tokenChanged && serverScore < (prevScore || state.totalScore)) || scoreDropped || localAhead;
+
+// Сохраняем серверные значения
+if (serverScore  !== null) state._lastServerScore = serverScore;
+if (serverToken  >    0  ) state._resetToken      = serverToken;
+
+if (isReset) {
   const savedAdminMode = state.adminMode;
-  state.totalScore     = serverScore;
+
+  state.totalScore        = serverScore;
   state.completedChapters = {};
   if (serverCompleted && serverCompleted > 0) {
     for (let i = 1; i <= serverCompleted; i++) state.completedChapters[i] = true;
@@ -3836,38 +3842,39 @@ if (needSync) {
   state.gameOver       = data.game_over || false;
   state.adminMode      = savedAdminMode;
 
-  // Полный сброс (score=0, completed=0) — очищаем всё включая достижения
+  // Полный сброс (score=0, completed=0) — стираем ВСЁ
   if (serverScore === 0 && (!serverCompleted || serverCompleted === 0)) {
-    state.achievements       = {};
-    state.achievementPts     = 0;
-    state._fastAnswers       = 0;
-    state._perfectChapters   = 0;
-    state._noHintChapters    = 0;
-    state._quizCorrect       = 0;
-    state._morsePerfect      = 0;
-    state._fullLivesChapters = 0;
-    state._firstCipherTimes  = [];
-    state._retryWins         = 0;
-    state.chapterStats       = {};
-    state.chapterFailCounts  = {};
-    state.repeatRuns         = {};
-    state.streak             = 0;
-    state.lives              = 5;
-    state._lastServerScore   = 0;
+    state.achievements        = {};
+    state.achievementPts      = 0;
+    state._fastAnswers        = 0;
+    state._perfectChapters    = 0;
+    state._noHintChapters     = 0;
+    state._quizCorrect        = 0;
+    state._morsePerfect       = 0;
+    state._fullLivesChapters  = 0;
+    state._firstCipherTimes   = [];
+    state._retryWins          = 0;
+    state.chapterStats        = {};
+    state.chapterFailCounts   = {};
+    state.repeatRuns          = {};
+    state.streak              = 0;
+    state.lives               = 5;
+    state._lastServerScore    = 0;
   }
 
   try { localStorage.removeItem(storageKey()); } catch(e2) {}
   saveState();
   renderChapters();
   updateStatusBars();
-  // Обновить рейтинг и профиль если открыты
-  const activeScreen = document.querySelector('.screen.active');
-  if (activeScreen) {
-    if (activeScreen.id === 's-leaderboard-tab') renderLeaderboardTab();
-    if (activeScreen.id === 's-profile-tab') renderProfileTab();
-    if (activeScreen.id === 's-achievements-tab') renderAchievementsScreenTab();
+
+  // Перерисовать активный экран если это рейтинг/профиль/достижения
+  const activeEl = document.querySelector('.screen.active');
+  if (activeEl) {
+    if (activeEl.id === 's-leaderboard-tab')   renderLeaderboardTab();
+    if (activeEl.id === 's-profile-tab')        renderProfileTab();
+    if (activeEl.id === 's-achievements-tab')   renderAchievementsScreenTab();
   }
-  showToast('🔄 Прогресс обновлён', 2000);
+  showToast('🔄 Прогресс сброшен администратором', 2500);
 }
 
 renderChapters();

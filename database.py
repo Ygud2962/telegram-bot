@@ -1314,7 +1314,7 @@ def get_game_players_count():
 
 def get_game_leaderboard(limit=20):
     """Возвращает публичный топ игроков.
-    Админы и тестировщики НЕ включаются — только обычные игроки."""
+    Админы, тестировщики и игроки с 0 очков НЕ включаются."""
     conn = None
     try:
         conn = get_connection()
@@ -1330,6 +1330,7 @@ def get_game_leaderboard(limit=20):
             LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
             WHERE NOT COALESCE(gr.banned, FALSE)
               AND COALESCE(rol.role, 'player') NOT IN ('admin', 'tester')
+              AND gr.total_score > 0
             ORDER BY gr.total_score DESC, gr.updated_at ASC
             LIMIT %s
         ''', (limit,))
@@ -1362,17 +1363,17 @@ def get_game_result(user_id):
 
 
 def reset_game_result(user_id):
-    """Сбрасывает прогресс конкретного игрока (обнуляет, не удаляет)."""
+    """Сбрасывает прогресс конкретного игрока (обнуляет, не удаляет), включая достижения."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Обнуляем прогресс но сохраняем запись — иначе игра не получит
-        # сигнал о сбросе и возьмёт старый прогресс из localStorage
         cur.execute("""
             UPDATE game_results
             SET chapter=0, score=0, total_score=0, completed=0,
-                game_over=FALSE, failed=FALSE, updated_at=NOW()
+                game_over=FALSE, failed=FALSE,
+                achievement_count=0, achievement_pts=0,
+                updated_at=NOW()
             WHERE user_id=%s
         """, (user_id,))
         updated = cur.rowcount
@@ -1387,15 +1388,15 @@ def reset_game_result(user_id):
 
 
 def update_achievement_stats(user_id, achievement_count, achievement_pts):
-    """Обновляет статистику достижений игрока."""
+    """Обновляет статистику достижений игрока. Всегда записывает переданное значение."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute('''
             UPDATE game_results
-            SET achievement_count = GREATEST(COALESCE(achievement_count,0), %s),
-                achievement_pts   = GREATEST(COALESCE(achievement_pts,0),   %s),
+            SET achievement_count = %s,
+                achievement_pts   = %s,
                 updated_at        = NOW()
             WHERE user_id = %s
         ''', (achievement_count, achievement_pts, user_id))
@@ -1473,7 +1474,7 @@ def clear_restart_mode(user_id):
 
 
 def reset_all_game_results():
-    """Сбрасывает прогресс всех игроков (обнуляет, не удаляет), включая достижения."""
+    """Сбрасывает прогресс всех игроков включая достижения и доступ к главам."""
     conn = None
     try:
         conn = get_connection()
@@ -1486,7 +1487,6 @@ def reset_all_game_results():
                 updated_at=NOW()
         """)
         updated = cur.rowcount
-        # Также закрываем все индивидуально открытые главы
         cur.execute("DELETE FROM player_chapter_access")
         conn.commit()
         return updated
