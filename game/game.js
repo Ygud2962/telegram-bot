@@ -120,7 +120,7 @@ const CHAPTERS = [
     ciphers:[
       { type:"morse", typeLabel:"АЗБУКА МОРЗЕ",
         task:"Радиограмма от партизанского отряда. Буквы разделены /, слова //",
-        encrypted:"--/---/.../-//--./---/.-./../- ",
+        encrypted:"--/---/.../-//--./---/.-././-",
         answer:"324d91c47431ef6d9a3d33983c3ff54e023f6bc359870d0ba5e3fce44afe2e6a",
         hint:"М=--,О=---,С=...,Т=- → МОСТ. Г=--.,О=---,Р=.-.,И=..,Т=- → ГОРИТ",
         fact:"В первую ночь Рельсовой войны партизаны произвели 42 000 взрывов на железных дорогах Беларуси.", points:110 },
@@ -285,9 +285,9 @@ const CHAPTERS = [
         fact:"Великая Отечественная война длилась 3 года, 10 месяцев и 18 дней — с 22 июня 1941 по 9 мая 1945.", points:120 },
       { type:"morse", typeLabel:"АЗБУКА МОРЗЕ",
         task:"Первое слово победной радиограммы. Расшифруй:",
-        encrypted:".../.-.../.-/.-../.-/",
+        encrypted:".../.-.../.-/.--/.-",
         answer:"9890080953fe693654e3db2bece9ddc1e28e86659ece82fd3a44e9904809a94f",
-        hint:"С=...,Л=.-.. — нет. С=...,Л=.-..,А=.-,В=.--,А=.- = СЛАВА ✓",
+        hint:"С=..., Л=.-.. , А=.- , В=.-- , А=.- → С/Л/А/В/А = СЛАВА ✓",
         fact:"9 мая 1945 в 00:43 по московскому времени был подписан Акт о капитуляции Германии.", points:130 },
       { type:"atbash", typeLabel:"ШИФР АТБАШ",
         task:"Последнее слово в приказе. Расшифруй:",
@@ -1252,8 +1252,12 @@ function renderRef(type, shift) {
   }
   if (type === 'morse') {
     ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div>
-    <div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">
-      -/ — разделение букв &nbsp;&nbsp; // — пробел (новое слово)
+    <div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:6px;letter-spacing:.04em;line-height:1.6">
+      <span style="color:#ffe033">/ </span>— разделитель букв &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color:#ffe033">// </span>— разделитель слов
+    </div>
+    <div style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:8px;background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:4px;padding:7px 10px;line-height:1.8">
+      Пример: <span style="color:#ffe033;font-family:var(--mono)">.-/.-././/--/.-.</span><br>
+      А<span style="color:#ffe033">/</span>Л<span style="color:#ffe033">/</span>Е<span style="color:#ffe033">/</span>Е<span style="color:rgba(255,224,51,.4)">//</span>МР → АЛЕЕ МР
     </div>
     <div style="font-size:var(--fs-lg);color:var(--accent2);font-weight:700;text-align:center;padding:8px 0;letter-spacing:.06em;border:1px solid rgba(255,90,90,.3);border-radius:4px;margin-bottom:8px">
       ⚠️ ДОЧИТАЙТЕ ТАБЛИЦУ ДО КОНЦА!
@@ -1982,6 +1986,8 @@ function confirmReset() {
   try { localStorage.removeItem(storageKey()); } catch(e) {}
   state = DEFAULT_STATE();
   state.adminMode = true; // сохраняем режим!
+  state.achievements = {};
+  state.achievementPts = 0;
 
   // 2. Отправляем сброс в БД через /game_reset (полный сброс, игнорирует GREATEST)
   const syncUrl = window._syncUrl;
@@ -4072,6 +4078,8 @@ async function fetchAndApplyState() {
       for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
       state.chapterScores = {};
       state.gameOver = data.game_over || false;
+      state.achievements = {};
+      state.achievementPts = 0;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     }
 
