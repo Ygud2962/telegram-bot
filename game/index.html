@@ -1186,18 +1186,23 @@ const dbScore = tgInitMe.score || 0;
 const dbCompleted = tgInitMe.completed || 0;
 const dbGameOver = tgInitMe.game_over || false;
 const dbRestartMode = tgInitMe.restart_mode || null;
+const dbResetToken = tgInitMe.reset_token || 0;
 const dbAdminMode = (tgInitMe && tgInitMe.admin_mode === true) || window._adminMode === true;
 const dbTesterMode = (tgInitMe && tgInitMe.tester_mode === true);
 state.adminMode = !!dbAdminMode;
 state.testerMode = !!dbTesterMode && !state.adminMode;
+if (dbResetToken > 0) state._resetToken = dbResetToken;
+state._lastServerScore = dbScore;
 if (state.adminMode) { console.log('adminMode=true установлен от бота'); }
 if (dbRestartMode === 'penalty') {
   state.totalScore = 0; state.completedChapters = {}; state.chapterScores = {};
   state.gameOver = false; state.retryPenalty = true; state._noptsMode = false;
+  state.achievements = {}; state.achievementPts = 0;
   try { localStorage.removeItem(storageKey()); } catch(e2) {}
 } else if (dbRestartMode === 'nopts') {
   state.totalScore = 0; state.completedChapters = {}; state.chapterScores = {};
   state.gameOver = false; state.retryPenalty = false; state._noptsMode = true;
+  state.achievements = {}; state.achievementPts = 0;
   try { localStorage.removeItem(storageKey()); } catch(e2) {}
 } else {
   state.totalScore = dbScore; state.completedChapters = {};
@@ -1205,6 +1210,9 @@ if (dbRestartMode === 'penalty') {
   const newScores = {};
   for (let i = 1; i <= dbCompleted; i++) { if (state.chapterScores[i]) newScores[i] = state.chapterScores[i]; }
   state.chapterScores = newScores; state.gameOver = dbGameOver;
+  if (dbScore === 0 && dbCompleted === 0) {
+    state.achievements = {}; state.achievementPts = 0;
+  }
   try { localStorage.removeItem(storageKey()); } catch(e2) {}
 }
 saveState();
@@ -3234,6 +3242,62 @@ const seq = [['intro-stamp',300],['intro-date',700],['intro-title',1000],['intro
 seq.forEach(([id, ms])=> setTimeout(()=>{ const el = document.getElementById(id); if(el) el.classList.add('intro-show'); }, ms));
 }
 
+function applyServerSyncResult(result, forceApply = false) {
+if (!result || typeof result !== 'object') return false;
+
+const serverToken = Number(result.db_reset_token || 0);
+if (serverToken > 0) state._resetToken = serverToken;
+
+const serverScore = (typeof result.db_score === 'number') ? result.db_score : null;
+const serverCompleted = (typeof result.db_completed === 'number') ? result.db_completed : null;
+const localCompleted = Object.keys(state.completedChapters || {}).length;
+if (serverScore !== null) state._lastServerScore = serverScore;
+
+const shouldApply = forceApply
+  || (serverScore !== null && serverScore < state.totalScore)
+  || (serverCompleted !== null && serverCompleted < localCompleted)
+  || (serverScore === 0 && (serverCompleted === 0 || serverCompleted === null));
+
+if (!shouldApply) return false;
+
+const nextScore = serverScore !== null ? serverScore : 0;
+const nextCompleted = serverCompleted && serverCompleted > 0 ? serverCompleted : 0;
+
+state.totalScore = nextScore;
+state.completedChapters = {};
+for (let i = 1; i <= nextCompleted; i++) state.completedChapters[i] = true;
+
+const newScores = {};
+for (let i = 1; i <= nextCompleted; i++) {
+  if (state.chapterScores[i]) newScores[i] = state.chapterScores[i];
+}
+state.chapterScores = newScores;
+state.gameOver = false;
+
+if (nextScore === 0 && nextCompleted === 0) {
+  state.achievements        = {};
+  state.achievementPts      = 0;
+  state._fastAnswers        = 0;
+  state._perfectChapters    = 0;
+  state._noHintChapters     = 0;
+  state._quizCorrect        = 0;
+  state._morsePerfect       = 0;
+  state._fullLivesChapters  = 0;
+  state._firstCipherTimes   = [];
+  state._retryWins          = 0;
+  state.chapterStats        = {};
+  state.chapterFailCounts   = {};
+  state.repeatRuns          = {};
+  state.streak              = 0;
+  state.lives               = 5;
+  state._lastServerScore    = 0;
+}
+
+try { localStorage.removeItem(storageKey()); } catch(e2) {}
+saveState();
+return true;
+}
+
 async function autoSync(showNotification = true) {
 const syncUrl = window._syncUrl;
 const uid = getTgUserId();
@@ -3244,10 +3308,26 @@ if (_syncInFlight) return;
 _syncInFlight = true;
 const data = { type: completed > 0 ? 'chapter_complete' : 'sync', chapter: completed > 0 ? Math.max(...Object.keys(state.completedChapters).map(Number)) : 0, score: 0, total_score: state.totalScore, completed: completed, game_over: state.gameOver || false, user_id: uid, user_name: getTgUserName(),
 achievement_count: Object.keys(state.achievements || {}).length,
-achievement_pts: state.achievementPts || 0 };
+achievement_pts: state.achievementPts || 0,
+reset_token: state._resetToken || 0 };
 try {
 const resp = await fetch(syncUrl, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
 if (resp.ok) {
+const result = await resp.json().catch(() => ({}));
+if (result.banned) {
+  showAccessDeniedScreen('banned');
+  return;
+}
+const isStale = result && result.stale === true;
+const rolledBack = applyServerSyncResult(result, isStale);
+if (rolledBack) {
+  renderChapters();
+  updateStatusBars();
+  _lastSyncedScore = state.totalScore;
+  _lastSyncedCompleted = Object.keys(state.completedChapters).length;
+  showToast('🔄 Прогресс сброшен администратором', 2500);
+  return;
+}
 _lastSyncedScore = state.totalScore;
 _lastSyncedCompleted = completed;
 console.log('✅ autoSync OK:', state.totalScore, 'pts,', completed, 'chapters');
@@ -3262,7 +3342,7 @@ if (document.hidden && state.totalScore > 0) { saveState(); autoSync(false); }
 
 window.addEventListener('beforeunload', () => {
 if (state.totalScore > 0 && window._syncUrl && getTgUserId()) {
-const data = { type: 'sync', total_score: state.totalScore, completed: Object.keys(state.completedChapters).length, game_over: state.gameOver || false, user_id: getTgUserId(), user_name: getTgUserName() };
+const data = { type: 'sync', total_score: state.totalScore, completed: Object.keys(state.completedChapters).length, game_over: state.gameOver || false, user_id: getTgUserId(), user_name: getTgUserName(), achievement_count: Object.keys(state.achievements || {}).length, achievement_pts: state.achievementPts || 0, reset_token: state._resetToken || 0 };
 navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
 }
 });
@@ -3886,6 +3966,9 @@ startStateRefresh();
 async function sendResultToBot(data) {
 data.completed = Object.keys(state.completedChapters).length;
 data.total_score = state.totalScore;
+data.achievement_count = Object.keys(state.achievements || {}).length;
+data.achievement_pts = state.achievementPts || 0;
+data.reset_token = state._resetToken || 0;
 data.user_id = getTgUserId();
 data.user_name = tgUser ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim() : 'Игрок';
 console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score, 'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО');
@@ -3900,11 +3983,20 @@ body: JSON.stringify(data)
 if (resp.ok) {
 const result = await resp.json().catch(() => ({}));
 if (result.banned) {
-document.body.innerHTML = '<div style="text-align:center;padding:60px 20px;"><div style="font-size:64px;margin-bottom:16px;">🚫</div><div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent2);">Доступ заблокирован</div><div style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;">Ваш аккаунт заблокирован администратором.</div></div>';
-try { localStorage.removeItem(storageKey()); } catch(e2) {}
+showAccessDeniedScreen('banned');
 return;
 }
-_lastSyncedScore = data.total_score;
+const isStale = result && result.stale === true;
+const rolledBack = applyServerSyncResult(result, isStale);
+if (rolledBack) {
+renderChapters();
+updateStatusBars();
+_lastSyncedScore = state.totalScore;
+_lastSyncedCompleted = Object.keys(state.completedChapters).length;
+showToast('🔄 Прогресс сброшен администратором', 2500);
+return;
+}
+_lastSyncedScore = state.totalScore;
 _lastSyncedCompleted = data.completed;
 showToast('✅ Прогресс сохранён');
 return;
@@ -4002,7 +4094,4 @@ if (document.visibilityState === 'hidden') {
     </script>
 </body>
 </html>
-
-
-
 

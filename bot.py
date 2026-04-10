@@ -5785,6 +5785,10 @@ async def handle_game_sync(request):
     game_over       = bool(data.get('game_over', False))
     achievement_count = int(data.get('achievement_count', 0))
     achievement_pts   = int(data.get('achievement_pts', 0))
+    try:
+        client_reset_token = int(data.get('reset_token', 0) or 0)
+    except Exception:
+        client_reset_token = 0
 
     if not user_id:
         return aiohttp_web.json_response(
@@ -5795,6 +5799,24 @@ async def handle_game_sync(request):
         # Проверяем текущий серверный счёт ДО сохранения
         current_result = await asyncio.to_thread(db.get_game_result, user_id)
         db_score_before = current_result[2] if current_result else 0
+        db_completed_before = current_result[3] if current_result else 0
+        db_reset_token_before = int(current_result[5].timestamp()) if current_result and current_result[5] else 0
+
+        # Защита от перезаписи после админ-сброса:
+        # клиент обязан присылать актуальный reset_token из /game_state.
+        if client_reset_token > 0 and db_reset_token_before > 0 and client_reset_token != db_reset_token_before:
+            current_role = await asyncio.to_thread(db.get_game_role, user_id)
+            banned = bool(current_result[6]) if current_result and len(current_result) > 6 else False
+            logger.info(
+                "game_sync stale token: user=%s client_token=%s db_token=%s",
+                user_id, client_reset_token, db_reset_token_before
+            )
+            return aiohttp_web.json_response(
+                {'ok': True, 'stale': True,
+                 'saved': {'score': db_score_before, 'completed': db_completed_before},
+                 'banned': banned, 'db_score': db_score_before, 'db_completed': db_completed_before,
+                 'db_reset_token': db_reset_token_before, 'role': current_role},
+                headers=headers)
 
         await asyncio.to_thread(
             db.save_game_result,
@@ -5819,11 +5841,12 @@ async def handle_game_sync(request):
         banned = bool(result[6]) if result and len(result) > 6 else False
         db_score = result[2] if result else 0
         db_completed = result[3] if result else 0
+        db_reset_token = int(result[5].timestamp()) if result and result[5] else 0
         logger.info(f"game_sync OK: user={user_id}, role={current_role}, score={total_score}, completed={completed}, banned={banned}")
         return aiohttp_web.json_response(
             {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
              'banned': banned, 'db_score': db_score, 'db_completed': db_completed,
-             'role': current_role},
+             'db_reset_token': db_reset_token, 'stale': False, 'role': current_role},
             headers=headers)
     except Exception as e:
         logger.error(f"game_sync error: {e}")
