@@ -720,11 +720,13 @@ function mergeBotLeaderboard() {
       state.totalScore = 0; state.completedChapters = {};
       state.chapterScores = {}; state.gameOver = false;
       state.retryPenalty = true; state._noptsMode = false;
+      state.achievements = {}; state.achievementPts = 0;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     } else if (dbRestartMode === 'nopts') {
       state.totalScore = 0; state.completedChapters = {};
       state.chapterScores = {}; state.gameOver = false;
       state.retryPenalty = false; state._noptsMode = true;
+      state.achievements = {}; state.achievementPts = 0;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     } else {
       state.totalScore = dbScore;
@@ -736,10 +738,9 @@ function mergeBotLeaderboard() {
       }
       state.chapterScores = newScores;
       state.gameOver = dbGameOver;
-      // Сброс достижений: если в БД score=0 и completed=0 — админ сбросил прогресс
+      // Если БД говорит score=0, completed=0 — был полный сброс, чистим достижения
       if (dbScore === 0 && dbCompleted === 0) {
-        state.achievements  = {};
-        state.achievementPts = 0;
+        state.achievements = {}; state.achievementPts = 0;
       }
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     }
@@ -1820,6 +1821,9 @@ function closeAchModal() {
 }
 
 function showMyAchievements() {
+  // Синхронизируем с сервером перед показом достижений
+  fetchAndApplyState().then(() => _renderAchModal());
+  function _renderAchModal() {
   let modal = document.getElementById('ach-modal');
   if (!modal) {
     modal = document.createElement('div');
@@ -1837,6 +1841,7 @@ function showMyAchievements() {
   modal.innerHTML = '';
   modal.appendChild(inner);
   modal.style.display = 'flex';
+  } // end _renderAchModal
 }
 
 function closeMyStats() {
@@ -2602,8 +2607,8 @@ function switchTab(tab) {
   if (tabEl)    tabEl.classList.add('active');
 
   if (tab === 'chapters')    { renderChapters(); fetchAndApplyState(); }
-  if (tab === 'leaderboard') renderLeaderboardTab();
-  if (tab === 'profile')     renderProfileTab();
+  if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyState(); }
+  if (tab === 'profile')     { renderProfileTab();     fetchAndApplyState(); }
   if (tab === 'about')       renderAboutTab();
 }
 
@@ -4076,19 +4081,19 @@ async function fetchAndApplyState() {
       tgChapterSchedule = data.chapter_schedule;
     }
 
-    // Синхронизируем прогресс если он меньше (сброс через админку)
-    // Сброс: score стал меньше (обычный сброс) ИЛИ score=0+completed=0 но достижения ещё есть в кэше
-    const _srv = typeof data.score === 'number' ? data.score : state.totalScore;
-    const _done = data.completed || 0;
-    const _hasAch = Object.keys(state.achievements || {}).length > 0;
-    if (_srv < state.totalScore || (_srv === 0 && _done === 0 && _hasAch)) {
-      state.totalScore = _srv;
+    // Синхронизируем прогресс с сервером
+    const _srvScore    = typeof data.score === 'number' ? data.score : state.totalScore;
+    const _srvCompleted = data.completed || 0;
+
+    // Сброс прогресса: score стал меньше ИЛИ сервер говорит 0/0 (полный сброс админом)
+    if (_srvScore < state.totalScore || (_srvScore === 0 && _srvCompleted === 0)) {
+      state.totalScore        = _srvScore;
       state.completedChapters = {};
-      for (let i = 1; i <= _done; i++) state.completedChapters[i] = true;
-      state.chapterScores  = {};
-      state.gameOver       = data.game_over || false;
-      state.achievements   = {};
-      state.achievementPts = 0;
+      for (let i = 1; i <= _srvCompleted; i++) state.completedChapters[i] = true;
+      state.chapterScores     = {};
+      state.gameOver          = data.game_over || false;
+      state.achievements      = {};
+      state.achievementPts    = 0;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     }
 
