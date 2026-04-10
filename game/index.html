@@ -270,6 +270,55 @@
             border-radius: 3px;
             text-align: center;
         }
+        .morse-code-display {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: stretch;
+        }
+        .morse-legend-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 10px;
+            color: var(--muted);
+            letter-spacing: .04em;
+        }
+        .morse-word {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px dashed rgba(255,224,51,.25);
+            background: rgba(255,224,51,.04);
+        }
+        .morse-word-badge {
+            font-family: var(--head);
+            font-size: 9px;
+            letter-spacing: .1em;
+            color: var(--accent);
+            margin-right: 2px;
+        }
+        .morse-letter-token {
+            font-family: var(--mono);
+            font-size: var(--fs-sm);
+            color: #fff6c9;
+            border: 1px solid rgba(255,224,51,.25);
+            background: rgba(0,0,0,.32);
+            border-radius: 6px;
+            padding: 6px 8px;
+            min-width: 34px;
+            text-align: center;
+            line-height: 1;
+        }
+        .morse-sep {
+            color: var(--accent);
+            font-size: 12px;
+            opacity: .8;
+            margin: 0 1px;
+        }
         .cipher-progress { display: flex; gap: 6px; justify-content: center; margin: 16px 0; }
         .cipher-prog-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
         .cipher-prog-dot.done { background: var(--green); }
@@ -751,7 +800,7 @@
     </div>
 
     <script>
-const GAME_VERSION = '1.2.0';
+const GAME_VERSION = '1.2.10';
 const CHAPTERS = [
 {
 id:1, title: "ХОЙНИКИ: ОГНЕННОЕ ЛЕТО", subtitle: "Глава I",
@@ -1130,7 +1179,7 @@ repeatRuns: {},
 achievements: {}, achievementPts: 0,
 soundEnabled: true,
 musicEnabled: true,
-selectedTrack: 0
+selectedTrack: 4
 });
 
 let state = DEFAULT_STATE();
@@ -1160,7 +1209,7 @@ const s = localStorage.getItem(storageKey());
 if (s) { Object.assign(state, JSON.parse(s)); state._noptsMode = false; }
 if (typeof state.soundEnabled !== 'boolean') state.soundEnabled = true;
 if (typeof state.musicEnabled !== 'boolean') state.musicEnabled = true;
-if (typeof state.selectedTrack !== 'number') state.selectedTrack = 0;
+if (typeof state.selectedTrack !== 'number') state.selectedTrack = 4;
 } catch(e) {}
 }
 
@@ -1288,6 +1337,7 @@ setTimeout(() => {
 }
 
 let _keyboardVisible = false;
+let _keyboardBtnDownTs = 0;
 
 function normalizeAnswerText(text) {
 if (!text) return '';
@@ -1304,42 +1354,48 @@ s = s.replace(/\s+/g, ' ').trim();
 return s;
 }
 
-function setKeyboardVisibility(visible) {
-const inp = document.getElementById('cipher-input');
+function updateKeyboardButtonState(visible) {
 const btn = document.getElementById('btn-keyboard');
+if (!btn) return;
+if (visible) {
+  btn.style.background = 'rgba(255,224,51,.25)';
+  btn.style.borderColor = 'rgba(255,224,51,.5)';
+  btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
+  btn.title = 'Скрыть клавиатуру';
+} else {
+  btn.style.background = 'rgba(255,224,51,.1)';
+  btn.style.borderColor = 'rgba(255,224,51,.2)';
+  btn.style.boxShadow = 'none';
+  btn.title = 'Показать клавиатуру';
+}
+}
+
+function setKeyboardVisibility(visible, opts = {}) {
+const inp = document.getElementById('cipher-input');
 if (!inp) return;
 
 _keyboardVisible = !!visible;
+inp.removeAttribute('readonly');
+inp.setAttribute('inputmode', 'text');
+
 if (_keyboardVisible) {
-  inp.removeAttribute('readonly');
-  inp.setAttribute('inputmode', 'text');
-  inp.focus();
-  inp.click();
+  if (opts.focus !== false) {
+    try { inp.focus({ preventScroll: true }); } catch(e) { inp.focus(); }
+    const len = (inp.value || '').length;
+    try { inp.setSelectionRange(len, len); } catch(e) {}
+  }
 } else {
-  inp.setAttribute('readonly', true);
-  inp.setAttribute('inputmode', 'none');
-  inp.blur();
+  if (opts.blur !== false && document.activeElement === inp) inp.blur();
 }
 
-if (btn) {
-  if (_keyboardVisible) {
-    btn.style.background = 'rgba(255,224,51,.25)';
-    btn.style.borderColor = 'rgba(255,224,51,.5)';
-    btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-    btn.title = 'Скрыть клавиатуру';
-  } else {
-    btn.style.background = 'rgba(255,224,51,.1)';
-    btn.style.borderColor = 'rgba(255,224,51,.2)';
-    btn.style.boxShadow = 'none';
-    btn.title = 'Показать клавиатуру';
-  }
-}
+updateKeyboardButtonState(_keyboardVisible);
 }
 
 function toggleKeyboard() {
 const inp = document.getElementById('cipher-input');
 if (!inp) return;
-setKeyboardVisibility(!_keyboardVisible);
+const currentlyVisible = _keyboardVisible || document.activeElement === inp;
+setKeyboardVisibility(!currentlyVisible);
 if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
 }
 
@@ -1580,7 +1636,14 @@ document.getElementById('cipher-chapter-label').textContent = ch.subtitle + ' ·
 const scoreEl = document.getElementById('cipher-score-display');
 if (scoreEl) scoreEl.textContent = state.chapterScore + ' оч';
 document.getElementById('cipher-type-label').textContent = cipher.typeLabel;
-document.getElementById('cipher-task').textContent = cipher.task;
+const taskEl = document.getElementById('cipher-task');
+if (taskEl) {
+  if (cipher.type === 'morse') {
+    taskEl.textContent = `${cipher.task} Подсказка: один блок точки/тире = буква, "/" разделяет буквы, новая строка разделяет слова.`;
+  } else {
+    taskEl.textContent = cipher.task;
+  }
+}
 const box = document.getElementById('cipher-box');
 if (box) { if (cipher.type !== 'quiz') box.style.display = ''; }
 box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
@@ -1605,7 +1668,13 @@ renderLives();
 _timerCanceledForCurrentCipher = false;
 startTimer();
 const inpReset = document.getElementById('cipher-input');
-if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; inpReset.setAttribute('readonly', true); }
+if (inpReset) {
+  inpReset.value = '';
+  inpReset.className = 'cipher-input';
+  inpReset.disabled = false;
+  inpReset.removeAttribute('readonly');
+  inpReset.setAttribute('inputmode', 'text');
+}
 setKeyboardVisibility(false);
 state.hintsUsed = false;
 const hb = document.getElementById('cipher-hint-box');
@@ -1682,15 +1751,52 @@ stopTimer(true);
 showToast('⏹ Таймер отключён для текущего задания', 1400);
 }
 
+function _escapeHtml(text) {
+return String(text || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+}
+
+function _splitMorseWords(text) {
+const raw = String(text || '').replace(/\r/g, '').trim();
+if (!raw) return [];
+const lines = raw.split('\n').map(s => s.trim()).filter(Boolean);
+const source = lines.length ? lines : [raw];
+return source.map(line => {
+  const letters = line.split('/').map(s => s.trim()).filter(Boolean);
+  if (letters.length) return letters;
+  return line.split(/\s+/).map(s => s.trim()).filter(Boolean);
+}).filter(arr => arr.length);
+}
+
 function animateMorse(el, text) {
-el.innerHTML = '<span style="animation:typewriter 2s steps(40);white-space:pre-line">' + text + '</span>';
+const words = _splitMorseWords(text);
+if (!words.length) {
+  el.textContent = '';
+  return;
+}
+const rows = words.map((letters, idx) => {
+  const cells = letters.map(code => `<span class="morse-letter-token">${_escapeHtml(code)}</span>`).join('<span class="morse-sep">/</span>');
+  return `<div class="morse-word"><span class="morse-word-badge">СЛОВО ${idx + 1}</span>${cells}</div>`;
+}).join('');
+el.innerHTML = `<div class="morse-code-display">
+  <div class="morse-legend-row"><span>Блок точки/тире = 1 буква</span><span>/ = граница букв</span><span>новая строка = новое слово</span></div>
+  ${rows}
+</div>`;
 }
 
 function renderRef(type, shift) {
 const ref = document.getElementById('cipher-ref');
 if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) { if (ref) ref.innerHTML = ''; return; }
 if (type === 'morse') {
-ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА МОРЗЕ</div><div style="font-size:var(--fs-base);color:var(--accent);font-weight:700;margin-bottom:8px;letter-spacing:.05em">/ — разделение букв</div><div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
+ref.innerHTML = `<div class="cipher-ref-title">// МОРЗЕ · КАК ЧИТАТЬ</div>
+<div style="font-size:var(--fs-sm);color:#f2e8b3;line-height:1.65;margin-bottom:10px">
+  <b style="color:var(--accent)">Правило:</b> один блок (<code style="color:var(--accent)">.-</code>) = одна буква,
+  символ <code style="color:var(--accent)">/</code> разделяет буквы,
+  новая строка разделяет слова.
+</div>
+<div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div><span style="color:var(--accent)">${l}</span><span style="color:var(--muted)">${c}</span></div>`).join('')}</div>`;
 } else if (type === 'atbash') {
 const a = RU_ALPHA;
 ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА АТБАШ (зеркальный алфавит)</div><div class="caesar-ref">${a.split('').map((l,i)=>`<div style="display:inline-block;width:50px;text-align:center;margin:2px"><span style="color:var(--accent)">${a[a.length-1-i]}</span><span style="color:var(--muted)">→${l}</span></div>`).join(' ')}</div>`;
@@ -2625,6 +2731,103 @@ const BGM_TRACKS = [
       };
       loop();
     }
+  },
+  {
+    id: 4,
+    name: '🚀 Пульс Победы',
+    desc: 'Современный epic-hybrid: плотный бас, чистый бит и героичный синт',
+    build: function(ctx, master) {
+      // PULSE OF VICTORY — modern cinematic hybrid
+      // Key: A minor, BPM: 108
+      const BPM = 108, B = 60 / BPM;
+
+      function tone(freq, type, startT, dur, vol, attack = 0.01, release = 0.12) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = type;
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, startT);
+        g.gain.linearRampToValueAtTime(vol, startT + attack);
+        g.gain.setValueAtTime(vol, Math.max(startT + attack, startT + dur - release));
+        g.gain.linearRampToValueAtTime(0.0001, startT + dur);
+        o.connect(g);
+        g.connect(master);
+        o.start(startT);
+        o.stop(startT + dur + 0.04);
+      }
+
+      function drumNoise(startT, dur, vol, hp = 80, lp = 3500) {
+        const len = Math.floor(ctx.sampleRate * dur);
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+        const ch = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.4);
+        const src = ctx.createBufferSource();
+        const hpF = ctx.createBiquadFilter();
+        const lpF = ctx.createBiquadFilter();
+        const g = ctx.createGain();
+        src.buffer = buf;
+        hpF.type = 'highpass'; hpF.frequency.value = hp;
+        lpF.type = 'lowpass'; lpF.frequency.value = lp;
+        g.gain.setValueAtTime(vol, startT);
+        g.gain.exponentialRampToValueAtTime(0.001, startT + dur);
+        src.connect(hpF); hpF.connect(lpF); lpF.connect(g); g.connect(master);
+        src.start(startT); src.stop(startT + dur + 0.03);
+      }
+
+      const loop = () => {
+        if (!_bgmMaster) return;
+        const N = ctx.currentTime + 0.05;
+        const loopLen = B * 16;
+
+        const progression = [
+          { bass: 110.00, chord: [220.00, 261.63, 329.63] }, // Am
+          { bass: 98.00,  chord: [196.00, 246.94, 293.66] }, // G
+          { bass: 146.83, chord: [220.00, 293.66, 349.23] }, // Dm
+          { bass: 130.81, chord: [196.00, 261.63, 329.63] }, // C
+        ];
+
+        // Pads/chords
+        progression.forEach((step, idx) => {
+          const t = N + idx * B * 4;
+          step.chord.forEach(f => {
+            tone(f, 'triangle', t, B * 4.1, 0.04, 0.35, 0.5);
+            tone(f * 2, 'sine', t, B * 4.1, 0.02, 0.45, 0.6);
+          });
+        });
+
+        // Bass pulse
+        for (let i = 0; i < 16; i++) {
+          const step = progression[Math.floor(i / 4)];
+          const t = N + i * B;
+          tone(step.bass, 'sawtooth', t, B * 0.95, 0.14, 0.01, 0.2);
+          tone(step.bass / 2, 'sine', t, B * 0.95, 0.11, 0.01, 0.25);
+        }
+
+        // Hero synth hook
+        const hook = [440, 493.88, 523.25, 659.25, 523.25, 493.88, 440, 392];
+        hook.forEach((f, i) => {
+          const t = N + B * 2 + i * B * 0.5;
+          tone(f, 'sawtooth', t, B * 0.45, 0.08, 0.015, 0.12);
+          tone(f * 0.5, 'triangle', t, B * 0.45, 0.045, 0.015, 0.14);
+        });
+
+        // Drums
+        for (let i = 0; i < 16; i++) {
+          const t = N + i * B;
+          if ([0, 4, 8, 11, 12].includes(i)) {
+            drumNoise(t, 0.24, 0.55, 30, 180);
+          }
+          if ([4, 12].includes(i)) {
+            drumNoise(t + B * 0.02, 0.14, 0.33, 600, 5200);
+          }
+          drumNoise(t, 0.05, i % 2 ? 0.07 : 0.11, 7000, 15000);
+        }
+
+        _bgmInterval = setTimeout(loop, loopLen * 1000 - 90);
+      };
+
+      loop();
+    }
   }
 ];
 
@@ -2656,11 +2859,25 @@ if (_bgmInterval && _bgmMaster) return;
 try {
   if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   _bgmMaster = ctx.createGain();
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.value = -22;
+  compressor.knee.value = 18;
+  compressor.ratio.value = 3.2;
+  compressor.attack.value = 0.02;
+  compressor.release.value = 0.28;
+  const toneFilter = ctx.createBiquadFilter();
+  toneFilter.type = 'lowpass';
+  toneFilter.frequency.value = 5200;
+  toneFilter.Q.value = 0.7;
   // Fade in
   _bgmMaster.gain.setValueAtTime(0.0001, ctx.currentTime);
-  _bgmMaster.gain.linearRampToValueAtTime(0.55, ctx.currentTime + 2.5);
-  _bgmMaster.connect(ctx.destination);
-  const trackIdx = typeof state.selectedTrack === 'number' ? state.selectedTrack : 0;
+  _bgmMaster.gain.linearRampToValueAtTime(0.40, ctx.currentTime + 2.5);
+  _bgmMaster.connect(compressor);
+  compressor.connect(toneFilter);
+  toneFilter.connect(ctx.destination);
+  const trackIdxRaw = Number.isInteger(state.selectedTrack) ? state.selectedTrack : 4;
+  const trackIdx = Math.max(0, Math.min(trackIdxRaw, BGM_TRACKS.length - 1));
+  state.selectedTrack = trackIdx;
   const track = BGM_TRACKS[Math.min(trackIdx, BGM_TRACKS.length-1)];
   track.build(ctx, _bgmMaster);
 } catch(e) {
@@ -2951,7 +3168,7 @@ const el = document.getElementById('settings-tab-content');
 if (!el) return;
 const soundOn = state.soundEnabled !== false;
 const musicOn = state.musicEnabled !== false;
-const curTrack = typeof state.selectedTrack === 'number' ? state.selectedTrack : 0;
+const curTrack = Number.isInteger(state.selectedTrack) ? state.selectedTrack : 4;
 
 const trackCards = BGM_TRACKS.map(tr => {
   const active = tr.id === curTrack;
@@ -3021,7 +3238,8 @@ stopBackgroundMusic(true);
 _bgmMaster = null; _bgmInterval = null;
 setTimeout(() => {
   startBackgroundMusic();
-  showToast('▶ ' + (BGM_TRACKS[state.selectedTrack||0]?.name || 'Мелодия'), 2000);
+  const curIdx = Number.isInteger(state.selectedTrack) ? state.selectedTrack : 4;
+  showToast('▶ ' + (BGM_TRACKS[curIdx]?.name || 'Мелодия'), 2000);
 }, 300);
 }
 
@@ -4037,24 +4255,25 @@ const _cipherInput = document.getElementById('cipher-input');
 if (!_cipherInput) return;
 if (_cipherInput.dataset.kbBound === '1') return;
 _cipherInput.dataset.kbBound = '1';
+const _kbBtn = document.getElementById('btn-keyboard');
+if (_kbBtn && _kbBtn.dataset.kbBound !== '1') {
+_kbBtn.dataset.kbBound = '1';
+_kbBtn.addEventListener('pointerdown', function(e) {
+_keyboardBtnDownTs = Date.now();
+});
+}
 _cipherInput.addEventListener('focus', function() {
 this.removeAttribute('readonly');
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.25)'; 
-btn.style.borderColor = 'rgba(255,224,51,.5)';
-btn.style.boxShadow = '0 0 12px rgba(255,224,51,.3)';
-}
+this.setAttribute('inputmode', 'text');
+_keyboardVisible = true;
+updateKeyboardButtonState(true);
 });
 _cipherInput.addEventListener('blur', function() {
-this.setAttribute('readonly', true);
-const btn = document.getElementById('btn-keyboard');
-if (btn) { 
-btn.style.background = 'rgba(255,224,51,.1)'; 
-btn.style.borderColor = 'rgba(255,224,51,.2)';
-btn.style.boxShadow = 'none';
-}
+if (Date.now() - _keyboardBtnDownTs < 250) return;
+_keyboardVisible = false;
+updateKeyboardButtonState(false);
 });
+updateKeyboardButtonState(false);
 }
 
 if (document.readyState === "loading") {
@@ -4094,4 +4313,3 @@ if (document.visibilityState === 'hidden') {
     </script>
 </body>
 </html>
-
