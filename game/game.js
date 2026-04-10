@@ -678,10 +678,13 @@ function mergeBotLeaderboard() {
   const myUid = getTgUserId();
 
   // Всегда берём leaderboard из БД как источник правды
-  if (tgInitLB.length) {
+  // Всегда применяем leaderboard из БД — даже если пустой (= все сброшены)
+  if (tgInitLB && Array.isArray(tgInitLB)) {
     state.leaderboard = tgInitLB.map(r => ({
       uid: String(r.uid), name: r.name, score: r.score,
-      completed: r.completed, role: r.role || 'player'
+      completed: r.completed, role: r.role || 'player',
+      achievementCount: r.achievementCount || 0,
+      achievementPts:   r.achievementPts   || 0
     }));
   }
 
@@ -736,6 +739,14 @@ function mergeBotLeaderboard() {
       }
       state.chapterScores = newScores;
       state.gameOver = dbGameOver;
+
+      // Если БД говорит score=0 и completed=0 — был сброс: очищаем достижения
+      if (dbScore === 0 && dbCompleted === 0) {
+        state.achievements = {};
+        state.achievementPts = 0;
+        console.log('🗑 Прогресс сброшен администратором — достижения очищены');
+      }
+
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     }
     saveState();

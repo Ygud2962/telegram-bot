@@ -3004,9 +3004,9 @@ async def game_admin_self_reset_confirm(query, context):
         await query.answer("⛔ Только администратор", show_alert=True)
         return
     await query.answer()
-    ok = await asyncio.to_thread(db.reset_game_result, uid)
+    ok = await asyncio.to_thread(db.reset_game_result_full, uid)
     await safe_edit(query,
-        "✅ <b>Ваш рейтинг сброшен.</b>\n\nОчки обнулены, прогресс сброшен.\nРоль администратора сохранена."
+        "✅ <b>Ваш рейтинг сброшен.</b>\n\nОчки обнулены, прогресс и достижения сброшены.\nРоль администратора сохранена."
         if ok else "❌ Не удалось сбросить рейтинг.",
         [[btn("🎮 Открыть игру", 'menu_game')], [btn("🏠 Главное меню", 'back_to_main')]])
 
@@ -5647,7 +5647,7 @@ async def handle_game_reset(request):
             return aiohttp_web.json_response(
                 {'ok': False, 'error': 'only admin can self-reset'},
                 status=403, headers=headers)
-        ok = await asyncio.to_thread(db.reset_game_result, user_id)
+        ok = await asyncio.to_thread(db.reset_game_result_full, user_id)
         logger.info(f"game_reset (admin self-reset): user={user_id}, ok={ok}")
         return aiohttp_web.json_response({'ok': ok}, headers=headers)
     except Exception as e:
