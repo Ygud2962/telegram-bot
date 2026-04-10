@@ -694,6 +694,7 @@ function mergeBotLeaderboard() {
     const dbCompleted   = tgInitMe.completed    || 0;
     const dbGameOver    = tgInitMe.game_over    || false;
     const dbRestartMode = tgInitMe.restart_mode || null;
+    const dbResetToken  = tgInitMe.reset_token  || 0;
 
     // Роль из payload — ВСЕГДА явно устанавливаем, не доверяем localStorage
     // Это критично: если роль сменилась с admin на player — нужно сбросить adminMode
@@ -740,11 +741,17 @@ function mergeBotLeaderboard() {
       state.chapterScores = newScores;
       state.gameOver = dbGameOver;
 
-      // Если БД говорит score=0 и completed=0 — был сброс: очищаем достижения
-      if (dbScore === 0 && dbCompleted === 0) {
-        state.achievements = {};
+      // Детектируем сброс: reset_token изменился И score=0
+      const storedTok = state._resetToken || 0;
+      const adminReset = (dbResetToken > 0 && dbResetToken !== storedTok && dbScore === 0 && dbCompleted === 0)
+                      || (dbScore === 0 && dbCompleted === 0 && state.totalScore === 0 && Object.keys(state.achievements||{}).length > 0);
+      if (adminReset) {
+        state.achievements  = {};
         state.achievementPts = 0;
-        console.log('🗑 Прогресс сброшен администратором — достижения очищены');
+        state._resetToken   = dbResetToken;
+        console.log('🗑 Сброс при загрузке — достижения очищены');
+      } else if (dbResetToken) {
+        state._resetToken = dbResetToken;
       }
 
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
@@ -4082,16 +4089,28 @@ async function fetchAndApplyState() {
       tgChapterSchedule = data.chapter_schedule;
     }
 
-    // Синхронизируем прогресс если он меньше (сброс через админку)
-    if (typeof data.score === 'number' && data.score < state.totalScore) {
-      state.totalScore = data.score;
+    // Синхронизируем прогресс с сервером
+    // Детектируем сброс через reset_token (timestamp последнего обновления в БД)
+    const serverToken  = data.reset_token || 0;
+    const storedToken  = state._resetToken || 0;
+    const wasReset     = serverToken > 0 && serverToken !== storedToken && data.score === 0 && data.completed === 0;
+    const scoreLower   = typeof data.score === 'number' && data.score < state.totalScore;
+
+    if (wasReset || scoreLower) {
+      state.totalScore        = data.score || 0;
       state.completedChapters = {};
       for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
-      state.chapterScores = {};
-      state.gameOver = data.game_over || false;
-      state.achievements = {};
-      state.achievementPts = 0;
+      state.chapterScores     = {};
+      state.gameOver          = data.game_over || false;
+      // Сбрасываем достижения при любом сбросе прогресса администратором
+      state.achievements      = {};
+      state.achievementPts    = 0;
+      state._resetToken       = serverToken;
+      console.log('🗑 Сброс прогресса обнаружен (wasReset=' + wasReset + ', scoreLower=' + scoreLower + ') — достижения очищены');
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
+    } else {
+      // Просто обновляем токен без сброса
+      if (serverToken) state._resetToken = serverToken;
     }
 
     saveState();

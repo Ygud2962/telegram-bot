@@ -2836,6 +2836,7 @@ async def menu_game(query, context):
             'restart_mode': restart_mode,
             'admin_mode': admin_mode,
             'tester_mode': tester_mode,
+            'reset_token': int(my_result[5].timestamp()) if my_result[5] else 0,
         }
 
     # sync_url ОБЯЗАТЕЛЕН
