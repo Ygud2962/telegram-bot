@@ -678,13 +678,10 @@ function mergeBotLeaderboard() {
   const myUid = getTgUserId();
 
   // Всегда берём leaderboard из БД как источник правды
-  // Всегда применяем leaderboard из БД — даже если пустой (= все сброшены)
-  if (tgInitLB && Array.isArray(tgInitLB)) {
+  if (tgInitLB.length) {
     state.leaderboard = tgInitLB.map(r => ({
       uid: String(r.uid), name: r.name, score: r.score,
-      completed: r.completed, role: r.role || 'player',
-      achievementCount: r.achievementCount || 0,
-      achievementPts:   r.achievementPts   || 0
+      completed: r.completed, role: r.role || 'player'
     }));
   }
 
@@ -694,7 +691,6 @@ function mergeBotLeaderboard() {
     const dbCompleted   = tgInitMe.completed    || 0;
     const dbGameOver    = tgInitMe.game_over    || false;
     const dbRestartMode = tgInitMe.restart_mode || null;
-    const dbResetToken  = tgInitMe.reset_token  || 0;
 
     // Роль из payload — ВСЕГДА явно устанавливаем, не доверяем localStorage
     // Это критично: если роль сменилась с admin на player — нужно сбросить adminMode
@@ -740,20 +736,11 @@ function mergeBotLeaderboard() {
       }
       state.chapterScores = newScores;
       state.gameOver = dbGameOver;
-
-      // Детектируем сброс: reset_token изменился И score=0
-      const storedTok = state._resetToken || 0;
-      const adminReset = (dbResetToken > 0 && dbResetToken !== storedTok && dbScore === 0 && dbCompleted === 0)
-                      || (dbScore === 0 && dbCompleted === 0 && state.totalScore === 0 && Object.keys(state.achievements||{}).length > 0);
-      if (adminReset) {
+      // Сброс достижений: если в БД score=0 и completed=0 — админ сбросил прогресс
+      if (dbScore === 0 && dbCompleted === 0) {
         state.achievements  = {};
         state.achievementPts = 0;
-        state._resetToken   = dbResetToken;
-        console.log('🗑 Сброс при загрузке — достижения очищены');
-      } else if (dbResetToken) {
-        state._resetToken = dbResetToken;
       }
-
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
     }
     saveState();
@@ -4089,28 +4076,20 @@ async function fetchAndApplyState() {
       tgChapterSchedule = data.chapter_schedule;
     }
 
-    // Синхронизируем прогресс с сервером
-    // Детектируем сброс через reset_token (timestamp последнего обновления в БД)
-    const serverToken  = data.reset_token || 0;
-    const storedToken  = state._resetToken || 0;
-    const wasReset     = serverToken > 0 && serverToken !== storedToken && data.score === 0 && data.completed === 0;
-    const scoreLower   = typeof data.score === 'number' && data.score < state.totalScore;
-
-    if (wasReset || scoreLower) {
-      state.totalScore        = data.score || 0;
+    // Синхронизируем прогресс если он меньше (сброс через админку)
+    // Сброс: score стал меньше (обычный сброс) ИЛИ score=0+completed=0 но достижения ещё есть в кэше
+    const _srv = typeof data.score === 'number' ? data.score : state.totalScore;
+    const _done = data.completed || 0;
+    const _hasAch = Object.keys(state.achievements || {}).length > 0;
+    if (_srv < state.totalScore || (_srv === 0 && _done === 0 && _hasAch)) {
+      state.totalScore = _srv;
       state.completedChapters = {};
-      for (let i = 1; i <= (data.completed||0); i++) state.completedChapters[i] = true;
-      state.chapterScores     = {};
-      state.gameOver          = data.game_over || false;
-      // Сбрасываем достижения при любом сбросе прогресса администратором
-      state.achievements      = {};
-      state.achievementPts    = 0;
-      state._resetToken       = serverToken;
-      console.log('🗑 Сброс прогресса обнаружен (wasReset=' + wasReset + ', scoreLower=' + scoreLower + ') — достижения очищены');
+      for (let i = 1; i <= _done; i++) state.completedChapters[i] = true;
+      state.chapterScores  = {};
+      state.gameOver       = data.game_over || false;
+      state.achievements   = {};
+      state.achievementPts = 0;
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
-    } else {
-      // Просто обновляем токен без сброса
-      if (serverToken) state._resetToken = serverToken;
     }
 
     saveState();
