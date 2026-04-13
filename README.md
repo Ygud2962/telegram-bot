@@ -12,7 +12,7 @@
 | Компонент | Версия |
 |---|---|
 | 🤖 Bot | **8.0.0** |
-| 🎮 Game | **1.2.0** |
+| 🎮 Game | **1.2.15** |
 <!-- AUTOVERSION:END -->
 
 [![Статус](https://img.shields.io/badge/✅_СТАТУС-РАБОТАЕТ-brightgreen?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
