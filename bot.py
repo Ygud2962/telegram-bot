@@ -1,4 +1,4 @@
-import re
+﻿import re
 import logging
 import asyncio
 import functools
@@ -116,7 +116,7 @@ if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
 PORT = int(os.environ.get('PORT', 8080))
 # Версии релизов (показываются в /version и используются для cache-bust игры)
 BOT_VERSION = os.environ.get('BOT_VERSION', '8.0.0').strip() or '8.0.0'
-GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.10').strip() or '1.2.10'
+GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.15').strip() or '1.2.15'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 GAME_AUTH_REQUIRED = os.environ.get('GAME_AUTH_REQUIRED', '1').strip() != '0'
