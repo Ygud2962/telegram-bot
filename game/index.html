@@ -1168,6 +1168,16 @@ if (tgUser) return tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_nam
 return 'Разведчик';
 }
 
+function getTgInitData() {
+if (tg?.initData) return String(tg.initData);
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get('tgWebAppData') || '';
+} catch(e) {
+  return '';
+}
+}
+
 const DEFAULT_STATE = () => ({
 lives: 5, chapter: 0, cipherIdx: 0, startTime: 0,
 chapterScore: 0, totalScore: 0,
@@ -1331,7 +1341,7 @@ setTimeout(() => {
   overlay.classList.remove('active');
   
   if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
-  if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyState(); }
+  if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyLeaderboard(); }
   if (tab === 'profile') renderProfileTab();
   if (tab === 'achievements') renderAchievementsScreenTab();
   if (tab === 'about') renderAboutTab();
@@ -1530,7 +1540,7 @@ if (scEl) scEl.textContent = state.totalScore;
 const resetBtn = document.getElementById('btn-reset-header');
 if (resetBtn) resetBtn.style.display = (state.adminMode || window._adminMode) ? 'inline-block' : 'none';
 const plEl = document.getElementById('stat-players-label');
-const plCount = tgInitLB.length || state.leaderboard.length;
+const plCount = state._playersCount || tgInitLB.length || state.leaderboard.length;
 if (plEl) plEl.textContent = '👥 ' + (plCount || '—') + ' игроков';
 if (state.gameOver) { document.getElementById('btn-to-final').style.display = 'block'; }
 else { document.getElementById('btn-to-final').style.display = 'none'; }
@@ -1565,7 +1575,7 @@ showScreen('s-briefing');
 updateStatusBars();
 }
 
-function startChapter(idx) {
+function startChapter(idx, skipReplayConfirm = false) {
 const ch = CHAPTERS[idx];
 if (!isChapterAvailableNow(idx)) {
 showToast('🔒 Глава пока закрыта');
@@ -1575,6 +1585,10 @@ return;
 }
 const chapterId = ch ? ch.id : (idx + 1);
 const isReplay = !!state.completedChapters[chapterId];
+if (!skipReplayConfirm && isReplay && !state.adminMode && !state.testerMode) {
+  showReplayConfirmModal(idx);
+  return;
+}
 state._repeatRun = isReplay && !state.adminMode && !state.testerMode;
 if (state._repeatRun) {
   if (!state.repeatRuns) state.repeatRuns = {};
@@ -1595,6 +1609,48 @@ loadCipher();
 showScreen('s-cipher');
 startBackgroundMusic();
 updateAudioButtons();
+}
+
+function showReplayConfirmModal(idx) {
+let modal = document.getElementById('replay-confirm-modal');
+if (!modal) {
+  modal = document.createElement('div');
+  modal.id = 'replay-confirm-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:18px';
+  document.body.appendChild(modal);
+}
+modal.dataset.chapterIdx = String(idx);
+modal.innerHTML = `
+  <div style="width:100%;max-width:380px;background:#141108;border:1px solid rgba(255,224,51,.25);border-radius:10px;padding:18px 16px">
+    <div style="font-family:var(--head);font-size:var(--fs-lg);color:var(--accent);letter-spacing:.06em;margin-bottom:8px;text-align:center">⚠️ ПОВТОР ГЛАВЫ</div>
+    <div style="font-size:var(--fs-sm);color:#d7d2c0;line-height:1.65;text-align:center;margin-bottom:16px">
+      При повторном запуске этой главы очки начисляться не будут.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button onclick="confirmReplayChapterStart()" style="width:100%;background:var(--accent);color:#0a0a08;border:none;padding:12px 14px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">✅ СОГЛАСЕН</button>
+      <button onclick="cancelReplayChapterStart()" style="width:100%;background:rgba(255,255,255,.06);color:#fdfaf0;border:1px solid rgba(255,255,255,.2);padding:11px 14px;border-radius:6px;font-family:var(--head);font-size:var(--fs-sm);font-weight:700;letter-spacing:.06em;cursor:pointer">🏠 ГЛАВНОЕ МЕНЮ</button>
+    </div>
+  </div>`;
+modal.style.display = 'flex';
+}
+
+function closeReplayConfirmModal() {
+const modal = document.getElementById('replay-confirm-modal');
+if (!modal) return;
+modal.style.display = 'none';
+}
+
+function confirmReplayChapterStart() {
+const modal = document.getElementById('replay-confirm-modal');
+const idx = Number(modal?.dataset?.chapterIdx || currentChapter || 0);
+closeReplayConfirmModal();
+startChapter(idx, true);
+}
+
+function cancelReplayChapterStart() {
+closeReplayConfirmModal();
+showScreen('s-chapters');
+renderChapters();
 }
 
 function isChapterAvailableNow(idx) {
@@ -3066,15 +3122,10 @@ if (tg) { setTimeout(() => tg.close(), 300); } else { goToChapters(); }
 }
 
 function updateLeaderboard() {
-const name = getTgUserName();
-const uid = getTgUserId() || 'guest';
-const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length,
-achievementCount: Object.keys(state.achievements || {}).length,
-achievementPts: state.achievementPts || 0 };
-const idx = state.leaderboard.findIndex(e => e.uid === uid);
-if (idx >= 0) { if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry; }
-else { state.leaderboard.push(entry); }
-state.leaderboard.sort((a,b) => b.score - a.score);
+// Источник правды по рейтингу — только серверная БД.
+if (document.getElementById('s-leaderboard-tab')?.classList.contains('active')) {
+  fetchAndApplyLeaderboard();
+}
 }
 
 function renderLeaderboardTab() {
@@ -3258,7 +3309,12 @@ const syncUrl = window._syncUrl;
 const uid = getTgUserId();
 if (syncUrl && uid) {
 const resetUrl = syncUrl.replace('/game_sync', '/game_reset');
-fetch(resetUrl, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ user_id: uid }) })
+const initData = getTgInitData();
+fetch(resetUrl, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({ user_id: uid, init_data: initData })
+})
 .then(r => r.json()).then(d => console.log('✅ Прогресс сброшен в БД:', d)).catch(e => console.warn('reset sync error:', e));
 }
 renderChapters();
@@ -3524,6 +3580,7 @@ async function autoSync(showNotification = true) {
 const syncUrl = window._syncUrl;
 const uid = getTgUserId();
 if (!syncUrl || !uid) return;
+const initData = getTgInitData();
 const completed = Object.keys(state.completedChapters).length;
 if (state.totalScore === _lastSyncedScore && completed === _lastSyncedCompleted) return;
 if (_syncInFlight) return;
@@ -3531,7 +3588,8 @@ _syncInFlight = true;
 const data = { type: completed > 0 ? 'chapter_complete' : 'sync', chapter: completed > 0 ? Math.max(...Object.keys(state.completedChapters).map(Number)) : 0, score: 0, total_score: state.totalScore, completed: completed, game_over: state.gameOver || false, user_id: uid, user_name: getTgUserName(),
 achievement_count: Object.keys(state.achievements || {}).length,
 achievement_pts: state.achievementPts || 0,
-reset_token: state._resetToken || 0 };
+reset_token: state._resetToken || 0,
+init_data: initData };
 try {
 const resp = await fetch(syncUrl, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
 if (resp.ok) {
@@ -3564,7 +3622,7 @@ if (document.hidden && state.totalScore > 0) { saveState(); autoSync(false); }
 
 window.addEventListener('beforeunload', () => {
 if (state.totalScore > 0 && window._syncUrl && getTgUserId()) {
-const data = { type: 'sync', total_score: state.totalScore, completed: Object.keys(state.completedChapters).length, game_over: state.gameOver || false, user_id: getTgUserId(), user_name: getTgUserName(), achievement_count: Object.keys(state.achievements || {}).length, achievement_pts: state.achievementPts || 0, reset_token: state._resetToken || 0 };
+const data = { type: 'sync', total_score: state.totalScore, completed: Object.keys(state.completedChapters).length, game_over: state.gameOver || false, user_id: getTgUserId(), user_name: getTgUserName(), achievement_count: Object.keys(state.achievements || {}).length, achievement_pts: state.achievementPts || 0, reset_token: state._resetToken || 0, init_data: getTgInitData() };
 navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
 }
 });
@@ -4022,10 +4080,18 @@ function startStateRefresh() {
   if (_stateRefreshInterval) return;
   _stateRefreshInterval = setInterval(() => {
     fetchAndApplyState();
+    if (document.getElementById('s-leaderboard-tab')?.classList.contains('active')) {
+      fetchAndApplyLeaderboard();
+    }
   }, 30000); // каждые 30 сек
   // Обновляем при возврате фокуса
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) fetchAndApplyState();
+    if (!document.hidden) {
+      fetchAndApplyState();
+      if (document.getElementById('s-leaderboard-tab')?.classList.contains('active')) {
+        fetchAndApplyLeaderboard();
+      }
+    }
   });
 }
 
@@ -4051,13 +4117,53 @@ function showAccessDeniedScreen(reason) {
   try { localStorage.removeItem(storageKey()); } catch(e2) {}
 }
 
+async function fetchAndApplyLeaderboard() {
+const uid = getTgUserId();
+const syncUrl = window._syncUrl;
+if (!uid || !syncUrl) return;
+try {
+const base = syncUrl.replace('/game_sync', '');
+const initData = getTgInitData();
+const query = 'user_id=' + encodeURIComponent(uid) + (initData ? '&init_data=' + encodeURIComponent(initData) : '');
+const resp = await fetch(base + '/game_leaderboard?' + query);
+if (!resp.ok) return;
+const data = await resp.json();
+if (!data.ok) return;
+
+if (Array.isArray(data.leaderboard)) {
+  state.leaderboard = data.leaderboard.map(r => ({
+    uid: String(r.uid),
+    name: r.name || 'Игрок',
+    score: Number(r.score) || 0,
+    completed: Number(r.completed) || 0,
+    role: r.role || 'player',
+    achievementCount: Number(r.achievementCount) || 0,
+    achievementPts: Number(r.achievementPts) || 0
+  }));
+  state.leaderboard.sort((a, b) => b.score - a.score);
+}
+if (typeof data.players_count === 'number') {
+  state._playersCount = data.players_count;
+}
+
+if (document.getElementById('s-leaderboard-tab')?.classList.contains('active')) {
+  renderLeaderboardTab();
+}
+if (document.getElementById('s-chapters')?.classList.contains('active')) {
+  renderChapters();
+}
+} catch(e) { console.warn('fetchAndApplyLeaderboard:', e); }
+}
+
 async function fetchAndApplyState() {
 const uid = getTgUserId();
 const syncUrl = window._syncUrl;
 if (!uid || !syncUrl) return;
 try {
 const base = syncUrl.replace('/game_sync', '');
-const resp = await fetch(base + '/game_state?user_id=' + uid);
+const initData = getTgInitData();
+const stateQuery = 'user_id=' + encodeURIComponent(uid) + (initData ? '&init_data=' + encodeURIComponent(initData) : '');
+const resp = await fetch(base + '/game_state?' + stateQuery);
 if (!resp.ok) return;
 const data = await resp.json();
 if (!data.ok) return;
@@ -4078,23 +4184,6 @@ if (data.allowed === false) {
 state.adminMode = data.role === 'admin' || data.admin_mode === true;
 state.testerMode = !state.adminMode && (data.role === 'tester' || data.tester_mode === true);
 window._adminMode = state.adminMode;
-
-// Обновляем таблицу лидеров только данными с сервера (источник правды — БД)
-if (Array.isArray(data.leaderboard)) {
-  state.leaderboard = data.leaderboard.map(r => ({
-    uid: String(r.uid),
-    name: r.name || 'Игрок',
-    score: Number(r.score) || 0,
-    completed: Number(r.completed) || 0,
-    role: r.role || 'player',
-    achievementCount: Number(r.achievementCount) || 0,
-    achievementPts: Number(r.achievementPts) || 0
-  }));
-  state.leaderboard.sort((a, b) => b.score - a.score);
-}
-if (typeof data.players_count === 'number') {
-  state._playersCount = data.players_count;
-}
 
 // Обновляем открытые главы и таймеры (поддержка обоих форматов ответа)
 {
@@ -4189,7 +4278,7 @@ if (isReset) {
   // Перерисовать активный экран если это рейтинг/профиль/достижения
   const activeEl = document.querySelector('.screen.active');
   if (activeEl) {
-    if (activeEl.id === 's-leaderboard-tab')   renderLeaderboardTab();
+    if (activeEl.id === 's-leaderboard-tab')   fetchAndApplyLeaderboard();
     if (activeEl.id === 's-profile-tab')        renderProfileTab();
     if (activeEl.id === 's-achievements-tab')   renderAchievementsScreenTab();
   }
@@ -4201,7 +4290,7 @@ startStateRefresh();
 
 const activeEl = document.querySelector('.screen.active');
 if (activeEl && activeEl.id === 's-leaderboard-tab') {
-  renderLeaderboardTab();
+  fetchAndApplyLeaderboard();
 }
 
 } catch(e) { console.warn('fetchAndApplyState:', e); }
@@ -4213,6 +4302,7 @@ data.total_score = state.totalScore;
 data.achievement_count = Object.keys(state.achievements || {}).length;
 data.achievement_pts = state.achievementPts || 0;
 data.reset_token = state._resetToken || 0;
+data.init_data = getTgInitData();
 data.user_id = getTgUserId();
 data.user_name = tgUser ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim() : 'Игрок';
 console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score, 'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО');

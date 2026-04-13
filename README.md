@@ -83,11 +83,13 @@ python bot.py
 | `BOT_TOKEN` | ✅ | Токен Telegram-бота |
 | `DATABASE_URL` | ✅ | Подключение к PostgreSQL |
 | `GAME_URL` | ✅ | Публичный URL игры |
-| `BOT_PUBLIC_URL` | ✅ | Публичный URL бота для `/game_sync` и `/game_state` |
+| `BOT_PUBLIC_URL` | ✅ | Публичный URL бота для `/game_sync`, `/game_state` и `/game_leaderboard` |
 | `BOT_VERSION` | ⛳ | Версия бота (по умолчанию `8.0.0`) |
 | `GAME_VERSION` | ⛳ | Версия игры (по умолчанию `1.2.0`) |
 | `GROQ_API_KEY` | ⛳ | Ключ Groq для ИИ-помощника |
 | `GAME_BETA` | ⛳ | Режим беты игры (`0` или `1`) |
+| `GAME_AUTH_REQUIRED` | ⛳ | Обязательная проверка Telegram `init_data` для API игры (`1` по умолчанию) |
+| `GAME_AUTH_TTL_SEC` | ⛳ | Срок жизни `init_data` в секундах (по умолчанию `86400`) |
 
 ---
 
@@ -126,7 +128,7 @@ telegram-bot/
 ├─ database.py
 ├─ game/
 │  ├─ index.html
-│  └─ game.js
+│  └─ game.js (legacy-файл, текущий runtime использует inline-скрипт в `index.html`)
 ├─ scripts/
 │  ├─ deploy-vscode.ps1
 │  └─ update_readme_versions.py
@@ -140,7 +142,8 @@ telegram-bot/
 ## 🧪 Проверки перед деплоем
 
 ```bash
-python -m py_compile bot.py database.py
+python -m py_compile bot.py database.py game_security.py
+python -m unittest tests.test_game_security
 python scripts/update_readme_versions.py
 ```
 

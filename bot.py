@@ -18,6 +18,7 @@ import os
 import pytz
 import httpx
 import ui_texts as txt
+from game_security import validate_webapp_init_data, is_stale_sync_token
 
 
 def _tname(t) -> str | None:
@@ -118,6 +119,8 @@ BOT_VERSION = os.environ.get('BOT_VERSION', '8.0.0').strip() or '8.0.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.10').strip() or '1.2.10'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
+GAME_AUTH_REQUIRED = os.environ.get('GAME_AUTH_REQUIRED', '1').strip() != '0'
+GAME_AUTH_TTL_SEC = _env_int('GAME_AUTH_TTL_SEC', 86400)
 # Кэш тестеров (обновляется при изменениях из бота)
 _beta_cache: set = set()
 _beta_cache_ts: float = 0
@@ -5620,6 +5623,26 @@ async def save_photo_subs(query, context):
 #  HTTP ENDPOINT ДЛЯ СИНХРОНИЗАЦИИ ИЗ ИГРЫ
 # ══════════════════════════════════════════════════════════
 
+def _unauthorized_game_response(headers: dict, reason: str):
+    return aiohttp_web.json_response(
+        {'ok': False, 'error': 'unauthorized', 'reason': reason},
+        status=403,
+        headers=headers,
+    )
+
+
+def _authorize_game_request(user_id: int, init_data_raw: str) -> tuple[bool, str]:
+    if not GAME_AUTH_REQUIRED:
+        return True, 'auth_disabled'
+    ok, reason, _ = validate_webapp_init_data(
+        init_data_raw=init_data_raw or '',
+        bot_token=TOKEN,
+        expected_user_id=user_id,
+        max_age_sec=GAME_AUTH_TTL_SEC,
+    )
+    return ok, reason
+
+
 async def handle_game_reset(request):
     """POST /game_reset — полный сброс прогресса игрока.
     Разрешено только для роли 'admin' (сброс своего рейтинга).
@@ -5637,10 +5660,15 @@ async def handle_game_reset(request):
     except Exception:
         return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
     user_id = data.get('user_id')
+    init_data_raw = data.get('init_data', '')
     if not user_id:
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_reset auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
 
         # Проверяем что только admin может сбросить свой рейтинг сам
         role = await asyncio.to_thread(db.get_game_role, user_id)
@@ -5665,22 +5693,29 @@ async def handle_game_state(request):
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
     }
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
     user_id = request.rel_url.query.get('user_id')
+    init_data_raw = request.rel_url.query.get('init_data', '')
     if not user_id:
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
         user_id = int(user_id)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_state auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+
         allowed = await is_game_allowed(user_id)
         access_mode = await _get_cached_game_mode()
         access_reason = access_mode if not allowed else None
 
         # Получаем всё параллельно
-        result, role, chapter_schedule, leaderboard_rows, players_count = await asyncio.gather(
+        result, role, chapter_schedule = await asyncio.gather(
             asyncio.to_thread(db.get_game_result, user_id),
             asyncio.to_thread(db.get_game_role, user_id),
             asyncio.to_thread(db.get_chapter_schedule_for_game),
-            asyncio.to_thread(db.get_game_leaderboard, 50),
-            asyncio.to_thread(db.get_game_players_count),
         )
 
         banned = bool(result[6]) if result and len(result) > 6 else False
@@ -5724,7 +5759,6 @@ async def handle_game_state(request):
             tester_mode = False
             in_rating   = True
 
-        
         chapters_payload = []
         for row in chapter_schedule or []:
             ch_id = int(row.get('id', 0))
@@ -5736,19 +5770,6 @@ async def handle_game_state(request):
                 'scheduled_open_at': ch_open_at,
                 'open_label': 'по расписанию' if ch_open_at else '',
             })
-
-        leaderboard_payload = [
-            {
-                'uid': str(r[0]),
-                'name': r[1] or 'Игрок',
-                'score': int(r[2] or 0),
-                'completed': int(r[3] or 0),
-                'role': (r[5] if len(r) > 5 else 'player') or 'player',
-                'achievementCount': int(r[6] or 0) if len(r) > 6 else 0,
-                'achievementPts': int(r[7] or 0) if len(r) > 7 else 0,
-            }
-            for r in (leaderboard_rows or [])
-        ]
 
         resp = {
             'ok':           True,
@@ -5766,8 +5787,6 @@ async def handle_game_state(request):
             'chapter_schedule': chapter_schedule,
             'chapters': chapters_payload,
             'reset_token':  reset_token,
-            'leaderboard': leaderboard_payload,
-            'players_count': int(players_count or 0),
         }
         if restart_mode:
             resp['restart_mode'] = restart_mode
@@ -5775,6 +5794,53 @@ async def handle_game_state(request):
         return aiohttp_web.json_response(resp, headers=headers)
     except Exception as e:
         logger.error(f"handle_game_state error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
+
+
+async def handle_game_leaderboard(request):
+    """GET /game_leaderboard?user_id=... — актуальный рейтинг из БД."""
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    }
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
+    user_id = request.rel_url.query.get('user_id')
+    init_data_raw = request.rel_url.query.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+
+    try:
+        user_id = int(user_id)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_leaderboard auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+
+        rows, players_count = await asyncio.gather(
+            asyncio.to_thread(db.get_game_leaderboard, 50),
+            asyncio.to_thread(db.get_game_players_count),
+        )
+        leaderboard_payload = [
+            {
+                'uid': str(r[0]),
+                'name': r[1] or 'Игрок',
+                'score': int(r[2] or 0),
+                'completed': int(r[3] or 0),
+                'role': (r[5] if len(r) > 5 else 'player') or 'player',
+                'achievementCount': int(r[6] or 0) if len(r) > 6 else 0,
+                'achievementPts': int(r[7] or 0) if len(r) > 7 else 0,
+            }
+            for r in (rows or [])
+        ]
+        return aiohttp_web.json_response(
+            {'ok': True, 'leaderboard': leaderboard_payload, 'players_count': int(players_count or 0)},
+            headers=headers,
+        )
+    except Exception as e:
+        logger.error(f"handle_game_leaderboard error: {e}")
         return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
 
 
@@ -5794,6 +5860,7 @@ async def handle_game_sync(request):
             {'ok': False, 'error': 'invalid json'}, status=400, headers=headers)
 
     user_id         = data.get('user_id')
+    init_data_raw   = data.get('init_data', '')
     user_name       = data.get('user_name', 'Игрок')
     total_score     = int(data.get('total_score', 0))
     completed       = int(data.get('completed', 0))
@@ -5811,8 +5878,13 @@ async def handle_game_sync(request):
         return aiohttp_web.json_response(
             {'ok': False, 'error': 'no user_id'}, status=400, headers=headers)
 
-    user_id = int(user_id)
     try:
+        user_id = int(user_id)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_sync auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+
         # Проверяем текущий серверный счёт ДО сохранения
         current_result = await asyncio.to_thread(db.get_game_result, user_id)
         db_score_before = current_result[2] if current_result else 0
@@ -5821,7 +5893,7 @@ async def handle_game_sync(request):
 
         # Защита от перезаписи после админ-сброса:
         # клиент обязан присылать актуальный reset_token из /game_state.
-        if client_reset_token > 0 and db_reset_token_before > 0 and client_reset_token != db_reset_token_before:
+        if is_stale_sync_token(client_reset_token, db_reset_token_before):
             current_role = await asyncio.to_thread(db.get_game_role, user_id)
             banned = bool(current_result[6]) if current_result and len(current_result) > 6 else False
             logger.info(
@@ -5917,6 +5989,9 @@ def start_http_server_thread():
         app_http.router.add_post('/game_reset', handle_game_reset)
         app_http.router.add_options('/game_reset', handle_game_reset)
         app_http.router.add_get('/game_state', handle_game_state)
+        app_http.router.add_options('/game_state', handle_game_state)
+        app_http.router.add_get('/game_leaderboard', handle_game_leaderboard)
+        app_http.router.add_options('/game_leaderboard', handle_game_leaderboard)
         app_http.router.add_post('/game_sync', handle_game_sync)
         app_http.router.add_options('/game_sync', handle_game_sync)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
