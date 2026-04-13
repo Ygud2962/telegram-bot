@@ -5675,10 +5675,12 @@ async def handle_game_state(request):
         access_reason = access_mode if not allowed else None
 
         # Получаем всё параллельно
-        result, role, chapter_schedule = await asyncio.gather(
+        result, role, chapter_schedule, leaderboard_rows, players_count = await asyncio.gather(
             asyncio.to_thread(db.get_game_result, user_id),
             asyncio.to_thread(db.get_game_role, user_id),
             asyncio.to_thread(db.get_chapter_schedule_for_game),
+            asyncio.to_thread(db.get_game_leaderboard, 50),
+            asyncio.to_thread(db.get_game_players_count),
         )
 
         banned = bool(result[6]) if result and len(result) > 6 else False
@@ -5735,6 +5737,19 @@ async def handle_game_state(request):
                 'open_label': 'по расписанию' if ch_open_at else '',
             })
 
+        leaderboard_payload = [
+            {
+                'uid': str(r[0]),
+                'name': r[1] or 'Игрок',
+                'score': int(r[2] or 0),
+                'completed': int(r[3] or 0),
+                'role': (r[5] if len(r) > 5 else 'player') or 'player',
+                'achievementCount': int(r[6] or 0) if len(r) > 6 else 0,
+                'achievementPts': int(r[7] or 0) if len(r) > 7 else 0,
+            }
+            for r in (leaderboard_rows or [])
+        ]
+
         resp = {
             'ok':           True,
             'allowed':      bool(allowed),
@@ -5751,6 +5766,8 @@ async def handle_game_state(request):
             'chapter_schedule': chapter_schedule,
             'chapters': chapters_payload,
             'reset_token':  reset_token,
+            'leaderboard': leaderboard_payload,
+            'players_count': int(players_count or 0),
         }
         if restart_mode:
             resp['restart_mode'] = restart_mode

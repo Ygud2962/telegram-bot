@@ -1179,7 +1179,8 @@ repeatRuns: {},
 achievements: {}, achievementPts: 0,
 soundEnabled: true,
 musicEnabled: true,
-selectedTrack: 4
+selectedTrack: 4,
+_playersCount: 0
 });
 
 let state = DEFAULT_STATE();
@@ -1207,6 +1208,8 @@ function loadState() {
 try {
 const s = localStorage.getItem(storageKey());
 if (s) { Object.assign(state, JSON.parse(s)); state._noptsMode = false; }
+state.leaderboard = [];
+state._playersCount = 0;
 if (typeof state.soundEnabled !== 'boolean') state.soundEnabled = true;
 if (typeof state.musicEnabled !== 'boolean') state.musicEnabled = true;
 if (typeof state.selectedTrack !== 'number') state.selectedTrack = 4;
@@ -1229,6 +1232,7 @@ completed: r.completed, role: r.role || 'player',
 achievementCount: r.achievementCount || 0,
 achievementPts: r.achievementPts || 0
 }));
+state._playersCount = tgInitLB.length;
 }
 if (tgInitMe && myUid) {
 const dbScore = tgInitMe.score || 0;
@@ -1327,7 +1331,7 @@ setTimeout(() => {
   overlay.classList.remove('active');
   
   if (tab === 'chapters') { renderChapters(); fetchAndApplyState(); }
-  if (tab === 'leaderboard') renderLeaderboardTab();
+  if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyState(); }
   if (tab === 'profile') renderProfileTab();
   if (tab === 'achievements') renderAchievementsScreenTab();
   if (tab === 'about') renderAboutTab();
@@ -3081,7 +3085,7 @@ list.innerHTML = '<div style="text-align:center;padding:50px 24px;"><div style="
 return;
 }
 const myUid = getTgUserId() || 'guest';
-const total = tgInitLB.length || state.leaderboard.length;
+const total = state._playersCount || tgInitLB.length || state.leaderboard.length;
 const header = `<div style="font-size:var(--fs-xs);color:var(--muted);text-align:center;margin-bottom:16px;letter-spacing:.06em">👥 ${total || 0} уч. · 👆 нажми на себя</div>`;
 const medals = ['🥇','🥈','🥉'];
 const myRole2 = tgInitMe?.role || '';
@@ -4075,6 +4079,23 @@ state.adminMode = data.role === 'admin' || data.admin_mode === true;
 state.testerMode = !state.adminMode && (data.role === 'tester' || data.tester_mode === true);
 window._adminMode = state.adminMode;
 
+// Обновляем таблицу лидеров только данными с сервера (источник правды — БД)
+if (Array.isArray(data.leaderboard)) {
+  state.leaderboard = data.leaderboard.map(r => ({
+    uid: String(r.uid),
+    name: r.name || 'Игрок',
+    score: Number(r.score) || 0,
+    completed: Number(r.completed) || 0,
+    role: r.role || 'player',
+    achievementCount: Number(r.achievementCount) || 0,
+    achievementPts: Number(r.achievementPts) || 0
+  }));
+  state.leaderboard.sort((a, b) => b.score - a.score);
+}
+if (typeof data.players_count === 'number') {
+  state._playersCount = data.players_count;
+}
+
 // Обновляем открытые главы и таймеры (поддержка обоих форматов ответа)
 {
   const openSet = new Set();
@@ -4177,6 +4198,11 @@ if (isReset) {
 
 renderChapters();
 startStateRefresh();
+
+const activeEl = document.querySelector('.screen.active');
+if (activeEl && activeEl.id === 's-leaderboard-tab') {
+  renderLeaderboardTab();
+}
 
 } catch(e) { console.warn('fetchAndApplyState:', e); }
 }
