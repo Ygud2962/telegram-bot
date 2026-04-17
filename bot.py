@@ -3,7 +3,6 @@ import logging
 import asyncio
 import functools
 import inspect
-import json as _json
 import json
 import time
 import urllib.parse
@@ -113,7 +112,28 @@ BOT_PUBLIC_URL = (
 )
 if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
-PORT = int(os.environ.get('PORT', 8080))
+def _origin_from_url(raw_url: str) -> str:
+    if not raw_url:
+        return ''
+    try:
+        parsed = urllib.parse.urlparse(raw_url)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        return ''
+    return ''
+
+
+_ALLOWED_GAME_ORIGINS: tuple[str, ...] = tuple(dict.fromkeys(filter(None, (
+    _origin_from_url(GAME_URL),
+    _origin_from_url(BOT_PUBLIC_URL),
+))))
+
+
+PORT = _env_int('PORT', 8080)
+if not (1 <= PORT <= 65535):
+    logger.warning(f"Некорректный PORT={PORT}, использую 8080")
+    PORT = 8080
 # Версии релизов (показываются в /version и используются для cache-bust игры)
 BOT_VERSION = os.environ.get('BOT_VERSION', '8.0.0').strip() or '8.0.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.15').strip() or '1.2.15'
@@ -1191,7 +1211,31 @@ def format_substitution_row(sub: tuple) -> str:
 # ══════════════════════════════════════════════════════════
 #  ИИ-ПОМОЩНИК (Groq)
 # ══════════════════════════════════════════════════════════
-AI_HISTORY: dict = {}   # user_id -> list of messages (последние 6)
+AI_HISTORY: dict[int, list[dict[str, str]]] = {}
+AI_HISTORY_LAST_SEEN: dict[int, float] = {}
+MAX_AI_HISTORY_MESSAGES = 12
+MAX_AI_HISTORY_USERS = _env_int('MAX_AI_HISTORY_USERS', 2000)
+AI_HISTORY_TTL_SEC = _env_int('AI_HISTORY_TTL_SEC', 24 * 3600)
+
+
+def _prune_ai_history(now_ts: float | None = None) -> None:
+    now_ts = now_ts or time.time()
+    expired = [
+        uid for uid, ts in AI_HISTORY_LAST_SEEN.items()
+        if now_ts - ts > AI_HISTORY_TTL_SEC
+    ]
+    for uid in expired:
+        AI_HISTORY.pop(uid, None)
+        AI_HISTORY_LAST_SEEN.pop(uid, None)
+
+    if len(AI_HISTORY_LAST_SEEN) <= MAX_AI_HISTORY_USERS:
+        return
+    # Удаляем самых "старых" пользователей при переполнении.
+    overflow = len(AI_HISTORY_LAST_SEEN) - MAX_AI_HISTORY_USERS
+    oldest = sorted(AI_HISTORY_LAST_SEEN.items(), key=lambda item: item[1])[:overflow]
+    for uid, _ in oldest:
+        AI_HISTORY.pop(uid, None)
+        AI_HISTORY_LAST_SEEN.pop(uid, None)
 
 SYSTEM_PROMPT_DEFAULT = (
     "Ты — умный помощник для белорусской школы. "
@@ -1214,10 +1258,14 @@ async def ask_ai(question: str, user_id: int, is_teacher: bool = False) -> str:
     if not GROQ_API_KEY:
         return "❌ ИИ-помощник не настроен. Установите GROQ_API_KEY."
 
+    now_ts = time.time()
+    _prune_ai_history(now_ts)
+    AI_HISTORY_LAST_SEEN[user_id] = now_ts
+
     history = AI_HISTORY.get(user_id, [])
     history.append({"role": "user", "content": question})
-    if len(history) > 12:
-        history = history[-12:]
+    if len(history) > MAX_AI_HISTORY_MESSAGES:
+        history = history[-MAX_AI_HISTORY_MESSAGES:]
 
     sys_prompt = SYSTEM_PROMPT_TEACHER if is_teacher else SYSTEM_PROMPT_DEFAULT
 
@@ -1248,7 +1296,8 @@ async def ask_ai(question: str, user_id: int, is_teacher: bool = False) -> str:
                 return "❌ Пустой ответ ИИ. Перефразируйте вопрос."
             # Сохраняем ответ в историю
             history.append({"role": "assistant", "content": answer})
-            AI_HISTORY[user_id] = history[-12:]
+            AI_HISTORY_LAST_SEEN[user_id] = time.time()
+            AI_HISTORY[user_id] = history[-MAX_AI_HISTORY_MESSAGES:]
             if len(answer) > 4000:
                 answer = answer[:4000] + "\n\n<i>...ответ обрезан</i>"
             return answer
@@ -4355,28 +4404,23 @@ async def admin_set_my_role(query, context, role):
 async def cmd_claim_admin(update: Update, context: CallbackContext):
     """/claim_admin — получить права администратора бота если в системе ещё нет ни одного."""
     user = update.effective_user
-    count = await asyncio.to_thread(db.count_bot_admins)
-    if count > 0:
+    await asyncio.to_thread(db.migrate_bot_admins_table)
+    ok = await asyncio.to_thread(db.claim_first_bot_admin, user.id)
+    if not ok:
         await update.message.reply_text(
             "⛔ Команда недоступна — в системе уже есть администратор.\n"
             "Обратитесь к текущему администратору для получения прав."
         )
         return
-    ok = await asyncio.to_thread(db.add_bot_admin, user.id, user.id)
-    if ok:
-        # Также выдаём роль admin в игре при первом получении прав
-        await asyncio.to_thread(db.set_game_role, user.id, 'admin')
-        # Вызываем миграцию на всякий случай
-        await asyncio.to_thread(db.migrate_bot_admins_table)
-        await update.message.reply_text(
-            f"✅ <b>Вы стали администратором!</b>\n\n"
-            f"Кнопка «👑 Админка» появится в главном меню.\n"
-            f"Напишите /start чтобы обновить меню.",
-            parse_mode='HTML'
-        )
-        logger.info(f"Bootstrap admin: user {user.id} ({user.first_name}) claimed admin rights")
-    else:
-        await update.message.reply_text("❌ Ошибка при выдаче прав. Попробуйте снова.")
+    # Также выдаём роль admin в игре при первом получении прав
+    await asyncio.to_thread(db.set_game_role, user.id, 'admin')
+    await update.message.reply_text(
+        f"✅ <b>Вы стали администратором!</b>\n\n"
+        f"Кнопка «👑 Админка» появится в главном меню.\n"
+        f"Напишите /start чтобы обновить меню.",
+        parse_mode='HTML'
+    )
+    logger.info(f"Bootstrap admin: user {user.id} ({user.first_name}) claimed admin rights")
 
 
 # ══════════════════════════════════════════════════════════
@@ -4771,6 +4815,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
     # ── ИИ ──
     if d == 'ai_clear_history':
         AI_HISTORY.pop(user.id, None)
+        AI_HISTORY_LAST_SEEN.pop(user.id, None)
         await query.answer("История очищена ✅")
         await menu_ai(query, context)
         return
@@ -5643,16 +5688,99 @@ def _authorize_game_request(user_id: int, init_data_raw: str) -> tuple[bool, str
     return ok, reason
 
 
+def _resolve_game_cors_origin(request) -> str:
+    req_origin = request.headers.get('Origin', '')
+    if req_origin and req_origin in _ALLOWED_GAME_ORIGINS:
+        return req_origin
+    if _ALLOWED_GAME_ORIGINS:
+        return _ALLOWED_GAME_ORIGINS[0]
+    if req_origin.startswith('http://localhost') or req_origin.startswith('http://127.0.0.1'):
+        return req_origin
+    return 'null'
+
+
+def _game_cors_headers(request, methods: str) -> dict[str, str]:
+    return {
+        'Access-Control-Allow-Origin': _resolve_game_cors_origin(request),
+        'Access-Control-Allow-Methods': methods,
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Vary': 'Origin',
+    }
+
+
+def _extract_user_name_from_init_data(init_data_raw: str) -> str | None:
+    try:
+        pairs = urllib.parse.parse_qsl(
+            init_data_raw or '', keep_blank_values=True, strict_parsing=False
+        )
+        data = dict(pairs)
+        user_raw = data.get('user')
+        if not user_raw:
+            return None
+        user_obj = json.loads(user_raw)
+        first_name = str(user_obj.get('first_name') or '').strip()
+        last_name = str(user_obj.get('last_name') or '').strip()
+        full_name = ' '.join(part for part in (first_name, last_name) if part).strip()
+        if full_name:
+            return full_name
+        username = str(user_obj.get('username') or '').strip()
+        if username:
+            return username
+    except Exception:
+        return None
+    return None
+
+
+def _to_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _clamp_int(value, min_value: int, max_value: int, default: int = 0) -> int:
+    num = _to_int(value, default)
+    if num < min_value:
+        return min_value
+    if num > max_value:
+        return max_value
+    return num
+
+
+def _to_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return False
+
+
+_GAME_RATE_STATE: dict[tuple[str, int], list[float]] = {}
+
+
+def _is_game_rate_limited(endpoint: str, user_id: int, limit: int, window_sec: int = 60) -> bool:
+    now_ts = time.time()
+    key = (endpoint, user_id)
+    events = _GAME_RATE_STATE.get(key, [])
+    events = [ts for ts in events if now_ts - ts < window_sec]
+    events.append(now_ts)
+    _GAME_RATE_STATE[key] = events
+    # Ленивая очистка старых ключей.
+    if len(_GAME_RATE_STATE) > 5000:
+        stale_keys = [k for k, vals in _GAME_RATE_STATE.items() if not vals or now_ts - vals[-1] > window_sec * 2]
+        for stale_key in stale_keys:
+            _GAME_RATE_STATE.pop(stale_key, None)
+    return len(events) > limit
+
+
 async def handle_game_reset(request):
     """POST /game_reset — полный сброс прогресса игрока.
     Разрешено только для роли 'admin' (сброс своего рейтинга).
     Тестировщики и игроки не могут сбрасывать сами себя.
     """
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-    }
+    headers = _game_cors_headers(request, 'POST, OPTIONS')
     if request.method == 'OPTIONS':
         return aiohttp_web.Response(headers=headers)
     try:
@@ -5664,7 +5792,9 @@ async def handle_game_reset(request):
     if not user_id:
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
-        user_id = int(user_id)
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
         auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
         if not auth_ok:
             logger.warning(f"game_reset auth failed: user={user_id}, reason={auth_reason}")
@@ -5688,11 +5818,7 @@ async def handle_game_state(request):
     """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД.
     Учитывает роль: admin/tester/player — разные права доступа к главам.
     """
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-    }
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
     if request.method == 'OPTIONS':
         return aiohttp_web.Response(headers=headers)
 
@@ -5701,11 +5827,19 @@ async def handle_game_state(request):
     if not user_id:
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
     try:
-        user_id = int(user_id)
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
         auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
         if not auth_ok:
             logger.warning(f"game_state auth failed: user={user_id}, reason={auth_reason}")
             return _unauthorized_game_response(headers, auth_reason)
+        if _is_game_rate_limited('game_state', user_id, limit=60):
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'rate_limited'},
+                status=429,
+                headers=headers,
+            )
 
         allowed = await is_game_allowed(user_id)
         access_mode = await _get_cached_game_mode()
@@ -5799,11 +5933,7 @@ async def handle_game_state(request):
 
 async def handle_game_leaderboard(request):
     """GET /game_leaderboard?user_id=... — актуальный рейтинг из БД."""
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-    }
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
     if request.method == 'OPTIONS':
         return aiohttp_web.Response(headers=headers)
 
@@ -5813,7 +5943,9 @@ async def handle_game_leaderboard(request):
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
 
     try:
-        user_id = int(user_id)
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
         auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
         if not auth_ok:
             logger.warning(f"game_leaderboard auth failed: user={user_id}, reason={auth_reason}")
@@ -5846,11 +5978,7 @@ async def handle_game_leaderboard(request):
 
 async def handle_game_sync(request):
     """Принимает POST /game_sync от игры и сохраняет результат в БД."""
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-    }
+    headers = _game_cors_headers(request, 'POST, OPTIONS')
     if request.method == 'OPTIONS':
         return aiohttp_web.Response(headers=headers)
     try:
@@ -5859,37 +5987,46 @@ async def handle_game_sync(request):
         return aiohttp_web.json_response(
             {'ok': False, 'error': 'invalid json'}, status=400, headers=headers)
 
-    user_id         = data.get('user_id')
-    init_data_raw   = data.get('init_data', '')
-    user_name       = data.get('user_name', 'Игрок')
-    total_score     = int(data.get('total_score', 0))
-    completed       = int(data.get('completed', 0))
-    chapter         = int(data.get('chapter', 0))
-    score           = int(data.get('score', 0))
-    game_over       = bool(data.get('game_over', False))
-    achievement_count = int(data.get('achievement_count', 0))
-    achievement_pts   = int(data.get('achievement_pts', 0))
-    try:
-        client_reset_token = int(data.get('reset_token', 0) or 0)
-    except Exception:
-        client_reset_token = 0
+    user_id = data.get('user_id')
+    init_data_raw = data.get('init_data', '')
+    total_score = _clamp_int(data.get('total_score', 0), 0, 999999)
+    completed = _clamp_int(data.get('completed', 0), 0, 6)
+    chapter = _clamp_int(data.get('chapter', 0), 0, 6)
+    score = _clamp_int(data.get('score', 0), 0, 50000)
+    game_over = _to_bool(data.get('game_over', False))
+    achievement_count = _clamp_int(data.get('achievement_count', 0), 0, 500)
+    achievement_pts = _clamp_int(data.get('achievement_pts', 0), 0, 50000)
+    client_reset_token = _clamp_int(data.get('reset_token', 0), 0, 2147483647)
 
     if not user_id:
         return aiohttp_web.json_response(
             {'ok': False, 'error': 'no user_id'}, status=400, headers=headers)
 
     try:
-        user_id = int(user_id)
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
         auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
         if not auth_ok:
             logger.warning(f"game_sync auth failed: user={user_id}, reason={auth_reason}")
             return _unauthorized_game_response(headers, auth_reason)
+        if _is_game_rate_limited('game_sync', user_id, limit=30):
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'rate_limited'},
+                status=429,
+                headers=headers,
+            )
 
         # Проверяем текущий серверный счёт ДО сохранения
         current_result = await asyncio.to_thread(db.get_game_result, user_id)
         db_score_before = current_result[2] if current_result else 0
         db_completed_before = current_result[3] if current_result else 0
         db_reset_token_before = int(current_result[5].timestamp()) if current_result and current_result[5] else 0
+        trusted_user_name = (
+            _extract_user_name_from_init_data(init_data_raw)
+            or (current_result[1] if current_result and len(current_result) > 1 and current_result[1] else None)
+            or 'Игрок'
+        )
 
         # Защита от перезаписи после админ-сброса:
         # клиент обязан присылать актуальный reset_token из /game_state.
@@ -5909,7 +6046,7 @@ async def handle_game_sync(request):
 
         await asyncio.to_thread(
             db.save_game_result,
-            user_id, user_name, chapter, score, total_score,
+            user_id, trusted_user_name, chapter, score, total_score,
             completed, game_over, False
         )
         # Сохраняем достижения ТОЛЬКО если серверный счёт до сохранения был > 0
@@ -5963,10 +6100,11 @@ def start_http_server_thread():
     async def serve_game_file(request):
         """Отдаёт файлы игры (game.js и пр.)."""
         filename = request.match_info.get('filename', '')
-        # Защита от path traversal
-        if '..' in filename or '/' in filename:
+        safe_filename = pathlib.Path(filename).name
+        # Защита от path traversal и скрытых файлов
+        if safe_filename != filename or safe_filename.startswith('.'):
             return aiohttp_web.Response(text='Forbidden', status=403)
-        fpath = GAME_DIR / filename
+        fpath = GAME_DIR / safe_filename
         if fpath.exists() and fpath.is_file():
             content_types = {
                 '.js': 'application/javascript; charset=utf-8',
@@ -6101,71 +6239,6 @@ def main():
     except Exception as e:
         logger.critical(f"Критическая ошибка: {e}")
 
-# Canonical main menu builder used by handlers.
-def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
-                     teacher_name: str | None = None) -> list:
-    """Возвращает главное меню с выделенными пунктами игры и помощи."""
-    if teacher_name:
-        role_btn = btn(f"👨‍🏫 {teacher_name}", 'menu_profile')
-    elif profile:
-        role = profile.get('role', 'guest')
-        name = profile.get('display_name', '')
-        cls = profile.get('class_name', '')
-        if role == 'student':
-            role_btn = btn(f"👨‍🎓 {cls.upper()} · {name}", 'menu_profile')
-        elif role == 'parent':
-            role_btn = btn(f"👨‍👩‍👧 {cls.upper()} · {name}", 'menu_profile')
-        else:
-            role_btn = btn("👤 Мой профиль", 'menu_profile')
-    else:
-        role_btn = btn("📝 Зарегистрироваться", 'menu_register')
-
-    kb = [
-        [btn("🎮 ШИВРОВАЛЬЩИК", 'menu_game'), btn("🆘 ПОМОЩЬ", 'menu_help')],
-        [btn("⏰ Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
-        [btn("🔄 Замены", 'menu_substitutions'), btn("📣 Новости", 'menu_news')],
-        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔍 Поиск", 'menu_search_teacher')],
-        [btn("🕐 Звонки", 'menu_bells'), btn("⭐ Избранное", 'menu_my')],
-        [btn("🤖 ИИ-помощник", 'menu_ai'), role_btn],
-    ]
-    if is_admin:
-        kb.append([btn("👑 Админка", 'admin_panel')])
-    return kb
-
-
-def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
-                     teacher_name: str | None = None) -> list:
-    """Возвращает главное меню в формате плиток 2 колонки + одиночные пункты."""
-    if teacher_name:
-        role_btn = btn(f"👨‍🏫 {teacher_name}", 'menu_profile')
-    elif profile:
-        role = profile.get('role', 'guest')
-        name = profile.get('display_name', '')
-        cls = profile.get('class_name', '')
-        if role == 'student':
-            role_btn = btn(f"👨‍🎓 {cls.upper()} · {name}", 'menu_profile')
-        elif role == 'parent':
-            role_btn = btn(f"👨‍👩‍👧 {cls.upper()} · {name}", 'menu_profile')
-        else:
-            role_btn = btn("👤 Мой профиль", 'menu_profile')
-    else:
-        role_btn = btn("📝 Зарегистрироваться", 'menu_register')
-
-    kb = [
-        [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
-        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
-        [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
-        [btn("🕑 Звонки", 'menu_bells'), btn("🤖 ИИ помощник", 'menu_ai')],
-        [btn("⭐ Избранное", 'menu_my')],
-        [btn("🎮 Шивровальщик", 'menu_game')],
-        [btn("🆘 Помощь", 'menu_help')],
-        [role_btn],
-    ]
-    if is_admin:
-        kb.append([btn("🛠 Админка", 'admin_panel')])
-    return kb
-
-
 async def menu_games(query, context):
     """Подменю игр."""
     kb = [
@@ -6187,7 +6260,7 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
     elif profile and profile.get('display_name'):
         profile_label = str(profile.get('display_name')).strip()
     else:
-        profile_label = "Юрий гуд"
+        profile_label = 'Гость'
 
     kb = [
         [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],

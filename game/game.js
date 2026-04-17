@@ -320,63 +320,7 @@ const CHAPTERS = [
   }
 ];
 
-const ANSWER_MAP = {
-"a2504b40b4c895667b4364476daee719377afbab51bbd142e0b5a5f538b58875":"ГОМЕЛЬСКАЯ",
-"4897432de4be211f639b683e878ae091df780e52bb92a5ac7023ad88bf5e3b8f":"СОЖ",
-"01458a6a82aafaacc62d2a5fff5e7c73ae5a97661b706e5dccaa8c96cb82a234":"ПОЛЕСЬЕ",
-"27d97c40af3afb4879364af1fdddf55bbbb06effe822b3ad43d869f147751822":"ПАРТИЗАН",
-"b82e24ecc9743b7d5b1b5b5fafc3fa8181bbc2be139b8227873783adbb0b8a2c":"СОЖА",
-"9f14025af0065b30e47e23ebb3b491d39ae8ed17d33739e5ff3827ffb3634953":"35",
-"ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d":"5",
-"4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a":"4",
-"39fa9ec190eee7b6f4dff1100d6343e10918d044c75eac8f9e9a2596173f80c9":"60",
-
-"469a02b8953ccf4cded9018fdfad65dad3b5d005e3c277b3d6d644fffaa52029":"ГЕРОЙ",
-"b7a56873cd771f2c446d369b649430b65a756ba278ff97ec81bb6f55b2e73569":"25",
-"f9e05f164c5a0d5f568e20655d6a3460a1b89be8ae2d039432b7f591269c56d7":"ГОРОД",
-"9f105caf00cb3a6702aa88267e5efeac19d5ed77d966999d103ad3c02e09f622":"ХЛЕБ ДОРОГ",
-"54ca7c8f08a9e7fad97a7e0720ab099fc0cf7fe8177b7ebea645d019797995e1":"ХЛЕБ ДОРОГ",
-"f4f847839b6e46ff3047b6ca7622555097aa47f3ee69e4f935530f4faa93d18c":"СКЛАД",
-"f44ea8d11615d997a61d3b8b0b80d8b5ea76d2dbb60c17fa162ede87abbe7bf7":"СВЯЗЬ",
-"20239dec89076cf07026693b3e5d5efc14bd7a26c1cd49e2bb77deb90cf8a00f":"ЯВКА",
-"324d91c47431ef6d9a3d33983c3ff54e023f6bc359870d0ba5e3fce44afe2e6a":"МОСТ ГОРИТ",
-"864558c186dc0e8d00dd5dddff6a2587c800cdf025b4a04157bc861f2b01874f":"МОСТ ГОРИТ",
-"f275f3dada670a7d7abdacfb2143475de1ea768123cd40111fb66d0d52ca74d8":"ПУТЬ",
-"06074d823df2801860e0d583c4c56927c9cf6f4255acced4541585f5123b3d50":"ОТРЯД",
-"24e6357fad3c0e1a6a24349c4250d1ead3461a4ca8052433cbb0c95515e1b4db":"ВЗРЫВ",
-"dc08aae51e3d3771be3986a40366d64f63635afd050b71e187ea15857c65b291":"ВРАГ БЕЖИТ",
-"d8f54e4c998fe29dbbeff453ec4d4733646f6e3edc4080f0bb29b4b86ea87676":"ВРАГ БЕЖИТ",
-"fec3d20ab54d04d7e2007c03c222a7204d732a1c75b18cf5730813d8007eb428":"РУБЕЖ",
-"e4d2f03d6cacba6f4636f7a06005337f496fb959510878462cb55d1e688ab307":"ОСВОБОЖДЕН",
-"3c52700fe62c8bff58582f5a574ddc38f0a83f05b7220763744bb61bc933b64d":"ПРОРЫВ",
-"e6f182a0288b446b693099008c4747ce928497399ea20a4c89dfef0be894662c":"МИНСК",
-"3872ed95b70ee6ebffbf1715e72742e00a4cba16dd7690862a993c4e0d9f8265":"ПОБЕДА",
-"1f357f38d0a3225db20815563c70bfe154832f7e0cd2cb79edde8a1e5038a85b":"БРЕСТ",
-"4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5":"10",
-"011942ffde9054ddd74029d5914c259e8d658a850fa296d5d083a1e38fcadbd9":"ПЛОЩАДЬ ПОБЕДЫ",
-"3461517ae2ee3e1b05a3d7e6135dbb915f7555c68e7a5fa1fdd0a839f512395f":"ПЛОЩАДЬ ПОБЕДЫ",
-"4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce":"3",
-"9890080953fe693654e3db2bece9ddc1e28e86659ece82fd3a44e9904809a94f":"СЛАВА",
-"0dd0a827bdd580e9eaa343e55ae702740b9f2346d8b6699c5a8669ea0b64571f":"МИР",
-"d5473eac88f77d42d6202029dd2d341434f791a78879b40285516d309fe37b48":"ВОЙНА ОКОНЧЕНА",
-"9c9edf660326661f487ffe24a68af0b2fc6d351ef5b00700a1120b67769f53ae":"ВОЙНА ОКОНЧЕНА",
-"ee28ccd9c40886ef8f32df5d06a38b87a2742942250d9bc525585f47cf132c8c":"ГАРНИЗОН",
-"06b21234e80f4cbe0bbcca7195551e94577a26f59f43bb4e78ea22aa3804b525":"БЕРЛИН",
-"02502539349de7bcea28618412d857217fbf10a5533504d3af7361cbe66b66c1":"ВИТЕБСК",
-"32076f76c7be7c437b41289f10c44cce9c107523aee32428024297703302ae2d":"БАГРАТИОН",
-"e9a000b50262fd7992df43b2ef5d0c0e8347a3b14ab12143f0fc4bd210606e93":"ХОЙНИКИ",
-"a371525f209c28d6fd1628900b18c725be85807884703f5fa8769a4990419512":"СВЯЗНОЙ",
-"e601539268946eebf1f84584657b2769e92be55ebc43a9a7266d8f0aec021dbb":"ГОМЕЛЬ",
-"14cef73b1bd29459a634b6bb8f2138e41e047419c0c22e017938ca80b21dafb7":"МОЗЫРЬ",
-"131f1b7eaf25d645a5a1a1fd3c35330be40dec081cd032ace5cfd7143ef011a7":"НАРОВЛЯ",
-"59afe82b485cb35ce1c356ab850147ccaaa5d72241e4357ec2c30f18063fdec8":"ПРИПЯТЬ",
-"5933b0b35d5d3e9d1f53fbce9403c5672883fff37f429dc1da26881f47415672":"1941",
-"66a7a5807c3130eb2d0b55bb260a6a001b9d62095c94b753cbb215f3e4f099e1":"1943",
-"f513a0aa4f8f39744c6fddf2b5eb18cc1eac55ca866a1b243d835362a023f243":"1944",
-"060672b8531404f598515957df33d6387e0647cbc382d35ef286fa3466362384":"1945",
-"19581e27de7ced00ff1ce50b2047e7a567c76b1cbaebabe5ef03f7c3017bb5b7":"9",
-};
-
+// Не храним правильные ответы в клиентском коде.
 const MORSE_TABLE = {
   'А':'.-','Б':'-...','В':'.--','Г':'--.','Д':'-..','Е':'.','Ж':'...-',
   'З':'--..','И':'..','Й':'.---','К':'-.-','Л':'.-..','М':'--','Н':'-.',
@@ -448,9 +392,6 @@ async function sendResultToBot(data) {
   data.achievement_count = Object.keys(state.achievements || {}).length;
   data.achievement_pts   = state.achievementPts || 0;
   data.user_id    = getTgUserId();
-  data.user_name  = tgUser
-    ? ((tgUser.first_name||'') + (tgUser.last_name?' '+tgUser.last_name:'')).trim()
-    : 'Игрок';
 
   console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score,
     'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО', 'userId:', data.user_id);
@@ -518,7 +459,6 @@ async function flushPendingResults() {
       if (!pending.length) return;
       const last = pending[pending.length - 1];
       last.user_id = getTgUserId();
-      last.user_name = getTgUserName();
       const resp = await fetch(syncUrl, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -591,7 +531,6 @@ async function autoSync(showNotification = true) {
     completed: completed,
     game_over: state.gameOver || false,
     user_id: uid,
-    user_name: getTgUserName(),
   };
 
   try {
@@ -630,7 +569,7 @@ window.addEventListener('beforeunload', () => {
       type: 'sync', total_score: state.totalScore,
       completed: Object.keys(state.completedChapters).length,
       game_over: state.gameOver || false,
-      user_id: getTgUserId(), user_name: getTgUserName(),
+      user_id: getTgUserId(),
     };
     navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
   }
@@ -1341,8 +1280,6 @@ async function checkAnswer() {
   const elapsed = Math.round((Date.now() - state.startTime) / 1000);
 
   const normVal = _normalizeForCompare(rawVal);
-  const canonical = ANSWER_MAP[correct] || '';
-  const normCanonical = _normalizeForCompare(canonical);
 
   // Несколько эквивалентных вариантов, чтобы убрать ложные "неверно"
   const candidates = new Set([
@@ -1357,14 +1294,6 @@ async function checkAnswer() {
 
   const hashes = await Promise.all(Array.from(candidates).filter(Boolean).map(c => sha256(c)));
   let isCorrect = hashes.includes(correct);
-
-  // Fallback: прямое сравнение с каноническим ответом по хешу
-  if (!isCorrect && normCanonical) {
-    isCorrect = (
-      normVal === normCanonical ||
-      normVal.replace(/\s+/g, '') === normCanonical.replace(/\s+/g, '')
-    );
-  }
 
   if (isCorrect) {
     // ── ПРАВИЛЬНО ──
@@ -1484,7 +1413,10 @@ function showHint() {
 //  ЭКРАН УСПЕХА (один шифр)
 // ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
-  document.getElementById('succ-answer').textContent = ANSWER_MAP[cipher.answer] || cipher.answer;
+  const solvedLabel = cipher.type === 'quiz'
+    ? (cipher.options?.[cipher.correctIndex] || 'Верно')
+    : 'Ответ принят';
+  document.getElementById('succ-answer').textContent = solvedLabel;
   document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
   const factEl = document.getElementById('succ-fact');
   if (factEl) factEl.innerHTML = cipher.fact ? '<span style="color:var(--accent3);margin-right:4px">📜</span>' + cipher.fact : '';
@@ -1571,7 +1503,6 @@ async function finishChapter() {
     score: state.chapterScore,
     total_score: state.totalScore,
     user_id: getTgUserId(),
-    user_name: getTgUserName(),
     game_over: allDone
   });
 
@@ -1674,8 +1605,7 @@ async function failChapter() {
     chapter_title: ch.title,
     score: state.chapterScore,
     total_score: state.totalScore,
-    user_id: getTgUserId(),
-    user_name: getTgUserName()
+    user_id: getTgUserId()
   });
 
   document.getElementById('fail-chapter-name').textContent = ch.title;
@@ -1921,8 +1851,7 @@ async function showFinal() {
     total_score: state.totalScore,
     rank: rank,
     pct: pct,
-    user_id: getTgUserId(),
-    user_name: getTgUserName()
+    user_id: getTgUserId()
   });
 
   showScreen('s-final');
@@ -2727,7 +2656,7 @@ function renderLeaderboardTab() {
 
   const medals = ['🥇','🥈','🥉'];
   const myRole2 = tgInitMe?.role || '';
-  const isAdminUser = myRole2 === 'admin' || (tgUser && tgUser.id === 516406248);
+  const isAdminUser = myRole2 === 'admin';
   // Фильтруем: обычные игроки не видят админов/тестировщиков в рейтинге
   const filteredLb = isAdminUser
     ? lb  // Админ видит всех

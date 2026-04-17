@@ -14,6 +14,7 @@ if not DATABASE_URL:
     raise ValueError("❌ DATABASE_URL не установлен!")
 
 db_pool = None
+_TEMP_CONNECTION_IDS: set[int] = set()
 
 # Параметры retry при потере связи с БД
 _DB_RETRY_ATTEMPTS = 5        # попыток переподключения
@@ -32,7 +33,7 @@ def init_pool():
                 except Exception:
                     pass
             db_pool = pool.SimpleConnectionPool(
-                minconn=1, maxconn=5,
+                minconn=1, maxconn=10,
                 dsn=DATABASE_URL, sslmode='require',
                 connect_timeout=10,
             )
@@ -85,6 +86,10 @@ def get_connection():
         init_pool()
     try:
         conn = db_pool.getconn()
+    except pool.PoolError:
+        logger.warning("⚠️ Пул БД исчерпан, открываю временное подключение")
+        conn = _try_new_connection()
+        _TEMP_CONNECTION_IDS.add(id(conn))
     except Exception:
         # Пул сломан — пересоздаём
         logger.warning("⚠️  Пул соединений сломан, пересоздаём...")
@@ -113,7 +118,20 @@ def get_connection():
 
 def release_connection(conn):
     global db_pool
-    if db_pool is None or conn is None:
+    if conn is None:
+        return
+    if id(conn) in _TEMP_CONNECTION_IDS:
+        _TEMP_CONNECTION_IDS.discard(id(conn))
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return
+    if db_pool is None:
+        try:
+            conn.close()
+        except Exception:
+            pass
         return
     try:
         # Если соединение в плохом состоянии — закрываем его
@@ -787,12 +805,18 @@ def get_news(offset=0, limit=8, order='DESC'):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        direction = 'ASC' if order == 'ASC' else 'DESC'
-        cur.execute(f'''
-            SELECT id, title, content, published_at, views_count
-            FROM news ORDER BY published_at {direction}
-            OFFSET %s LIMIT %s
-        ''', (offset, limit))
+        if order == 'ASC':
+            cur.execute('''
+                SELECT id, title, content, published_at, views_count
+                FROM news ORDER BY published_at ASC
+                OFFSET %s LIMIT %s
+            ''', (offset, limit))
+        else:
+            cur.execute('''
+                SELECT id, title, content, published_at, views_count
+                FROM news ORDER BY published_at DESC
+                OFFSET %s LIMIT %s
+            ''', (offset, limit))
         return cur.fetchall()
     except Exception as e:
         logger.error(f"get_news: {e}")
@@ -2107,6 +2131,35 @@ def add_bot_admin(user_id: int, granted_by: int = None) -> bool:
         return True
     except Exception as e:
         logger.error(f"add_bot_admin error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def claim_first_bot_admin(user_id: int) -> bool:
+    """Атомарно назначает первого админа бота. Возвращает True только если прав не было."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # Глобальная транзакционная блокировка для bootstrap-сценария.
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (99177351,))
+        cur.execute("""
+            WITH has_admin AS (
+                SELECT 1 FROM bot_admins LIMIT 1
+            )
+            INSERT INTO bot_admins(user_id, granted_by, granted_at)
+            SELECT %s, %s, NOW()
+            WHERE NOT EXISTS (SELECT 1 FROM has_admin)
+            ON CONFLICT (user_id) DO NOTHING
+            RETURNING user_id
+        """, (user_id, user_id))
+        row = cur.fetchone()
+        conn.commit()
+        return bool(row)
+    except Exception as e:
+        logger.error(f"claim_first_bot_admin error: {e}")
         _safe_rollback(conn)
         return False
     finally:
