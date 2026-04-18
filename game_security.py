@@ -1,8 +1,13 @@
 import hashlib
 import hmac
 import json
+import re
 import time
 import urllib.parse
+
+MAX_INIT_DATA_LEN = 8192
+MAX_USER_JSON_LEN = 4096
+MAX_ALLOWED_FUTURE_SKEW_SEC = 30
 
 
 def is_stale_sync_token(client_token: int, server_token: int) -> bool:
@@ -30,18 +35,30 @@ def validate_webapp_init_data(
         return False, "missing_bot_token", None
     if not init_data_raw:
         return False, "missing_init_data", None
+    if len(init_data_raw) > MAX_INIT_DATA_LEN:
+        return False, "init_data_too_large", None
 
     try:
-        pairs = urllib.parse.parse_qsl(
+        pairs: list[tuple[str, str]] = urllib.parse.parse_qsl(
             init_data_raw, keep_blank_values=True, strict_parsing=False
         )
-        data = dict(pairs)
     except Exception:
         return False, "bad_init_data_format", None
+    if not pairs:
+        return False, "empty_init_data", None
+
+    data: dict[str, str] = {}
+    for key, value in pairs:
+        # Защита от неоднозначной интерпретации query-string.
+        if key in data:
+            return False, "duplicate_key", None
+        data[key] = value
 
     recv_hash = data.pop("hash", None)
     if not recv_hash:
         return False, "missing_hash", None
+    if not re.fullmatch(r"[0-9a-f]{64}", recv_hash):
+        return False, "bad_hash_format", None
 
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
     secret_key = hmac.new(
@@ -61,20 +78,40 @@ def validate_webapp_init_data(
     if auth_date <= 0:
         return False, "missing_auth_date", None
 
+    try:
+        ttl = int(max_age_sec)
+    except Exception:
+        ttl = 86400
+    if ttl <= 0:
+        ttl = 86400
+
     now = int(now_ts if now_ts is not None else time.time())
-    if abs(now - auth_date) > int(max_age_sec):
+    if auth_date > now + MAX_ALLOWED_FUTURE_SKEW_SEC:
+        return False, "future_auth_date", None
+    if now - auth_date > ttl:
         return False, "expired", None
 
     user_raw = data.get("user")
     if not user_raw:
         return False, "missing_user", None
+    if len(user_raw) > MAX_USER_JSON_LEN:
+        return False, "user_json_too_large", None
     try:
         user_obj = json.loads(user_raw)
         auth_user_id = int(user_obj.get("id"))
     except Exception:
         return False, "bad_user_json", None
+    if auth_user_id <= 0:
+        return False, "bad_user_id", None
 
-    if expected_user_id is not None and int(expected_user_id) != auth_user_id:
-        return False, "user_mismatch", auth_user_id
+    if expected_user_id is not None:
+        try:
+            expected_uid = int(expected_user_id)
+        except Exception:
+            return False, "bad_expected_user_id", auth_user_id
+        if expected_uid <= 0:
+            return False, "bad_expected_user_id", auth_user_id
+        if expected_uid != auth_user_id:
+            return False, "user_mismatch", auth_user_id
 
     return True, "ok", auth_user_id

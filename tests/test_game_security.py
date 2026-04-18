@@ -45,7 +45,7 @@ class GameSecurityTests(unittest.TestCase):
             init_data, bot_token, expected_user_id=222, max_age_sec=3600, now_ts=now
         )
         self.assertFalse(ok)
-        self.assertEqual(reason, "bad_hash")
+        self.assertIn(reason, {"bad_hash", "bad_hash_format"})
 
     def test_validate_webapp_init_data_expired(self):
         bot_token = "123456:TEST_TOKEN"
@@ -73,6 +73,31 @@ class GameSecurityTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "user_mismatch")
         self.assertEqual(uid, 444)
+
+    def test_validate_webapp_init_data_duplicate_key(self):
+        bot_token = "123456:TEST_TOKEN"
+        now = int(time.time())
+        raw_user = json.dumps({"id": 555}, separators=(",", ":"))
+        data = {"auth_date": str(now), "query_id": "AAE", "user": raw_user}
+        signed = _sign_init_data(data, bot_token)
+        duplicated = signed + "&auth_date=" + str(now)
+        ok, reason, _ = validate_webapp_init_data(
+            duplicated, bot_token, expected_user_id=555, max_age_sec=3600, now_ts=now
+        )
+        self.assertFalse(ok)
+        self.assertEqual(reason, "duplicate_key")
+
+    def test_validate_webapp_init_data_future_auth_date(self):
+        bot_token = "123456:TEST_TOKEN"
+        now = int(time.time())
+        raw_user = json.dumps({"id": 666}, separators=(",", ":"))
+        data = {"auth_date": str(now + 120), "query_id": "AAE", "user": raw_user}
+        init_data = _sign_init_data(data, bot_token)
+        ok, reason, _ = validate_webapp_init_data(
+            init_data, bot_token, expected_user_id=666, max_age_sec=3600, now_ts=now
+        )
+        self.assertFalse(ok)
+        self.assertEqual(reason, "future_auth_date")
 
     def test_stale_sync_token(self):
         self.assertTrue(is_stale_sync_token(101, 202))
