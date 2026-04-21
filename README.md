@@ -7,12 +7,12 @@
 
 <!-- AUTOVERSION:START -->
 [![Версия бота](https://img.shields.io/badge/🤖_ВЕРСИЯ-8.0.0-2196F3?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ygud2962/telegram-bot)
-[![Версия игры](https://img.shields.io/badge/🎮_ВЕРСИЯ-1.2.15-FF9800?style=for-the-badge&logo=html5&logoColor=white)](https://ygud2962.github.io/telegram-bot/)
+[![Версия игры](https://img.shields.io/badge/🎮_ВЕРСИЯ-1.2.17-FF9800?style=for-the-badge&logo=html5&logoColor=white)](https://ygud2962.github.io/telegram-bot/)
 
 | Компонент | Версия |
 |---|---|
 | 🤖 Bot | **8.0.0** |
-| 🎮 Game | **1.2.15** |
+| 🎮 Game | **1.2.17** |
 <!-- AUTOVERSION:END -->
 
 [![Статус](https://img.shields.io/badge/✅_СТАТУС-РАБОТАЕТ-brightgreen?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
@@ -85,7 +85,7 @@ python bot.py
 | `GAME_URL` | ✅ | Публичный URL игры |
 | `BOT_PUBLIC_URL` | ✅ | Публичный URL бота для `/game_sync`, `/game_state` и `/game_leaderboard` |
 | `BOT_VERSION` | ⛳ | Версия бота (по умолчанию `8.0.0`) |
-| `GAME_VERSION` | ⛳ | Версия игры (по умолчанию `1.2.15`) |
+| `GAME_VERSION` | ⛳ | Версия игры (по умолчанию `1.2.17`) |
 | `GROQ_API_KEY` | ⛳ | Ключ Groq для ИИ-помощника |
 | `GAME_BETA` | ⛳ | Режим беты игры (`0` или `1`) |
 | `GAME_AUTH_REQUIRED` | ⛳ | Обязательная проверка Telegram `init_data` для API игры (`1` по умолчанию) |

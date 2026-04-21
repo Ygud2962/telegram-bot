@@ -136,7 +136,7 @@ if not (1 <= PORT <= 65535):
     PORT = 8080
 # Версии релизов (показываются в /version и используются для cache-bust игры)
 BOT_VERSION = os.environ.get('BOT_VERSION', '8.0.0').strip() or '8.0.0'
-GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.15').strip() or '1.2.15'
+GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.17').strip() or '1.2.17'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 GAME_AUTH_REQUIRED = os.environ.get('GAME_AUTH_REQUIRED', '1').strip() != '0'
@@ -6103,6 +6103,7 @@ def start_http_server_thread():
         safe_filename = pathlib.Path(filename).name
         # Защита от path traversal и скрытых файлов
         if safe_filename != filename or safe_filename.startswith('.'):
+            logger.warning(f"serve_game_file forbidden: filename='{filename}', path='{request.path_qs}'")
             return aiohttp_web.Response(text='Forbidden', status=403)
         fpath = GAME_DIR / safe_filename
         if fpath.exists() and fpath.is_file():
@@ -6119,6 +6120,7 @@ def start_http_server_thread():
                 'Content-Type': ct,
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
             })
+        logger.warning(f"serve_game_file not found: filename='{filename}', path='{request.path_qs}'")
         return aiohttp_web.Response(text='Not found', status=404)
 
     async def _run():
