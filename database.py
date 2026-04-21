@@ -98,18 +98,23 @@ def get_connection():
         conn = db_pool.getconn()
     try:
         # Проверяем что соединение живое
-        conn.cursor().execute("SELECT 1")
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
         return conn
     except Exception:
         # Соединение мёртвое — закрываем и создаём новое напрямую
-        try:
-            db_pool.putconn(conn, close=True)
-        except Exception:
-            pass
+        release_connection(conn)
         try:
             new_conn = _try_new_connection()
             # Кладём новое соединение обратно в пул и берём его
-            db_pool.putconn(new_conn)
+            try:
+                db_pool.putconn(new_conn)
+            except Exception:
+                try:
+                    new_conn.close()
+                except Exception:
+                    pass
+                raise
             return db_pool.getconn()
         except Exception as e:
             logger.error(f"Не удалось переподключиться к БД: {e}")

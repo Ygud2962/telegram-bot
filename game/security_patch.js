@@ -17,7 +17,7 @@
   }
 
   function sanitizeText(value, maxLen) {
-    const raw = String(value ?? "");
+    const raw = String(value == null ? "" : value);
     const withoutCtl = raw.replace(/[\u0000-\u001F\u007F]/g, " ").trim();
     return escapeHtml(withoutCtl).slice(0, maxLen);
   }

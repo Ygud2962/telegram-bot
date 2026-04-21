@@ -337,11 +337,11 @@ let tg = null, tgUser = null, tgInitLB = [], tgInitMe = null, tgOpenChapters = n
 // Расписание открытия глав (для таймеров): [{id, open, open_at}, ...]
 let tgChapterSchedule = [];
 try {
-  tg = window.Telegram?.WebApp;
+  tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   if (tg) {
     tg.ready();
     tg.expand();
-    tgUser = tg.initDataUnsafe?.user;
+    tgUser = tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user : null;
 
     const _parsePayload = (parsed) => {
       if (!parsed) return;
@@ -357,7 +357,7 @@ try {
     };
 
     // Таблица лидеров, прогресс и открытые главы передаются через startParam
-    const sp = tg.initDataUnsafe?.start_param;
+    const sp = tg.initDataUnsafe && tg.initDataUnsafe.start_param ? tg.initDataUnsafe.start_param : null;
     if (sp) {
       try { _parsePayload(JSON.parse(decodeURIComponent(sp))); }
       catch(e) { console.warn('startParam parse error:', e); }
@@ -373,13 +373,13 @@ try {
     }
 
     console.log('🔗 sync_url:', window._syncUrl || 'НЕ ПОЛУЧЕН');
-    console.log('👤 user:', tgUser?.id, tgUser?.first_name);
+    console.log('👤 user:', tgUser ? tgUser.id : null, tgUser ? tgUser.first_name : null);
     console.log('🎭 role:', window._gameRole, '| adminMode:', window._adminMode, '| testerMode:', window._testerMode);
   }
 } catch(e) {}
 
 function getTgUserId() {
-  if (tgUser?.id) return String(tgUser.id);
+  if (tgUser && tgUser.id) return String(tgUser.id);
   return null;
 }
 function getTgUserName() {
@@ -1413,8 +1413,9 @@ function showHint() {
 //  ЭКРАН УСПЕХА (один шифр)
 // ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
+  const quizOption = (cipher.options && cipher.options[cipher.correctIndex]) || 'Верно';
   const solvedLabel = cipher.type === 'quiz'
-    ? (cipher.options?.[cipher.correctIndex] || 'Верно')
+    ? quizOption
     : 'Ответ принят';
   document.getElementById('succ-answer').textContent = solvedLabel;
   document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
@@ -2655,7 +2656,7 @@ function renderLeaderboardTab() {
   }
 
   const medals = ['🥇','🥈','🥉'];
-  const myRole2 = tgInitMe?.role || '';
+  const myRole2 = (tgInitMe && tgInitMe.role) || '';
   const isAdminUser = myRole2 === 'admin';
   // Фильтруем: обычные игроки не видят админов/тестировщиков в рейтинге
   const filteredLb = isAdminUser
@@ -2736,8 +2737,8 @@ function renderProfileTab() {
   const uid = getTgUserId();
   const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
   // Берём максимум из localStorage и данных БД (tgInitMe)
-  const dbCompleted = tgInitMe?.completed || 0;
-  const dbScore     = tgInitMe?.score     || 0;
+  const dbCompleted = (tgInitMe && tgInitMe.completed) || 0;
+  const dbScore     = (tgInitMe && tgInitMe.score) || 0;
   const localCompleted = Object.keys(state.completedChapters).length;
   const completed = Math.max(localCompleted, dbCompleted);
   // Обновляем state если БД даёт больше
@@ -2745,7 +2746,7 @@ function renderProfileTab() {
   const pct = Math.round((completed / CHAPTERS.length) * 100);
 
   // Роль из БД (передаётся через tgInitMe)
-  const myRole = tgInitMe?.role || (tgUser?.id === 516406248 ? 'admin' : 'player');
+  const myRole = (tgInitMe && tgInitMe.role) || ((tgUser && tgUser.id === 516406248) ? 'admin' : 'player');
   const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
 
   // Звание по очкам
