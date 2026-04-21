@@ -2783,7 +2783,7 @@ async def is_game_allowed(user_id: int) -> bool:
 
 
 async def menu_game(query, context):
-    """Запуск игры Шивровальщик с учётом роли (admin/tester/player)."""
+    """Запуск игры Шифровальщик с учётом роли (admin/tester/player)."""
     await query.answer()
     user = query.from_user
 
@@ -3180,7 +3180,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
                 try:
                     await context.bot.send_message(
                         chat_id=a,
-                        text=f"🏆 <b>{user_name}</b> прошёл Шивровальщика!\nОчков: <b>{total_score}</b>",
+                        text=f"🏆 <b>{user_name}</b> прошёл Шифровальщика!\nОчков: <b>{total_score}</b>",
                         parse_mode='HTML'
                     )
                 except Exception:
@@ -3212,7 +3212,7 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
             try:
                 await context.bot.send_message(
                     chat_id=a,
-                    text=f"🏆 <b>{user_name}</b> завершил Шивровальщика!\n"
+                    text=f"🏆 <b>{user_name}</b> завершил Шифровальщика!\n"
                          f"Очков: <b>{total_score}</b> · {rank}",
                     parse_mode='HTML'
                 )
@@ -6257,7 +6257,7 @@ def main():
 async def menu_games(query, context):
     """Подменю игр."""
     kb = [
-        [btn("🎮 Шивровальщик", 'menu_game')],
+        [btn("🎮 Шифровальщик", 'menu_game')],
         [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(

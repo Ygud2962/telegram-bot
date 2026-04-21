@@ -1,4 +1,7 @@
 window.__GAME_JS_LOADED = true;
+// Переменные синхронизации (объявлены глобально чтобы избежать ReferenceError)
+let _lastSyncedScore = -1;
+let _lastSyncedCompleted = -1;
 // ═══════════════════════════════════════════════════════
 //  ДАННЫЕ ИГРЫ — 20 ШИФРОВ, 4 ГЛАВЫ
 // ═══════════════════════════════════════════════════════
@@ -511,7 +514,6 @@ function showToast(text, duration = 2500) {
 // ═══════════════════════════════════════════════════════
 //  АВТОСИНХРОНИЗАЦИЯ (фоновая, без UI)
 // ═══════════════════════════════════════════════════════
-let _lastSyncedScore = -1;
 let _syncInFlight = false;
 
 async function autoSync(showNotification = true) {
@@ -552,7 +554,6 @@ async function autoSync(showNotification = true) {
     _syncInFlight = false;
   }
 }
-let _lastSyncedCompleted = -1;
 
 // Автосинк при сворачивании / переключении вкладки
 document.addEventListener('visibilitychange', () => {
@@ -820,7 +821,8 @@ function renderChapters() {
     } else {
       // Для игрока: глава доступна только если явно указана в tgOpenChapters
       // Если tgOpenChapters === null (не передан) — все главы закрыты для игрока
-      const serverAllows = tgOpenChapters !== null && tgOpenChapters.has(ch.id);
+      // Fallback: если tgOpenChapters не получен от бота, открываем первую главу
+      const serverAllows = tgOpenChapters !== null ? tgOpenChapters.has(ch.id) : (i === 0);
       const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
       isLocked = !(serverAllows && prevDone);
       visuallyLocked = isLocked;
@@ -1787,7 +1789,7 @@ function shareMyTotal() {
   const maxAll = CHAPTERS.reduce((s,ch) => s + ch.ciphers.reduce((a,c2) => a+c2.points, 0), 0);
   const pct    = Math.round(total / maxAll * 100);
   const medal  = pct >= 90 ? '🌟' : pct >= 75 ? '⭐' : pct >= 55 ? '🎖' : '🏅';
-  const text   = medal + ' ШИВРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
+  const text   = medal + ' ШИФРОВАЛЬЩИК: ' + total + ' очков (' + pct + '%), ' + done + '/6 глав | СШ 3 г. Хойники';
   if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(() => showToast('📋 Скопировано! Вставьте в чат'));
@@ -2520,16 +2522,20 @@ function switchTab(tab) {
   showBottomNav();
 
   const screenMap = {
-    'chapters':    's-chapters',
-    'leaderboard': 's-leaderboard-tab',
-    'profile':     's-profile-tab',
-    'about':       's-about-tab',
+    'chapters':     's-chapters',
+    'leaderboard':  's-leaderboard-tab',
+    'profile':      's-profile-tab',
+    'about':        's-about-tab',
+    'achievements': 's-achievements-tab',
+    'settings':     's-settings-tab',
   };
   const tabMap = {
-    'chapters':    'bn-chapters',
-    'leaderboard': 'bn-leaderboard',
-    'profile':     'bn-profile',
-    'about':       'bn-about',
+    'chapters':     'bn-chapters',
+    'leaderboard':  'bn-leaderboard',
+    'profile':      'bn-profile',
+    'about':        'bn-about',
+    'achievements': 'bn-achievements',
+    'settings':     'bn-settings',
   };
 
   const screenEl = document.getElementById(screenMap[tab]);
@@ -2540,7 +2546,12 @@ function switchTab(tab) {
   if (tab === 'chapters')    { renderChapters(); fetchAndApplyState(); }
   if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyState(); }
   if (tab === 'profile')     { renderProfileTab();     fetchAndApplyState(); }
-  if (tab === 'about')       renderAboutTab();
+  if (tab === 'about')        renderAboutTab();
+  if (tab === 'achievements') {
+    const el = document.getElementById('achievements-tab-content');
+    if (el) renderAchievementsTab(el);
+  }
+  if (tab === 'settings')     renderSettingsTab();
 }
 
 function renderAboutTab() {
@@ -2548,7 +2559,7 @@ function renderAboutTab() {
   if (!el) return;
   el.innerHTML = '<div style="background:linear-gradient(180deg,#1a1508 0%,#0d0b08 100%);padding:32px 20px 24px;text-align:center;border-bottom:1px solid rgba(255,224,51,.1)">'
     + '<div style="font-size:56px;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(255,224,51,.5))">🔐</div>'
-    + '<div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.08em;margin-bottom:4px">ШИВРОВАЛЬЩИК</div>'
+    + '<div style="font-family:var(--head);font-size:var(--fs-2xl);color:var(--accent);letter-spacing:.08em;margin-bottom:4px">ШИФРОВАЛЬЩИК</div>'
     + '<div style="font-size:var(--fs-sm);color:var(--muted);letter-spacing:.06em">ВЕРСИЯ 1.0  ·  2025</div></div>'
     + '<div style="padding:20px 16px">'
     // О игре
@@ -2592,7 +2603,7 @@ function renderAboutTab() {
     + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:8px"><div style="font-size:22px">💬</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Telegram</div><div style="font-size:11px;color:var(--muted)">@Yury_hud</div></div></div>'
     + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:8px"><div style="font-size:22px">📧</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Email</div><div style="font-size:11px;color:var(--muted)">uragud.2020@gmail.com</div></div></div>'
     + '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:22px">🕐</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Время ответа</div><div style="font-size:11px;color:var(--muted)">Пн–Пт, 9:00–18:00</div></div></div></div>'
-    + '<div style="text-align:center;padding:12px 0;color:var(--muted);font-size:10px;letter-spacing:.06em">ШИВРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>'
+    + '<div style="text-align:center;padding:12px 0;color:var(--muted);font-size:10px;letter-spacing:.06em">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>'
     + '</div>';
 }
 
@@ -3941,6 +3952,26 @@ function renderAchievementsTab(container) {
   container.innerHTML = html;
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  ВКЛАДКА НАСТРОЙКИ
+// ═══════════════════════════════════════════════════════
+function renderSettingsTab() {
+  const el = document.getElementById('settings-tab-content');
+  if (!el) return;
+  const musicOn = typeof musicEnabled !== 'undefined' ? musicEnabled : true;
+  el.innerHTML =
+    '<div style="padding:20px 16px">' +
+    '<div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:20px;">⚙️ НАСТРОЙКИ</div>' +
+    '<div style="background:var(--bg-soft);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:16px;margin-bottom:12px;">' +
+    '<div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:12px;">🎵 Музыка в игре</div>' +
+    '<button onclick="toggleMusicEnabled();renderSettingsTab();" class="btn" style="width:auto;padding:8px 20px;">' +
+    (musicOn ? '🔊 ВКЛ' : '🔇 ВЫКЛ') + '</button></div>' +
+    '<div style="background:var(--bg-soft);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:16px;margin-bottom:12px;">' +
+    '<div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:12px;">🗑 Сброс прогресса</div>' +
+    '<button onclick="confirmReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🗑 СБРОСИТЬ</button>' +
+    '</div></div>';
+}
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
