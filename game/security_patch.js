@@ -1,4 +1,5 @@
 (function () {
+  window.__SECURITY_PATCH_LOADED = true;
   "use strict";
 
   const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;

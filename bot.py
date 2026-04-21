@@ -6136,6 +6136,8 @@ def start_http_server_thread():
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)
         app_http.router.add_get('/index.html', serve_game_index)
+        app_http.router.add_get('/game', serve_game_index)
+        app_http.router.add_get('/game/', serve_game_index)
         app_http.router.add_get('/game/{filename}', serve_game_file)
         app_http.router.add_get('/{filename}', serve_game_file)
         runner = aiohttp_web.AppRunner(app_http)
@@ -6161,9 +6163,10 @@ def start_http_server_thread():
 
 def main():
     # Ждём БД при старте (Railway PostgreSQL стартует чуть позже бота)
-    max_wait = 60  # секунд
-    interval = 5
-    for attempt in range(max_wait // interval):
+    max_wait = _env_int('DB_STARTUP_MAX_WAIT_SEC', 180)
+    interval = max(1, _env_int('DB_STARTUP_RETRY_SEC', 5))
+    attempts = max(1, max_wait // interval)
+    for attempt in range(attempts):
         try:
             db.init_db()
             db.init_pool()
@@ -6172,12 +6175,17 @@ def main():
             logger.info("✅ БД инициализирована успешно")
             break
         except Exception as e:
-            if attempt < (max_wait // interval) - 1:
-                logger.warning(f"⏳ Жду БД (попытка {attempt+1}/{max_wait//interval}): {e}")
+            if attempt < attempts - 1:
+                logger.warning(f"⏳ Жду БД (попытка {attempt + 1}/{attempts}): {e}")
                 import time; time.sleep(interval)
             else:
                 logger.critical(f"❌ БД недоступна после {max_wait}с: {e}")
                 raise SystemExit(1)
+
+    # Один активный poller на весь бот (исключаем Conflict при параллельных инстансах)
+    if not db.wait_for_polling_lock(max_wait_sec=180, interval_sec=5):
+        logger.critical("❌ Не удалось получить polling lock: другой экземпляр уже выполняет getUpdates")
+        raise SystemExit(1)
 
     async def post_init(application):
         await application.bot.set_my_commands([
@@ -6238,6 +6246,11 @@ def main():
         print("\n🛑 Бот остановлен")
     except Exception as e:
         logger.critical(f"Критическая ошибка: {e}")
+    finally:
+        try:
+            db.release_polling_lock()
+        except Exception:
+            pass
 
 async def menu_games(query, context):
     """Подменю игр."""

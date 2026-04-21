@@ -15,6 +15,8 @@ if not DATABASE_URL:
 
 db_pool = None
 _TEMP_CONNECTION_IDS: set[int] = set()
+_POLLING_LOCK_CONN = None
+_POLLING_LOCK_KEY = 82445031
 
 # Параметры retry при потере связи с БД
 _DB_RETRY_ATTEMPTS = 5        # попыток переподключения
@@ -157,6 +159,81 @@ def _safe_rollback(conn):
             conn.rollback()
     except Exception:
         pass
+
+
+def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
+    """Пытается взять глобальную advisory-блокировку для polling (один инстанс бота)."""
+    global _POLLING_LOCK_CONN
+    if _POLLING_LOCK_CONN is not None:
+        try:
+            if not _POLLING_LOCK_CONN.closed:
+                return True
+        except Exception:
+            _POLLING_LOCK_CONN = None
+
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            DATABASE_URL, sslmode='require', connect_timeout=10
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_key,))
+        row = cur.fetchone()
+        cur.close()
+        if row and bool(row[0]):
+            _POLLING_LOCK_CONN = conn
+            logger.info("✅ Polling lock acquired")
+            return True
+        conn.close()
+        return False
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось взять polling lock: {e}")
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        return False
+
+
+def wait_for_polling_lock(max_wait_sec: int = 180, interval_sec: int = 5) -> bool:
+    """Ждёт освобождения polling lock до max_wait_sec."""
+    interval = max(1, int(interval_sec))
+    attempts = max(1, int(max_wait_sec) // interval)
+    for i in range(attempts):
+        if acquire_polling_lock():
+            return True
+        if i < attempts - 1:
+            logger.warning(
+                f"⏳ Polling lock занят другим инстансом, жду {interval}с "
+                f"(попытка {i + 1}/{attempts})"
+            )
+            time.sleep(interval)
+    return False
+
+
+def release_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> None:
+    """Освобождает advisory lock polling при остановке процесса."""
+    global _POLLING_LOCK_CONN
+    conn = _POLLING_LOCK_CONN
+    _POLLING_LOCK_CONN = None
+    if conn is None:
+        return
+    try:
+        if not conn.closed:
+            cur = conn.cursor()
+            try:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (lock_key,))
+            finally:
+                cur.close()
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 
@@ -384,7 +461,11 @@ def init_db():
         conn.commit()
         logger.info("✅ БД инициализирована")
     except Exception as e:
-        logger.error(f"❌ Ошибка init_db: {e}")
+        err_text = str(e)
+        if 'Connection refused' in err_text or 'could not connect to server' in err_text:
+            logger.warning(f"⚠️ init_db: БД ещё не готова: {e}")
+        else:
+            logger.error(f"❌ Ошибка init_db: {e}")
         raise
     finally:
         if conn:

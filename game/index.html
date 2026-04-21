@@ -799,7 +799,20 @@
         </div>
     </div>
 
-        <script src="./game/security_patch.js"></script>
-        <script src="./game/game.js"></script>
+        <script src="./game/security_patch.js" onerror="this.onerror=null;this.src='/game/security_patch.js';"></script>
+        <script src="./game/game.js" onerror="this.onerror=null;this.src='/game/game.js';"></script>
+        <script>
+            setTimeout(function () {
+                if (window.__GAME_JS_LOADED) return;
+                var intro = document.getElementById('s-intro');
+                if (intro) intro.classList.add('active');
+                if (document.getElementById('boot-error')) return;
+                var box = document.createElement('div');
+                box.id = 'boot-error';
+                box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:10001;background:rgba(20,17,8,.95);border:1px solid rgba(255,58,58,.45);border-radius:10px;padding:10px 12px;color:#ffe4e4;font-size:12px;line-height:1.4;';
+                box.textContent = 'Ошибка загрузки игры. Закройте мини-приложение, откройте снова из кнопки бота и обновите GAME_VERSION в Railway.';
+                document.body.appendChild(box);
+            }, 3000);
+        </script>
 </body>
 </html>
