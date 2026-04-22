@@ -440,8 +440,14 @@ def init_db():
 
         cur.execute('''
             INSERT INTO game_chapters (chapter_id, is_open)
-            VALUES (1,FALSE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
+            VALUES (1,TRUE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
             ON CONFLICT (chapter_id) DO NOTHING
+        ''')
+
+        # Миграция: если глава 1 ещё закрыта — открываем её (фикс для существующих деплоев)
+        cur.execute('''
+            UPDATE game_chapters SET is_open = TRUE
+            WHERE chapter_id = 1 AND is_open = FALSE AND open_at IS NULL
         ''')
 
         # Индексы

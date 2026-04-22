@@ -2809,7 +2809,7 @@ async def menu_game(query, context):
 
     if not GAME_URL:
         await safe_edit(query,
-            "🔐 <b>ШИВРОВАЛЬЩИК</b>\n\n"
+            "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
             "⚠️ Игра временно недоступна.\n"
             "<i>Администратор ещё не добавил GAME_URL в Railway.</i>",
             [BACK_TO_MAIN[0]])
@@ -2855,6 +2855,15 @@ async def menu_game(query, context):
             accessible = await asyncio.to_thread(db.get_player_accessible_chapters, user.id)
         except Exception:
             accessible = set()
+        # Если у игрока нет доступных глав — автоматически открываем главу 1
+        if not accessible:
+            try:
+                await asyncio.to_thread(db.open_chapter, 1)
+                accessible = {1}
+                logger.info(f"Auto-opened chapter 1 for player {user.id} (no chapters accessible)")
+            except Exception as e:
+                logger.warning(f"Failed to auto-open chapter 1: {e}")
+                accessible = {1}  # даём доступ на фронте даже если БД недоступна
         open_chapters_list = sorted(list(accessible))
         admin_mode  = False
         tester_mode = False
@@ -2999,7 +3008,7 @@ async def menu_game(query, context):
                 [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
             ])
     await query.message.edit_text(
-        "🔐 <b>ШИВРОВАЛЬЩИК</b>\n"
+        "🔐 <b>ШИФРОВАЛЬЩИК</b>\n"
         "<i>1941–1945 · Беларусь</i>\n\n"
         "Вы — советский разведчик. Расшифруйте донесения "
         "и приблизьте День Победы.\n\n"
@@ -3088,7 +3097,7 @@ async def game_leaderboard(query, context):
 
     medals     = ['🥇','🥈','🥉']
     role_label = {'admin': ' 👑 <i>админ</i>', 'tester': ' 🧪 <i>тестер</i>', 'player': ''}
-    lines      = [f"🏆 <b>ЛУЧШИЕ ШИВРОВАЛЬЩИКИ</b>  👥 {total} участников\n"]
+    lines      = [f"🏆 <b>ЛУЧШИЕ ШИФРОВАЛЬЩИКИ</b>  👥 {total} участников\n"]
     prev_role  = None
     for i, (uid, name, score, completed, game_over, role) in enumerate(lb):
         # Разделитель между группами
@@ -3872,7 +3881,7 @@ async def admin_beta_panel(query, context):
     else:
         mode_text = "🌐 <b>Игра открыта для всех</b>\nДобавьте тестеров чтобы включить бета-режим."
 
-    lines = [f"🧪 <b>БЕТА-ТЕСТ «ШИВРОВАЛЬЩИК»</b>\n\n{mode_text}"]
+    lines = [f"🧪 <b>БЕТА-ТЕСТ «ШИФРОВАЛЬЩИК»</b>\n\n{mode_text}"]
     if users:
         lines.append("\n<b>Тестеры:</b>")
         for uid, name, added, note in users[:15]:
@@ -5888,6 +5897,13 @@ async def handle_game_state(request):
         else:  # player
             # Только открытые индивидуально + глобально
             accessible = await asyncio.to_thread(db.get_player_accessible_chapters, user_id)
+            # Если у игрока нет доступных глав — автоматически открываем главу 1
+            if not accessible:
+                try:
+                    await asyncio.to_thread(db.open_chapter, 1)
+                    accessible = {1}
+                except Exception:
+                    accessible = {1}
             open_chapters = sorted(list(accessible))
             admin_mode  = False
             tester_mode = False

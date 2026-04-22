@@ -780,7 +780,7 @@ function toggleKeyboard() {
 // ═══════════════════════════════════════════════════════
 let currentChapter = 0;
 function showScreen(id) {
-  const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab'];
+  const TAB_SCREENS = ['s-leaderboard-tab','s-profile-tab','s-about-tab','s-achievements-tab','s-settings-tab'];
   if (TAB_SCREENS.includes(id)) return; // только через switchTab
 
   if (id === 's-chapters') {
@@ -848,6 +848,7 @@ function renderChapters() {
     else if (state.testerMode) { statusText='🧪 ОТКРЫТО'; badgeIcon='▶'; }
     else if (schedInfo) { statusText='⏰ СКОРО'; badgeIcon='⏰'; }
     else if (isLocked) { statusText='🔒 ЗАКРЫТО'; badgeIcon='🔒'; }
+    // isLocked остаётся — просто улучшаем отображение
     else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
 
     const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
@@ -3579,10 +3580,15 @@ function showSplash() {
     if (pct >= 100) {
       setTimeout(() => {
         splash.style.opacity = '0';
-        setTimeout(() => splash.remove(), 500);
+        setTimeout(() => { try { splash.remove(); } catch(_){} }, 500);
       }, 200);
     }
   }, 80);
+  // Гарантированное удаление сплэша через 3 секунды (защита от зависания)
+  setTimeout(() => {
+    clearInterval(interval);
+    try { splash.style.opacity = '0'; setTimeout(() => splash.remove(), 500); } catch(_){}
+  }, 3000);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4034,9 +4040,13 @@ async function fetchAndApplyState() {
 
     // Обновляем tgOpenChapters из server (open_chapters приоритетнее старого)
     if (data.open_chapters !== undefined && Array.isArray(data.open_chapters)) {
-      // Пустой массив [] = ни одна глава не открыта (для игрока)
-      // Для admin/tester open_chapters = [1,2,3,4,5,6], state.adminMode/testerMode уже true
-      tgOpenChapters = new Set(data.open_chapters);
+      // Если сервер вернул пустой массив для обычного игрока (не admin/tester),
+      // открываем хотя бы главу 1, чтобы игра не зависала на экране загрузки.
+      let chaptersToOpen = data.open_chapters;
+      if (chaptersToOpen.length === 0 && !data.admin_mode && !data.tester_mode) {
+        chaptersToOpen = [1];
+      }
+      tgOpenChapters = new Set(chaptersToOpen);
     }
     // Обновляем расписание глав (таймеры)
     if (data.chapter_schedule && Array.isArray(data.chapter_schedule)) {
