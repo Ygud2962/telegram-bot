@@ -3580,6 +3580,7 @@ function showSplash() {
     if (pct >= 100) {
       setTimeout(() => {
         splash.style.opacity = '0';
+        splash.style.pointerEvents = 'none'; // немедленно разрешаем клики под сплэшем
         setTimeout(() => { try { splash.remove(); } catch(_){} }, 500);
       }, 200);
     }
@@ -3587,7 +3588,11 @@ function showSplash() {
   // Гарантированное удаление сплэша через 3 секунды (защита от зависания)
   setTimeout(() => {
     clearInterval(interval);
-    try { splash.style.opacity = '0'; setTimeout(() => splash.remove(), 500); } catch(_){}
+    try {
+      splash.style.opacity = '0';
+      splash.style.pointerEvents = 'none';
+      setTimeout(() => { try { splash.remove(); } catch(_){} }, 500);
+    } catch(_){}
   }, 3000);
 }
 
