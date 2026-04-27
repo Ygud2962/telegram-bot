@@ -1485,7 +1485,11 @@ async function checkAnswer() {
       mapCorrect:     cipher.type === 'map',
       morseFast:      cipher.type === 'morse' && elapsed <= 10,
     };
-    checkAchievements({ elapsed, firstTry: isFirstTry, ...cipherTypeCtx });
+    try {
+      checkAchievements({ elapsed, firstTry: isFirstTry, ...cipherTypeCtx });
+    } catch (achErr) {
+      console.warn('checkAnswer: achievements update skipped', achErr);
+    }
     setTimeout(() => showSuccess(cipher, pts, elapsed), 400);
 
   } else {
@@ -1608,18 +1612,30 @@ function showSuccess(cipher, pts, elapsed) {
     speedText += '  🔥 Стрик x' + streak + ' (+' + bonus + '%)';
     speedColor = streak >= 4 ? 'var(--green)' : 'var(--accent)';
   }
-  speedEl.textContent = speedText;
-  speedEl.style.color = speedColor;
+  if (speedEl) {
+    speedEl.textContent = speedText;
+    speedEl.style.color = speedColor;
+  }
 
   const ch     = CHAPTERS[state.chapter];
   const isLast = state.cipherIdx === ch.ciphers.length - 1;
   const btn    = document.getElementById('succ-next-btn');
-  btn.textContent = isLast ? 'ЗАВЕРШИТЬ ГЛАВУ →' : 'СЛЕДУЮЩИЙ ШИФР →';
+  if (btn) {
+    btn.textContent = isLast ? 'ЗАВЕРШИТЬ ГЛАВУ →' : 'СЛЕДУЮЩИЙ ШИФР →';
+    btn.disabled = false;
+    btn.onclick = nextCipher;
+  }
   showScreen('s-success');
 }
 
 function nextCipher() {
   const ch = CHAPTERS[state.chapter];
+  if (!ch || !Array.isArray(ch.ciphers)) {
+    console.warn('nextCipher: chapter is unavailable', state.chapter);
+    showScreen('s-chapters');
+    renderChapters();
+    return;
+  }
   if (state.cipherIdx < ch.ciphers.length - 1) {
     state.cipherIdx++;
     // Жизни НЕ сбрасываются между шифрами — они общие на главу
@@ -2705,10 +2721,36 @@ checkAnswer = async function(){
     console.error('checkAnswer failed:', e);
     const chapter = CHAPTERS[state.chapter];
     const cipher = chapter && Array.isArray(chapter.ciphers) ? chapter.ciphers[state.cipherIdx] : null;
+    const inp = document.getElementById('cipher-input');
+
+    // Ответ уже принят (поле ввода заблокировано), но упали вторичные эффекты.
+    // Не блокируем игрока — принудительно показываем успех/продвигаем дальше.
+    if (cipher && inp && inp.disabled) {
+      console.warn('checkAnswer recover: forcing next step after accepted answer');
+      try { showSuccess(cipher, 0, getEffectiveElapsed(state.startTime || Date.now())); }
+      catch (_) {
+        try { nextCipher(); } catch (_) {}
+      }
+      return;
+    }
+
     if (cipher && cipher.type === 'quiz' && (!_quizState || !_quizState.cipher)) {
       console.warn('checkAnswer recover: empty quiz state, reloading cipher');
       try { loadCipher(); } catch (reloadErr) { console.error('quiz reload failed:', reloadErr); }
       showToast('⚠ Задание обновлено. Нажмите «Проверить» снова');
+    } else if (
+      cipher &&
+      cipher.type === 'quiz' &&
+      _quizState &&
+      _quizState.answered &&
+      _quizState.cipher &&
+      _quizState.selected === _quizState.cipher.correctIndex
+    ) {
+      console.warn('checkAnswer recover: forcing quiz success transition');
+      try { showSuccess(cipher, 0, getEffectiveElapsed(_quizState.startTime || Date.now())); }
+      catch (_) {
+        try { nextCipher(); } catch (_) {}
+      }
     } else {
       showToast('⚠ Ошибка проверки. Попробуйте ещё раз');
     }
@@ -3297,7 +3339,11 @@ function quizSubmit() {
     saveState();
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
-    checkAchievements({ elapsed, firstTry: (state._chapterErrors||0)===0, quizCorrect: true });
+    try {
+      checkAchievements({ elapsed, firstTry: (state._chapterErrors||0)===0, quizCorrect: true });
+    } catch (achErr) {
+      console.warn('quizSubmit: achievements update skipped', achErr);
+    }
     setTimeout(() => {
       const qc = document.getElementById('quiz-container');
       if (qc) qc.style.display = 'none';
@@ -3783,6 +3829,7 @@ function syncMusicButtons() {
 
 function toggleMusicEnabled() {
   musicEnabled = !musicEnabled;
+  if (musicEnabled) _audioUnlocked = true;
   saveAudioPreferences();
   syncMusicButtons();
   applyBackgroundMusic(false);
@@ -3799,6 +3846,14 @@ function setMusicTrack(indexLike) {
   const idx = Number(indexLike);
   if (!Number.isInteger(idx) || idx < 0 || idx >= GAME_MUSIC_TRACKS.length) return;
   musicTrackIndex = idx;
+  // Выбор трека в настройках — явное действие пользователя.
+  // Сразу разрешаем и запускаем музыку, не дожидаясь старта главы.
+  _audioUnlocked = true;
+  if (!musicEnabled) musicEnabled = true;
+  const ctx = getAudio();
+  if (ctx && ctx.state === 'suspended') {
+    try { ctx.resume(); } catch (e) {}
+  }
   const selectedTrack = GAME_MUSIC_TRACKS[idx];
   if (selectedTrack) _brokenMusicTrackIds.delete(selectedTrack.id);
   saveAudioPreferences();
