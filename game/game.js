@@ -434,7 +434,6 @@ async function sendResultToBot(data) {
         }
         _lastSyncedScore = data.total_score;
         _lastSyncedCompleted = data.completed;
-        showToast('✅ Прогресс сохранён');
         return;
       }
       console.warn('game_sync HTTP error:', resp.status);
@@ -528,7 +527,7 @@ function showToast(text, duration = 2500) {
 // ═══════════════════════════════════════════════════════
 let _syncInFlight = false;
 
-async function autoSync(showNotification = true) {
+async function autoSync(showNotification = false) {
   const syncUrl = window._syncUrl;
   const uid = getTgUserId();
   if (!syncUrl || !uid) return;
@@ -793,6 +792,19 @@ function toggleKeyboard() {
   _setKeyboardVisibility(!_keyboardVisible);
 }
 
+function _canUseTextInputForCurrentCipher() {
+  const chapter = CHAPTERS[state.chapter];
+  if (!chapter || !Array.isArray(chapter.ciphers)) return false;
+  const cipher = chapter.ciphers[state.cipherIdx];
+  if (!cipher) return false;
+  return cipher.type !== 'map' && cipher.type !== 'anagram' && cipher.type !== 'quiz';
+}
+
+function ensureCipherInputKeyboard() {
+  if (!_canUseTextInputForCurrentCipher()) return;
+  if (!_keyboardVisible) _setKeyboardVisibility(true);
+}
+
 // ═══════════════════════════════════════════════════════
 //  НАВИГАЦИЯ
 // ═══════════════════════════════════════════════════════
@@ -1038,7 +1050,13 @@ function loadCipher() {
   const ch = CHAPTERS[state.chapter];
   if (!ch) { showScreen('s-chapters'); renderChapters(); return; }
   const cipher = ch.ciphers[state.cipherIdx];
-  if (!cipher) { finishChapter(); return; }
+  if (!cipher) {
+    Promise.resolve(finishChapter()).catch((err) => {
+      console.error('loadCipher -> finishChapter failed:', err);
+      showChapterEndFallback();
+    });
+    return;
+  }
 
   // Сбрасываем quiz-container
   const qc = document.getElementById('quiz-container');
@@ -1136,8 +1154,15 @@ function loadCipher() {
   // Сброс ввода (inp уже объявлен выше)
   const inpReset = document.getElementById('cipher-input');
   if (inpReset) { inpReset.value = ''; inpReset.className = 'cipher-input'; inpReset.disabled = false; }
-  // Каждый шифр начинается с закрытой клавиатурой
-  _setKeyboardVisibility(false);
+  // Для текстовых заданий сразу открываем клавиатуру и ставим курсор.
+  // Для map/anagram/quiz клавиатура не нужна.
+  const shouldShowKeyboard = cipher.type !== 'map' && cipher.type !== 'anagram' && cipher.type !== 'quiz';
+  _setKeyboardVisibility(shouldShowKeyboard);
+  if (shouldShowKeyboard && inpReset) {
+    setTimeout(() => {
+      try { inpReset.focus(); } catch (e) {}
+    }, 0);
+  }
   state.hintsUsed = false;
   const hb = document.getElementById('cipher-hint-box');
   const ht = document.getElementById('cipher-hint-text');
@@ -1152,7 +1177,7 @@ function loadCipher() {
   if (cipher.type === 'anagram') renderAnagram(cipher);
   if (cipher.type === 'map')     renderMap(cipher);
   if (cipher.type === 'quiz')    renderQuiz(cipher);
-  if (cipher.type !== 'map' && cipher.type !== 'anagram') inp.focus();
+  if (shouldShowKeyboard && inp) inp.focus();
 }
 
 function renderLives() {
@@ -1475,6 +1500,7 @@ async function checkAnswer() {
     const pts      = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
+    autoSync(false);
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
     const isFirstTry = (state._chapterErrors || 0) === 0;
@@ -1506,11 +1532,12 @@ async function checkAnswer() {
       playSound('life_lost');
     }
     saveState();
+    autoSync(false);
 
     if (state.lives <= 0) {
       if (state.adminMode) {
         // Режим администратора — восстанавливаем жизни
-        state.lives = 5; saveState(); renderLives();
+        state.lives = 5; saveState(); autoSync(false); renderLives();
         const hb = document.getElementById('cipher-hint-box');
         const ht = document.getElementById('cipher-hint-text');
         if (hb && ht) {
@@ -1643,8 +1670,36 @@ function nextCipher() {
     loadCipher();
     showScreen('s-cipher');
   } else {
-    finishChapter();
+    Promise.resolve(finishChapter()).catch((err) => {
+      console.error('finishChapter failed:', err);
+      showChapterEndFallback();
+    });
   }
+}
+
+function showChapterEndFallback() {
+  const ch = CHAPTERS[state.chapter];
+  if (!ch) {
+    showScreen('s-chapters');
+    renderChapters();
+    return;
+  }
+  const nameEl = document.getElementById('chend-chapter-name');
+  const medalEl = document.getElementById('chend-medal');
+  const scoreEl = document.getElementById('chend-score');
+  const totalEl = document.getElementById('chend-total');
+  const pctEl = document.getElementById('chend-pct');
+  if (nameEl) nameEl.textContent = ch.title;
+  if (medalEl) medalEl.textContent = '🥈';
+  if (scoreEl) scoreEl.textContent = String(state.chapterScore || 0);
+  if (totalEl) totalEl.textContent = String(state.totalScore || 0);
+  if (pctEl) pctEl.textContent = '';
+  const nextBtn = document.getElementById('chend-next-btn');
+  if (nextBtn) {
+    nextBtn.textContent = '← К ЗАДАНИЯМ';
+    nextBtn.onclick = () => { showScreen('s-chapters'); renderChapters(); };
+  }
+  showScreen('s-chapter-end');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2847,7 +2902,10 @@ function switchTab(tab) {
   if (tab === 'chapters')    { renderChapters(); fetchAndApplyState(); }
   if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyState(); }
   if (tab === 'profile')     { renderProfileTab();     fetchAndApplyState(); }
-  if (tab === 'about')        renderAboutTab();
+  if (tab === 'about') {
+    renderAboutTab();
+    applyAboutBuildVersion();
+  }
   if (tab === 'achievements') {
     const el = document.getElementById('achievements-tab-content');
     if (el) renderAchievementsTab(el);
@@ -2906,6 +2964,23 @@ function renderAboutTab() {
     + '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:22px">🕐</div><div><div style="font-size:var(--fs-sm);color:#fdfaf0">Время ответа</div><div style="font-size:11px;color:var(--muted)">Пн–Пт, 9:00–18:00</div></div></div></div>'
     + '<div style="text-align:center;padding:12px 0;color:var(--muted);font-size:10px;letter-spacing:.06em">ШИФРОВАЛЬЩИК v1.0 · © 2025 СШ №3 г. Хойники</div>'
     + '</div>';
+}
+
+function applyAboutBuildVersion() {
+  const el = document.getElementById('about-tab-content');
+  if (!el) return;
+  let buildVersion = 'vdev';
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const raw = (params.get('v') || window.__BOOT_VERSION || '').toString().trim();
+    if (raw) buildVersion = 'v' + raw;
+  } catch (e) {}
+  const buildYear = String(new Date().getFullYear());
+  let html = el.innerHTML || '';
+  html = html.replace(/v1\.0/g, buildVersion);
+  html = html.replace(/1\.0/g, buildVersion.toUpperCase());
+  html = html.replace(/2025/g, buildYear);
+  el.innerHTML = html;
 }
 
 function renderLeaderboardTab() {
@@ -3186,7 +3261,7 @@ function goToChapters() {
   renderChapters();
   showBottomNav();
   // Синхронизация
-  autoSync(true);
+  autoSync(false);
 }
 
 function exitToMain() {
@@ -3337,6 +3412,7 @@ function quizSubmit() {
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
+    autoSync(false);
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
     try {
@@ -3370,6 +3446,7 @@ function quizSubmit() {
       playSound('life_lost');
     }
     saveState();
+    autoSync(false);
     renderLives();
 
     if (state.lives <= 0 && !state.adminMode) {
@@ -3480,6 +3557,7 @@ async function checkAnagram() {
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
+    autoSync(false);
     setTimeout(() => showSuccess(cipher, pts, elapsed), 600);
   } else {
     slots.forEach(s => { s.style.borderColor = '#ff3a3a'; s.style.background = 'rgba(255,58,58,.1)'; });
@@ -3487,9 +3565,10 @@ async function checkAnagram() {
     state.lives--;
     playSound('life_lost');
     saveState();
+    autoSync(false);
     if (state.lives <= 0) {
       if (state.adminMode) {
-        state.lives = 5; saveState(); renderLives();
+        state.lives = 5; saveState(); autoSync(false); renderLives();
         setTimeout(resetAnagram, 500);
       } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
     } else { renderLives(); setTimeout(resetAnagram, 900); }
@@ -3563,6 +3642,7 @@ async function checkMapAnswer(clicked, target) {
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
+    autoSync(false);
     setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
   } else {
     if (dotEl) {
@@ -3574,9 +3654,10 @@ async function checkMapAnswer(clicked, target) {
     state.lives--;
     playSound('life_lost');
     saveState();
+    autoSync(false);
     if (state.lives <= 0) {
       if (state.adminMode) {
-        state.lives = 5; saveState(); renderLives();
+        state.lives = 5; saveState(); autoSync(false); renderLives();
         document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
       } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
     } else { renderLives(); }
@@ -4523,6 +4604,12 @@ if (document.readyState === "loading") { showSplash(); } else { showSplash(); }
 loadState();
 syncMusicButtons();
 applyBackgroundMusic(false);
+const _cipherInput = document.getElementById('cipher-input');
+if (_cipherInput) {
+  _cipherInput.addEventListener('focus', ensureCipherInputKeyboard);
+  _cipherInput.addEventListener('click', ensureCipherInputKeyboard);
+  _cipherInput.addEventListener('touchstart', ensureCipherInputKeyboard, { passive: true });
+}
 
 // Применяем роль из window-флагов ДО mergeBotLeaderboard и renderChapters.
 // Это гарантирует что adminMode/testerMode правильны даже если tgInitMe = null.
