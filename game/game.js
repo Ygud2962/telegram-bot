@@ -355,6 +355,12 @@ try {
       if (parsed.open) tgOpenChapters = new Set(parsed.open);
       if (parsed.sync_url) window._syncUrl = parsed.sync_url;
       if (parsed.chapter_schedule) tgChapterSchedule = parsed.chapter_schedule;
+      if (parsed.me && typeof parsed.me.reset_token === 'number' && parsed.me.reset_token > 0) {
+        _serverResetToken = parsed.me.reset_token;
+      }
+      if (typeof parsed.reset_token === 'number' && parsed.reset_token > 0) {
+        _serverResetToken = parsed.reset_token;
+      }
       // Роль: admin_mode только для admin, tester_mode для tester
       if (parsed.admin_mode  === true) window._adminMode  = true;
       if (parsed.tester_mode === true) window._testerMode = true;
@@ -395,21 +401,37 @@ function getTgInitDataRaw() {
   if (tg && typeof tg.initData === 'string') return tg.initData;
   return '';
 }
+function _applySyncResponse(result, forceServerState = false) {
+  if (!result || typeof result !== 'object') return;
+  if (typeof result.db_reset_token === 'number' && result.db_reset_token > 0) {
+    _serverResetToken = result.db_reset_token;
+  }
+
+  const hasDbSnapshot = (typeof result.db_score === 'number') || (typeof result.db_completed === 'number');
+  if (!hasDbSnapshot) return;
+
+  const dbScore = Number(result.db_score || 0);
+  const dbCompleted = Number(result.db_completed || 0);
+  const mergeRes = _applyServerProgress(dbScore, dbCompleted, state.gameOver, !!forceServerState);
+  if (mergeRes.applied) {
+    saveState();
+    _refreshCurrentTabAfterSync();
+  }
+}
+
 async function sendResultToBot(data) {
-  data.completed        = Object.keys(state.completedChapters).length;
-  data.total_score      = state.totalScore;
+  data.completed = _stateCompletedCount();
+  data.total_score = state.totalScore;
   data.achievement_count = Object.keys(state.achievements || {}).length;
-  data.achievement_pts   = state.achievementPts || 0;
-  data.user_id    = getTgUserId();
+  data.achievement_pts = state.achievementPts || 0;
+  data.user_id = getTgUserId();
+  if (_serverResetToken > 0) data.reset_token = _serverResetToken;
+
   if (!data.init_data) {
     const initDataRaw = getTgInitDataRaw();
     if (initDataRaw) data.init_data = initDataRaw;
   }
 
-  console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score,
-    'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО', 'userId:', data.user_id);
-
-  // Способ 1: HTTP POST к /game_sync (основной — работает всегда)
   const syncUrl = window._syncUrl;
   if (syncUrl && data.user_id) {
     try {
@@ -421,20 +443,13 @@ async function sendResultToBot(data) {
       if (resp.ok) {
         const result = await resp.json().catch(() => ({}));
         if (result.banned) {
-          document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div><div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">Ваш аккаунт заблокирован администратором.</div></div>';
+          document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Access blocked</div><div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">Your account was blocked by administrator.</div></div>';
           try { localStorage.removeItem(storageKey()); } catch(e2) {}
           return;
         }
-        if (typeof result.db_score === 'number' && result.db_score < state.totalScore) {
-          state.totalScore = result.db_score;
-          state.completedChapters = {};
-          for (let i = 1; i <= (result.db_completed||0); i++) state.completedChapters[i] = true;
-          state.chapterScores = {};
-          try { localStorage.removeItem(storageKey()); } catch(e2) {}
-          saveState();
-        }
-        _lastSyncedScore = data.total_score;
-        _lastSyncedCompleted = data.completed;
+        _applySyncResponse(result, !!result.stale);
+        _lastSyncedScore = Number(state.totalScore || data.total_score || 0);
+        _lastSyncedCompleted = _stateCompletedCount();
         return;
       }
       console.warn('game_sync HTTP error:', resp.status);
@@ -443,7 +458,6 @@ async function sendResultToBot(data) {
     }
   }
 
-  // Способ 2: tg.sendData (работает только из KeyboardButton, НЕ из InlineKeyboardButton)
   if (tg && tg.sendData && tg.initData) {
     try {
       tg.sendData(JSON.stringify(data));
@@ -453,7 +467,6 @@ async function sendResultToBot(data) {
     }
   }
 
-  // Способ 3: localStorage — бот прочитает при следующем открытии
   try {
     const pending = JSON.parse(localStorage.getItem('pending_results') || '[]');
     pending.push({ ...data, ts: Date.now() });
@@ -461,7 +474,6 @@ async function sendResultToBot(data) {
   } catch(e) {}
 }
 
-// Отправляем накопленные результаты при открытии
 async function flushPendingResults() {
   const syncUrl = window._syncUrl;
   // Пробуем HTTP POST для ранее не отправленных
@@ -471,6 +483,7 @@ async function flushPendingResults() {
       if (!pending.length) return;
       const last = pending[pending.length - 1];
       last.user_id = getTgUserId();
+      if (_serverResetToken > 0) last.reset_token = _serverResetToken;
       if (!last.init_data) {
         const initDataRaw = getTgInitDataRaw();
         if (initDataRaw) last.init_data = initDataRaw;
@@ -481,8 +494,10 @@ async function flushPendingResults() {
         body: JSON.stringify(last)
       });
       if (resp.ok) {
+        const result = await resp.json().catch(() => ({}));
+        _applySyncResponse(result, !!result.stale);
         localStorage.removeItem('pending_results');
-        console.log('✅ flushPendingResults: HTTP POST OK');
+        console.log('flushPendingResults: HTTP POST OK');
         return;
       }
     } catch(e) {}
@@ -533,7 +548,7 @@ async function autoSync(showNotification = false) {
   const uid = getTgUserId();
   if (!syncUrl || !uid) return;
   // Не отправляем дубли
-  const completed = Object.keys(state.completedChapters).length;
+  const completed = _stateCompletedCount();
   if (state.totalScore === _lastSyncedScore && completed === _lastSyncedCompleted) return;
   if (_syncInFlight) return;
   _syncInFlight = true;
@@ -549,6 +564,7 @@ async function autoSync(showNotification = false) {
   };
   const initDataRaw = getTgInitDataRaw();
   if (initDataRaw) data.init_data = initDataRaw;
+  if (_serverResetToken > 0) data.reset_token = _serverResetToken;
 
   try {
     const resp = await fetch(syncUrl, {
@@ -557,10 +573,16 @@ async function autoSync(showNotification = false) {
       body: JSON.stringify(data)
     });
     if (resp.ok) {
-      _lastSyncedScore = state.totalScore;
-      _lastSyncedCompleted = completed;
-      console.log('✅ autoSync OK:', state.totalScore, 'pts,', completed, 'chapters');
-      if (showNotification) showToast('✅ Прогресс сохранён');
+      const result = await resp.json().catch(() => ({}));
+      if (result.stale) {
+        _applySyncResponse(result, true);
+      } else {
+        _applySyncResponse(result, false);
+      }
+      _lastSyncedScore = Number(state.totalScore || 0);
+      _lastSyncedCompleted = _stateCompletedCount();
+      console.log('autoSync OK:', state.totalScore, 'pts,', _lastSyncedCompleted, 'chapters');
+      if (showNotification) showToast('Progress saved');
     }
   } catch(e) {
     console.warn('autoSync error:', e);
@@ -583,12 +605,13 @@ window.addEventListener('beforeunload', () => {
     // Используем navigator.sendBeacon — не блокирует закрытие
     const data = {
       type: 'sync', total_score: state.totalScore,
-      completed: Object.keys(state.completedChapters).length,
+      completed: _stateCompletedCount(),
       game_over: state.gameOver || false,
       user_id: getTgUserId(),
     };
     const initDataRaw = getTgInitDataRaw();
     if (initDataRaw) data.init_data = initDataRaw;
+    if (_serverResetToken > 0) data.reset_token = _serverResetToken;
     navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
   }
 });
@@ -633,80 +656,130 @@ function storageKey() {
 }
 
 // Загружаем таблицу лидеров из бота (если передана) в state
+function _stateCompletedCount() {
+  return Object.keys(state.completedChapters || {}).length;
+}
+
+function _applyServerProgress(serverScore, serverCompleted, serverGameOver, force = false) {
+  const srvScore = Math.max(0, Number(serverScore || 0));
+  const srvCompleted = Math.max(0, Math.min(CHAPTERS.length, Number(serverCompleted || 0)));
+  const localScore = Number(state.totalScore || 0);
+  const localCompleted = _stateCompletedCount();
+  const localAhead = localScore > srvScore || localCompleted > srvCompleted;
+
+  if (!force && localAhead) {
+    return { applied: false, localAhead: true };
+  }
+
+  const oldChapterScores = Object.assign({}, state.chapterScores || {});
+  const oldChapterStats = Object.assign({}, state.chapterStats || {});
+  const oldFailCounts = Object.assign({}, state.chapterFailCounts || {});
+
+  state.totalScore = srvScore;
+  state.completedChapters = {};
+  for (let i = 1; i <= srvCompleted; i++) state.completedChapters[i] = true;
+
+  const nextScores = {};
+  const nextStats = {};
+  const nextFailCounts = {};
+  for (let i = 1; i <= srvCompleted; i++) {
+    if (oldChapterScores[i] !== undefined) nextScores[i] = oldChapterScores[i];
+    if (oldChapterStats[i] !== undefined) nextStats[i] = oldChapterStats[i];
+    if (oldFailCounts[i] !== undefined) nextFailCounts[i] = oldFailCounts[i];
+  }
+  state.chapterScores = nextScores;
+  state.chapterStats = nextStats;
+  state.chapterFailCounts = nextFailCounts;
+  state.gameOver = !!serverGameOver;
+
+  return { applied: true, localAhead: false };
+}
+
+function _refreshCurrentTabAfterSync() {
+  if (currentTab === 'leaderboard') {
+    renderLeaderboardTab();
+    return;
+  }
+  if (currentTab === 'profile') {
+    renderProfileTab();
+    return;
+  }
+  if (currentTab === 'about') {
+    renderAboutTab();
+    applyAboutBuildVersion();
+    return;
+  }
+  if (currentTab === 'achievements') {
+    const el = document.getElementById('achievements-tab-content');
+    if (el) renderAchievementsTab(el);
+    return;
+  }
+  renderChapters();
+}
+
+// Р—Р°РіСЂСѓР¶Р°РµРј С‚Р°Р±Р»РёС†Сѓ Р»РёРґРµСЂРѕРІ РёР· Р±РѕС‚Р° (РµСЃР»Рё РїРµСЂРµРґР°РЅР°) РІ state
 function mergeBotLeaderboard() {
   const myUid = getTgUserId();
 
-  // Всегда берём leaderboard из БД как источник правды
   if (tgInitLB.length) {
     state.leaderboard = tgInitLB.map(r => ({
-      uid: String(r.uid), name: r.name, score: r.score,
-      completed: r.completed, role: r.role || 'player'
+      uid: String(r.uid), name: r.name, score: Number(r.score || 0),
+      completed: Number(r.completed || 0), role: r.role || 'player',
+      achievementCount: Number(r.achievementCount || 0),
+      achievementPts: Number(r.achievementPts || 0)
     }));
   }
 
-  // Синхронизируем прогресс с БД
   if (tgInitMe && myUid) {
-    const dbScore       = tgInitMe.score        || 0;
-    const dbCompleted   = tgInitMe.completed    || 0;
-    const dbGameOver    = tgInitMe.game_over    || false;
+    if (typeof tgInitMe.reset_token === 'number' && tgInitMe.reset_token > 0) {
+      _serverResetToken = tgInitMe.reset_token;
+    }
+
+    const dbScore = Number(tgInitMe.score || 0);
+    const dbCompleted = Number(tgInitMe.completed || 0);
+    const dbGameOver = !!tgInitMe.game_over;
     const dbRestartMode = tgInitMe.restart_mode || null;
 
-    // Роль из payload — ВСЕГДА явно устанавливаем, не доверяем localStorage
-    // Это критично: если роль сменилась с admin на player — нужно сбросить adminMode
-    const dbAdminMode  = (tgInitMe.admin_mode  === true) || window._adminMode  === true;
+    const dbAdminMode = (tgInitMe.admin_mode === true) || window._adminMode === true;
     const dbTesterMode = (tgInitMe.tester_mode === true) || window._testerMode === true;
-    const dbRole       = tgInitMe.role || window._gameRole || 'player';
+    const dbRole = tgInitMe.role || window._gameRole || 'player';
 
-    // Явно устанавливаем оба флага — не оставляем старые значения из localStorage
     if (dbAdminMode) {
-      state.adminMode  = true;
+      state.adminMode = true;
       state.testerMode = false;
-      console.log('👑 adminMode=true (admin)');
     } else if (dbTesterMode) {
-      state.adminMode  = false;
+      state.adminMode = false;
       state.testerMode = true;
-      console.log('🧪 testerMode=true (tester)');
     } else {
-      // Роль player — явно сбрасываем оба флага
-      state.adminMode  = false;
+      state.adminMode = false;
       state.testerMode = false;
-      console.log('🎮 player mode — adminMode/testerMode сброшены');
     }
     state.gameRole = dbRole;
 
-    // Режим перезапуска после game_over
-    if (dbRestartMode === 'penalty') {
-      state.totalScore = 0; state.completedChapters = {};
-      state.chapterScores = {}; state.gameOver = false;
-      state.retryPenalty = true; state._noptsMode = false;
-      state.achievements = {}; state.achievementPts = 0;
-      try { localStorage.removeItem(storageKey()); } catch(e2) {}
-    } else if (dbRestartMode === 'nopts') {
-      state.totalScore = 0; state.completedChapters = {};
-      state.chapterScores = {}; state.gameOver = false;
-      state.retryPenalty = false; state._noptsMode = true;
-      state.achievements = {}; state.achievementPts = 0;
-      try { localStorage.removeItem(storageKey()); } catch(e2) {}
-    } else {
-      state.totalScore = dbScore;
+    if (dbRestartMode === 'penalty' || dbRestartMode === 'nopts') {
+      state.totalScore = 0;
       state.completedChapters = {};
-      for (let i = 1; i <= dbCompleted; i++) state.completedChapters[i] = true;
-      const newScores = {};
-      for (let i = 1; i <= dbCompleted; i++) {
-        if (state.chapterScores[i]) newScores[i] = state.chapterScores[i];
-      }
-      state.chapterScores = newScores;
-      state.gameOver = dbGameOver;
-      // Если БД говорит score=0, completed=0 — был полный сброс, чистим достижения
-      if (dbScore === 0 && dbCompleted === 0) {
-        state.achievements = {}; state.achievementPts = 0;
-      }
-      try { localStorage.removeItem(storageKey()); } catch(e2) {}
+      state.chapterScores = {};
+      state.chapterStats = {};
+      state.chapterFailCounts = {};
+      state.gameOver = false;
+      state.retryPenalty = dbRestartMode === 'penalty';
+      state._noptsMode = dbRestartMode === 'nopts';
+      state.achievements = {};
+      state.achievementPts = 0;
+      saveState();
+      return;
     }
-    saveState();
+
+    const mergeResult = _applyServerProgress(dbScore, dbCompleted, dbGameOver, false);
+    if (!mergeResult.applied) {
+      // Р›РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРіСЂРµСЃСЃ РЅРѕРІРµРµ СЃРµСЂРІРµСЂРЅРѕРіРѕ вЂ” РїРѕРґРЅРёРјР°РµРј Р‘Р” Р°РІС‚РѕСЃРёРЅРєРѕРј.
+      setTimeout(() => autoSync(false), 0);
+    } else {
+      saveState();
+    }
   }
 }
-
 function loadState() {
   try {
     const s = localStorage.getItem(storageKey());
@@ -2901,7 +2974,7 @@ function switchTab(tab) {
   if (tabEl)    tabEl.classList.add('active');
 
   if (tab === 'chapters')    { renderChapters(); fetchAndApplyState(); }
-  if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyState(); }
+  if (tab === 'leaderboard') { renderLeaderboardTab(); fetchAndApplyState(); fetchAndApplyLeaderboard(); }
   if (tab === 'profile')     { renderProfileTab();     fetchAndApplyState(); }
   if (tab === 'about') {
     renderAboutTab();
@@ -2991,7 +3064,7 @@ function renderLeaderboardTab() {
   if (!state.leaderboard.length && tgInitLB.length) mergeBotLeaderboard();
   const lb    = state.leaderboard || [];
   const myUid = getTgUserId() || 'guest';
-  const total = tgInitLB.length || lb.length;
+  const total = lb.length;
 
   // Переключатель вкладок — объявляем ДО header чтобы использовать в шаблоне
   const currentRatingTab = window._ratingTab || 'score';
@@ -3045,7 +3118,7 @@ function renderLeaderboardTab() {
   }
 
   const medals = ['🥇','🥈','🥉'];
-  const myRole2 = (tgInitMe && tgInitMe.role) || '';
+  const myRole2 = state.gameRole || ((tgInitMe && tgInitMe.role) || '');
   const isAdminUser = myRole2 === 'admin';
   // Фильтруем: обычные игроки не видят админов/тестировщиков в рейтинге
   const filteredLb = isAdminUser
@@ -3125,17 +3198,12 @@ function renderProfileTab() {
   if (!el) return;
   const uid = getTgUserId();
   const name = tgUser ? (tgUser.first_name || 'Игрок') : 'Гость';
-  // Берём максимум из localStorage и данных БД (tgInitMe)
-  const dbCompleted = (tgInitMe && tgInitMe.completed) || 0;
-  const dbScore     = (tgInitMe && tgInitMe.score) || 0;
-  const localCompleted = Object.keys(state.completedChapters).length;
-  const completed = Math.max(localCompleted, dbCompleted);
-  // Обновляем state если БД даёт больше
-  if (dbScore > state.totalScore) state.totalScore = dbScore;
+  // Progress is rendered from current synchronized state
+  const completed = _stateCompletedCount();
   const pct = Math.round((completed / CHAPTERS.length) * 100);
 
-  // Роль из БД (передаётся через tgInitMe)
-  const myRole = (tgInitMe && tgInitMe.role) || ((tgUser && tgUser.id === 516406248) ? 'admin' : 'player');
+  // Role comes from synchronized game state
+  const myRole = state.gameRole || (tgInitMe && tgInitMe.role) || 'player';
   const roleLabels = { admin: '👑 Администратор', tester: '🧪 Тестировщик', player: '' };
 
   // Звание по очкам
@@ -4645,75 +4713,145 @@ async function fetchAndApplyState() {
     const initDataRaw = getTgInitDataRaw();
     let stateUrl = base + '/game_state?user_id=' + encodeURIComponent(uid);
     if (initDataRaw) stateUrl += '&init_data=' + encodeURIComponent(initDataRaw);
+
     const resp = await fetch(stateUrl);
     const data = await resp.json().catch(() => null);
     if (!data || typeof data !== 'object') return;
+
     if (data.allowed === false) {
       if (data.access_reason === 'maintenance') {
-        document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🛠️</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Игра на технических работах</div><div style="font-size:15px;color:rgba(255,255,255,.7);max-width:360px;line-height:1.5">Вход временно ограничен. Доступ есть только у администраторов и тестировщиков игры.</div>' + (data.maintenance_until ? '<div style="font-size:13px;color:rgba(255,255,255,.55);margin-top:14px">До: ' + String(data.maintenance_until) + '</div>' : '') + '</div>';
+        document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🛠️</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Game is under maintenance</div><div style="font-size:15px;color:rgba(255,255,255,.7);max-width:360px;line-height:1.5">Access is temporarily limited.</div>' + (data.maintenance_until ? '<div style="font-size:13px;color:rgba(255,255,255,.55);margin-top:14px">Until: ' + String(data.maintenance_until) + '</div>' : '') + '</div>';
       } else {
-        document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ ограничен</div><div style="font-size:15px;color:rgba(255,255,255,.7);max-width:320px">Откройте игру снова из кнопки в Telegram после выдачи доступа.</div></div>';
+        document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Access denied</div><div style="font-size:15px;color:rgba(255,255,255,.7);max-width:320px">Open the game from Telegram button after access is granted.</div></div>';
       }
       return;
     }
+
     if (!resp.ok || !data.ok) return;
     if (data.banned) {
-      document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div><div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">Ваш аккаунт заблокирован администратором.</div></div>';
+      document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Access blocked</div><div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">Your account was blocked by administrator.</div></div>';
       try { localStorage.removeItem(storageKey()); } catch(e2) {}
       return;
     }
 
-    // Применяем роль из сервера — ВСЕГДА явно, перезаписываем localStorage
     if (data.admin_mode === true) {
-      state.adminMode  = true;
+      state.adminMode = true;
       state.testerMode = false;
     } else if (data.tester_mode === true) {
-      state.adminMode  = false;
+      state.adminMode = false;
       state.testerMode = true;
     } else {
-      // player — явно сбрасываем
-      state.adminMode  = false;
+      state.adminMode = false;
       state.testerMode = false;
     }
     if (data.role) state.gameRole = data.role;
 
-    // Обновляем tgOpenChapters из server (open_chapters приоритетнее старого)
-    if (data.open_chapters !== undefined && Array.isArray(data.open_chapters)) {
-      // Если сервер вернул пустой массив для обычного игрока (не admin/tester),
-      // открываем хотя бы главу 1, чтобы игра не зависала на экране загрузки.
+    if (Array.isArray(data.open_chapters)) {
       let chaptersToOpen = data.open_chapters;
       if (chaptersToOpen.length === 0 && !data.admin_mode && !data.tester_mode) {
         chaptersToOpen = [1];
       }
       tgOpenChapters = new Set(chaptersToOpen);
     }
-    // Обновляем расписание глав (таймеры)
-    if (data.chapter_schedule && Array.isArray(data.chapter_schedule)) {
+    if (Array.isArray(data.chapter_schedule)) {
       tgChapterSchedule = data.chapter_schedule;
     }
 
-    // Синхронизируем прогресс с сервером
-    const _srvScore    = typeof data.score === 'number' ? data.score : state.totalScore;
-    const _srvCompleted = data.completed || 0;
-
-    // Сброс прогресса: score стал меньше ИЛИ сервер говорит 0/0 (полный сброс админом)
-    if (_srvScore < state.totalScore || (_srvScore === 0 && _srvCompleted === 0)) {
-      state.totalScore        = _srvScore;
-      state.completedChapters = {};
-      for (let i = 1; i <= _srvCompleted; i++) state.completedChapters[i] = true;
-      state.chapterScores     = {};
-      state.gameOver          = data.game_over || false;
-      state.achievements      = {};
-      state.achievementPts    = 0;
-      try { localStorage.removeItem(storageKey()); } catch(e2) {}
+    const prevResetToken = _serverResetToken;
+    if (typeof data.reset_token === 'number' && data.reset_token > 0) {
+      _serverResetToken = data.reset_token;
     }
 
-    saveState();
-    renderChapters();
-  } catch(e) { console.warn('fetchAndApplyState:', e); }
+    tgInitMe = Object.assign({}, (tgInitMe || {}), {
+      uid: String(uid),
+      score: Number(data.score || 0),
+      completed: Number(data.completed || 0),
+      game_over: !!data.game_over,
+      role: data.role || state.gameRole || 'player',
+      admin_mode: !!data.admin_mode,
+      tester_mode: !!data.tester_mode,
+      restart_mode: data.restart_mode || null,
+      reset_token: _serverResetToken || 0,
+      banned: !!data.banned,
+    });
+
+    const srvScore = typeof data.score === 'number' ? data.score : state.totalScore;
+    const srvCompleted = typeof data.completed === 'number' ? data.completed : _stateCompletedCount();
+    const forcedByTokenReset = (
+      prevResetToken > 0 && _serverResetToken > 0 && prevResetToken !== _serverResetToken &&
+      Number(srvScore || 0) === 0 && Number(srvCompleted || 0) === 0
+    );
+
+    if (data.restart_mode === 'penalty' || data.restart_mode === 'nopts') {
+      state.totalScore = 0;
+      state.completedChapters = {};
+      state.chapterScores = {};
+      state.chapterStats = {};
+      state.chapterFailCounts = {};
+      state.gameOver = false;
+      state.retryPenalty = data.restart_mode === 'penalty';
+      state._noptsMode = data.restart_mode === 'nopts';
+      state.achievements = {};
+      state.achievementPts = 0;
+      saveState();
+    } else {
+      const mergeResult = _applyServerProgress(srvScore, srvCompleted, !!data.game_over, forcedByTokenReset);
+      if (!mergeResult.applied) {
+        // Server is behind local cache; push local snapshot to backend.
+        autoSync(false);
+      } else {
+        if (forcedByTokenReset) {
+          state.achievements = {};
+          state.achievementPts = 0;
+        }
+        saveState();
+      }
+    }
+
+    _lastSyncedScore = Number(state.totalScore || 0);
+    _lastSyncedCompleted = _stateCompletedCount();
+    _refreshCurrentTabAfterSync();
+  } catch (e) {
+    console.warn('fetchAndApplyState:', e);
+  }
+}
+
+let _lbSyncInFlight = false;
+async function fetchAndApplyLeaderboard() {
+  const uid = getTgUserId();
+  const syncUrl = window._syncUrl;
+  if (!uid || !syncUrl || _lbSyncInFlight) return;
+  _lbSyncInFlight = true;
+  try {
+    const base = syncUrl.replace('/game_sync', '');
+    const initDataRaw = getTgInitDataRaw();
+    let lbUrl = base + '/game_leaderboard?user_id=' + encodeURIComponent(uid);
+    if (initDataRaw) lbUrl += '&init_data=' + encodeURIComponent(initDataRaw);
+    const resp = await fetch(lbUrl);
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data || !data.ok || !Array.isArray(data.leaderboard)) return;
+
+    state.leaderboard = data.leaderboard.map(r => ({
+      uid: String(r.uid),
+      name: r.name || 'Игрок',
+      score: Number(r.score || 0),
+      completed: Number(r.completed || 0),
+      role: r.role || 'player',
+      achievementCount: Number(r.achievementCount || 0),
+      achievementPts: Number(r.achievementPts || 0),
+    }));
+    tgInitLB = state.leaderboard.slice();
+    if (currentTab === 'leaderboard') renderLeaderboardTab();
+  } catch (e) {
+    console.warn('fetchAndApplyLeaderboard:', e);
+  } finally {
+    _lbSyncInFlight = false;
+  }
 }
 
 renderChapters();
 fetchAndApplyState();
+fetchAndApplyLeaderboard();
+flushPendingResults();
 try {
 } catch(e) {}

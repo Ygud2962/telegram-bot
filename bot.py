@@ -241,16 +241,17 @@ async def get_maintenance_status_cached(force: bool = False) -> dict:
 async def is_game_privileged_async(user_id: int, *, bot_admin: bool | None = None,
                                    game_role: str | None = None) -> bool:
     """True, если пользователь может входить в игру в техрежиме."""
-    if bot_admin is None:
-        bot_admin = await is_bot_admin_async(user_id)
-    if bot_admin:
-        return True
     if game_role is None:
         try:
             game_role = await asyncio.to_thread(db.get_game_role, user_id)
         except Exception:
             game_role = None
-    return game_role in ('admin', 'tester')
+    if game_role == 'admin':
+        return True
+    if game_role == 'tester':
+        mode = await _get_cached_game_mode()
+        return mode in ('beta', 'open')
+    return False
 
 
 async def is_game_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None = None,
@@ -1408,9 +1409,8 @@ async def check_maintenance(update: Update, context: CallbackContext,
             "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>\n\n"
             "Вход в игру временно ограничен.\n"
             "Доступ имеют только:\n"
-            "• администраторы бота\n"
             "• администраторы игры\n"
-            "• тестировщики игры\n"
+            "• тестировщики игры (в режимах beta/open)\n"
         )
         if status.get('until'):
             msg += f"\n🕗 Ожидаемое восстановление: <b>{status['until']}</b>\n"
@@ -2975,8 +2975,8 @@ async def _get_cached_game_mode() -> str:
 
 async def is_game_allowed(user_id: int) -> bool:
     """Строгий доступ к игре по режимам: closed / beta / open.
-    closed: доступ только admin/tester/бот-админу
-    beta: доступ только разрешённым (бета-список, tester/admin, бот-админ)
+    closed: доступ только admin игры
+    beta: доступ admin + tester + игроки из бета-списка
     open: доступ всем
     """
     import time
@@ -2988,14 +2988,14 @@ async def is_game_allowed(user_id: int) -> bool:
     except Exception:
         game_role = None
 
-    if await is_bot_admin_async(user_id):
-        return True
-    if game_role in ('admin', 'tester'):
+    if game_role == 'admin':
         return True
 
     mode = await _get_cached_game_mode()
     if mode == 'closed':
         return False
+    if game_role == 'tester':
+        return mode in ('beta', 'open')
     if mode == 'open':
         return True
 
@@ -3019,7 +3019,7 @@ async def menu_game(query, context):
             denied_text = (
                 "🔧 <b>Игра в техническом режиме</b>\n\n"
                 "Сейчас вход в игру ограничен.\n"
-                "Доступ есть только у администраторов бота/игры и тестировщиков игры.\n\n"
+                "Доступ есть только у администраторов игры.\n\n"
                 "<i>Дождитесь завершения техработ или обратитесь к администратору.</i>"
             )
         else:
@@ -3051,7 +3051,7 @@ async def menu_game(query, context):
         logger.warning(f"menu_game: DB error registering player: {e}")
         current_role = None
     if not current_role:
-        role = 'admin' if await is_bot_admin_async(user.id) else 'player'
+        role = 'player'
         try:
             await asyncio.to_thread(db.set_game_role, user.id, role)
         except Exception:
@@ -3159,6 +3159,7 @@ async def menu_game(query, context):
             'completed': my_data.get('completed', 0), 'role': current_role,
             'banned': my_data.get('banned', False),
             'admin_mode': admin_mode, 'tester_mode': tester_mode,
+            'reset_token': my_data.get('reset_token', 0),
         } if my_data else None
         game_payload = _build_payload(lb=None, me=slim_me, full=False)
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
@@ -3170,6 +3171,7 @@ async def menu_game(query, context):
             'admin_mode': admin_mode,
             'tester_mode': tester_mode,
             'role': current_role,
+            'reset_token': my_data.get('reset_token', 0) if my_data else 0,
         }
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
 
@@ -3391,11 +3393,8 @@ async def handle_web_app_data(update: Update, context: CallbackContext):
                 f"chapter={chapter}, score={score}, total={total_score}, completed={completed}")
 
     # Автоматически назначаем роль
-    if not current_role or current_role == 'player':
-        if await is_bot_admin_async(user.id):
-            await asyncio.to_thread(db.set_game_role, user.id, 'admin')
-        else:
-            await asyncio.to_thread(db.set_game_role, user.id, 'player')
+    if not current_role:
+        await asyncio.to_thread(db.set_game_role, user.id, 'player')
 
     if event_type == 'chapter_complete':
         ch_title = data.get('chapter_title', f'Глава {chapter}')
@@ -4563,9 +4562,6 @@ async def handle_bot_admin_input(update, context, text):
         try:
             target = int(text.strip())
             ok = await asyncio.to_thread(db.add_bot_admin, target, admin_uid)
-            # Также выдаём игровую роль admin
-            if ok:
-                await asyncio.to_thread(db.set_game_role, target, 'admin')
             await update.message.reply_text(
                 f"{'✅ Администратор добавлен' if ok else '❌ Ошибка'}: <code>{target}</code>\n"
                 f"Пользователю нужно нажать /start чтобы увидеть Админку.",
@@ -4644,11 +4640,10 @@ async def cmd_claim_admin(update: Update, context: CallbackContext):
             "Обратитесь к текущему администратору для получения прав."
         )
         return
-    # Также выдаём роль admin в игре при первом получении прав
-    await asyncio.to_thread(db.set_game_role, user.id, 'admin')
     await update.message.reply_text(
         f"✅ <b>Вы стали администратором!</b>\n\n"
         f"Кнопка «👑 Админка» появится в главном меню.\n"
+        f"Игровая роль настраивается отдельно в разделе ролей игры.\n"
         f"Напишите /start чтобы обновить меню.",
         parse_mode='HTML'
     )
@@ -6406,7 +6401,7 @@ async def handle_game_sync(request):
         if not current_role or current_role == 'player':
             # Назначаем роль только при первом входе
             if not current_role:
-                role = 'admin' if await is_bot_admin_async(user_id) else 'player'
+                role = 'player'
                 await asyncio.to_thread(db.set_game_role, user_id, role)
                 current_role = role
         # Проверяем бан — игра должна знать об этом сразу

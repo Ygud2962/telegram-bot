@@ -1420,7 +1420,9 @@ def get_peak_hours():
 
 def save_game_result(user_id, user_name, chapter, score, total_score,
                      completed, game_over=False, failed=False):
-    """Сохраняет/обновляет результат игрока. БД всегда принимает новое значение."""
+    """Save/update player game result with monotonic score/completed/chapter fields.
+    Full resets must be done via dedicated reset_* methods.
+    """
     conn = None
     try:
         conn = get_connection()
@@ -1430,13 +1432,18 @@ def save_game_result(user_id, user_name, chapter, score, total_score,
                 (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (user_id) DO UPDATE SET
-                user_name   = EXCLUDED.user_name,
-                chapter     = EXCLUDED.chapter,
-                score       = EXCLUDED.score,
-                total_score = EXCLUDED.total_score,
-                completed   = EXCLUDED.completed,
-                game_over   = EXCLUDED.game_over,
-                failed      = EXCLUDED.failed,
+                user_name   = COALESCE(EXCLUDED.user_name, game_results.user_name),
+                chapter     = GREATEST(COALESCE(game_results.chapter, 0), COALESCE(EXCLUDED.chapter, 0)),
+                score       = CASE
+                                WHEN COALESCE(EXCLUDED.total_score, 0) >= COALESCE(game_results.total_score, 0)
+                                  OR COALESCE(EXCLUDED.completed, 0) >= COALESCE(game_results.completed, 0)
+                                THEN EXCLUDED.score
+                                ELSE game_results.score
+                              END,
+                total_score = GREATEST(COALESCE(game_results.total_score, 0), COALESCE(EXCLUDED.total_score, 0)),
+                completed   = GREATEST(COALESCE(game_results.completed, 0), COALESCE(EXCLUDED.completed, 0)),
+                game_over   = COALESCE(game_results.game_over, FALSE) OR COALESCE(EXCLUDED.game_over, FALSE),
+                failed      = COALESCE(EXCLUDED.failed, FALSE),
                 updated_at  = NOW()
         ''', (user_id, user_name, chapter, score, total_score,
               completed, game_over, failed))
