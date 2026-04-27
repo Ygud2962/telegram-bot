@@ -682,7 +682,8 @@ const DEFAULT_STATE = () => ({
   adminMode: false,
   testerMode: false,   // 🧪 тестировщик — все главы открыты, 5 жизней, не в рейтинге
   gameRole: 'player',  // 'admin' | 'tester' | 'player'
-  achievements: {}, achievementPts: 0
+  achievements: {}, achievementPts: 0,
+  artifacts: {}, solvedTypes: {}, solvedTypeCounts: {}
 });
 
 let state = DEFAULT_STATE();
@@ -866,6 +867,11 @@ function loadState() {
     const s = localStorage.getItem(storageKey());
     if (s) {
       Object.assign(state, JSON.parse(s));
+      if (!state.achievements || typeof state.achievements !== 'object') state.achievements = {};
+      if (!state.artifacts || typeof state.artifacts !== 'object') state.artifacts = {};
+      if (!state.solvedTypes || typeof state.solvedTypes !== 'object') state.solvedTypes = {};
+      if (!state.solvedTypeCounts || typeof state.solvedTypeCounts !== 'object') state.solvedTypeCounts = {};
+      if (!Number.isFinite(Number(state.achievementPts || 0))) state.achievementPts = 0;
       // Роль ВСЕГДА приходит от сервера — никогда не берём из кэша.
       // Иначе при смене роли с admin на player — adminMode останется true из кэша.
       state.adminMode  = false;
@@ -1187,6 +1193,75 @@ function showBriefing(idx) {
   showScreen('s-briefing');
 }
 
+let _missionCinematicTimer = null;
+function showMissionCinematic(chapter, onDone) {
+  if (!chapter) { if (typeof onDone === 'function') onDone(); return; }
+  const prev = document.getElementById('mission-cinematic-overlay');
+  if (prev) prev.remove();
+  if (_missionCinematicTimer) {
+    clearTimeout(_missionCinematicTimer);
+    _missionCinematicTimer = null;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'mission-cinematic-overlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:12000;background:radial-gradient(circle at 50% 30%, rgba(42,33,12,.95), rgba(8,8,8,.98));
+    display:flex;align-items:center;justify-content:center;padding:18px;backdrop-filter:blur(2px)`;
+  const briefing = String(chapter.briefing || chapter.mission || '').replace(/\s+/g, ' ').trim();
+  const shortBriefing = briefing.length > 240 ? (briefing.slice(0, 237) + '...') : briefing;
+  const missionLine = `${chapter.subtitle || 'Глава'} · ${chapter.place || ''}`.trim();
+  overlay.innerHTML = `
+    <div style="width:min(560px,95vw);border:1px solid rgba(255,224,51,.45);border-radius:12px;background:linear-gradient(160deg,rgba(32,25,10,.95),rgba(10,10,8,.95));box-shadow:0 14px 36px rgba(0,0,0,.55);padding:18px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-family:var(--head);font-size:13px;letter-spacing:.12em;color:#ffe58f">СЕКРЕТНЫЙ БРИФИНГ</div>
+        <button id="mission-cinematic-skip" class="btn btn-small" style="margin:0;padding:6px 10px;font-size:10px">ПРОПУСТИТЬ</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div style="font-size:26px;filter:drop-shadow(0 0 10px rgba(255,224,51,.4))">${chapter.stamp || '🎖️'}</div>
+        <div style="font-family:var(--head);font-size:18px;line-height:1.2;color:var(--accent)">${chapter.title || 'Операция'}</div>
+      </div>
+      <div style="font-size:11px;color:#d7c99a;letter-spacing:.08em;margin-bottom:10px">${missionLine}</div>
+      <div id="mission-cinematic-text" style="min-height:72px;border:1px dashed rgba(255,224,51,.35);border-radius:8px;padding:10px 12px;background:rgba(255,224,51,.05);font-size:13px;line-height:1.6;color:#f2e8c8"></div>
+      <div style="margin-top:12px;display:flex;justify-content:flex-end">
+        <div style="font-size:11px;color:#d7c99a;letter-spacing:.1em">РАДИОКАНАЛ ОТКРЫТ</div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const textEl = overlay.querySelector('#mission-cinematic-text');
+  const fullText = `Операция начата. ${shortBriefing}`;
+  let idx = 0;
+  const typeTimer = setInterval(() => {
+    if (!textEl) return;
+    idx += 2;
+    textEl.textContent = fullText.slice(0, idx);
+    if (idx >= fullText.length) clearInterval(typeTimer);
+  }, 22);
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearInterval(typeTimer);
+    if (_missionCinematicTimer) {
+      clearTimeout(_missionCinematicTimer);
+      _missionCinematicTimer = null;
+    }
+    overlay.style.transition = 'opacity .18s ease';
+    overlay.style.opacity = '0';
+    setTimeout(() => {
+      try { overlay.remove(); } catch (e) {}
+      if (typeof onDone === 'function') onDone();
+    }, 180);
+  };
+
+  const skipBtn = overlay.querySelector('#mission-cinematic-skip');
+  if (skipBtn) skipBtn.onclick = finish;
+  _missionCinematicTimer = setTimeout(finish, Math.max(3000, Math.min(6200, 1200 + fullText.length * 24)));
+  try { playSound('hint'); } catch (e) {}
+}
+
 // ═══════════════════════════════════════════════════════
 //  СТАРТ ГЛАВЫ
 // ═══════════════════════════════════════════════════════
@@ -1202,8 +1277,11 @@ function startChapter(idx) {
   state._chapterErrors    = 0;
   state._chapterHints     = 0;
   saveState();
-  loadCipher();
-  showScreen('s-cipher');
+  const chapterMeta = CHAPTERS[idx];
+  showMissionCinematic(chapterMeta, () => {
+    loadCipher();
+    showScreen('s-cipher');
+  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1377,6 +1455,77 @@ function animateLifeLoss() {
 
 let _timerInterval = null;
 let _timerCancelled = false;
+let _riskIntensity = 0;
+let _timerStartMs = 0;
+
+function _setRiskIntensity(v) {
+  _riskIntensity = _clamp(Number(v) || 0, 0, 1);
+}
+
+function _resetCipherUrgencyUI() {
+  _setRiskIntensity(0);
+  const timerEl = document.getElementById('cipher-timer');
+  if (timerEl) {
+    timerEl.style.transform = '';
+    timerEl.style.textShadow = '';
+    timerEl.style.animation = '';
+  }
+  const box = document.getElementById('cipher-box');
+  if (box) {
+    box.style.boxShadow = '';
+    box.style.borderColor = '';
+  }
+  const task = document.getElementById('cipher-task');
+  if (task) task.style.textShadow = '';
+}
+
+function _applyCipherUrgency(elapsedSec) {
+  const sec = Math.max(0, Number(elapsedSec || 0));
+  let risk = 0;
+  if (sec >= 25) risk = 0.25;
+  if (sec >= 40) risk = 0.6;
+  if (sec >= 55) risk = 1;
+  _setRiskIntensity(risk);
+
+  const timerEl = document.getElementById('cipher-timer');
+  if (timerEl) {
+    if (risk >= 1) {
+      timerEl.style.animation = 'pulse 0.7s ease-in-out infinite';
+      timerEl.style.transform = 'scale(1.08)';
+      timerEl.style.textShadow = '0 0 18px rgba(255,58,58,.75)';
+    } else if (risk >= 0.6) {
+      timerEl.style.animation = 'pulse 1.2s ease-in-out infinite';
+      timerEl.style.transform = 'scale(1.03)';
+      timerEl.style.textShadow = '0 0 12px rgba(255,170,85,.6)';
+    } else if (risk >= 0.25) {
+      timerEl.style.animation = '';
+      timerEl.style.transform = 'scale(1.01)';
+      timerEl.style.textShadow = '0 0 8px rgba(255,224,51,.45)';
+    } else {
+      timerEl.style.animation = '';
+      timerEl.style.transform = '';
+      timerEl.style.textShadow = '';
+    }
+  }
+  const box = document.getElementById('cipher-box');
+  if (box) {
+    if (risk >= 1) {
+      box.style.borderColor = 'rgba(255,58,58,.65)';
+      box.style.boxShadow = '0 0 18px rgba(255,58,58,.35)';
+    } else if (risk >= 0.6) {
+      box.style.borderColor = 'rgba(255,170,85,.55)';
+      box.style.boxShadow = '0 0 14px rgba(255,170,85,.28)';
+    } else if (risk >= 0.25) {
+      box.style.borderColor = 'rgba(255,224,51,.45)';
+      box.style.boxShadow = '0 0 10px rgba(255,224,51,.2)';
+    } else {
+      box.style.borderColor = '';
+      box.style.boxShadow = '';
+    }
+  }
+  const task = document.getElementById('cipher-task');
+  if (task) task.style.textShadow = risk >= 0.6 ? '0 0 8px rgba(255,170,85,.35)' : '';
+}
 
 function _syncTimerCancelButton() {
   const btn = document.getElementById('btn-cancel-timer');
@@ -1396,16 +1545,18 @@ function startTimer() {
   if (_timerInterval) clearInterval(_timerInterval);
   const el = document.getElementById('cipher-timer');
   if (!el) return;
-  const start = Date.now();
+  _timerStartMs = Date.now();
   el.textContent = '0с';
   el.style.color = 'var(--muted)';
+  _applyCipherUrgency(0);
   _timerInterval = setInterval(() => {
-    const sec = Math.round((Date.now() - start) / 1000);
+    const sec = Math.round((Date.now() - _timerStartMs) / 1000);
     el.textContent = sec + 'с';
     if (sec <= 10) el.style.color = 'var(--green)';
     else if (sec <= 30) el.style.color = 'var(--accent)';
     else if (sec <= 60) el.style.color = 'var(--accent2)';
     else el.style.color = 'var(--red)';
+    _applyCipherUrgency(sec);
   }, 1000);
 }
 
@@ -1413,6 +1564,7 @@ function stopTimer() {
   if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
   const el = document.getElementById('cipher-timer');
   if (el) el.style.color = 'var(--muted)';
+  _resetCipherUrgencyUI();
 }
 
 function cancelCipherTimer() {
@@ -1424,6 +1576,7 @@ function cancelCipherTimer() {
     el.textContent = 'без таймера';
     el.style.color = 'var(--green)';
   }
+  _resetCipherUrgencyUI();
   _syncTimerCancelButton();
   showToast('⏱ Таймер отключён для текущего задания');
 }
@@ -1671,8 +1824,10 @@ async function checkAnswer() {
     autoSync(false, true);
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+    registerSolvedCipherType(cipher.type);
     const isFirstTry = (state._chapterErrors || 0) === 0;
     const cipherTypeCtx = {
+      cipherType:     cipher.type,
       quizCorrect:    cipher.type === 'quiz',
       mathCorrect:    cipher.type === 'math',
       anagramCorrect: cipher.type === 'anagram',
@@ -1935,7 +2090,8 @@ async function finishChapter() {
   }
 
   // Comeback — прошёл главу после повторной попытки
-  if (state._isRetryAttempt) {
+  const wasRetryWin = !!state._isRetryAttempt;
+  if (wasRetryWin) {
     state._isRetryAttempt = false;
     checkAchievements({ retryWin: true, comeback: true });
   }
@@ -1946,13 +2102,113 @@ async function finishChapter() {
   if (chNoHints)  state._noHintChapters  = (state._noHintChapters  || 0) + 1;
   const survived1Life = state.lives === 1;
   checkAchievements({
+    chapterDone: true,
     chapterDoneNoErrors: chNoErrors,
     chapterDoneNoHints: chNoHints,
     survived1: survived1Life,
   });
+  const artifactsGained = evaluateArtifacts({
+    chapterDone: true,
+    chapterId: ch.id,
+    chapterDoneNoErrors: chNoErrors,
+    chapterDoneNoHints: chNoHints,
+    retryWin: wasRetryWin,
+  });
+  renderChapterEpicSummary(ch, state.chapterStats[ch.id] || {}, pct, medal, artifactsGained);
   playSound('chapter_win');
   launchConfetti(800, 20);
   showScreen('s-chapter-end');
+}
+
+function _chapterGradeInfo(pct) {
+  const p = Number(pct || 0);
+  if (p >= 0.9) return { grade: 'S', label: 'ЛЕГЕНДАРНО' };
+  if (p >= 0.75) return { grade: 'A', label: 'ОТЛИЧНО' };
+  if (p >= 0.6) return { grade: 'B', label: 'ХОРОШО' };
+  if (p >= 0.45) return { grade: 'C', label: 'СТАБИЛЬНО' };
+  return { grade: 'D', label: 'ТРЕБУЕТСЯ ПОВТОР' };
+}
+
+function copyChapterReportCard() {
+  const reportEl = document.getElementById('chend-epic-report');
+  if (!reportEl) return;
+  const payload = String(reportEl.dataset.report || '').trim();
+  if (!payload) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(payload).then(
+      () => showToast('📋 Отчёт главы скопирован'),
+      () => showToast('⚠ Не удалось скопировать отчёт')
+    );
+    return;
+  }
+  showToast('⚠ Копирование недоступно в этом режиме');
+}
+
+function renderChapterEpicSummary(chapter, stats, pct, medal, artifactsGained) {
+  const screen = document.getElementById('s-chapter-end');
+  if (!screen || !chapter) return;
+  let report = document.getElementById('chend-epic-report');
+  const nextBtn = document.getElementById('chend-next-btn');
+  if (!report) {
+    report = document.createElement('div');
+    report.id = 'chend-epic-report';
+    report.style.cssText = 'margin:0 0 14px 0';
+    if (nextBtn && nextBtn.parentNode) nextBtn.parentNode.insertBefore(report, nextBtn);
+    else screen.appendChild(report);
+  }
+
+  const totalTasks = Array.isArray(chapter.ciphers) ? chapter.ciphers.length : 0;
+  const errors = Math.max(0, Number(stats.errors || 0));
+  const hints = Math.max(0, Number(stats.hints || 0));
+  const score = Math.max(0, Number(stats.score || 0));
+  const timeSec = Math.max(0, Number(stats.time || 0));
+  const accuracy = totalTasks ? Math.max(0, Math.round(((totalTasks - errors) / totalTasks) * 100)) : 100;
+  const mm = String(Math.floor(timeSec / 60)).padStart(2, '0');
+  const ss = String(timeSec % 60).padStart(2, '0');
+  const gradeInfo = _chapterGradeInfo(pct);
+
+  const gained = Array.isArray(artifactsGained) ? artifactsGained : [];
+  const artifactsLine = gained.length
+    ? gained.map(a => `${a.icon} ${a.name}`).join(' · ')
+    : 'нет новых артефактов';
+
+  report.dataset.report = [
+    `Отчёт по главе: ${chapter.title}`,
+    `Медаль: ${medal} · Ранг: ${gradeInfo.grade} (${gradeInfo.label})`,
+    `Очки главы: ${score}`,
+    `Точность: ${accuracy}%`,
+    `Ошибки: ${errors}, подсказки: ${hints}`,
+    `Время: ${mm}:${ss}`,
+    `Артефакты: ${artifactsLine}`,
+  ].join('\n');
+
+  report.innerHTML = `
+    <div style="background:linear-gradient(165deg,rgba(255,224,51,.16),rgba(18,16,10,.95));border:1px solid rgba(255,224,51,.42);border-radius:12px;padding:12px 12px 10px;box-shadow:0 10px 24px rgba(0,0,0,.45)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-family:var(--head);font-size:12px;color:#ffe8a2;letter-spacing:.09em">БОЕВОЙ ОТЧЁТ ГЛАВЫ</div>
+        <div style="font-family:var(--head);font-size:12px;color:var(--accent)">РАНГ ${gradeInfo.grade}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px">
+        <div style="background:rgba(0,0,0,.28);border:1px solid rgba(255,224,51,.2);border-radius:8px;padding:8px">
+          <div style="font-size:10px;color:var(--muted)">ТОЧНОСТЬ</div>
+          <div style="font-family:var(--head);font-size:18px;color:#fff2bf">${accuracy}%</div>
+        </div>
+        <div style="background:rgba(0,0,0,.28);border:1px solid rgba(255,224,51,.2);border-radius:8px;padding:8px">
+          <div style="font-size:10px;color:var(--muted)">ВРЕМЯ</div>
+          <div style="font-family:var(--head);font-size:18px;color:#fff2bf">${mm}:${ss}</div>
+        </div>
+        <div style="background:rgba(0,0,0,.28);border:1px solid rgba(255,224,51,.2);border-radius:8px;padding:8px">
+          <div style="font-size:10px;color:var(--muted)">ОШИБКИ</div>
+          <div style="font-family:var(--head);font-size:18px;color:#ffd4a8">${errors}</div>
+        </div>
+        <div style="background:rgba(0,0,0,.28);border:1px solid rgba(255,224,51,.2);border-radius:8px;padding:8px">
+          <div style="font-size:10px;color:var(--muted)">ПОДСКАЗКИ</div>
+          <div style="font-family:var(--head);font-size:18px;color:#ffd4a8">${hints}</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#efe2ba;line-height:1.45;margin-bottom:10px">Артефакты: ${artifactsLine}</div>
+      <button class="btn btn-small" style="width:100%" onclick="copyChapterReportCard()">📋 СКОПИРОВАТЬ ОТЧЁТ</button>
+    </div>`;
 }
 
 
@@ -3432,6 +3688,7 @@ function resumeGame() {
 
 function goToChapters() {
   unlockAudioInteraction();
+  stopTimer();
   saveState();
   showScreen('s-chapters');
   renderChapters();
@@ -3591,8 +3848,9 @@ function quizSubmit() {
     autoSync(false, true);
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+    registerSolvedCipherType('quiz');
     try {
-      checkAchievements({ elapsed, firstTry: (state._chapterErrors||0)===0, quizCorrect: true });
+      checkAchievements({ elapsed, firstTry: (state._chapterErrors||0)===0, cipherType: 'quiz', quizCorrect: true });
     } catch (achErr) {
       console.warn('quizSubmit: achievements update skipped', achErr);
     }
@@ -3729,17 +3987,40 @@ async function checkAnagram() {
   const slots = document.querySelectorAll('.anagram-slot');
   const ansHash = await sha256(answer.toUpperCase());
   if (ansHash === cipher.answer) {
+    state.streak = (state.streak || 0) + 1;
+    playSound('correct');
+    stopTimer();
     slots.forEach(s => { s.style.borderColor = '#55dd55'; s.style.background = 'rgba(85,221,85,.15)'; });
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
+    if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+    registerSolvedCipherType('anagram');
+    try {
+      checkAchievements({
+        elapsed,
+        firstTry: (state._chapterErrors || 0) === 0,
+        cipherType: 'anagram',
+        anagramCorrect: true
+      });
+    } catch (achErr) {
+      console.warn('checkAnagram: achievements update skipped', achErr);
+    }
     saveState();
     autoSync(false, true);
     setTimeout(() => showSuccess(cipher, pts, elapsed), 600);
   } else {
+    state.streak = 0;
+    state._chapterErrors = (state._chapterErrors || 0) + 1;
     slots.forEach(s => { s.style.borderColor = '#ff3a3a'; s.style.background = 'rgba(255,58,58,.1)'; });
     setTimeout(() => slots.forEach(s => { s.style.borderColor = ''; s.style.background = ''; }), 800);
-    state.lives--;
-    playSound('life_lost');
+    screenPulseRed();
+    if (!state.adminMode) {
+      state.lives--;
+      animateLifeLoss();
+      playSound('life_lost');
+    } else {
+      playSound('wrong');
+    }
     saveState();
     autoSync(false, true);
     if (state.lives <= 0) {
@@ -3813,22 +4094,45 @@ async function checkMapAnswer(clicked, target) {
   const clickedHash = await sha256(clicked);
   if (clickedHash === cipher.answer) {
     mapAnswered = true;
+    state.streak = (state.streak || 0) + 1;
+    playSound('correct');
+    stopTimer();
     if (dotEl) dotEl.querySelector('circle').setAttribute('fill','#55dd55');
     document.getElementById('map-hint-text').textContent = '✅ Верно! ' + target;
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
+    if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
+    registerSolvedCipherType('map');
+    try {
+      checkAchievements({
+        elapsed,
+        firstTry: (state._chapterErrors || 0) === 0,
+        cipherType: 'map',
+        mapCorrect: true
+      });
+    } catch (achErr) {
+      console.warn('checkMapAnswer: achievements update skipped', achErr);
+    }
     saveState();
     autoSync(false, true);
     setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
   } else {
+    state.streak = 0;
+    state._chapterErrors = (state._chapterErrors || 0) + 1;
     if (dotEl) {
       const c = dotEl.querySelector('circle');
       c.setAttribute('fill','#ff3a3a');
       setTimeout(() => c.setAttribute('fill','#ffe033'), 700);
     }
     document.getElementById('map-hint-text').textContent = '❌ Не здесь. Попробуй ещё раз.';
-    state.lives--;
-    playSound('life_lost');
+    screenPulseRed();
+    if (!state.adminMode) {
+      state.lives--;
+      animateLifeLoss();
+      playSound('life_lost');
+    } else {
+      playSound('wrong');
+    }
     saveState();
     autoSync(false, true);
     if (state.lives <= 0) {
@@ -3893,7 +4197,8 @@ function _clamp(v, min, max) {
 function _normVolume(raw, fallback) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return fallback;
-  return _clamp(n, 0, 1);
+  const normalized = n > 1 ? (n / 100) : n;
+  return _clamp(normalized, 0, 1);
 }
 
 function getCurrentMusicTrack() {
@@ -4056,7 +4361,8 @@ function applyBackgroundMusic(forceTrackReload = false) {
     audio.dataset.trackId = track.id;
   }
 
-  audio.volume = musicVolume;
+  const riskBoost = 1 + (_riskIntensity * 0.18);
+  audio.volume = _clamp(musicVolume * riskBoost, 0, 1);
   if (!musicEnabled || !_audioUnlocked || document.hidden) {
     audio.pause();
     return;
@@ -4123,9 +4429,15 @@ function setMusicTrack(indexLike) {
 function setMusicVolume(valueLike) {
   const n = Number(valueLike);
   if (!Number.isFinite(n)) return;
-  musicVolume = _clamp(n / 100, 0, 1);
+  const normalized = n > 1 ? (n / 100) : n;
+  musicVolume = _clamp(normalized, 0, 1);
+  if (musicVolume > 0 && !musicEnabled) musicEnabled = true;
+  unlockAudioInteraction();
   saveAudioPreferences();
+  syncMusicButtons();
   applyBackgroundMusic(false);
+  const slider = document.getElementById('music-volume-range');
+  if (slider) slider.value = String(Math.round(musicVolume * 100));
   const v = document.getElementById('music-vol-value');
   if (v) v.textContent = Math.round(musicVolume * 100) + '%';
 }
@@ -4133,8 +4445,14 @@ function setMusicVolume(valueLike) {
 function setSfxVolume(valueLike) {
   const n = Number(valueLike);
   if (!Number.isFinite(n)) return;
-  sfxVolume = _clamp(n / 100, 0, 1);
+  const normalized = n > 1 ? (n / 100) : n;
+  sfxVolume = _clamp(normalized, 0, 1);
+  if (sfxVolume > 0 && !sfxEnabled) sfxEnabled = true;
+  unlockAudioInteraction();
   saveAudioPreferences();
+  const slider = document.getElementById('sfx-volume-range');
+  if (slider) slider.value = String(Math.round(sfxVolume * 100));
+  try { playSound('hint'); } catch (e) {}
   const v = document.getElementById('sfx-vol-value');
   if (v) v.textContent = Math.round(sfxVolume * 100) + '%';
 }
@@ -4154,7 +4472,7 @@ function playSound(type) {
   if (ctx.state === 'suspended') {
     try { ctx.resume(); } catch (e) {}
   }
-  const level = (base) => Math.max(0.0001, base * sfxVolume);
+  const level = (base) => Math.max(0.0001, base * sfxVolume * (1 + _riskIntensity * 0.35));
   try {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -4327,142 +4645,75 @@ function screenPulseRed() {
 //  СИСТЕМА ДОСТИЖЕНИЙ (50 штук)
 // ═══════════════════════════════════════════════════════
 const ACHIEVEMENTS = [
-  // Скорость
-  {id:'speed_1',    icon:'⚡', name:'Молния',          desc:'Ответил за 5 секунд',           pts:10},
-  {id:'speed_5',    icon:'🚀', name:'Реактивный',       desc:'5 ответов быстрее 5 секунд',    pts:25},
-  {id:'speed_10',   icon:'🌪', name:'Вихрь',            desc:'10 ответов быстрее 10 секунд',  pts:50},
-  {id:'speed_all',  icon:'🏎', name:'Формула-1',         desc:'Вся глава за 3 минуты',         pts:75},
-  // Точность
-  {id:'perfect_1',  icon:'🎯', name:'Снайпер',          desc:'Глава без единой ошибки',       pts:50},
-  {id:'perfect_3',  icon:'💎', name:'Бриллиант',        desc:'3 главы без ошибок',            pts:100},
-  {id:'perfect_all',icon:'👑', name:'Безупречный',      desc:'Все главы без ошибок',          pts:200},
-  {id:'no_hints_1', icon:'🧠', name:'Умник',            desc:'Глава без подсказок',           pts:30},
-  {id:'no_hints_all',icon:'🎓',name:'Мастер шифров',    desc:'Все главы без подсказок',       pts:150},
-  // Стрик
-  {id:'streak_3',   icon:'🔥', name:'На волне',         desc:'Стрик 3 правильных ответа',     pts:15},
-  {id:'streak_5',   icon:'💥', name:'Огонь!',           desc:'Стрик 5 правильных ответа',     pts:30},
-  {id:'streak_10',  icon:'🌋', name:'Вулкан',           desc:'Стрик 10 правильных ответов',   pts:60},
-  {id:'streak_all', icon:'☄️', name:'Метеор',           desc:'Вся глава одним стриком',       pts:100},
-  // Прогресс
-  {id:'ch1_done',   icon:'🏅', name:'Первый шаг',       desc:'Пройдена глава I',              pts:20},
-  {id:'ch3_done',   icon:'🥈', name:'Полпути',          desc:'Пройдено 3 главы',              pts:40},
-  {id:'ch6_done',   icon:'🥇', name:'Победитель',       desc:'Пройдена вся игра',             pts:100},
-  {id:'ch1_gold',   icon:'🌟', name:'Золото главы I',   desc:'80%+ очков в главе I',          pts:30},
-  {id:'ch2_gold',   icon:'🌟', name:'Золото главы II',  desc:'80%+ очков в главе II',         pts:30},
-  {id:'ch3_gold',   icon:'🌟', name:'Золото главы III', desc:'80%+ очков в главе III',        pts:30},
-  {id:'ch4_gold',   icon:'🌟', name:'Золото главы IV',  desc:'80%+ очков в главе IV',         pts:30},
-  {id:'ch5_gold',   icon:'🌟', name:'Золото главы V',   desc:'80%+ очков в главе V',          pts:30},
-  {id:'ch6_gold',   icon:'🌟', name:'Золото главы VI',  desc:'80%+ очков в главе VI',         pts:30},
-  {id:'all_gold',   icon:'👸', name:'Чемпион',          desc:'80%+ во всех главах',           pts:200},
-  // Очки
-  {id:'score_100',  icon:'💫', name:'Первые очки',      desc:'Набрал 100 очков',              pts:5},
-  {id:'score_500',  icon:'⭐', name:'Набирает обороты', desc:'Набрал 500 очков',              pts:10},
-  {id:'score_1000', icon:'🌠', name:'Тысячник',         desc:'Набрал 1000 очков',             pts:20},
-  {id:'score_2500', icon:'💎', name:'Эксперт',          desc:'Набрал 2500 очков',             pts:40},
-  {id:'score_5000', icon:'🏆', name:'Легенда',          desc:'Набрал 5000+ очков',            pts:80},
-  // Шифры
-  {id:'morse_1',    icon:'📡', name:'Морзист',          desc:'Решил задание на азбуке Морзе', pts:10},
-  {id:'morse_5',    icon:'📻', name:'Радист',           desc:'5 заданий на Морзе',            pts:25},
-  {id:'caesar_5',   icon:'🔐', name:'Цезарь',           desc:'5 заданий шифром Цезаря',       pts:20},
-  {id:'atbash_3',   icon:'🪞', name:'Зеркало',          desc:'3 задания шифром Атбаш',        pts:15},
-  {id:'math_3',     icon:'➗', name:'Математик',        desc:'3 математических задания',      pts:20},
-  {id:'anagram_3',  icon:'🔤', name:'Буквоед',          desc:'3 анаграммы',                   pts:20},
-  {id:'map_1',      icon:'🗺', name:'Картограф',        desc:'Нашёл город на карте',          pts:15},
-  // Особые
-  {id:'first_try',  icon:'🎊', name:'С первого раза',   desc:'Правильный ответ без ошибок',   pts:5},
-  {id:'comeback',   icon:'💪', name:'Возвращение',      desc:'Прошёл главу после провала',    pts:30},
-  {id:'night_owl',  icon:'🦉', name:'Полуночник',       desc:'Играл после 23:00',             pts:15},
-  {id:'early_bird', icon:'🐦', name:'Ранняя пташка',    desc:'Играл до 8:00',                 pts:15},
-  {id:'dedicated',  icon:'📚', name:'Усердный',         desc:'Прошёл 10+ заданий',            pts:20},
-  {id:'veteran',    icon:'🎖', name:'Ветеран',          desc:'Прошёл 30 заданий',             pts:50},
-  {id:'collector',  icon:'🗃', name:'Коллекционер',     desc:'Получил 10 достижений',         pts:30},
-  {id:'explorer',   icon:'🧭', name:'Исследователь',   desc:'Открыл все 6 глав',             pts:25},
-  {id:'historian',  icon:'📜', name:'Историк',          desc:'Прочитал 10 исторических фактов',pts:20},
-  {id:'survivor',   icon:'🛡', name:'Выживший',         desc:'Остался с 1 жизнью и победил',  pts:40},
-  {id:'comeback_ch',icon:'🔄', name:'Несломленный',     desc:'Повторил главу и победил',      pts:35},
-  {id:'top3',       icon:'🏅', name:'Призёр',           desc:'Попал в топ-3 рейтинга',        pts:50},
-  {id:'top1',       icon:'🥇', name:'Чемпион школы',    desc:'Первое место в рейтинге',       pts:100},
-  {id:'all_types',  icon:'🎭', name:'Универсал',        desc:'Решил все типы шифров',         pts:60},
-  {id:'full_game',  icon:'🎮', name:'Настоящий разведчик', desc:'Прошёл игру полностью',      pts:150},
-,
-  // ── ХОЙНИКИ И ГОМЕЛЬСКАЯ ОБЛАСТЬ ──────────────────────
-  {id:'hoiki_1',     icon:'🌿', name:'Сын Полесья',       desc:'Завершил главу о Хойниках',               pts:25},
-  {id:'hoiki_quiz',  icon:'📍', name:'Знаток Хойник',     desc:'Ответил на все вопросы о Хойниках',       pts:40},
-  {id:'gomel_map',   icon:'🗺', name:'Компас Гомельщины', desc:'Нашёл Гомель на карте',                   pts:20},
-  {id:'polesia',     icon:'🌲', name:'Дух Полесья',       desc:'Узнал название региона',                  pts:15},
-  {id:'soizh_river', icon:'🌊', name:'По реке Сож',       desc:'Расшифровал название реки',               pts:20},
-  // ── ИСТОРИЯ И GEOGRAPHY ─────────────────────────────
-  {id:'quiz_5',      icon:'🧩', name:'Знаток',            desc:'Правильно ответил на 5 вопросов викторины',pts:30},
-  {id:'quiz_10',     icon:'🎓', name:'Профессор',         desc:'Правильно ответил на 10 вопросов викторины',pts:60},
-  {id:'quiz_all',    icon:'🏫', name:'Учёный',            desc:'Все вопросы викторины правильно',          pts:100},
-  {id:'date_1941',   icon:'📅', name:'Помню 41-й',        desc:'Назвал год начала оккупации',              pts:15},
-  {id:'date_1945',   icon:'🕊', name:'Помню 45-й',        desc:'Назвал год Победы',                       pts:15},
-  // ── СКОРОСТЬ II УРОВЕНЬ ──────────────────────────────
-  {id:'speed_ch1',   icon:'💨', name:'Стремительный старт',desc:'Глава I за менее чем 5 минут',            pts:40},
-  {id:'speed_any',   icon:'🔥', name:'На максимуме',      desc:'Любое задание за 3 секунды',               pts:35},
-  {id:'speed_morse', icon:'📻', name:'Телеграфист',       desc:'Морзе за 10 секунд',                       pts:30},
-  {id:'no_wrong_1',  icon:'✨', name:'Без промаха',       desc:'Первое задание без ошибок',                pts:10},
-  {id:'fast_start',  icon:'⏩', name:'Быстрый старт',     desc:'Первые 3 задания за 30 секунд',            pts:25},
-  // ── СТОЙКОСТЬ ────────────────────────────────────────
-  {id:'one_life',    icon:'❤️', name:'На волоске',        desc:'Прошёл главу с 1 оставшейся жизнью',       pts:50},
-  {id:'retry_2',     icon:'🔄', name:'Настойчивый',       desc:'Повторил одну главу дважды',               pts:25},
-  {id:'retry_win',   icon:'💪', name:'Не сдаётся',        desc:'После провала прошёл главу с первой попытки',pts:60},
-  {id:'no_penalty',  icon:'🎖', name:'Без штрафов',       desc:'Прошёл игру без повторных попыток',        pts:80},
-  {id:'comeback_3',  icon:'🦅', name:'Феникс',            desc:'Провалил и победил 3 раза подряд',         pts:70},
-  // ── РАЗНООБРАЗИЕ ─────────────────────────────────────
-  {id:'first_quiz',  icon:'❓', name:'Первый вопрос',     desc:'Ответил на первый вопрос викторины',        pts:5},
-  {id:'first_math',  icon:'🔢', name:'Первый расчёт',     desc:'Решил первую математическую задачу',        pts:5},
-  {id:'first_anagram',icon:'🔤',name:'Первая анаграмма',  desc:'Разгадал первую анаграмму',                pts:5},
-  {id:'first_map_t', icon:'🧭', name:'Первая карта',      desc:'Нашёл первый город на карте',              pts:5},
-  {id:'all_quiz',    icon:'📚', name:'Эрудит',            desc:'Все вопросы викторины пройдены',            pts:50},
-  // ── КОМБИНИРОВАННЫЕ ──────────────────────────────────
-  {id:'perfect_run', icon:'🌈', name:'Идеальный забег',   desc:'Глава без ошибок, без подсказок и быстро', pts:120},
-  {id:'speedrun',    icon:'🏁', name:'Спидран',           desc:'Все 6 глав менее чем за 1 час',            pts:150},
-  {id:'pacifist',    icon:'🕊', name:'Пацифист',          desc:'Не использовал ни одной подсказки',        pts:100},
-  {id:'iron_will',   icon:'⚙️', name:'Железная воля',    desc:'5 заданий подряд без ошибок',              pts:45},
-  {id:'chain_6',     icon:'⛓', name:'Цепная реакция',    desc:'6 правильных ответов подряд (2 главы)',     pts:80},
-  // ── ВРЕМЯ ────────────────────────────────────────────
-  {id:'weekend',     icon:'📆', name:'Выходной разведчик',desc:'Играл в выходной день',                    pts:10},
-  {id:'school_time', icon:'🏫', name:'Школьный час',      desc:'Играл с 8 до 15 часов',                   pts:10},
-  {id:'marathon',    icon:'🏃', name:'Марафон',           desc:'Прошёл 3 главы за один сеанс',             pts:35},
-  {id:'all_in_day',  icon:'☀️', name:'День победы',      desc:'Прошёл все 6 глав за один день',           pts:100},
-  {id:'long_game',   icon:'🌙', name:'Долгая ночь',       desc:'Играл более 30 минут',                    pts:20},
-  // ── РЕЙТИНГ И СОЦИАЛЬНОЕ ─────────────────────────────
-  {id:'top5',        icon:'⭐', name:'В элите',           desc:'Вошёл в топ-5 рейтинга',                  pts:60},
-  {id:'beat_someone',icon:'📈', name:'Обогнал',           desc:'Поднялся выше другого игрока',             pts:15},
-  {id:'shared',      icon:'📤', name:'Поделился',         desc:'Поделился результатом',                    pts:10},
-  {id:'ach_20',      icon:'🏆', name:'Достиженец',        desc:'Получил 20 достижений',                   pts:40},
-  {id:'ach_30',      icon:'💠', name:'Мастер наград',     desc:'Получил 30 достижений',                   pts:60},
-  // ── ТЕМАТИЧЕСКИЕ ─────────────────────────────────────
-  {id:'war_expert',  icon:'🎗', name:'Эксперт войны',     desc:'Правильно ответил на все вопросы о ВОВ',   pts:75},
-  {id:'geo_expert',  icon:'🌍', name:'Географ',           desc:'Нашёл все 3 города на карте',              pts:50},
-  {id:'cipher_master',icon:'🔓',name:'Взломщик',          desc:'Разгадал все шифры без подсказок',         pts:90},
-  {id:'history_buff',icon:'📖', name:'Историк',           desc:'Прочитал 15 исторических фактов',          pts:30},
-  {id:'memory',      icon:'🎖', name:'Вечная память',     desc:'Завершил игру и прочитал все факты',        pts:80},
-  // ── ФИНАЛЬНЫЕ ────────────────────────────────────────
-  {id:'all_100',     icon:'💯', name:'Сотка!',            desc:'Получил 100 достижений',                   pts:250},
-  {id:'true_hero',   icon:'🌟', name:'Настоящий герой',   desc:'Прошёл все главы на золото без подсказок',  pts:300},
-  {id:'school_legend',icon:'👑',name:'Легенда школы',     desc:'Первый кто получил все достижения',         pts:500},
-  {id:'peacekeeper', icon:'🕊', name:'Миротворец',        desc:'Помнит и чтит историю своей Родины',       pts:100},
-  {id:'defender',    icon:'🛡', name:'Защитник',          desc:'Завершил игру — настоящий разведчик',       pts:150},
+  { id:'fast_5', icon:'⚡', name:'Молния', desc:'Дай правильный ответ за 5 секунд', pts:10 },
+  { id:'fast_10', icon:'🚀', name:'Ускорение', desc:'5 быстрых ответов (<=10 сек)', pts:25 },
+  { id:'fast_25', icon:'🌪️', name:'Штурм', desc:'25 быстрых ответов (<=10 сек)', pts:60 },
+  { id:'streak_3', icon:'🔥', name:'На серии', desc:'Серия из 3 правильных ответов', pts:15 },
+  { id:'streak_5', icon:'💥', name:'Без промаха', desc:'Серия из 5 правильных ответов', pts:30 },
+  { id:'streak_8', icon:'☄️', name:'Огненный темп', desc:'Серия из 8 правильных ответов', pts:55 },
+  { id:'chapter_1', icon:'🏅', name:'Первый рубеж', desc:'Заверши 1 главу', pts:20 },
+  { id:'chapter_3', icon:'🥈', name:'Полпути', desc:'Заверши 3 главы', pts:45 },
+  { id:'chapter_6', icon:'🥇', name:'Операция завершена', desc:'Заверши все 6 глав', pts:120 },
+  { id:'flawless_1', icon:'🎯', name:'Снайпер', desc:'Заверши главу без ошибок', pts:40 },
+  { id:'flawless_3', icon:'💎', name:'Холодный расчёт', desc:'3 главы без ошибок', pts:95 },
+  { id:'no_hints_1', icon:'🧠', name:'Аналитик', desc:'Заверши главу без подсказок', pts:30 },
+  { id:'no_hints_3', icon:'🎓', name:'Мастер шифра', desc:'3 главы без подсказок', pts:70 },
+  { id:'score_500', icon:'⭐', name:'Первые очки', desc:'Набери 500 очков', pts:10 },
+  { id:'score_1200', icon:'🌟', name:'Крепкий результат', desc:'Набери 1200 очков', pts:25 },
+  { id:'score_2500', icon:'🏆', name:'В элите', desc:'Набери 2500 очков', pts:55 },
+  { id:'score_4000', icon:'👑', name:'Легенда штаба', desc:'Набери 4000 очков', pts:90 },
+  { id:'type_morse', icon:'📡', name:'Радист', desc:'Реши 3 задания Морзе', pts:20 },
+  { id:'type_math', icon:'➗', name:'Штабной математик', desc:'Реши 3 математических задания', pts:20 },
+  { id:'type_map', icon:'🗺️', name:'Навигатор', desc:'Реши 2 задания по карте', pts:20 },
+  { id:'all_types', icon:'🎭', name:'Универсал', desc:'Реши все 6 типов заданий', pts:60 },
+  { id:'comeback', icon:'💪', name:'Возвращение', desc:'Пройди главу после провала', pts:35 },
+  { id:'survivor', icon:'🛡️', name:'На волоске', desc:'Заверши главу с 1 жизнью', pts:35 },
+  { id:'school_time', icon:'🏫', name:'Школьный час', desc:'Играй с 8:00 до 15:00', pts:10 },
+  { id:'weekend', icon:'📆', name:'Выходной разведчик', desc:'Играй в субботу или воскресенье', pts:10 },
+  { id:'collector_8', icon:'🗃️', name:'Коллекционер', desc:'Получи 8 достижений', pts:30 },
+  { id:'collector_16', icon:'🧩', name:'Архивариус', desc:'Получи 16 достижений', pts:65 },
 ];
 
-// Состояние достижений
+const ARTIFACTS = [
+  { id:'artifact_ch1', icon:'📜', rarity:'common', name:'Донесение Полесья', desc:'Открыто за завершение главы I' },
+  { id:'artifact_ch2', icon:'🧾', rarity:'common', name:'Подпольный пропуск', desc:'Открыто за завершение главы II' },
+  { id:'artifact_ch3', icon:'📻', rarity:'rare', name:'Радиограмма штаба', desc:'Открыто за завершение главы III' },
+  { id:'artifact_ch4', icon:'🗂️', rarity:'rare', name:'Оперативная сводка', desc:'Открыто за завершение главы IV' },
+  { id:'artifact_ch5', icon:'🧭', rarity:'epic', name:'Компас диверсанта', desc:'Открыто за завершение главы V' },
+  { id:'artifact_ch6', icon:'🕊️', rarity:'epic', name:'Шифр Победы', desc:'Открыто за завершение главы VI' },
+  { id:'artifact_flawless', icon:'🎖️', rarity:'rare', name:'Знак точности', desc:'Глава без ошибок' },
+  { id:'artifact_silent', icon:'🕶️', rarity:'rare', name:'Тихий канал', desc:'Глава без подсказок' },
+  { id:'artifact_fast', icon:'⏱️', rarity:'rare', name:'Хронометр штаба', desc:'10 быстрых ответов' },
+  { id:'artifact_retry', icon:'🔁', rarity:'epic', name:'Нашивка феникса', desc:'Победа после провала' },
+  { id:'artifact_polyglot', icon:'🧠', rarity:'epic', name:'Шифровальный диск', desc:'Освоены все типы шифров' },
+  { id:'artifact_legend', icon:'🏛️', rarity:'legendary', name:'Архив Победы', desc:'Все главы завершены с высоким результатом' },
+];
+
 if (!state.achievements) state.achievements = {};
 if (!state.achievementPts) state.achievementPts = 0;
+if (!state.artifacts) state.artifacts = {};
+if (!state.solvedTypes) state.solvedTypes = {};
+if (!state.solvedTypeCounts) state.solvedTypeCounts = {};
+
+function registerSolvedCipherType(type) {
+  const t = String(type || '').trim().toLowerCase();
+  if (!t) return;
+  if (!state.solvedTypes || typeof state.solvedTypes !== 'object') state.solvedTypes = {};
+  if (!state.solvedTypeCounts || typeof state.solvedTypeCounts !== 'object') state.solvedTypeCounts = {};
+  state.solvedTypes[t] = true;
+  state.solvedTypeCounts[t] = Math.max(0, Number(state.solvedTypeCounts[t] || 0)) + 1;
+}
 
 function unlockAchievement(id) {
   if (!state.achievements) state.achievements = {};
-  if (state.achievements[id]) return; // уже есть
+  if (state.achievements[id]) return;
   const ach = ACHIEVEMENTS.find(a => a.id === id);
   if (!ach) return;
   state.achievements[id] = Date.now();
   state.achievementPts = (state.achievementPts || 0) + ach.pts;
   saveState();
-  // Показываем уведомление
   showAchievementToast(ach);
-  // Синхронизируем
-  setTimeout(() => autoSync(false), 500);
+  setTimeout(() => autoSync(false), 350);
 }
 
 function showAchievementToast(ach) {
@@ -4472,17 +4723,16 @@ function showAchievementToast(ach) {
   el.id = 'ach-toast';
   el.style.cssText = `position:fixed;top:80px;left:50%;transform:translateX(-50%);
     z-index:9997;background:linear-gradient(135deg,#1a1508,#2a2010);
-    border:1px solid rgba(255,224,51,.4);border-radius:12px;
+    border:1px solid rgba(255,224,51,.45);border-radius:12px;
     padding:12px 18px;display:flex;align-items:center;gap:12px;
     box-shadow:0 8px 32px rgba(0,0,0,.6),0 0 20px rgba(255,224,51,.15);
-    animation:slideDown .4s cubic-bezier(.34,1.56,.64,1) both;
-    max-width:280px`;
+    max-width:300px`;
   el.innerHTML = `
     <div style="font-size:28px;flex-shrink:0">${ach.icon}</div>
     <div>
-      <div style="font-size:9px;color:rgba(255,224,51,.6);letter-spacing:.1em;margin-bottom:2px">ДОСТИЖЕНИЕ</div>
+      <div style="font-size:9px;color:rgba(255,224,51,.68);letter-spacing:.1em;margin-bottom:2px">ДОСТИЖЕНИЕ</div>
       <div style="font-family:var(--head);font-size:var(--fs-sm);color:var(--accent)">${ach.name}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:2px">${ach.desc} · +${ach.pts}⭐</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">${ach.desc} · +${ach.pts} оч</div>
     </div>`;
   document.body.appendChild(el);
   setTimeout(() => {
@@ -4490,146 +4740,133 @@ function showAchievementToast(ach) {
     el.style.opacity = '0';
     el.style.transform = 'translateX(-50%) translateY(-10px)';
     setTimeout(() => el.remove(), 300);
-  }, 3000);
+  }, 2700);
+}
+
+function _artifactRarityStyle(rarity) {
+  if (rarity === 'legendary') return { border:'rgba(255,186,61,.65)', glow:'0 0 18px rgba(255,186,61,.3)', text:'#ffdca2' };
+  if (rarity === 'epic') return { border:'rgba(255,115,115,.55)', glow:'0 0 16px rgba(255,115,115,.2)', text:'#ffcfbf' };
+  if (rarity === 'rare') return { border:'rgba(120,198,255,.55)', glow:'0 0 14px rgba(120,198,255,.2)', text:'#cce9ff' };
+  return { border:'rgba(160,255,184,.45)', glow:'0 0 10px rgba(160,255,184,.15)', text:'#d8ffe2' };
+}
+
+function unlockArtifact(id) {
+  if (!state.artifacts) state.artifacts = {};
+  if (state.artifacts[id]) return null;
+  const art = ARTIFACTS.find(a => a.id === id);
+  if (!art) return null;
+  state.artifacts[id] = Date.now();
+  saveState();
+  showArtifactToast(art);
+  return art;
+}
+
+function showArtifactToast(artifact) {
+  const old = document.getElementById('artifact-toast');
+  if (old) old.remove();
+  const style = _artifactRarityStyle(artifact.rarity);
+  const el = document.createElement('div');
+  el.id = 'artifact-toast';
+  el.style.cssText = `position:fixed;top:140px;left:50%;transform:translateX(-50%);z-index:9997;
+    background:linear-gradient(140deg,#11120d,#1d1a12);border:1px solid ${style.border};border-radius:12px;
+    padding:11px 14px;display:flex;align-items:center;gap:10px;box-shadow:${style.glow};max-width:320px`;
+  el.innerHTML = `
+    <div style="font-size:25px">${artifact.icon}</div>
+    <div>
+      <div style="font-size:9px;letter-spacing:.11em;color:${style.text};opacity:.9">АРТЕФАКТ НАЙДЕН</div>
+      <div style="font-family:var(--head);font-size:12px;color:${style.text};margin-top:2px">${artifact.name}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">${artifact.desc}</div>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity .25s,transform .25s';
+    el.style.opacity = '0';
+    el.style.transform = 'translateX(-50%) translateY(-8px)';
+    setTimeout(() => el.remove(), 260);
+  }, 2600);
+}
+
+function evaluateArtifacts(context = {}) {
+  if (!state.artifacts) state.artifacts = {};
+  const gained = [];
+  const pushIf = (id, cond) => {
+    if (!cond) return;
+    const unlocked = unlockArtifact(id);
+    if (unlocked) gained.push(unlocked);
+  };
+
+  pushIf('artifact_ch1', !!state.completedChapters[1]);
+  pushIf('artifact_ch2', !!state.completedChapters[2]);
+  pushIf('artifact_ch3', !!state.completedChapters[3]);
+  pushIf('artifact_ch4', !!state.completedChapters[4]);
+  pushIf('artifact_ch5', !!state.completedChapters[5]);
+  pushIf('artifact_ch6', !!state.completedChapters[6]);
+
+  pushIf('artifact_flawless', !!context.chapterDoneNoErrors);
+  pushIf('artifact_silent', !!context.chapterDoneNoHints);
+  pushIf('artifact_fast', (state._fastAnswers || 0) >= 10);
+  pushIf('artifact_retry', !!context.retryWin);
+
+  const solvedTypeCount = Object.keys(state.solvedTypes || {}).length;
+  pushIf('artifact_polyglot', solvedTypeCount >= 6);
+
+  const done = _stateCompletedCount();
+  pushIf('artifact_legend', done >= 6 && Number(state.totalScore || 0) >= 2500);
+  return gained;
 }
 
 function checkAchievements(context = {}) {
-  const done = Object.keys(state.completedChapters).length;
-  const score = state.totalScore;
-  const achs = state.achievements || {};
-  const stats = state.chapterStats || {};
-  const typesUsed = new Set();
+  const done = _stateCompletedCount();
+  const score = Number(state.totalScore || 0);
 
-  // Считаем типы шифров и задания
-  let totalCiphers = 0;
-  let morseCount = 0, caesarCount = 0, atbashCount = 0, mathCount = 0, anagramCount = 0, mapCount = 0;
-  CHAPTERS.forEach(ch => {
-    if (state.completedChapters[ch.id]) {
-      ch.ciphers.forEach(c => {
-        totalCiphers++;
-        typesUsed.add(c.type);
-        if (c.type === 'morse') morseCount++;
-        if (c.type === 'caesar') caesarCount++;
-        if (c.type === 'atbash') atbashCount++;
-        if (c.type === 'math') mathCount++;
-        if (c.type === 'anagram') anagramCount++;
-        if (c.type === 'map') mapCount++;
-      });
-    }
-  });
+  if (context.cipherType) {
+    registerSolvedCipherType(context.cipherType);
+  }
 
-  // Скорость
-  if (context.elapsed <= 5) unlockAchievement('speed_1');
-  if ((state._fastAnswers || 0) >= 5) unlockAchievement('speed_5');
-  if ((state._fastAnswers || 0) >= 10) unlockAchievement('speed_10');
+  if (context.elapsed <= 5) unlockAchievement('fast_5');
+  if ((state._fastAnswers || 0) >= 5) unlockAchievement('fast_10');
+  if ((state._fastAnswers || 0) >= 25) unlockAchievement('fast_25');
 
-  // Точность
-  if (context.chapterDoneNoErrors) unlockAchievement('perfect_1');
-  if ((state._perfectChapters || 0) >= 3) unlockAchievement('perfect_3');
-  if ((state._perfectChapters || 0) >= 6) unlockAchievement('perfect_all');
-  if (context.chapterDoneNoHints) unlockAchievement('no_hints_1');
-  if ((state._noHintChapters || 0) >= 6) unlockAchievement('no_hints_all');
-
-  // Стрик
   if ((state.streak || 0) >= 3) unlockAchievement('streak_3');
   if ((state.streak || 0) >= 5) unlockAchievement('streak_5');
-  if ((state.streak || 0) >= 10) unlockAchievement('streak_10');
+  if ((state.streak || 0) >= 8) unlockAchievement('streak_8');
 
-  // Прогресс
-  if (done >= 1) unlockAchievement('ch1_done');
-  if (done >= 3) unlockAchievement('ch3_done');
-  if (done >= 6) { unlockAchievement('ch6_done'); unlockAchievement('full_game'); }
-  if (done >= 6) unlockAchievement('explorer');
+  if (done >= 1) unlockAchievement('chapter_1');
+  if (done >= 3) unlockAchievement('chapter_3');
+  if (done >= 6) unlockAchievement('chapter_6');
 
-  // Золото за главы
-  CHAPTERS.forEach((ch, i) => {
-    if (!state.completedChapters[ch.id]) return;
-    const s = state.chapterStats && state.chapterStats[ch.id];
-    const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0);
-    const chScore = state.chapterScores[ch.id] || 0;
-    if (chScore >= maxCh * 0.8) {
-      unlockAchievement('ch' + (i+1) + '_gold');
-    }
-  });
-  // Все золото
-  const goldCount = CHAPTERS.filter((ch,i) => {
-    const maxCh = ch.ciphers.reduce((a,c) => a+c.points, 0);
-    return (state.chapterScores[ch.id] || 0) >= maxCh * 0.8;
-  }).length;
-  if (goldCount >= 6) unlockAchievement('all_gold');
-  if (goldCount >= 6) unlockAchievement('champion');
+  if (context.chapterDoneNoErrors) unlockAchievement('flawless_1');
+  if ((state._perfectChapters || 0) >= 3) unlockAchievement('flawless_3');
 
-  // Очки
-  if (score >= 100)  unlockAchievement('score_100');
-  if (score >= 500)  unlockAchievement('score_500');
-  if (score >= 1000) unlockAchievement('score_1000');
+  if (context.chapterDoneNoHints) unlockAchievement('no_hints_1');
+  if ((state._noHintChapters || 0) >= 3) unlockAchievement('no_hints_3');
+
+  if (score >= 500) unlockAchievement('score_500');
+  if (score >= 1200) unlockAchievement('score_1200');
   if (score >= 2500) unlockAchievement('score_2500');
-  if (score >= 5000) unlockAchievement('score_5000');
+  if (score >= 4000) unlockAchievement('score_4000');
 
-  // Шифры
-  if (morseCount >= 1)   unlockAchievement('morse_1');
-  if (morseCount >= 5)   unlockAchievement('morse_5');
-  if (caesarCount >= 5)  unlockAchievement('caesar_5');
-  if (atbashCount >= 3)  unlockAchievement('atbash_3');
-  if (mathCount >= 3)    unlockAchievement('math_3');
-  if (anagramCount >= 3) unlockAchievement('anagram_3');
-  if (mapCount >= 1)     unlockAchievement('map_1');
-  if (typesUsed.size >= 6) unlockAchievement('all_types');
+  const solvedTypes = state.solvedTypes || {};
+  const solvedTypeCounts = state.solvedTypeCounts || {};
+  const solvedTypeCount = Object.keys(solvedTypes).length;
+  if ((solvedTypeCounts.morse || 0) >= 3) unlockAchievement('type_morse');
+  if ((solvedTypeCounts.math || 0) >= 3) unlockAchievement('type_math');
+  if ((solvedTypeCounts.map || 0) >= 2) unlockAchievement('type_map');
+  if (solvedTypeCount >= 6) unlockAchievement('all_types');
 
-  // Задания
-  if (totalCiphers >= 10) unlockAchievement('dedicated');
-  if (totalCiphers >= 30) unlockAchievement('veteran');
-
-  // Особые
-  const h = new Date().getHours();
-  if (h >= 23 || h < 6)  unlockAchievement('night_owl');
-  if (h >= 5 && h < 8)   unlockAchievement('early_bird');
-  if (context.firstTry)  unlockAchievement('first_try');
+  if (context.retryWin || context.comeback) unlockAchievement('comeback');
   if (context.survived1) unlockAchievement('survivor');
-  if (context.comeback)  unlockAchievement('comeback');
-  if (context.retryWin)  unlockAchievement('comeback_ch');
 
-  // Коллекционер
-  const achCount = Object.keys(state.achievements || {}).length;
-  if (achCount >= 10) unlockAchievement('collector');
-  if (achCount >= 20) unlockAchievement('ach_20');
-  if (achCount >= 30) unlockAchievement('ach_30');
-  if (achCount >= 100) unlockAchievement('all_100');
-
-  // Хойники
-  if (state.completedChapters[1]) unlockAchievement('hoiki_1');
-  if (done >= 1 && context.quizCorrect) unlockAchievement('first_quiz');
-  if (context.quizCorrect) {
-    state._quizCorrect = (state._quizCorrect || 0) + 1;
-    if (state._quizCorrect >= 5)  unlockAchievement('quiz_5');
-    if (state._quizCorrect >= 10) unlockAchievement('quiz_10');
-  }
-  if (context.mathCorrect) unlockAchievement('first_math');
-  if (context.anagramCorrect) unlockAchievement('first_anagram');
-  if (context.mapCorrect) unlockAchievement('first_map_t');
-
-  // Скорость
-  if (context.elapsed <= 3) unlockAchievement('speed_any');
-  if (context.elapsed <= 5 && !achs.no_wrong_1) unlockAchievement('no_wrong_1');
-  if (context.morseFast) unlockAchievement('speed_morse');
-
-  // Время игры
   const hour = new Date().getHours();
-  if (hour >= 8 && hour < 15)   unlockAchievement('school_time');
   const day = new Date().getDay();
-  if (day === 0 || day === 6)   unlockAchievement('weekend');
+  if (hour >= 8 && hour < 15) unlockAchievement('school_time');
+  if (day === 0 || day === 6) unlockAchievement('weekend');
 
-  // Стойкость
-  if (state.lives === 1 && context.chapterDoneNoErrors === false && done > 0) unlockAchievement('one_life');
-  if (context.retryWin) unlockAchievement('retry_win');
+  const count = Object.keys(state.achievements || {}).length;
+  if (count >= 8) unlockAchievement('collector_8');
+  if (count >= 16) unlockAchievement('collector_16');
 
-  // Поделился
-  if (context.shared) unlockAchievement('shared');
-
-  // Рейтинг достижений
-  if (done >= 6) unlockAchievement('defender');
-  if (done >= 6 && (state._perfectChapters || 0) >= 6 && (state._noHintChapters || 0) >= 6) unlockAchievement('true_hero');
-  if (done >= 6 && context.readAllFacts) unlockAchievement('memory');
+  evaluateArtifacts(context);
 }
 
 function renderAchievementsTab(container) {
@@ -4638,6 +4875,10 @@ function renderAchievementsTab(container) {
   const earned = Object.keys(myAchs).length;
   const earnedPts = state.achievementPts || 0;
   const progressPct = total ? Math.round((earned / total) * 100) : 0;
+  const myArtifacts = state.artifacts || {};
+  const artifactTotal = ARTIFACTS.length;
+  const artifactEarned = Object.keys(myArtifacts).length;
+  const artifactPct = artifactTotal ? Math.round((artifactEarned / artifactTotal) * 100) : 0;
 
   let html = `<div style="padding:16px">
     <div style="background:linear-gradient(160deg,rgba(255,224,51,.16),rgba(20,17,8,.95));
@@ -4660,7 +4901,7 @@ function renderAchievementsTab(container) {
       <div style="margin-top:10px;background:rgba(0,0,0,.35);border-radius:999px;height:8px;overflow:hidden;">
         <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#ffe033,#fff1a8);box-shadow:0 0 8px rgba(255,224,51,.8)"></div>
       </div>
-      <div style="margin-top:6px;font-size:10px;color:#f0df9d;text-align:right;">${progressPct}% коллекции</div>
+      <div style="margin-top:6px;font-size:10px;color:#f0df9d;text-align:right;">${progressPct}% коллекции достижений</div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">`;
 
@@ -4680,14 +4921,47 @@ function renderAchievementsTab(container) {
       <div style="font-size:10px;color:${has ? 'var(--accent)' : '#d5c99c'};margin-top:7px;font-family:var(--head)">+${ach.pts} очков</div>
     </div>`;
   });
+
+  html += `</div>
+    <div style="margin-top:14px;background:linear-gradient(160deg,rgba(130,220,255,.12),rgba(18,16,10,.94));
+      border:1px solid rgba(130,220,255,.35);border-radius:12px;padding:14px;margin-bottom:14px;
+      box-shadow:0 8px 22px rgba(0,0,0,.42)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="font-family:var(--head);font-size:12px;color:#d7f0ff;letter-spacing:.08em">🗃️ АРТЕФАКТЫ</div>
+        <div style="font-family:var(--head);font-size:12px;color:#bfe8ff">${artifactEarned}/${artifactTotal}</div>
+      </div>
+      <div style="margin-top:10px;background:rgba(0,0,0,.35);border-radius:999px;height:8px;overflow:hidden;">
+        <div style="height:100%;width:${artifactPct}%;background:linear-gradient(90deg,#7fc5ff,#d7f0ff);box-shadow:0 0 10px rgba(127,197,255,.8)"></div>
+      </div>
+      <div style="margin-top:6px;font-size:10px;color:#cfeaff;text-align:right;">${artifactPct}% коллекции артефактов</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">`;
+
+  ARTIFACTS.forEach(artifact => {
+    const has = !!myArtifacts[artifact.id];
+    const rarityStyle = _artifactRarityStyle(artifact.rarity);
+    const rarityLabel =
+      artifact.rarity === 'legendary' ? 'ЛЕГЕНДАРНЫЙ' :
+      artifact.rarity === 'epic' ? 'ЭПИЧЕСКИЙ' :
+      artifact.rarity === 'rare' ? 'РЕДКИЙ' : 'ОБЫЧНЫЙ';
+    html += `<div style="background:${has ? 'linear-gradient(168deg,#1f1a12,#13100b)' : 'linear-gradient(168deg,#171510,#0f0d09)'};
+      border:1px solid ${has ? rarityStyle.border : 'rgba(255,255,255,.13)'};
+      box-shadow:${has ? rarityStyle.glow : 'none'};
+      border-radius:10px;padding:11px;opacity:${has ? '1' : '0.82'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="font-size:24px;filter:${has ? 'drop-shadow(0 0 8px rgba(255,255,255,.25))' : 'none'}">${artifact.icon}</div>
+        <div style="font-size:9px;color:${has ? rarityStyle.text : '#b8b1a0'};letter-spacing:.05em">${has ? '✅ НАЙДЕН' : '🔒 СКРЫТ'}</div>
+      </div>
+      <div style="font-family:var(--head);font-size:11px;color:${has ? rarityStyle.text : '#e2dac0'};letter-spacing:.04em;margin-top:6px">${artifact.name}</div>
+      <div style="font-size:9px;color:${has ? rarityStyle.text : '#b8b09a'};opacity:.92;margin-top:4px;letter-spacing:.06em">${rarityLabel}</div>
+      <div style="font-size:10px;color:${has ? '#d9d0b6' : '#aea58c'};margin-top:5px;line-height:1.45">${artifact.desc}</div>
+    </div>`;
+  });
+
   html += '</div></div>';
   container.innerHTML = html;
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  ВКЛАДКА НАСТРОЙКИ
-// ═══════════════════════════════════════════════════════
 function renderSettingsTab() {
   const el = document.getElementById('settings-tab-content');
   if (!el) return;
@@ -4722,7 +4996,7 @@ function renderSettingsTab() {
           <div style="font-size:12px;color:#f5ebc7">Громкость музыки</div>
           <div id="music-vol-value" style="font-family:var(--head);font-size:12px;color:var(--accent)">${musicPct}%</div>
         </div>
-        <input class="settings-range" type="range" min="0" max="100" step="1" value="${musicPct}" oninput="setMusicVolume(this.value)">
+        <input id="music-volume-range" class="settings-range" type="range" min="0" max="100" step="1" value="${musicPct}" oninput="setMusicVolume(this.value)" onchange="setMusicVolume(this.value)">
       </div>
 
       <div class="settings-card">
@@ -4739,7 +5013,7 @@ function renderSettingsTab() {
           <div style="font-size:12px;color:#f5ebc7">Громкость эффектов</div>
           <div id="sfx-vol-value" style="font-family:var(--head);font-size:12px;color:var(--accent)">${sfxPct}%</div>
         </div>
-        <input class="settings-range" type="range" min="0" max="100" step="1" value="${sfxPct}" oninput="setSfxVolume(this.value)">
+        <input id="sfx-volume-range" class="settings-range" type="range" min="0" max="100" step="1" value="${sfxPct}" oninput="setSfxVolume(this.value)" onchange="setSfxVolume(this.value)">
         <div class="settings-caption">Эффекты регулируются отдельно от фоновой музыки.</div>
       </div>
 
@@ -4778,6 +5052,7 @@ window.contactGameAdmin = contactGameAdmin;
 window.checkAnswer = checkAnswer;
 window.nextCipher = nextCipher;
 window.showHint = showHint;
+window.copyChapterReportCard = copyChapterReportCard;
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
