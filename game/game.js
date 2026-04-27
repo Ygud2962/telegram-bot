@@ -1116,14 +1116,14 @@ function loadCipher() {
   const actions   = document.querySelector('.cipher-actions');
   const btnCheck  = document.querySelector('.btn-check');
   if (cipher.type === 'map') {
-    inputWrap.style.display  = 'none';
-    btnCheck.style.display   = 'none';
+    if (inputWrap) inputWrap.style.display = 'none';
+    if (btnCheck) btnCheck.style.display = 'none';
   } else if (cipher.type === 'anagram') {
-    inputWrap.style.display  = 'none';
-    btnCheck.style.display   = 'none';
+    if (inputWrap) inputWrap.style.display = 'none';
+    if (btnCheck) btnCheck.style.display = 'none';
   } else {
-    inputWrap.style.display  = '';
-    btnCheck.style.display   = '';
+    if (inputWrap) inputWrap.style.display = '';
+    if (btnCheck) btnCheck.style.display = '';
   }
 
   // Жизни
@@ -1418,16 +1418,33 @@ async function sha256(str) {
 }
 
 async function checkAnswer() {
+  const chapter = CHAPTERS[state.chapter];
+  if (!chapter || !Array.isArray(chapter.ciphers)) {
+    console.warn('checkAnswer: chapter is unavailable', state.chapter);
+    return;
+  }
+  const cipher = chapter.ciphers[state.cipherIdx];
+  if (!cipher) {
+    console.warn('checkAnswer: cipher is unavailable', state.cipherIdx);
+    return;
+  }
   // Если текущее задание — quiz, делегируем в quizSubmit
-  const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
   if (cipher.type === 'quiz') {
-    quizSubmit();
+    if (typeof quizSubmit === 'function') quizSubmit();
     return;
   }
   const inp    = document.getElementById('cipher-input');
+  if (!inp) {
+    console.warn('checkAnswer: cipher-input element not found');
+    return;
+  }
   const rawVal = inp.value || '';
   const val = rawVal.trim().toUpperCase().replace(/\s+/g,' ');
   const correct = cipher.answer; // хеш
+  if (!correct || typeof correct !== 'string') {
+    console.warn('checkAnswer: missing answer hash for cipher', cipher);
+    return;
+  }
 
   if (!val) { inp.focus(); return; }
 
@@ -1492,9 +1509,11 @@ async function checkAnswer() {
         state.lives = 5; saveState(); renderLives();
         const hb = document.getElementById('cipher-hint-box');
         const ht = document.getElementById('cipher-hint-text');
-        hb.className = 'cipher-hint-box show';
-        ht.textContent = '⚡ Режим админа: жизни восстановлены';
-        setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
+        if (hb && ht) {
+          hb.className = 'cipher-hint-box show';
+          ht.textContent = '⚡ Режим админа: жизни восстановлены';
+          setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
+        }
       } else {
         // Для tester/player: при 0 жизней начинаем эту же главу заново
         inp.disabled = true;
@@ -2659,7 +2678,10 @@ const _origLoadCipher = loadCipher;
 loadCipher = function(){
   _origLoadCipher();
   const box = document.getElementById('cipher-box');
-  const cipher = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
+  const chapter = CHAPTERS[state.chapter];
+  if (!box || !chapter || !Array.isArray(chapter.ciphers)) return;
+  const cipher = chapter.ciphers[state.cipherIdx];
+  if (!cipher) return;
   if(cipher.type !== 'morse' && cipher.type !== 'anagram' && cipher.type !== 'photo' && cipher.type !== 'map' && cipher.type !== 'math'){
     const originalText = box.textContent;
     if(originalText.trim()){
@@ -2671,21 +2693,40 @@ loadCipher = function(){
 
 // ── Переопределяем checkAnswer — добавляем эффекты ──
 const _origCheck = checkAnswer;
+let _checkAnswerBusy = false;
 checkAnswer = async function(){
+  if (_checkAnswerBusy) return;
+  _checkAnswerBusy = true;
   const btn = document.querySelector('.btn-check');
   if(btn) pulseBtn(btn);
   try {
     await _origCheck();
   } catch (e) {
     console.error('checkAnswer failed:', e);
-    showToast('⚠ Ошибка проверки. Попробуйте ещё раз');
+    const chapter = CHAPTERS[state.chapter];
+    const cipher = chapter && Array.isArray(chapter.ciphers) ? chapter.ciphers[state.cipherIdx] : null;
+    if (cipher && cipher.type === 'quiz' && (!_quizState || !_quizState.cipher)) {
+      console.warn('checkAnswer recover: empty quiz state, reloading cipher');
+      try { loadCipher(); } catch (reloadErr) { console.error('quiz reload failed:', reloadErr); }
+      showToast('⚠ Задание обновлено. Нажмите «Проверить» снова');
+    } else {
+      showToast('⚠ Ошибка проверки. Попробуйте ещё раз');
+    }
+  } finally {
+    setTimeout(() => { _checkAnswerBusy = false; }, 120);
   }
 };
 
 // ── Переопределяем showSuccess — добавляем конфетти ──
 const _origSuccess = showSuccess;
 showSuccess = function(cipher, pts, elapsed){
-  _origSuccess(cipher, pts, elapsed);
+  try {
+    _origSuccess(cipher, pts, elapsed);
+  } catch (e) {
+    console.error('showSuccess failed:', e);
+    try { nextCipher(); } catch (nextErr) { console.error('nextCipher fallback failed:', nextErr); }
+    return;
+  }
   if(pts > 0) {
     launchConfetti();
     setTimeout(()=>{
@@ -3184,6 +3225,21 @@ function quizSelect(idx) {
 
 function quizSubmit() {
   if (_quizState.answered) return;
+  const chapter = CHAPTERS[state.chapter];
+  const fallbackCipher = chapter && Array.isArray(chapter.ciphers) ? chapter.ciphers[state.cipherIdx] : null;
+  if (!_quizState.cipher && fallbackCipher && fallbackCipher.type === 'quiz') {
+    _quizState.cipher = fallbackCipher;
+  }
+  const cipher = _quizState.cipher;
+  if (!cipher || !Array.isArray(cipher.options) || !Number.isInteger(cipher.correctIndex)) {
+    console.warn('quizSubmit: invalid quiz state, forcing reload', _quizState);
+    _quizState.answered = false;
+    showToast('⚠ Ошибка викторины. Задание будет перезагружено');
+    setTimeout(() => {
+      try { loadCipher(); } catch (e) { console.error('quizSubmit reload failed:', e); }
+    }, 80);
+    return;
+  }
   if (_quizState.selected === null) {
     // Подсвечиваем что нужно выбрать
     const container = document.getElementById('quiz-container');
@@ -3198,7 +3254,6 @@ function quizSubmit() {
   }
   _quizState.answered = true;
 
-  const cipher  = _quizState.cipher;
   const correct = cipher.correctIndex;
   const sel     = _quizState.selected;
   const elapsed = getEffectiveElapsed(_quizState.startTime);
@@ -3496,32 +3551,35 @@ let sfxEnabled = true;
 let musicVolume = 0.45;
 let sfxVolume = 0.8;
 let musicTrackIndex = 0;
+const _brokenMusicTrackIds = new Set();
+let _musicFailoverInProgress = false;
+let _musicValidationStarted = false;
 
 const GAME_MUSIC_TRACKS = [
   {
-    id: 'mars',
-    title: 'Mars, The Bringer Of War',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Holst-_mars.ogg'
+    id: 'epic_boss_battle',
+    title: 'Epic Boss Battle (CC0)',
+    url: 'https://opengameart.org/sites/default/files/Juhani%20Junkala%20-%20Epic%20Boss%20Battle%20%5BSeamlessly%20Looping%5D.wav'
   },
   {
-    id: '1812',
-    title: '1812 Overture',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/1/1f/1812_Overture.ogg'
+    id: 'determination',
+    title: 'Determination (CC0)',
+    url: 'https://opengameart.org/sites/default/files/determination.mp3'
   },
   {
-    id: 'bald_mountain',
-    title: 'Night on Bald Mountain',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/Modest_Mussorgsky_-_night_on_bald_mountain.ogg'
+    id: 'prepare_your_swords',
+    title: 'Prepare Your Swords (CC0)',
+    url: 'https://opengameart.org/sites/default/files/prepare_your_swords.mp3'
   },
   {
-    id: 'dies_irae',
-    title: 'Dies Irae (Gregorian Chant)',
-    url: 'https://commons.wikimedia.org/wiki/Special:FilePath/Dies.irae.ogg'
+    id: 'adventuring_song',
+    title: 'Adventuring Song (CC0)',
+    url: 'https://opengameart.org/sites/default/files/adventuring_song.mp3'
   },
   {
-    id: 'william_tell',
-    title: 'William Tell Overture',
-    url: 'https://upload.wikimedia.org/wikipedia/commons/8/86/William_Tell_Overture_-_Edison.ogg'
+    id: 'town_theme',
+    title: 'Town Theme (CC0)',
+    url: 'https://opengameart.org/sites/default/files/TownTheme.mp3'
   }
 ];
 
@@ -3537,6 +3595,91 @@ function _normVolume(raw, fallback) {
 
 function getCurrentMusicTrack() {
   return GAME_MUSIC_TRACKS[musicTrackIndex] || GAME_MUSIC_TRACKS[0];
+}
+
+function getNextWorkingTrackIndex(startIdx = 0) {
+  const total = GAME_MUSIC_TRACKS.length;
+  if (!total) return -1;
+  for (let step = 1; step <= total; step++) {
+    const idx = (startIdx + step) % total;
+    const track = GAME_MUSIC_TRACKS[idx];
+    if (track && !_brokenMusicTrackIds.has(track.id)) return idx;
+  }
+  return -1;
+}
+
+function onMusicTrackFailed(trackId) {
+  if (_musicFailoverInProgress) return;
+  _musicFailoverInProgress = true;
+  try {
+    if (trackId) _brokenMusicTrackIds.add(trackId);
+    const nextIdx = getNextWorkingTrackIndex(musicTrackIndex);
+    if (nextIdx === -1) {
+      musicEnabled = false;
+      saveAudioPreferences();
+      syncMusicButtons();
+      const audio = ensureBackgroundMusic();
+      if (audio) audio.pause();
+      showToast('🔇 Музыка недоступна: треки не загрузились');
+      return;
+    }
+    musicTrackIndex = nextIdx;
+    saveAudioPreferences();
+    syncMusicButtons();
+    const track = getCurrentMusicTrack();
+    if (track) showToast('🎼 Переключено: ' + track.title);
+    applyBackgroundMusic(true);
+  } finally {
+    _musicFailoverInProgress = false;
+  }
+}
+
+function probeMusicTrack(url, timeoutMs = 7000) {
+  return new Promise(resolve => {
+    let done = false;
+    const audio = new Audio();
+    const cleanup = () => {
+      audio.oncanplaythrough = null;
+      audio.onloadedmetadata = null;
+      audio.onerror = null;
+      try {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      } catch (e) {}
+    };
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      cleanup();
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    audio.preload = 'auto';
+    audio.oncanplaythrough = () => finish(true);
+    audio.onloadedmetadata = () => finish(true);
+    audio.onerror = () => finish(false);
+    try {
+      audio.src = url;
+      audio.load();
+    } catch (e) {
+      finish(false);
+    }
+  });
+}
+
+async function validateMusicTracksInBackground() {
+  if (_musicValidationStarted) return;
+  _musicValidationStarted = true;
+  for (const track of GAME_MUSIC_TRACKS) {
+    const ok = await probeMusicTrack(track.url, 7000);
+    if (!ok) _brokenMusicTrackIds.add(track.id);
+  }
+  const current = getCurrentMusicTrack();
+  if (current && _brokenMusicTrackIds.has(current.id)) {
+    onMusicTrackFailed(current.id);
+  }
 }
 
 function loadAudioPreferences() {
@@ -3576,7 +3719,11 @@ function ensureBackgroundMusic() {
     _bgMusic = new Audio();
     _bgMusic.loop = true;
     _bgMusic.preload = 'auto';
-    _bgMusic.crossOrigin = 'anonymous';
+    _bgMusic.addEventListener('error', () => {
+      const failedId = _bgMusic && _bgMusic.dataset ? _bgMusic.dataset.trackId : '';
+      console.warn('background music load error', failedId, _bgMusic && _bgMusic.error);
+      onMusicTrackFailed(failedId);
+    });
   } catch (e) {
     _bgMusic = null;
   }
@@ -3586,8 +3733,20 @@ function ensureBackgroundMusic() {
 function applyBackgroundMusic(forceTrackReload = false) {
   const audio = ensureBackgroundMusic();
   if (!audio) return;
-  const track = getCurrentMusicTrack();
+  let track = getCurrentMusicTrack();
   if (!track) return;
+  if (_brokenMusicTrackIds.has(track.id)) {
+    const nextIdx = getNextWorkingTrackIndex(musicTrackIndex);
+    if (nextIdx !== -1 && nextIdx !== musicTrackIndex) {
+      musicTrackIndex = nextIdx;
+      saveAudioPreferences();
+      track = getCurrentMusicTrack();
+    }
+  }
+  if (!track || _brokenMusicTrackIds.has(track.id)) {
+    audio.pause();
+    return;
+  }
 
   if (forceTrackReload || audio.dataset.trackId !== track.id) {
     audio.src = track.url;
@@ -3609,6 +3768,7 @@ function unlockAudioInteraction() {
   if (ctx && ctx.state === 'suspended') {
     try { ctx.resume(); } catch (e) {}
   }
+  void validateMusicTracksInBackground();
   applyBackgroundMusic(false);
 }
 
@@ -3639,6 +3799,8 @@ function setMusicTrack(indexLike) {
   const idx = Number(indexLike);
   if (!Number.isInteger(idx) || idx < 0 || idx >= GAME_MUSIC_TRACKS.length) return;
   musicTrackIndex = idx;
+  const selectedTrack = GAME_MUSIC_TRACKS[idx];
+  if (selectedTrack) _brokenMusicTrackIds.delete(selectedTrack.id);
   saveAudioPreferences();
   applyBackgroundMusic(true);
   syncMusicButtons();
