@@ -1042,7 +1042,7 @@ function renderChapters() {
     // HTML карточки — с опциональным таймером обратного отсчёта
     const countdownId = `ch-countdown-${ch.id}`;
     const countdownHtml = schedInfo
-      ? `<div id="${countdownId}" style="font-size:10px;color:#ffe033;letter-spacing:.05em;margin-top:4px">⏳ Подсчёт...</div>`
+      ? `<div id="${countdownId}" style="display:inline-flex;align-items:center;gap:6px;max-width:100%;margin-top:8px;padding:6px 10px;border-radius:8px;background:rgba(255,224,51,.16);border:1px solid rgba(255,224,51,.45);font-family:var(--head);font-size:13px;line-height:1.25;color:#fff7c2;letter-spacing:.08em;text-shadow:0 1px 4px rgba(0,0,0,.75);font-weight:700;box-shadow:0 0 10px rgba(255,224,51,.15)">⏳ Подсчёт...</div>`
       : '';
 
     card.innerHTML = `
@@ -1137,15 +1137,18 @@ function _startChapterCountdown(elId, openAtIso, chapterId) {
   const openAt = new Date(openAtIso).getTime();
 
   function _fmt(ms) {
-    if (ms <= 0) return '⏰ Открывается...';
+    if (ms <= 0) return '🟢 ГЛАВА ОТКРЫТА';
     const totalSec = Math.floor(ms / 1000);
     const d = Math.floor(totalSec / 86400);
     const h = Math.floor((totalSec % 86400) / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
     const s = totalSec % 60;
-    if (d > 0) return `⏳ ${d}д ${h}ч ${m}м`;
-    if (h > 0) return `⏳ ${h}ч ${m}м ${s}с`;
-    return `⏳ ${m}м ${s}с`;
+    const hh = String(h).padStart(2, '0');
+    const mm = String(m).padStart(2, '0');
+    const ss = String(s).padStart(2, '0');
+    if (d > 0) return `⏳ ОТКРЫТИЕ ЧЕРЕЗ ${d}д ${hh}:${mm}:${ss}`;
+    if (h > 0) return `⏳ ОТКРЫТИЕ ЧЕРЕЗ ${hh}:${mm}:${ss}`;
+    return `⏳ ОТКРЫТИЕ ЧЕРЕЗ ${mm}:${ss}`;
   }
 
   function _tick() {
@@ -1153,7 +1156,10 @@ function _startChapterCountdown(elId, openAtIso, chapterId) {
     if (!el) { clearInterval(_countdownIntervals[chapterId]); return; }
     const diff = openAt - Date.now();
     if (diff <= 0) {
-      el.textContent = '🔓 Перезагрузите для доступа';
+      el.textContent = '🟢 ГЛАВА ОТКРЫТА · ОБНОВИТЕ ЭКРАН';
+      el.style.background = 'rgba(85,221,85,.14)';
+      el.style.borderColor = 'rgba(85,221,85,.55)';
+      el.style.color = '#a8ffb2';
       clearInterval(_countdownIntervals[chapterId]);
       delete _countdownIntervals[chapterId];
       return;
