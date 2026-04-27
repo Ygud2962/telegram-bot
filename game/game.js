@@ -390,12 +390,20 @@ function getTgUserName() {
   if (tgUser) return tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '');
   return 'Разведчик';
 }
+function getTgInitDataRaw() {
+  if (tg && typeof tg.initData === 'string') return tg.initData;
+  return '';
+}
 async function sendResultToBot(data) {
   data.completed        = Object.keys(state.completedChapters).length;
   data.total_score      = state.totalScore;
   data.achievement_count = Object.keys(state.achievements || {}).length;
   data.achievement_pts   = state.achievementPts || 0;
   data.user_id    = getTgUserId();
+  if (!data.init_data) {
+    const initDataRaw = getTgInitDataRaw();
+    if (initDataRaw) data.init_data = initDataRaw;
+  }
 
   console.log('📤 sendResultToBot:', data.type, 'score:', data.total_score,
     'syncUrl:', window._syncUrl ? '✅' : '❌ ПУСТО', 'userId:', data.user_id);
@@ -463,6 +471,10 @@ async function flushPendingResults() {
       if (!pending.length) return;
       const last = pending[pending.length - 1];
       last.user_id = getTgUserId();
+      if (!last.init_data) {
+        const initDataRaw = getTgInitDataRaw();
+        if (initDataRaw) last.init_data = initDataRaw;
+      }
       const resp = await fetch(syncUrl, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -535,6 +547,8 @@ async function autoSync(showNotification = true) {
     game_over: state.gameOver || false,
     user_id: uid,
   };
+  const initDataRaw = getTgInitDataRaw();
+  if (initDataRaw) data.init_data = initDataRaw;
 
   try {
     const resp = await fetch(syncUrl, {
@@ -573,6 +587,8 @@ window.addEventListener('beforeunload', () => {
       game_over: state.gameOver || false,
       user_id: getTgUserId(),
     };
+    const initDataRaw = getTgInitDataRaw();
+    if (initDataRaw) data.init_data = initDataRaw;
     navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
   }
 });
@@ -1109,7 +1125,10 @@ function loadCipher() {
 
   // Жизни
   renderLives();
+  _timerCancelled = false;
   startTimer();
+  _syncTimerCancelButton();
+  syncMusicButtons();
 
   // Сброс ввода (inp уже объявлен выше)
   const inpReset = document.getElementById('cipher-input');
@@ -1161,6 +1180,21 @@ function animateLifeLoss() {
 }
 
 let _timerInterval = null;
+let _timerCancelled = false;
+
+function _syncTimerCancelButton() {
+  const btn = document.getElementById('btn-cancel-timer');
+  if (!btn) return;
+  if (_timerCancelled) {
+    btn.disabled = true;
+    btn.style.opacity = '0.55';
+    btn.textContent = '⏱ ТАЙМЕР ОТКЛЮЧЕН';
+  } else {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.textContent = '⏹ ОТМЕНИТЬ ТАЙМЕР';
+  }
+}
 
 function startTimer() {
   if (_timerInterval) clearInterval(_timerInterval);
@@ -1183,6 +1217,24 @@ function stopTimer() {
   if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
   const el = document.getElementById('cipher-timer');
   if (el) el.style.color = 'var(--muted)';
+}
+
+function cancelCipherTimer() {
+  if (_timerCancelled) return;
+  _timerCancelled = true;
+  stopTimer();
+  const el = document.getElementById('cipher-timer');
+  if (el) {
+    el.textContent = 'без таймера';
+    el.style.color = 'var(--green)';
+  }
+  _syncTimerCancelButton();
+  showToast('⏱ Таймер отключён для текущего задания');
+}
+
+function getEffectiveElapsed(startTimeMs) {
+  const elapsed = Math.round((Date.now() - startTimeMs) / 1000);
+  return _timerCancelled ? 0 : elapsed;
 }
 
 function animateMorse(el, text) {
@@ -1281,7 +1333,7 @@ async function checkAnswer() {
 
   if (!val) { inp.focus(); return; }
 
-  const elapsed = Math.round((Date.now() - state.startTime) / 1000);
+  const elapsed = getEffectiveElapsed(state.startTime);
 
   const normVal = _normalizeForCompare(rawVal);
 
@@ -1938,10 +1990,13 @@ function confirmReset() {
   const uid = getTgUserId();
   if (syncUrl && uid) {
     const resetUrl = syncUrl.replace('/game_sync', '/game_reset');
+    const payload = { user_id: uid };
+    const initDataRaw = getTgInitDataRaw();
+    if (initDataRaw) payload.init_data = initDataRaw;
     fetch(resetUrl, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ user_id: uid })
+      body: JSON.stringify(payload)
     }).then(r => r.json())
       .then(d => console.log('✅ Прогресс сброшен в БД:', d))
       .catch(e => console.warn('reset sync error:', e));
@@ -2983,7 +3038,7 @@ function quizSubmit() {
   const cipher  = _quizState.cipher;
   const correct = cipher.correctIndex;
   const sel     = _quizState.selected;
-  const elapsed = Math.round((Date.now() - _quizState.startTime) / 1000);
+  const elapsed = getEffectiveElapsed(_quizState.startTime);
   const isOk    = sel === correct;
 
   // Подсвечиваем результат
@@ -3159,7 +3214,7 @@ function quizSubmit() {
   const cipher   = _quizState.cipher;
   const correct  = cipher.correctIndex;
   const selected = _quizState.selected;
-  const elapsed  = Math.round((Date.now() - _quizState.startTime) / 1000);
+  const elapsed  = getEffectiveElapsed(_quizState.startTime);
   const isCorrect = selected === correct;
 
 
@@ -3328,7 +3383,7 @@ function resetAnagram() {
 async function checkAnagram() {
   const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
   const answer  = anagramState.placed.map(i => i !== null ? anagramState.letters[i] : '').join('');
-  const elapsed = Math.round((Date.now() - state.startTime) / 1000);
+  const elapsed = getEffectiveElapsed(state.startTime);
 
   // Подсветить слоты
   const slots = document.querySelectorAll('.anagram-slot');
@@ -3407,7 +3462,7 @@ function renderMap(cipher) {
 
 async function checkMapAnswer(clicked, target) {
   if (mapAnswered) return;
-  const elapsed = Math.round((Date.now() - state.startTime) / 1000);
+  const elapsed = getEffectiveElapsed(state.startTime);
   const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
 
   const dotEl = document.getElementById(`mcdot-${clicked}`);
@@ -3444,6 +3499,39 @@ async function checkMapAnswer(clicked, target) {
 //  ЗВУКОВЫЕ ЭФФЕКТЫ (Web Audio API — без файлов)
 // ═══════════════════════════════════════════════════════
 let _audioCtx = null;
+const MUSIC_PREF_KEY = 'cipher_music_enabled_v1';
+let musicEnabled = true;
+
+function loadMusicPreference() {
+  try {
+    const raw = localStorage.getItem(MUSIC_PREF_KEY);
+    if (raw === null) return;
+    musicEnabled = raw === '1';
+  } catch(e) {}
+}
+
+function saveMusicPreference() {
+  try {
+    localStorage.setItem(MUSIC_PREF_KEY, musicEnabled ? '1' : '0');
+  } catch(e) {}
+}
+
+function syncMusicButtons() {
+  const btn = document.getElementById('btn-toggle-music');
+  if (btn) {
+    btn.textContent = musicEnabled ? '🎵 МУЗЫКА: ON' : '🔇 МУЗЫКА: OFF';
+    btn.style.opacity = musicEnabled ? '1' : '0.7';
+  }
+}
+
+function toggleMusicEnabled() {
+  musicEnabled = !musicEnabled;
+  saveMusicPreference();
+  syncMusicButtons();
+  showToast(musicEnabled ? '🎵 Музыка включена' : '🔇 Музыка выключена');
+}
+
+loadMusicPreference();
 function getAudio() {
   if (!_audioCtx) {
     try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
@@ -3452,6 +3540,7 @@ function getAudio() {
 }
 
 function playSound(type) {
+  if (!musicEnabled) return;
   const ctx = getAudio();
   if (!ctx) return;
   try {
@@ -3982,12 +4071,19 @@ function renderSettingsTab() {
     '<div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:12px;">🗑 Сброс прогресса</div>' +
     '<button onclick="confirmReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🗑 СБРОСИТЬ</button>' +
     '</div></div>';
+  syncMusicButtons();
 }
+window.showScreen = showScreen;
+window.switchTab = switchTab;
+window.renderChapters = renderChapters;
+window.toggleMusicEnabled = toggleMusicEnabled;
+window.cancelCipherTimer = cancelCipherTimer;
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
 if (document.readyState === "loading") { showSplash(); } else { showSplash(); }
 loadState();
+syncMusicButtons();
 
 // Применяем роль из window-флагов ДО mergeBotLeaderboard и renderChapters.
 // Это гарантирует что adminMode/testerMode правильны даже если tgInitMe = null.
@@ -4019,10 +4115,21 @@ async function fetchAndApplyState() {
   if (!uid || !syncUrl) return;
   try {
     const base = syncUrl.replace('/game_sync', '');
-    const resp = await fetch(base + '/game_state?user_id=' + uid);
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (!data.ok) return;
+    const initDataRaw = getTgInitDataRaw();
+    let stateUrl = base + '/game_state?user_id=' + encodeURIComponent(uid);
+    if (initDataRaw) stateUrl += '&init_data=' + encodeURIComponent(initDataRaw);
+    const resp = await fetch(stateUrl);
+    const data = await resp.json().catch(() => null);
+    if (!data || typeof data !== 'object') return;
+    if (data.allowed === false) {
+      if (data.access_reason === 'maintenance') {
+        document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🛠️</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Игра на технических работах</div><div style="font-size:15px;color:rgba(255,255,255,.7);max-width:360px;line-height:1.5">Вход временно ограничен. Доступ есть только у администраторов и тестировщиков игры.</div>' + (data.maintenance_until ? '<div style="font-size:13px;color:rgba(255,255,255,.55);margin-top:14px">До: ' + String(data.maintenance_until) + '</div>' : '') + '</div>';
+      } else {
+        document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ ограничен</div><div style="font-size:15px;color:rgba(255,255,255,.7);max-width:320px">Откройте игру снова из кнопки в Telegram после выдачи доступа.</div></div>';
+      }
+      return;
+    }
+    if (!resp.ok || !data.ok) return;
     if (data.banned) {
       document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0d0b08;color:#fff;text-align:center;padding:32px;font-family:sans-serif"><div style="font-size:64px;margin-bottom:16px">🚫</div><div style="font-size:22px;font-weight:700;color:#ffe033;margin-bottom:12px">Доступ заблокирован</div><div style="font-size:15px;color:rgba(255,255,255,.6);max-width:280px">Ваш аккаунт заблокирован администратором.</div></div>';
       try { localStorage.removeItem(storageKey()); } catch(e2) {}

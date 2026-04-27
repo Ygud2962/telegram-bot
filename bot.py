@@ -154,6 +154,7 @@ _game_mode_cache_ts: float = 0
 # ══════════════════════════════════════════════════════════
 ADMIN_IDS       = []  # Права администратора через БД (таблица bot_admins)
 _bot_admin_cache: dict[int, tuple[bool, float]] = {}
+_bot_admin_last_true: set[int] = set()
 _BOT_ADMIN_TTL = 30.0
 
 def is_bot_admin(user_id: int) -> bool:
@@ -173,9 +174,16 @@ async def is_bot_admin_async(user_id: int) -> bool:
     try:
         val = bool(await asyncio.to_thread(db.is_bot_admin_db, user_id))
         _bot_admin_cache[user_id] = (val, now_ts)
+        if val:
+            _bot_admin_last_true.add(user_id)
+        else:
+            _bot_admin_last_true.discard(user_id)
         return val
     except Exception:
-        return False
+        # При временном сбое БД не теряем уже известные админ-права.
+        if cached is not None:
+            return bool(cached[0])
+        return user_id in _bot_admin_last_true
 
 async def get_admin_ids() -> list:
     """Возвращает список user_id всех бот-администраторов из bot_admins."""
@@ -184,6 +192,46 @@ async def get_admin_ids() -> list:
         return [r[0] for r in rows]
     except Exception:
         return []
+
+
+async def get_maintenance_status_cached(force: bool = False) -> dict:
+    """Возвращает статус техрежима с TTL-кэшем."""
+    global _maintenance_cache
+    now = datetime.now()
+    if force or (now - _maintenance_cache['last_check']).total_seconds() > MAINTENANCE_TTL:
+        status = await asyncio.to_thread(db.get_maintenance_status)
+        status['last_check'] = now
+        _maintenance_cache = status
+    return _maintenance_cache
+
+
+async def is_game_privileged_async(user_id: int, *, bot_admin: bool | None = None,
+                                   game_role: str | None = None) -> bool:
+    """True, если пользователь может входить в игру в техрежиме."""
+    if bot_admin is None:
+        bot_admin = await is_bot_admin_async(user_id)
+    if bot_admin:
+        return True
+    if game_role is None:
+        try:
+            game_role = await asyncio.to_thread(db.get_game_role, user_id)
+        except Exception:
+            game_role = None
+    return game_role in ('admin', 'tester')
+
+
+async def is_game_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None = None,
+                                         game_role: str | None = None) -> tuple[bool, dict]:
+    """Проверяет блокируется ли вход в игру техрежимом для конкретного пользователя."""
+    status = await get_maintenance_status_cached()
+    if not status.get('enabled'):
+        return False, status
+    allowed = await is_game_privileged_async(
+        user_id,
+        bot_admin=bot_admin,
+        game_role=game_role,
+    )
+    return (not allowed), status
 REQUEST_TIMEOUT = 30.0
 TZ_MINSK        = pytz.timezone('Europe/Minsk')
 
@@ -1312,30 +1360,44 @@ async def ask_ai(question: str, user_id: int, is_teacher: bool = False) -> str:
 #  ТЕХРЕЖИМ
 # ══════════════════════════════════════════════════════════
 async def check_maintenance(update: Update, context: CallbackContext,
-                            is_admin: bool | None = None) -> bool:
-    global _maintenance_cache
-    now = datetime.now()
-    if (now - _maintenance_cache['last_check']).total_seconds() > MAINTENANCE_TTL:
-        status = await asyncio.to_thread(db.get_maintenance_status)
-        status['last_check'] = now
-        _maintenance_cache = status
-
+                            is_admin: bool | None = None,
+                            scope: str = 'bot') -> bool:
+    status = await get_maintenance_status_cached()
     if is_admin is None:
         is_admin = await is_bot_admin_async(update.effective_user.id)
     if is_admin:
         return False
-    if not _maintenance_cache.get('enabled'):
+    if not status.get('enabled'):
         return False
 
-    msg = "⚠️ <b>ТЕХНИЧЕСКИЕ РАБОТЫ</b>\n\nБот временно недоступен.\n"
-    if _maintenance_cache.get('until'):
-        msg += f"🕗 Восстановление: <b>{_maintenance_cache['until']}</b>\n"
-    msg += "\nПриносим извинения за неудобства."
-    kb = [[btn("🔄 Проверить статус", 'check_maintenance_status')]]
+    if scope == 'game':
+        msg = (
+            "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>\n\n"
+            "Вход в игру временно ограничен.\n"
+            "Доступ имеют только:\n"
+            "• администраторы бота\n"
+            "• администраторы игры\n"
+            "• тестировщики игры\n"
+        )
+        if status.get('until'):
+            msg += f"\n🕗 Ожидаемое восстановление: <b>{status['until']}</b>\n"
+        kb = [
+            [btn("🎮 Проверить доступ", 'menu_game')],
+            [btn("🏠 Главное меню", 'back_to_main')],
+        ]
+    else:
+        msg = "⚠️ <b>ТЕХНИЧЕСКИЕ РАБОТЫ</b>\n\nБот временно недоступен.\n"
+        if status.get('until'):
+            msg += f"🕗 Восстановление: <b>{status['until']}</b>\n"
+        msg += "\nПриносим извинения за неудобства."
+        kb = [[btn("🔄 Проверить статус", 'check_maintenance_status')]]
 
     try:
         if update.callback_query:
-            await update.callback_query.answer("⚠️ Технические работы", show_alert=True)
+            await update.callback_query.answer(
+                "⚠️ Технические работы" if scope != 'game' else "⚠️ Игра в техрежиме",
+                show_alert=True
+            )
             await safe_edit(update.callback_query, msg, kb)
         else:
             await update.message.reply_text(
@@ -2750,18 +2812,12 @@ async def _get_cached_game_mode() -> str:
 
 async def is_game_allowed(user_id: int) -> bool:
     """Строгий доступ к игре по режимам: closed / beta / open.
-    closed: нет доступа всем игрокам
+    closed: доступ только admin/tester/бот-админу
     beta: доступ только разрешённым (бета-список, tester/admin, бот-админ)
     open: доступ всем
     """
     import time
     global _beta_cache, _beta_cache_ts
-
-    mode = await _get_cached_game_mode()
-    if mode == 'closed':
-        return False
-    if mode == 'open':
-        return True
 
     game_role = None
     try:
@@ -2772,6 +2828,12 @@ async def is_game_allowed(user_id: int) -> bool:
     if await is_bot_admin_async(user_id):
         return True
     if game_role in ('admin', 'tester'):
+        return True
+
+    mode = await _get_cached_game_mode()
+    if mode == 'closed':
+        return False
+    if mode == 'open':
         return True
 
     # beta mode
@@ -2792,10 +2854,10 @@ async def menu_game(query, context):
         mode = await _get_cached_game_mode()
         if mode == 'closed':
             denied_text = (
-                "🔒 <b>Игра закрыта</b>\n\n"
-                "Сейчас доступ к игре полностью отключён.\n"
-                "Дождитесь открытия от администратора.\n\n"
-                "<i>Следите за объявлениями в боте.</i>"
+                "🔧 <b>Игра в техническом режиме</b>\n\n"
+                "Сейчас вход в игру ограничен.\n"
+                "Доступ есть только у администраторов бота/игры и тестировщиков игры.\n\n"
+                "<i>Дождитесь завершения техработ или обратитесь к администратору.</i>"
             )
         else:
             denied_text = (
@@ -4704,7 +4766,20 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
 
     d = query.data
     user_is_admin = await is_bot_admin_async(user.id)
-    if await check_maintenance(update, context, is_admin=user_is_admin):
+    maintenance_scope = 'bot'
+    maintenance_bypass = user_is_admin
+    if d == 'menu_game':
+        maintenance_scope = 'game'
+        maintenance_bypass = await is_game_privileged_async(
+            user.id,
+            bot_admin=user_is_admin,
+        )
+    if await check_maintenance(
+        update,
+        context,
+        is_admin=maintenance_bypass,
+        scope=maintenance_scope,
+    ):
         return
 
     # ── Добавление замены (пошаговый режим) ──
@@ -4967,7 +5042,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         await set_maintenance(query, context, dur)
         return
     if d == 'check_maintenance_status':
-        maint = await asyncio.to_thread(db.get_maintenance_status)
+        maint = await get_maintenance_status_cached(force=True)
         if not maint['enabled']:
             await safe_edit(query, "🟢 Бот работает штатно.", [[btn("🏠 Меню", 'back_to_main')]])
         else:
@@ -5808,6 +5883,19 @@ async def handle_game_reset(request):
         if not auth_ok:
             logger.warning(f"game_reset auth failed: user={user_id}, reason={auth_reason}")
             return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': False,
+                    'error': 'maintenance',
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance_until': maint.get('until'),
+                },
+                status=503,
+                headers=headers,
+            )
 
         # Проверяем что только admin может сбросить свой рейтинг сам
         role = await asyncio.to_thread(db.get_game_role, user_id)
@@ -5843,6 +5931,25 @@ async def handle_game_state(request):
         if not auth_ok:
             logger.warning(f"game_state auth failed: user={user_id}, reason={auth_reason}")
             return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': True,
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance': True,
+                    'maintenance_until': maint.get('until'),
+                    'score': 0,
+                    'completed': 0,
+                    'game_over': False,
+                    'banned': False,
+                    'open_chapters': [],
+                    'chapter_schedule': [],
+                    'chapters': [],
+                },
+                headers=headers,
+            )
         if _is_game_rate_limited('game_state', user_id, limit=60):
             return aiohttp_web.json_response(
                 {'ok': False, 'error': 'rate_limited'},
@@ -5966,6 +6073,19 @@ async def handle_game_leaderboard(request):
         if not auth_ok:
             logger.warning(f"game_leaderboard auth failed: user={user_id}, reason={auth_reason}")
             return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': False,
+                    'error': 'maintenance',
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance_until': maint.get('until'),
+                },
+                status=503,
+                headers=headers,
+            )
 
         rows, players_count = await asyncio.gather(
             asyncio.to_thread(db.get_game_leaderboard, 50),
@@ -6026,6 +6146,19 @@ async def handle_game_sync(request):
         if not auth_ok:
             logger.warning(f"game_sync auth failed: user={user_id}, reason={auth_reason}")
             return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': False,
+                    'error': 'maintenance',
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance_until': maint.get('until'),
+                },
+                status=503,
+                headers=headers,
+            )
         if _is_game_rate_limited('game_sync', user_id, limit=30):
             return aiohttp_web.json_response(
                 {'ok': False, 'error': 'rate_limited'},

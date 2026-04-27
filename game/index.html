@@ -591,8 +591,8 @@
             <div id="intro-ribbon" class="intro-ribbon"></div>
             <div id="intro-desc" class="intro-desc">Вы — советский разведчик. Расшифруйте донесения партизан и приблизьте Победу.</div>
             <div id="intro-quote" class="intro-quote">«Никто не забыт, ничто не забыто»</div>
-            <button id="intro-btn" class="btn btn-accent intro-btn" onclick="if(typeof showScreen==='function'){showScreen('s-chapters');renderChapters();}else{document.getElementById('boot-error')||alert('Игра загружается, попробуйте ещё раз');}">▶ НАЧАТЬ МИССИЮ</button>
-            <div id="intro-how" class="intro-how" onclick="if(typeof switchTab==='function'){switchTab('about');}else{document.getElementById('boot-error')||alert('Игра загружается, попробуйте ещё раз');}">❓ КАК ИГРАТЬ</div>
+            <button id="intro-btn" class="btn btn-accent intro-btn" onclick="startMission()">▶ НАЧАТЬ МИССИЮ</button>
+            <div id="intro-how" class="intro-how" onclick="openHowToPlay()">❓ КАК ИГРАТЬ</div>
             <div id="intro-memory" class="intro-memory">Помним · Чтим · Гордимся</div>
         </div>
         
@@ -800,6 +800,13 @@
     </div>
     <script>
         (function () {
+            var bootState = {
+                loading: false,
+                loaded: false,
+                failed: false,
+                promise: null
+            };
+
             function getBootVersion() {
                 try {
                     var params = new URLSearchParams(window.location.search || "");
@@ -807,6 +814,22 @@
                 } catch (_) {
                     return "dev";
                 }
+            }
+
+            function gameReady() {
+                return (
+                    typeof window.showScreen === "function" &&
+                    typeof window.renderChapters === "function" &&
+                    typeof window.switchTab === "function"
+                );
+            }
+
+            function setIntroButtonState(loading, text) {
+                var btn = document.getElementById("intro-btn");
+                if (!btn) return;
+                btn.disabled = !!loading;
+                btn.style.opacity = loading ? "0.7" : "1";
+                if (text) btn.textContent = text;
             }
 
             function showBootError(reason) {
@@ -818,6 +841,14 @@
                 box.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:10001;background:rgba(20,17,8,.95);border:1px solid rgba(255,58,58,.45);border-radius:10px;padding:10px 12px;color:#ffe4e4;font-size:12px;line-height:1.4;";
                 box.textContent = "Game failed to load. Reopen Mini App from bot button and bump GAME_VERSION in Railway. " + reason;
                 document.body.appendChild(box);
+                bootState.failed = true;
+                setIntroButtonState(false, "↻ ПОВТОРИТЬ ЗАПУСК");
+            }
+
+            function clearBootError() {
+                var box = document.getElementById("boot-error");
+                if (box && box.parentNode) box.parentNode.removeChild(box);
+                bootState.failed = false;
             }
 
             function appendScript(primaryUrl, fallbackUrl) {
@@ -845,18 +876,77 @@
             var gamePrimary = "/game/game.js?v=" + version;
             var gameFallback = "/game.js?v=" + version;
 
-            appendScript(securityPrimary, securityFallback)
-                .then(function () { return appendScript(gamePrimary, gameFallback); })
-                .then(function () {
-                    setTimeout(function () {
-                        if (!window.__GAME_JS_LOADED) {
-                            showBootError("(game.js did not initialize)");
-                        }
-                    }, 2500);
-                })
-                .catch(function (err) {
-                    showBootError("(" + (err && err.message ? err.message : "unknown") + ")");
+            function startBoot(forceReload) {
+                if (bootState.loading) return bootState.promise;
+                if (bootState.loaded && !forceReload && gameReady()) {
+                    clearBootError();
+                    setIntroButtonState(false, "▶ НАЧАТЬ МИССИЮ");
+                    return Promise.resolve(true);
+                }
+                setIntroButtonState(true, "⏳ ЗАГРУЗКА...");
+                bootState.loading = true;
+                clearBootError();
+                bootState.promise = appendScript(securityPrimary, securityFallback)
+                    .then(function () { return appendScript(gamePrimary, gameFallback); })
+                    .then(function () {
+                        return new Promise(function (resolve, reject) {
+                            setTimeout(function () {
+                                if (window.__GAME_JS_LOADED && gameReady()) {
+                                    bootState.loaded = true;
+                                    clearBootError();
+                                    setIntroButtonState(false, "▶ НАЧАТЬ МИССИЮ");
+                                    resolve(true);
+                                } else {
+                                    reject(new Error("game.js did not initialize"));
+                                }
+                            }, 2500);
+                        });
+                    })
+                    .catch(function (err) {
+                        showBootError("(" + (err && err.message ? err.message : "unknown") + ")");
+                        return false;
+                    })
+                    .finally(function () {
+                        bootState.loading = false;
+                    });
+                return bootState.promise;
+            }
+
+            window.startMission = function () {
+                if (gameReady()) {
+                    window.showScreen("s-chapters");
+                    window.renderChapters();
+                    return;
+                }
+                startBoot(true).then(function (ok) {
+                    if (ok && gameReady()) {
+                        window.showScreen("s-chapters");
+                        window.renderChapters();
+                        return;
+                    }
+                    if (!document.getElementById("boot-error")) {
+                        alert("Игра загружается, попробуйте ещё раз");
+                    }
                 });
+            };
+
+            window.openHowToPlay = function () {
+                if (gameReady()) {
+                    window.switchTab("about");
+                    return;
+                }
+                startBoot(true).then(function (ok) {
+                    if (ok && gameReady()) {
+                        window.switchTab("about");
+                        return;
+                    }
+                    if (!document.getElementById("boot-error")) {
+                        alert("Игра загружается, попробуйте ещё раз");
+                    }
+                });
+            };
+
+            startBoot(false);
         })();
     </script>
 </body>
