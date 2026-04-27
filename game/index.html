@@ -9,11 +9,11 @@
     <style>
         :root {
             --bg: #0a0a08;
-            --bg-soft: #141108;
+            --bg-soft: #1a140a;
             --accent: #ffe033;
             --accent2: #ff3a3a;
             --red: #ff3a3a;
-            --muted: #888;
+            --muted: #b8b091;
             --green: #55dd55;
             --head: 'Courier New', monospace;
             --mono: 'Courier New', monospace;
@@ -34,7 +34,7 @@
         }
         body {
             background: var(--bg);
-            color: #fdfaf0;
+            color: #fff6dd;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         
@@ -115,14 +115,14 @@
         }
         .intro-show { opacity: 1; transform: translateY(0); }
         #intro-stamp { font-size: 72px; margin-bottom: 16px; filter: drop-shadow(0 0 30px rgba(255,224,51,.4)); }
-        #intro-date { font-size: var(--fs-sm); color: var(--muted); letter-spacing: .15em; margin-bottom: 8px; }
+        #intro-date { font-size: var(--fs-sm); color: #d2cab2; letter-spacing: .15em; margin-bottom: 8px; text-shadow: 0 1px 0 rgba(0,0,0,.55); }
         #intro-title { font-family: var(--head); font-size: var(--fs-hero); color: var(--accent); letter-spacing: .06em; line-height: .9; margin-bottom: 16px; text-shadow: 0 0 40px rgba(255,224,51,.5); }
         #intro-ribbon { width: 200px; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); margin: 20px auto; }
-        #intro-desc { font-size: var(--fs-base); color: #ccc; max-width: 320px; margin-bottom: 24px; line-height: 1.6; }
-        #intro-quote { font-size: var(--fs-sm); color: var(--muted); font-style: italic; margin-bottom: 32px; }
+        #intro-desc { font-size: var(--fs-base); color: #f3e6bf; max-width: 320px; margin-bottom: 24px; line-height: 1.6; text-shadow: 0 1px 0 rgba(0,0,0,.55); }
+        #intro-quote { font-size: var(--fs-sm); color: #d1c9ad; font-style: italic; margin-bottom: 32px; }
         #intro-btn { width: 200px; }
-        #intro-how { font-size: var(--fs-xs); color: var(--muted); margin-top: 16px; cursor: pointer; text-decoration: underline; }
-        #intro-memory { font-size: var(--fs-xs); color: var(--muted); margin-top: 40px; letter-spacing: .1em; }
+        #intro-how { font-size: var(--fs-xs); color: #dace9c; margin-top: 16px; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(255,224,51,.5); }
+        #intro-memory { font-size: var(--fs-xs); color: #c7bea1; margin-top: 40px; letter-spacing: .1em; }
         
         #fireworks-canvas, #petals-canvas, #particles-canvas, #map-canvas, #three-canvas {
             position: fixed;
@@ -396,7 +396,7 @@
         .succ-answer { font-family: var(--mono); font-size: var(--fs-2xl); color: var(--accent); letter-spacing: .15em; margin: 20px 0; text-align: center; }
         .succ-pts { font-family: var(--head); font-size: var(--fs-hero); color: var(--green); text-align: center; }
         .succ-time { font-size: var(--fs-sm); color: var(--muted); text-align: center; margin-top: 8px; }
-        .succ-fact { background: rgba(255,255,255,.03); border-left: 3px solid var(--accent); padding: 12px; margin: 20px 0; font-size: var(--fs-sm); color: #ccc; line-height: 1.6; }
+        .succ-fact { background: rgba(255,255,255,.03); border-left: 3px solid var(--accent); padding: 12px; margin: 20px 0; font-size: var(--fs-sm); color: #e3d9b8; line-height: 1.6; }
         
         .chend-medal { font-size: 72px; text-align: center; margin: 20px 0; }
         .chend-score { font-family: var(--head); font-size: var(--fs-2xl); color: var(--accent); text-align: center; }
@@ -572,6 +572,49 @@
         .nav-buttons .btn {
             flex: 1;
         }
+        .settings-card {
+            background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015));
+            border: 1px solid rgba(255,224,51,.22);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 6px 24px rgba(0,0,0,.35);
+        }
+        .settings-card-title {
+            font-family: var(--head);
+            font-size: var(--fs-base);
+            color: #fff2bc;
+            margin-bottom: 10px;
+            letter-spacing: .06em;
+        }
+        .settings-caption {
+            font-size: var(--fs-xs);
+            color: #d8cfb0;
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+        .settings-inline {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .settings-select {
+            width: 100%;
+            background: rgba(10,10,8,.9);
+            color: #fff6d0;
+            border: 1px solid rgba(255,224,51,.35);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: var(--fs-sm);
+            margin-top: 8px;
+        }
+        .settings-range {
+            width: 100%;
+            accent-color: #ffe033;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
@@ -637,7 +680,7 @@
                 <div id="brief-place" style="font-size:var(--fs-sm);color:var(--muted);margin-top:4px;"></div>
             </div>
             <div id="brief-meta" style="background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;padding:12px;font-size:var(--fs-xs);color:var(--accent);line-height:1.8;margin-bottom:20px;"></div>
-            <div id="brief-text" style="font-size:var(--fs-base);color:#ccc;line-height:1.7;margin-bottom:20px;"></div>
+            <div id="brief-text" style="font-size:var(--fs-base);color:#e8dfbf;line-height:1.7;margin-bottom:20px;"></div>
             <div id="brief-mission" style="background:rgba(85,221,85,.08);border-left:3px solid var(--green);padding:12px;font-size:var(--fs-sm);color:var(--green);margin-bottom:24px;"></div>
             <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
         </div>

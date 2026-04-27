@@ -1014,6 +1014,7 @@ function showBriefing(idx) {
 //  СТАРТ ГЛАВЫ
 // ═══════════════════════════════════════════════════════
 function startChapter(idx) {
+  unlockAudioInteraction();
   state.chapter           = idx;
   state.cipherIdx         = 0;
   // Жизни: бесконечные только для adminMode, для testerMode и player — 5
@@ -1601,6 +1602,7 @@ async function finishChapter() {
 
 
 function restartChapterFromStart(idx) {
+  unlockAudioInteraction();
   const ch = CHAPTERS[idx];
   if (!ch) {
     showScreen('s-chapters');
@@ -1702,6 +1704,7 @@ async function failChapter() {
       ? `⚠️ Повтор: штраф <b>-${currentPenalty}%</b> от набранных очков<br>Жизни восстановятся`
       : `⚠️ Повтор #${currentFailCount}: штраф <b>-${currentPenalty}%</b> от очков<br>Жизни восстановятся`;
   }
+  playSound('game_lose');
   showScreen('s-chapter-fail');
 }
 
@@ -2935,6 +2938,7 @@ function resumeGame() {
 }
 
 function goToChapters() {
+  unlockAudioInteraction();
   saveState();
   showScreen('s-chapters');
   renderChapters();
@@ -3398,6 +3402,7 @@ async function checkAnagram() {
     slots.forEach(s => { s.style.borderColor = '#ff3a3a'; s.style.background = 'rgba(255,58,58,.1)'; });
     setTimeout(() => slots.forEach(s => { s.style.borderColor = ''; s.style.background = ''; }), 800);
     state.lives--;
+    playSound('life_lost');
     saveState();
     if (state.lives <= 0) {
       if (state.adminMode) {
@@ -3484,6 +3489,7 @@ async function checkMapAnswer(clicked, target) {
     }
     document.getElementById('map-hint-text').textContent = '❌ Не здесь. Попробуй ещё раз.';
     state.lives--;
+    playSound('life_lost');
     saveState();
     if (state.lives <= 0) {
       if (state.adminMode) {
@@ -3499,39 +3505,185 @@ async function checkMapAnswer(clicked, target) {
 //  ЗВУКОВЫЕ ЭФФЕКТЫ (Web Audio API — без файлов)
 // ═══════════════════════════════════════════════════════
 let _audioCtx = null;
-const MUSIC_PREF_KEY = 'cipher_music_enabled_v1';
+let _bgMusic = null;
+let _audioUnlocked = false;
+const AUDIO_PREF_KEY = 'cipher_audio_prefs_v2';
+const LEGACY_MUSIC_PREF_KEY = 'cipher_music_enabled_v1';
 let musicEnabled = true;
+let sfxEnabled = true;
+let musicVolume = 0.45;
+let sfxVolume = 0.8;
+let musicTrackIndex = 0;
 
-function loadMusicPreference() {
-  try {
-    const raw = localStorage.getItem(MUSIC_PREF_KEY);
-    if (raw === null) return;
-    musicEnabled = raw === '1';
-  } catch(e) {}
+const GAME_MUSIC_TRACKS = [
+  {
+    id: 'mars',
+    title: 'Mars, The Bringer Of War',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Holst-_mars.ogg'
+  },
+  {
+    id: '1812',
+    title: '1812 Overture',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/1/1f/1812_Overture.ogg'
+  },
+  {
+    id: 'bald_mountain',
+    title: 'Night on Bald Mountain',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/Modest_Mussorgsky_-_night_on_bald_mountain.ogg'
+  },
+  {
+    id: 'dies_irae',
+    title: 'Dies Irae (Gregorian Chant)',
+    url: 'https://commons.wikimedia.org/wiki/Special:FilePath/Dies.irae.ogg'
+  },
+  {
+    id: 'william_tell',
+    title: 'William Tell Overture',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/8/86/William_Tell_Overture_-_Edison.ogg'
+  }
+];
+
+function _clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
 }
 
-function saveMusicPreference() {
+function _normVolume(raw, fallback) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return _clamp(n, 0, 1);
+}
+
+function getCurrentMusicTrack() {
+  return GAME_MUSIC_TRACKS[musicTrackIndex] || GAME_MUSIC_TRACKS[0];
+}
+
+function loadAudioPreferences() {
   try {
-    localStorage.setItem(MUSIC_PREF_KEY, musicEnabled ? '1' : '0');
-  } catch(e) {}
+    const raw = localStorage.getItem(AUDIO_PREF_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      musicEnabled = parsed.musicEnabled !== false;
+      sfxEnabled = parsed.sfxEnabled !== false;
+      musicVolume = _normVolume(parsed.musicVolume, 0.45);
+      sfxVolume = _normVolume(parsed.sfxVolume, 0.8);
+      const idx = Number(parsed.musicTrackIndex);
+      musicTrackIndex = Number.isInteger(idx) ? _clamp(idx, 0, GAME_MUSIC_TRACKS.length - 1) : 0;
+      return;
+    }
+    const old = localStorage.getItem(LEGACY_MUSIC_PREF_KEY);
+    if (old !== null) musicEnabled = old === '1';
+  } catch (e) {}
+}
+
+function saveAudioPreferences() {
+  try {
+    localStorage.setItem(AUDIO_PREF_KEY, JSON.stringify({
+      musicEnabled,
+      sfxEnabled,
+      musicVolume,
+      sfxVolume,
+      musicTrackIndex
+    }));
+    localStorage.setItem(LEGACY_MUSIC_PREF_KEY, musicEnabled ? '1' : '0');
+  } catch (e) {}
+}
+
+function ensureBackgroundMusic() {
+  if (_bgMusic) return _bgMusic;
+  try {
+    _bgMusic = new Audio();
+    _bgMusic.loop = true;
+    _bgMusic.preload = 'auto';
+    _bgMusic.crossOrigin = 'anonymous';
+  } catch (e) {
+    _bgMusic = null;
+  }
+  return _bgMusic;
+}
+
+function applyBackgroundMusic(forceTrackReload = false) {
+  const audio = ensureBackgroundMusic();
+  if (!audio) return;
+  const track = getCurrentMusicTrack();
+  if (!track) return;
+
+  if (forceTrackReload || audio.dataset.trackId !== track.id) {
+    audio.src = track.url;
+    audio.dataset.trackId = track.id;
+  }
+
+  audio.volume = musicVolume;
+  if (!musicEnabled || !_audioUnlocked || document.hidden) {
+    audio.pause();
+    return;
+  }
+  const p = audio.play();
+  if (p && typeof p.catch === 'function') p.catch(() => {});
+}
+
+function unlockAudioInteraction() {
+  _audioUnlocked = true;
+  const ctx = getAudio();
+  if (ctx && ctx.state === 'suspended') {
+    try { ctx.resume(); } catch (e) {}
+  }
+  applyBackgroundMusic(false);
 }
 
 function syncMusicButtons() {
   const btn = document.getElementById('btn-toggle-music');
-  if (btn) {
-    btn.textContent = musicEnabled ? '🎵 МУЗЫКА: ON' : '🔇 МУЗЫКА: OFF';
-    btn.style.opacity = musicEnabled ? '1' : '0.7';
-  }
+  if (!btn) return;
+  const track = getCurrentMusicTrack();
+  btn.textContent = musicEnabled ? '🎵 МУЗЫКА: ON' : '🔇 МУЗЫКА: OFF';
+  btn.style.opacity = musicEnabled ? '1' : '0.7';
+  if (track) btn.title = 'Трек: ' + track.title;
 }
 
 function toggleMusicEnabled() {
   musicEnabled = !musicEnabled;
-  saveMusicPreference();
+  saveAudioPreferences();
   syncMusicButtons();
+  applyBackgroundMusic(false);
   showToast(musicEnabled ? '🎵 Музыка включена' : '🔇 Музыка выключена');
 }
 
-loadMusicPreference();
+function toggleSfxEnabled() {
+  sfxEnabled = !sfxEnabled;
+  saveAudioPreferences();
+  showToast(sfxEnabled ? '🔊 Эффекты включены' : '🔇 Эффекты выключены');
+}
+
+function setMusicTrack(indexLike) {
+  const idx = Number(indexLike);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= GAME_MUSIC_TRACKS.length) return;
+  musicTrackIndex = idx;
+  saveAudioPreferences();
+  applyBackgroundMusic(true);
+  syncMusicButtons();
+  const track = getCurrentMusicTrack();
+  if (track) showToast('🎼 Трек: ' + track.title);
+}
+
+function setMusicVolume(valueLike) {
+  const n = Number(valueLike);
+  if (!Number.isFinite(n)) return;
+  musicVolume = _clamp(n / 100, 0, 1);
+  saveAudioPreferences();
+  applyBackgroundMusic(false);
+  const v = document.getElementById('music-vol-value');
+  if (v) v.textContent = Math.round(musicVolume * 100) + '%';
+}
+
+function setSfxVolume(valueLike) {
+  const n = Number(valueLike);
+  if (!Number.isFinite(n)) return;
+  sfxVolume = _clamp(n / 100, 0, 1);
+  saveAudioPreferences();
+  const v = document.getElementById('sfx-vol-value');
+  if (v) v.textContent = Math.round(sfxVolume * 100) + '%';
+}
+
+loadAudioPreferences();
 function getAudio() {
   if (!_audioCtx) {
     try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
@@ -3540,9 +3692,13 @@ function getAudio() {
 }
 
 function playSound(type) {
-  if (!musicEnabled) return;
+  if (!sfxEnabled || sfxVolume <= 0) return;
   const ctx = getAudio();
   if (!ctx) return;
+  if (ctx.state === 'suspended') {
+    try { ctx.resume(); } catch (e) {}
+  }
+  const level = (base) => Math.max(0.0001, base * sfxVolume);
   try {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -3551,23 +3707,20 @@ function playSound(type) {
     const now = ctx.currentTime;
 
     if (type === 'correct') {
-      // Победный звук — два тона вверх
       osc.type = 'sine';
       osc.frequency.setValueAtTime(523, now);
       osc.frequency.setValueAtTime(784, now + 0.1);
-      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.setValueAtTime(level(0.3), now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
       osc.start(now); osc.stop(now + 0.4);
     } else if (type === 'wrong') {
-      // Ошибка — низкий дребезжащий звук
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(150, now);
       osc.frequency.setValueAtTime(100, now + 0.15);
-      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.setValueAtTime(level(0.2), now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
       osc.start(now); osc.stop(now + 0.3);
     } else if (type === 'chapter_win') {
-      // Победная фанфара
       const freqs = [523, 659, 784, 1047];
       freqs.forEach((f, i) => {
         const o = ctx.createOscillator();
@@ -3575,36 +3728,42 @@ function playSound(type) {
         o.connect(g); g.connect(ctx.destination);
         o.type = 'sine';
         o.frequency.setValueAtTime(f, now + i * 0.1);
-        g.gain.setValueAtTime(0.25, now + i * 0.1);
+        g.gain.setValueAtTime(level(0.25), now + i * 0.1);
         g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.3);
         o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.3);
       });
     } else if (type === 'life_lost') {
-      // Потеря жизни — тревожный звук
       osc.type = 'square';
       osc.frequency.setValueAtTime(200, now);
       osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
-      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.setValueAtTime(level(0.2), now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
       osc.start(now); osc.stop(now + 0.3);
     } else if (type === 'hint') {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(440, now);
-      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.setValueAtTime(level(0.15), now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
       osc.start(now); osc.stop(now + 0.2);
     } else if (type === 'game_win') {
-      // Финальная победа — торжественный аккорд
       [523,659,784,880,1047].forEach((f, i) => {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
         o.connect(g); g.connect(ctx.destination);
         o.type = i % 2 === 0 ? 'sine' : 'triangle';
         o.frequency.setValueAtTime(f, now + i * 0.08);
-        g.gain.setValueAtTime(0.2, now + i * 0.08);
+        g.gain.setValueAtTime(level(0.2), now + i * 0.08);
         g.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
         o.start(now + i * 0.08); o.stop(now + 1.5);
       });
+    } else if (type === 'game_lose') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(294, now);
+      osc.frequency.linearRampToValueAtTime(196, now + 0.2);
+      osc.frequency.linearRampToValueAtTime(131, now + 0.45);
+      gain.gain.setValueAtTime(level(0.25), now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+      osc.start(now); osc.stop(now + 0.55);
     }
   } catch(e) {}
 }
@@ -3613,6 +3772,11 @@ function playSound(type) {
 // ═══════════════════════════════════════════════════════
 //  КОНФЕТТИ (улучшенное)
 // ═══════════════════════════════════════════════════════
+document.addEventListener('pointerdown', unlockAudioInteraction, { once: true, passive: true });
+document.addEventListener('keydown', unlockAudioInteraction, { once: true });
+document.addEventListener('visibilitychange', () => applyBackgroundMusic(false));
+applyBackgroundMusic(true);
+
 function launchConfetti(duration = 800, intensity = 20) {
   // Вспышки по краям экрана вместо конфетти сверху
   const colors = ['#ffe033','#ff4455','#55ee66','#4488ff','#ff88ff'];
@@ -4017,35 +4181,47 @@ function renderAchievementsTab(container) {
   const total = ACHIEVEMENTS.length;
   const earned = Object.keys(myAchs).length;
   const earnedPts = state.achievementPts || 0;
+  const progressPct = total ? Math.round((earned / total) * 100) : 0;
 
   let html = `<div style="padding:16px">
-    <div style="background:#141108;border:1px solid rgba(255,224,51,.12);
-      border-radius:8px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-around;text-align:center">
-      <div>
-        <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earned}</div>
-        <div style="font-size:10px;color:var(--muted)">ПОЛУЧЕНО</div>
+    <div style="background:linear-gradient(160deg,rgba(255,224,51,.16),rgba(20,17,8,.95));
+      border:1px solid rgba(255,224,51,.45);border-radius:12px;padding:14px;margin-bottom:14px;
+      box-shadow:0 8px 24px rgba(0,0,0,.45)">
+      <div style="display:flex;justify-content:space-around;text-align:center">
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earned}</div>
+          <div style="font-size:10px;color:#f2e5b0;letter-spacing:.05em">ПОЛУЧЕНО</div>
+        </div>
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${total}</div>
+          <div style="font-size:10px;color:#f2e5b0;letter-spacing:.05em">ВСЕГО</div>
+        </div>
+        <div>
+          <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earnedPts}</div>
+          <div style="font-size:10px;color:#f2e5b0;letter-spacing:.05em">ОЧКОВ</div>
+        </div>
       </div>
-      <div>
-        <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${total}</div>
-        <div style="font-size:10px;color:var(--muted)">ВСЕГО</div>
+      <div style="margin-top:10px;background:rgba(0,0,0,.35);border-radius:999px;height:8px;overflow:hidden;">
+        <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#ffe033,#fff1a8);box-shadow:0 0 8px rgba(255,224,51,.8)"></div>
       </div>
-      <div>
-        <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent)">${earnedPts}</div>
-        <div style="font-size:10px;color:var(--muted)">ОЧКОВ</div>
-      </div>
+      <div style="margin-top:6px;font-size:10px;color:#f0df9d;text-align:right;">${progressPct}% коллекции</div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">`;
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">`;
 
   ACHIEVEMENTS.forEach(ach => {
     const has = !!myAchs[ach.id];
-    html += `<div style="background:${has ? 'linear-gradient(145deg,#1a1808,#141208)' : '#0e0c08'};
-      border:1px solid ${has ? 'rgba(255,224,51,.25)' : 'rgba(255,255,255,.05)'};
-      border-radius:8px;padding:10px;opacity:${has ? '1' : '0.35'}">
-      <div style="font-size:22px;margin-bottom:4px">${ach.icon}</div>
-      <div style="font-family:var(--head);font-size:11px;color:${has ? 'var(--accent)' : '#fdfaf0'};
-        letter-spacing:.04em">${ach.name}</div>
-      <div style="font-size:9px;color:var(--muted);margin-top:2px;line-height:1.4">${ach.desc}</div>
-      <div style="font-size:9px;color:${has ? 'var(--accent)' : 'rgba(255,255,255,.2)'};margin-top:4px">+${ach.pts}⭐</div>
+    html += `<div style="background:${has ? 'linear-gradient(170deg,#2b240c,#171208)' : 'linear-gradient(170deg,#1a1711,#100e0a)'};
+      border:1px solid ${has ? 'rgba(255,224,51,.55)' : 'rgba(255,255,255,.14)'};
+      box-shadow:${has ? '0 0 18px rgba(255,224,51,.22)' : '0 0 0 rgba(0,0,0,0)'};
+      border-radius:10px;padding:11px;opacity:${has ? '1' : '0.84'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div style="font-size:24px;filter:${has ? 'drop-shadow(0 0 10px rgba(255,224,51,.45))' : 'none'}">${ach.icon}</div>
+        <div style="font-size:9px;color:${has ? '#fff0b0' : '#c8c1a6'};letter-spacing:.05em">${has ? '✅ ПОЛУЧЕНО' : '🔒 НЕ ПОЛУЧЕНО'}</div>
+      </div>
+      <div style="font-family:var(--head);font-size:11px;color:${has ? '#ffe680' : '#f1e7c7'};
+        letter-spacing:.04em;margin-top:6px">${ach.name}</div>
+      <div style="font-size:10px;color:${has ? '#d8cfb0' : '#b6ad90'};margin-top:4px;line-height:1.45">${ach.desc}</div>
+      <div style="font-size:10px;color:${has ? 'var(--accent)' : '#d5c99c'};margin-top:7px;font-family:var(--head)">+${ach.pts} очков</div>
     </div>`;
   });
   html += '</div></div>';
@@ -4059,24 +4235,74 @@ function renderAchievementsTab(container) {
 function renderSettingsTab() {
   const el = document.getElementById('settings-tab-content');
   if (!el) return;
-  const musicOn = typeof musicEnabled !== 'undefined' ? musicEnabled : true;
-  el.innerHTML =
-    '<div style="padding:20px 16px">' +
-    '<div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:20px;">⚙️ НАСТРОЙКИ</div>' +
-    '<div style="background:var(--bg-soft);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:16px;margin-bottom:12px;">' +
-    '<div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:12px;">🎵 Музыка в игре</div>' +
-    '<button onclick="toggleMusicEnabled();renderSettingsTab();" class="btn" style="width:auto;padding:8px 20px;">' +
-    (musicOn ? '🔊 ВКЛ' : '🔇 ВЫКЛ') + '</button></div>' +
-    '<div style="background:var(--bg-soft);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:16px;margin-bottom:12px;">' +
-    '<div style="font-size:var(--fs-sm);color:#fdfaf0;margin-bottom:12px;">🗑 Сброс прогресса</div>' +
-    '<button onclick="confirmReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🗑 СБРОСИТЬ</button>' +
-    '</div></div>';
+  const musicOn = musicEnabled;
+  const sfxOn = sfxEnabled;
+  const musicPct = Math.round(musicVolume * 100);
+  const sfxPct = Math.round(sfxVolume * 100);
+  const currentTrack = getCurrentMusicTrack();
+  const trackOptions = GAME_MUSIC_TRACKS.map((track, idx) =>
+    `<option value="${idx}" ${idx === musicTrackIndex ? 'selected' : ''}>${track.title}</option>`
+  ).join('');
+
+  el.innerHTML = `
+    <div style="padding:20px 16px">
+      <div style="font-family:var(--head);font-size:var(--fs-xl);color:var(--accent);letter-spacing:.06em;margin-bottom:16px;">⚙️ НАСТРОЙКИ</div>
+
+      <div class="settings-card">
+        <div class="settings-card-title">🎵 ФОНОВАЯ МУЗЫКА</div>
+        <div class="settings-inline">
+          <button onclick="toggleMusicEnabled();renderSettingsTab();" class="btn btn-small" style="width:auto;padding:8px 18px;margin:0;">
+            ${musicOn ? '🔊 ВКЛ' : '🔇 ВЫКЛ'}
+          </button>
+          <div style="font-size:11px;color:#dfd5b3;line-height:1.4">
+            Текущий трек:<br><span style="color:#fff0bf">${currentTrack ? currentTrack.title : '-'}</span>
+          </div>
+        </div>
+        <div class="settings-caption">Встроено 5 бесплатных треков (royalty-free).</div>
+        <select class="settings-select" onchange="setMusicTrack(this.value);renderSettingsTab();">
+          ${trackOptions}
+        </select>
+        <div class="settings-inline" style="margin-top:10px">
+          <div style="font-size:12px;color:#f5ebc7">Громкость музыки</div>
+          <div id="music-vol-value" style="font-family:var(--head);font-size:12px;color:var(--accent)">${musicPct}%</div>
+        </div>
+        <input class="settings-range" type="range" min="0" max="100" step="1" value="${musicPct}" oninput="setMusicVolume(this.value)">
+      </div>
+
+      <div class="settings-card">
+        <div class="settings-card-title">🔊 ЗВУКОВЫЕ ЭФФЕКТЫ</div>
+        <div class="settings-inline">
+          <button onclick="toggleSfxEnabled();renderSettingsTab();" class="btn btn-small" style="width:auto;padding:8px 18px;margin:0;">
+            ${sfxOn ? '🔊 ВКЛ' : '🔇 ВЫКЛ'}
+          </button>
+          <div style="font-size:11px;color:#dfd5b3;line-height:1.4">
+            События:<br><span style="color:#fff0bf">победа / поражение / потеря жизни</span>
+          </div>
+        </div>
+        <div class="settings-inline" style="margin-top:10px">
+          <div style="font-size:12px;color:#f5ebc7">Громкость эффектов</div>
+          <div id="sfx-vol-value" style="font-family:var(--head);font-size:12px;color:var(--accent)">${sfxPct}%</div>
+        </div>
+        <input class="settings-range" type="range" min="0" max="100" step="1" value="${sfxPct}" oninput="setSfxVolume(this.value)">
+        <div class="settings-caption">Эффекты регулируются отдельно от фоновой музыки.</div>
+      </div>
+
+      <div class="settings-card">
+        <div class="settings-card-title">🗑 СБРОС ИГРЫ</div>
+        <div class="settings-caption" style="margin-top:0;margin-bottom:10px;">Удалит локальный прогресс, очки и достижения на этом устройстве.</div>
+        <button onclick="confirmReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🗑 СБРОСИТЬ</button>
+      </div>
+    </div>`;
   syncMusicButtons();
 }
 window.showScreen = showScreen;
 window.switchTab = switchTab;
 window.renderChapters = renderChapters;
 window.toggleMusicEnabled = toggleMusicEnabled;
+window.toggleSfxEnabled = toggleSfxEnabled;
+window.setMusicTrack = setMusicTrack;
+window.setMusicVolume = setMusicVolume;
+window.setSfxVolume = setSfxVolume;
 window.cancelCipherTimer = cancelCipherTimer;
 // ═══════════════════════════════════════════════════════
 //  INIT
@@ -4084,6 +4310,7 @@ window.cancelCipherTimer = cancelCipherTimer;
 if (document.readyState === "loading") { showSplash(); } else { showSplash(); }
 loadState();
 syncMusicButtons();
+applyBackgroundMusic(false);
 
 // Применяем роль из window-флагов ДО mergeBotLeaderboard и renderChapters.
 // Это гарантирует что adminMode/testerMode правильны даже если tgInitMe = null.
