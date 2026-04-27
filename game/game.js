@@ -624,6 +624,8 @@ const DEFAULT_STATE = () => ({
 });
 
 let state = DEFAULT_STATE();
+const GAME_ADMIN_USERNAME = 'Yury_hud';
+const GAME_ADMIN_CHAT_URL = 'https://t.me/' + GAME_ADMIN_USERNAME;
 
 function storageKey() {
   const uid = getTgUserId();
@@ -1315,9 +1317,104 @@ function calcPoints(cipher, elapsed) {
 // ═══════════════════════════════════════════════════════
 //  ПРОВЕРКА ОТВЕТА
 // ═══════════════════════════════════════════════════════
+const _SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+];
+
+function _rotr(x, n) {
+  return (x >>> n) | (x << (32 - n));
+}
+
+function _utf8Bytes(str) {
+  if (typeof TextEncoder !== 'undefined') {
+    return Array.from(new TextEncoder().encode(str));
+  }
+  const out = [];
+  const encoded = encodeURIComponent(str).replace(
+    /%([0-9A-F]{2})/g,
+    (_, p) => String.fromCharCode(parseInt(p, 16))
+  );
+  for (let i = 0; i < encoded.length; i++) out.push(encoded.charCodeAt(i));
+  return out;
+}
+
+function _sha256Fallback(str) {
+  const bytes = _utf8Bytes(String(str ?? ''));
+  const bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while ((bytes.length % 64) !== 56) bytes.push(0);
+
+  const high = Math.floor(bitLen / 0x100000000) >>> 0;
+  const low = bitLen >>> 0;
+  bytes.push((high >>> 24) & 0xff, (high >>> 16) & 0xff, (high >>> 8) & 0xff, high & 0xff);
+  bytes.push((low >>> 24) & 0xff, (low >>> 16) & 0xff, (low >>> 8) & 0xff, low & 0xff);
+
+  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+  let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  const w = new Array(64);
+
+  for (let i = 0; i < bytes.length; i += 64) {
+    for (let t = 0; t < 16; t++) {
+      const j = i + t * 4;
+      w[t] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;
+    }
+    for (let t = 16; t < 64; t++) {
+      const s0 = _rotr(w[t - 15], 7) ^ _rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);
+      const s1 = _rotr(w[t - 2], 17) ^ _rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);
+      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;
+    }
+
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    for (let t = 0; t < 64; t++) {
+      const S1 = _rotr(e, 6) ^ _rotr(e, 11) ^ _rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const temp1 = (h + S1 + ch + _SHA256_K[t] + w[t]) >>> 0;
+      const S0 = _rotr(a, 2) ^ _rotr(a, 13) ^ _rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (S0 + maj) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) >>> 0;
+    }
+
+    h0 = (h0 + a) >>> 0;
+    h1 = (h1 + b) >>> 0;
+    h2 = (h2 + c) >>> 0;
+    h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0;
+    h5 = (h5 + f) >>> 0;
+    h6 = (h6 + g) >>> 0;
+    h7 = (h7 + h) >>> 0;
+  }
+
+  return [h0, h1, h2, h3, h4, h5, h6, h7]
+    .map(v => v.toString(16).padStart(8, '0'))
+    .join('');
+}
+
 async function sha256(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const text = String(str ?? '');
+  try {
+    if (window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === 'function') {
+      const buf = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (e) {
+    console.warn('crypto.subtle unavailable, using fallback SHA-256:', e);
+  }
+  return _sha256Fallback(text);
 }
 
 async function checkAnswer() {
@@ -2010,6 +2107,63 @@ function confirmReset() {
   showToast('🗑 Прогресс сброшен');
 }
 
+function clearLocalGameCache() {
+  const keys = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key.startsWith('cipher_v4_')) keys.push(key);
+    }
+    keys.forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem(AUDIO_PREF_KEY);
+    localStorage.removeItem(LEGACY_MUSIC_PREF_KEY);
+  } catch (e) {
+    console.warn('clearLocalGameCache error:', e);
+  }
+}
+
+function confirmCacheReset() {
+  const msg = 'Очистить локальный кеш игры на этом устройстве? Рейтинг в базе не удаляется.';
+  if (!confirm(msg)) return;
+  clearLocalGameCache();
+  showToast('🧹 Кеш очищен. Перезагрузка...');
+  setTimeout(() => window.location.reload(), 250);
+}
+
+function openBugReportModal() {
+  const modal = document.getElementById('bug-report-modal');
+  if (!modal) return;
+  modal.classList.add('show');
+}
+
+function closeBugReportModal() {
+  const modal = document.getElementById('bug-report-modal');
+  if (!modal) return;
+  modal.classList.remove('show');
+}
+
+function contactGameAdmin() {
+  closeBugReportModal();
+  const url = GAME_ADMIN_CHAT_URL;
+  try {
+    if (tg && typeof tg.openTelegramLink === 'function') {
+      tg.openTelegramLink(url);
+      return;
+    }
+    window.open(url, '_blank');
+  } catch (e) {
+    console.warn('contactGameAdmin error:', e);
+    showToast('Не удалось открыть чат администратора');
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const modal = document.getElementById('bug-report-modal');
+  if (!modal || !modal.classList.contains('show')) return;
+  if (event.target === modal) closeBugReportModal();
+});
+
 // ══════════════════════════════════════════════
 //  WOW EFFECTS
 // ══════════════════════════════════════════════
@@ -2517,10 +2671,15 @@ loadCipher = function(){
 
 // ── Переопределяем checkAnswer — добавляем эффекты ──
 const _origCheck = checkAnswer;
-checkAnswer = function(){
+checkAnswer = async function(){
   const btn = document.querySelector('.btn-check');
   if(btn) pulseBtn(btn);
-  _origCheck();
+  try {
+    await _origCheck();
+  } catch (e) {
+    console.error('checkAnswer failed:', e);
+    showToast('⚠ Ошибка проверки. Попробуйте ещё раз');
+  }
 };
 
 // ── Переопределяем showSuccess — добавляем конфетти ──
@@ -3142,184 +3301,7 @@ function checkQuizAnswer(idx) { quizSelect(idx); }
 
 // ═══════════════════════════════════════════════════════
 
-function renderQuiz(cipher) {
-  _quizState = { cipher, startTime: Date.now(), selected: null, answered: false };
-
-  // Элементы уже скрыты в loadCipher для типа quiz
-
-  let container = document.getElementById('quiz-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'quiz-container';
-    const refEl = document.getElementById('cipher-hint-box');
-    if (refEl && refEl.parentNode) refEl.parentNode.insertBefore(container, refEl);
-    else document.querySelector('.cipher-body') && document.querySelector('.cipher-body').appendChild(container);
-  }
-  container.style.cssText = 'display:block;width:100%;padding:0 2px;margin-bottom:12px';
-
-  // Строим варианты ответов
-  const letters = ['А', 'Б', 'В', 'Г', 'Д'];
-  const optionsHtml = cipher.options.map((opt, i) => `
-    <div id="quiz-opt-${i}" onclick="quizSelect(${i})"
-      style="width:100%;padding:14px 16px;margin-bottom:8px;
-      background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.1);
-      border-radius:10px;color:#fdfaf0;font-size:14px;cursor:pointer;
-      display:flex;align-items:center;gap:12px;
-      transition:all .15s ease;box-sizing:border-box;user-select:none">
-      <div id="quiz-letter-${i}" style="flex-shrink:0;width:30px;height:30px;border-radius:50%;
-        background:rgba(255,224,51,.08);border:1.5px solid rgba(255,224,51,.2);
-        display:flex;align-items:center;justify-content:center;
-        font-family:var(--head);font-size:13px;color:var(--accent);
-        transition:all .15s">${letters[i] || String.fromCharCode(65+i)}</div>
-      <span style="flex:1;line-height:1.5">${opt}</span>
-    </div>`).join('');
-
-  container.innerHTML = `
-    <div style="font-size:10px;color:rgba(255,224,51,.5);letter-spacing:.12em;
-      text-align:center;margin-bottom:10px;font-family:var(--head)">
-      👆 ВЫБЕРИТЕ ВАРИАНТ И НАЖМИТЕ ОТВЕТИТЬ
-    </div>
-    <div id="quiz-options-list">${optionsHtml}</div>
-    <div id="quiz-feedback" style="display:none;padding:10px 14px;border-radius:8px;
-      margin-top:4px;margin-bottom:8px;font-size:13px;text-align:center;
-      font-family:var(--head);letter-spacing:.04em"></div>
-`;
-}
-
-function quizSelect(idx) {
-  if (_quizState.answered) return;
-  _quizState.selected = idx;
-
-  // Сбрасываем все варианты
-  _quizState.cipher.options.forEach((_, i) => {
-    const opt = document.getElementById('quiz-opt-' + i);
-    const let_ = document.getElementById('quiz-letter-' + i);
-    if (!opt) return;
-    if (i === idx) {
-      opt.style.background = 'rgba(255,224,51,.12)';
-      opt.style.borderColor = 'rgba(255,224,51,.45)';
-      opt.style.color = '#fdfaf0';
-      if (let_) { let_.style.background = 'rgba(255,224,51,.25)'; let_.style.borderColor = 'rgba(255,224,51,.6)'; let_.style.color = '#ffe033'; }
-    } else {
-      opt.style.background = 'rgba(255,255,255,.04)';
-      opt.style.borderColor = 'rgba(255,255,255,.1)';
-      opt.style.color = '#fdfaf0';
-      if (let_) { let_.style.background = 'rgba(255,224,51,.08)'; let_.style.borderColor = 'rgba(255,224,51,.2)'; let_.style.color = 'var(--accent)'; }
-    }
-  });
-
-
-}
-
-function quizSubmit() {
-  if (_quizState.answered || _quizState.selected === null) return;
-  _quizState.answered = true;
-
-  const cipher   = _quizState.cipher;
-  const correct  = cipher.correctIndex;
-  const selected = _quizState.selected;
-  const elapsed  = getEffectiveElapsed(_quizState.startTime);
-  const isCorrect = selected === correct;
-
-
-
-  // Подсвечиваем правильный/неправильный
-  cipher.options.forEach((_, i) => {
-    const opt  = document.getElementById('quiz-opt-' + i);
-    const let_ = document.getElementById('quiz-letter-' + i);
-    if (!opt) return;
-    opt.style.cursor = 'default';
-    if (i === correct) {
-      opt.style.background = 'rgba(40,200,80,.15)';
-      opt.style.borderColor = 'rgba(40,200,80,.5)';
-      opt.style.color = '#50ee80';
-      if (let_) { let_.style.background = 'rgba(40,200,80,.25)'; let_.style.borderColor = 'rgba(40,200,80,.6)'; let_.style.color = '#50ee80'; }
-    } else if (i === selected && !isCorrect) {
-      opt.style.background = 'rgba(255,50,50,.12)';
-      opt.style.borderColor = 'rgba(255,50,50,.45)';
-      opt.style.color = '#ff7070';
-      if (let_) { let_.style.background = 'rgba(255,50,50,.2)'; let_.style.borderColor = 'rgba(255,50,50,.5)'; let_.style.color = '#ff7070'; }
-    } else {
-      opt.style.opacity = '0.4';
-    }
-  });
-
-  const feedback = document.getElementById('quiz-feedback');
-
-  if (isCorrect) {
-    playSound('correct');
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = 'rgba(40,200,80,.1)';
-      feedback.style.border = '1px solid rgba(40,200,80,.3)';
-      feedback.style.color = '#50ee80';
-      feedback.textContent = '✅ Верно!';
-    }
-    state.streak = (state.streak || 0) + 1;
-    const pts = calcPoints(cipher, elapsed);
-    state.chapterScore += pts;
-    saveState();
-    stopTimer();
-    if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
-    const cipherTypeCtx = { quizCorrect: true, elapsed };
-    checkAchievements({ elapsed, firstTry: (state._chapterErrors || 0) === 0, ...cipherTypeCtx });
-    setTimeout(() => {
-      // Скрываем quiz-container перед показом экрана успеха
-      const qc = document.getElementById('quiz-container');
-      if (qc) qc.style.display = 'none';
-      // Восстанавливаем cipher-input-wrap для следующего задания
-      const ciw = document.getElementById('cipher-input-wrap');
-      if (ciw) ciw.style.display = '';
-      showSuccess(cipher, pts, elapsed);
-    }, 900);
-  } else {
-    playSound('wrong');
-    screenPulseRed();
-    if (feedback) {
-      feedback.style.display = 'block';
-      feedback.style.background = 'rgba(255,50,50,.1)';
-      feedback.style.border = '1px solid rgba(255,50,50,.3)';
-      feedback.style.color = '#ff8080';
-      feedback.textContent = '❌ Неверно — правильный ответ выделен зелёным';
-    }
-    state.streak = 0;
-    state._chapterErrors = (state._chapterErrors || 0) + 1;
-    if (!state.adminMode) {
-      state.lives--;
-      animateLifeLoss();
-      playSound('life_lost');
-    }
-    saveState();
-    renderLives();
-
-    if (state.lives <= 0) {
-      stopTimer();
-      setTimeout(() => restartChapterFromStart(state.chapter), 900);
-    } else {
-      // Через 2 секунды разрешаем выбрать снова (кроме правильного)
-      setTimeout(() => {
-        _quizState.answered = false;
-        _quizState.selected = null;
-        cipher.options.forEach((_, i) => {
-          const opt2 = document.getElementById('quiz-opt-' + i);
-          const let2 = document.getElementById('quiz-letter-' + i);
-          if (!opt2 || i === correct) return;
-          opt2.style.background = 'rgba(255,255,255,.04)';
-          opt2.style.borderColor = 'rgba(255,255,255,.1)';
-          opt2.style.color = '#fdfaf0';
-          opt2.style.opacity = '1';
-          opt2.style.cursor = 'pointer';
-          if (let2) { let2.style.background = 'rgba(255,224,51,.08)'; let2.style.borderColor = 'rgba(255,224,51,.2)'; let2.style.color = 'var(--accent)'; }
-        });
-        if (feedback) feedback.style.display = 'none';
-
-      }, 2000);
-    }
-  }
-}
-
-// Совместимость — старый checkQuizAnswer больше не используется
-function checkQuizAnswer(idx) { quizSelect(idx); }
+// Удалён дублирующий блок quiz (renderQuiz/quizSubmit), оставлена единая версия выше.
 // ═══════════════════════════════════════════════════════
 //  АНАГРАММА
 // ═══════════════════════════════════════════════════════
@@ -4288,10 +4270,16 @@ function renderSettingsTab() {
       </div>
 
       <div class="settings-card">
-        <div class="settings-card-title">🗑 СБРОС ИГРЫ</div>
-        <div class="settings-caption" style="margin-top:0;margin-bottom:10px;">Удалит локальный прогресс, очки и достижения на этом устройстве.</div>
-        <button onclick="confirmReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🗑 СБРОСИТЬ</button>
+        <div class="settings-card-title">🧹 СБРОС КЕША</div>
+        <div class="settings-caption" style="margin-top:0;margin-bottom:10px;">Очищает локальный кеш игры для этого устройства во всех режимах (player/tester/admin).</div>
+        <button onclick="confirmCacheReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🧹 ОЧИСТИТЬ КЕШ</button>
       </div>
+      ${(state.adminMode || window._adminMode) ? `
+      <div class="settings-card">
+        <div class="settings-card-title">🗑 СБРОС ТЕСТОВОГО ПРОГРЕССА</div>
+        <div class="settings-caption" style="margin-top:0;margin-bottom:10px;">Полный сброс игрового прогресса в БД доступен только администратору.</div>
+        <button onclick="confirmReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🗑 СБРОСИТЬ ПРОГРЕСС</button>
+      </div>` : ''}
     </div>`;
   syncMusicButtons();
 }
@@ -4304,6 +4292,13 @@ window.setMusicTrack = setMusicTrack;
 window.setMusicVolume = setMusicVolume;
 window.setSfxVolume = setSfxVolume;
 window.cancelCipherTimer = cancelCipherTimer;
+window.confirmCacheReset = confirmCacheReset;
+window.openBugReportModal = openBugReportModal;
+window.closeBugReportModal = closeBugReportModal;
+window.contactGameAdmin = contactGameAdmin;
+window.checkAnswer = checkAnswer;
+window.nextCipher = nextCipher;
+window.showHint = showHint;
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════

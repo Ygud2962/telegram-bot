@@ -235,6 +235,49 @@
         .btn-hint { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.15); }
         .cipher-extra-actions { display: flex; gap: 8px; margin-top: 8px; }
         .cipher-extra-actions .btn { flex: 1; margin: 0; }
+        .cipher-report-wrap { margin-top: 8px; }
+        .cipher-report-wrap .btn { margin: 0; letter-spacing: .06em; }
+        .bug-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.75);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10002;
+            padding: 16px;
+        }
+        .bug-modal-backdrop.show { display: flex; }
+        .bug-modal-card {
+            width: 100%;
+            max-width: 420px;
+            background: linear-gradient(160deg, #1d160b, #0f0d08);
+            border: 1px solid rgba(255,224,51,.35);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 14px 36px rgba(0,0,0,.5);
+        }
+        .bug-modal-title {
+            font-family: var(--head);
+            font-size: var(--fs-lg);
+            color: var(--accent);
+            letter-spacing: .05em;
+            margin-bottom: 8px;
+        }
+        .bug-modal-text {
+            font-size: var(--fs-sm);
+            color: #f2e8c4;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+        .bug-modal-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .bug-modal-actions .btn {
+            margin: 0;
+        }
         .cipher-hint-box {
             background: rgba(255,224,51,.08);
             border: 1px solid rgba(255,224,51,.2);
@@ -717,6 +760,9 @@
                 <button id="btn-cancel-timer" class="btn btn-small" onclick="cancelCipherTimer()">⏹ ОТМЕНИТЬ ТАЙМЕР</button>
                 <button id="btn-toggle-music" class="btn btn-small" onclick="toggleMusicEnabled()">🎵 МУЗЫКА: ON</button>
             </div>
+            <div class="cipher-report-wrap">
+                <button id="btn-report-bug" class="btn btn-danger btn-small" onclick="openBugReportModal()">⚠ СООБЩИТЬ ОБ ОШИБКЕ</button>
+            </div>
             <div id="cipher-hint-box" class="cipher-hint-box">
                 <div id="cipher-hint-text"></div>
             </div>
@@ -812,6 +858,17 @@
         
         <div id="s-settings-tab" class="screen">
             <div id="settings-tab-content"></div>
+        </div>
+    </div>
+
+    <div id="bug-report-modal" class="bug-modal-backdrop">
+        <div class="bug-modal-card">
+            <div class="bug-modal-title">⚠ СООБЩЕНИЕ О ПРОБЛЕМЕ</div>
+            <div class="bug-modal-text">Сделайте скриншот ошибки или проблемы, затем нажмите «Связаться с администрацией» и отправьте описание в чат.</div>
+            <div class="bug-modal-actions">
+                <button class="btn" onclick="closeBugReportModal()">ОК</button>
+                <button class="btn btn-accent" onclick="contactGameAdmin()">СВЯЗАТЬСЯ С АДМИНИСТРАЦИЕЙ</button>
+            </div>
         </div>
     </div>
     

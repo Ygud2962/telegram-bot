@@ -47,6 +47,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class _PollingConflictNoiseFilter(logging.Filter):
+    """Filters expected 409 polling conflicts during redeploy overlap."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "terminated by other getUpdates request" in msg:
+            return False
+        if '/getUpdates "HTTP/1.1 409 Conflict"' in msg:
+            return False
+        return True
+
+
+_polling_conflict_filter = _PollingConflictNoiseFilter()
+logging.getLogger("telegram.ext.Updater").addFilter(_polling_conflict_filter)
+logging.getLogger("telegram.ext._updater").addFilter(_polling_conflict_filter)
+logging.getLogger("httpx").addFilter(_polling_conflict_filter)
+
+_LAST_CONFLICT_WARN_TS = 0.0
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int((os.environ.get(name) or "").strip() or default)
@@ -2145,7 +2165,11 @@ async def global_error_handler(update: object, context: CallbackContext):
     # Conflict — два экземпляра при редеплое Railway
     # Это нормально: старый контейнер ещё жив пока новый стартует
     if isinstance(err, Conflict):
-        logger.warning(f"Конфликт getUpdates (редеплой): {err}")
+        global _LAST_CONFLICT_WARN_TS
+        now_ts = time.time()
+        if now_ts - _LAST_CONFLICT_WARN_TS >= 60:
+            logger.warning(f"Конфликт getUpdates (редеплой): {err}")
+            _LAST_CONFLICT_WARN_TS = now_ts
         # Ждём пока старый инстанс умрёт — Railway даёт ~30с на graceful shutdown
         await asyncio.sleep(5)
         return
