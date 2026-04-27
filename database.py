@@ -336,6 +336,12 @@ def init_db():
             )
         ''')
         cur.execute("ALTER TABLE news ADD COLUMN IF NOT EXISTS views_count INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE news ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'bot'")
+        cur.execute("UPDATE news SET category='bot' WHERE category IS NULL OR category = ''")
+        cur.execute("UPDATE news SET category='school' WHERE LOWER(category)='school'")
+        cur.execute("UPDATE news SET category='bot' WHERE LOWER(category)<>'school'")
+        cur.execute("ALTER TABLE news ALTER COLUMN category SET DEFAULT 'bot'")
+        cur.execute("ALTER TABLE news ALTER COLUMN category SET NOT NULL")
 
         # Просмотры новостей
         cur.execute('''
@@ -460,6 +466,7 @@ def init_db():
             'CREATE INDEX IF NOT EXISTS idx_users_active ON users(last_active)',
             'CREATE INDEX IF NOT EXISTS idx_fav_user ON user_favorites(user_id)',
             'CREATE INDEX IF NOT EXISTS idx_news_pub ON news(published_at)',
+            'CREATE INDEX IF NOT EXISTS idx_news_category_pub ON news(category, published_at)',
             'CREATE INDEX IF NOT EXISTS idx_teachers_tgid ON teachers(telegram_id)',
         ]:
             cur.execute(idx_sql)
@@ -871,14 +878,23 @@ def seed_teachers(teacher_names: list):
 # ──────────────────────────────────────────────
 #  НОВОСТИ
 # ──────────────────────────────────────────────
-def add_news(title, content):
+_NEWS_SCOPES = {'school', 'bot'}
+
+
+def normalize_news_scope(scope, default='bot'):
+    scope_str = str(scope or default).strip().lower()
+    return scope_str if scope_str in _NEWS_SCOPES else default
+
+
+def add_news(title, content, scope='bot'):
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
+        news_scope = normalize_news_scope(scope)
         cur.execute(
-            'INSERT INTO news (title, content) VALUES (%s,%s) RETURNING id',
-            (title, content)
+            'INSERT INTO news (title, content, category) VALUES (%s,%s,%s) RETURNING id',
+            (title, content, news_scope)
         )
         news_id = cur.fetchone()[0]
         conn.commit()
@@ -890,23 +906,27 @@ def add_news(title, content):
         release_connection(conn)
 
 
-def get_news(offset=0, limit=8, order='DESC'):
+def get_news(offset=0, limit=8, order='DESC', scope=None):
     """Универсальная функция получения новостей. Заменяет get_news_page_asc,
     get_latest_news, get_archive_news_page, get_recent_news."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        if order == 'ASC':
+        scope_norm = normalize_news_scope(scope) if scope is not None else None
+        order_sql = 'ASC' if order == 'ASC' else 'DESC'
+        if scope_norm is not None:
             cur.execute('''
                 SELECT id, title, content, published_at, views_count
-                FROM news ORDER BY published_at ASC
+                FROM news
+                WHERE category=%s
+                ORDER BY published_at ''' + order_sql + '''
                 OFFSET %s LIMIT %s
-            ''', (offset, limit))
+            ''', (scope_norm, offset, limit))
         else:
             cur.execute('''
                 SELECT id, title, content, published_at, views_count
-                FROM news ORDER BY published_at DESC
+                FROM news ORDER BY published_at ''' + order_sql + '''
                 OFFSET %s LIMIT %s
             ''', (offset, limit))
         return cur.fetchall()
@@ -918,26 +938,30 @@ def get_news(offset=0, limit=8, order='DESC'):
 
 
 # Алиасы для обратной совместимости
-def get_archive_news_page(offset=0, limit=8):
-    return get_news(offset=offset, limit=limit, order='DESC')
+def get_archive_news_page(offset=0, limit=8, scope=None):
+    return get_news(offset=offset, limit=limit, order='DESC', scope=scope)
 
-def get_latest_news(limit=3):
-    return get_news(offset=0, limit=limit, order='DESC')
+def get_latest_news(limit=3, scope=None):
+    return get_news(offset=0, limit=limit, order='DESC', scope=scope)
 
-def get_recent_news(limit=15):
-    return get_news(offset=0, limit=limit, order='DESC')
+def get_recent_news(limit=15, scope=None):
+    return get_news(offset=0, limit=limit, order='DESC', scope=scope)
 
-def get_news_page_asc(offset=0, limit=5):
-    return get_news(offset=offset, limit=limit, order='ASC')
+def get_news_page_asc(offset=0, limit=5, scope=None):
+    return get_news(offset=offset, limit=limit, order='ASC', scope=scope)
 
 
 
-def get_total_news_count():
+def get_total_news_count(scope=None):
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('SELECT COUNT(*) FROM news')
+        scope_norm = normalize_news_scope(scope) if scope is not None else None
+        if scope_norm is None:
+            cur.execute('SELECT COUNT(*) FROM news')
+        else:
+            cur.execute('SELECT COUNT(*) FROM news WHERE category=%s', (scope_norm,))
         return cur.fetchone()[0] or 0
     except Exception as e:
         logger.error(f"get_total_news_count: {e}")
@@ -946,20 +970,27 @@ def get_total_news_count():
         release_connection(conn)
 
 
-def get_news_detail(news_id):
+def get_news_detail(news_id, scope=None):
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(
-            'SELECT id, title, content, published_at, views_count FROM news WHERE id=%s',
-            (news_id,)
-        )
+        scope_norm = normalize_news_scope(scope) if scope is not None else None
+        if scope_norm is None:
+            cur.execute(
+                'SELECT id, title, content, published_at, views_count, category FROM news WHERE id=%s',
+                (news_id,)
+            )
+        else:
+            cur.execute(
+                'SELECT id, title, content, published_at, views_count, category FROM news WHERE id=%s AND category=%s',
+                (news_id, scope_norm)
+            )
         row = cur.fetchone()
         if not row:
             return None
         return {'id': row[0], 'title': row[1], 'content': row[2],
-                'published_at': row[3], 'views_count': row[4]}
+                'published_at': row[3], 'views_count': row[4], 'category': row[5]}
     except Exception as e:
         logger.error(f"get_news_detail: {e}")
         return None
@@ -968,12 +999,12 @@ def get_news_detail(news_id):
 
 
 def get_news_by_id(news_id):
-    """Возвращает кортеж (id, title, content, published_at) или None."""
+    """Возвращает кортеж (id, title, content, published_at, category) или None."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('SELECT id, title, content, published_at FROM news WHERE id=%s', (news_id,))
+        cur.execute('SELECT id, title, content, published_at, category FROM news WHERE id=%s', (news_id,))
         return cur.fetchone()
     except Exception as e:
         logger.error(f"get_news_by_id: {e}")
@@ -1003,12 +1034,19 @@ def increment_news_views(news_id, user_id):
         release_connection(conn)
 
 
-def update_news(news_id, title, content):
+def update_news(news_id, title, content, scope=None):
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute('UPDATE news SET title=%s, content=%s WHERE id=%s', (title, content, news_id))
+        if scope is None:
+            cur.execute('UPDATE news SET title=%s, content=%s WHERE id=%s', (title, content, news_id))
+        else:
+            scope_norm = normalize_news_scope(scope)
+            cur.execute(
+                'UPDATE news SET title=%s, content=%s, category=%s WHERE id=%s',
+                (title, content, scope_norm, news_id)
+            )
         conn.commit()
         return True
     except Exception as e:
@@ -1034,7 +1072,25 @@ def delete_news(news_id):
         release_connection(conn)
 
 
-def count_new_news_since(user_id):
+def update_news_scope(news_id, scope):
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        scope_norm = normalize_news_scope(scope)
+        cur.execute('UPDATE news SET category=%s WHERE id=%s', (scope_norm, news_id))
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        logger.error(f"update_news_scope: {e}")
+        if conn:
+            _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def count_new_news_since(user_id, scope=None):
     conn = None
     try:
         conn = get_connection()
@@ -1042,7 +1098,14 @@ def count_new_news_since(user_id):
         cur.execute('SELECT last_news_check FROM users WHERE user_id=%s', (user_id,))
         row = cur.fetchone()
         last_check = row[0] if row and row[0] else datetime(2000, 1, 1, tzinfo=pytz.utc)
-        cur.execute('SELECT COUNT(*) FROM news WHERE published_at > %s', (last_check,))
+        scope_norm = normalize_news_scope(scope) if scope is not None else None
+        if scope_norm is None:
+            cur.execute('SELECT COUNT(*) FROM news WHERE published_at > %s', (last_check,))
+        else:
+            cur.execute(
+                'SELECT COUNT(*) FROM news WHERE published_at > %s AND category=%s',
+                (last_check, scope_norm)
+            )
         return cur.fetchone()[0] or 0
     except Exception as e:
         logger.error(f"count_new_news_since: {e}")
