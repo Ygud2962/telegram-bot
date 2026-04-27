@@ -851,21 +851,68 @@
                 bootState.failed = false;
             }
 
-            function appendScript(primaryUrl, fallbackUrl) {
+            function clearBootScripts() {
+                var scripts = document.querySelectorAll("script[data-boot-script='1']");
+                Array.prototype.forEach.call(scripts, function (script) {
+                    if (script && script.parentNode) script.parentNode.removeChild(script);
+                });
+            }
+
+            function appendScript(primaryUrl, fallbackUrl, timeoutMs) {
+                var timeout = timeoutMs || 12000;
                 return new Promise(function (resolve, reject) {
                     var script = document.createElement("script");
                     var usedFallback = false;
+                    var timer = null;
+                    var settled = false;
+
+                    function clearTimer() {
+                        if (timer) {
+                            clearTimeout(timer);
+                            timer = null;
+                        }
+                    }
+
+                    function finishWithError(message) {
+                        if (settled) return;
+                        settled = true;
+                        clearTimer();
+                        if (script && script.parentNode) script.parentNode.removeChild(script);
+                        reject(new Error(message));
+                    }
+
+                    function armTimeout() {
+                        clearTimer();
+                        timer = setTimeout(function () {
+                            if (!usedFallback && fallbackUrl) {
+                                usedFallback = true;
+                                script.src = fallbackUrl;
+                                armTimeout();
+                                return;
+                            }
+                            finishWithError("script load timeout: " + (script.src || primaryUrl));
+                        }, timeout);
+                    }
+
                     script.async = false;
-                    script.onload = function () { resolve(); };
+                    script.setAttribute("data-boot-script", "1");
+                    script.onload = function () {
+                        if (settled) return;
+                        settled = true;
+                        clearTimer();
+                        resolve();
+                    };
                     script.onerror = function () {
                         if (!usedFallback && fallbackUrl) {
                             usedFallback = true;
                             script.src = fallbackUrl;
+                            armTimeout();
                             return;
                         }
-                        reject(new Error("script load failed: " + (script.src || primaryUrl)));
+                        finishWithError("script load failed: " + (script.src || primaryUrl));
                     };
                     script.src = primaryUrl;
+                    armTimeout();
                     document.body.appendChild(script);
                 });
             }
@@ -886,8 +933,9 @@
                 setIntroButtonState(true, "⏳ ЗАГРУЗКА...");
                 bootState.loading = true;
                 clearBootError();
-                bootState.promise = appendScript(securityPrimary, securityFallback)
-                    .then(function () { return appendScript(gamePrimary, gameFallback); })
+                clearBootScripts();
+                bootState.promise = appendScript(securityPrimary, securityFallback, 12000)
+                    .then(function () { return appendScript(gamePrimary, gameFallback, 12000); })
                     .then(function () {
                         return new Promise(function (resolve, reject) {
                             setTimeout(function () {
@@ -905,9 +953,13 @@
                     .catch(function (err) {
                         showBootError("(" + (err && err.message ? err.message : "unknown") + ")");
                         return false;
-                    })
-                    .finally(function () {
+                    });
+                bootState.promise = bootState.promise.then(function (result) {
                         bootState.loading = false;
+                        return result;
+                    }, function (err) {
+                        bootState.loading = false;
+                        throw err;
                     });
                 return bootState.promise;
             }
