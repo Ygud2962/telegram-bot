@@ -2,6 +2,7 @@ window.__GAME_JS_LOADED = true;
 // Переменные синхронизации (объявлены глобально чтобы избежать ReferenceError)
 let _lastSyncedScore = -1;
 let _lastSyncedCompleted = -1;
+let _lastSyncedSignature = '';
 let _serverResetToken = 0;
 // ═══════════════════════════════════════════════════════
 //  ДАННЫЕ ИГРЫ — 20 ШИФРОВ, 4 ГЛАВЫ
@@ -450,6 +451,17 @@ async function sendResultToBot(data) {
         _applySyncResponse(result, !!result.stale);
         _lastSyncedScore = Number(state.totalScore || data.total_score || 0);
         _lastSyncedCompleted = _stateCompletedCount();
+        _lastSyncedSignature = [
+          Number(state.totalScore || 0),
+          _lastSyncedCompleted,
+          _stateCurrentChapterId(),
+          Number(state.chapterScore || 0),
+          Number(state.cipherIdx || 0),
+          Number(state.lives || 0),
+          state.gameOver ? 1 : 0,
+          Object.keys(state.achievements || {}).length,
+          Number(state.achievementPts || 0)
+        ].join('|');
         return;
       }
       console.warn('game_sync HTTP error:', resp.status);
@@ -543,23 +555,39 @@ function showToast(text, duration = 2500) {
 // ═══════════════════════════════════════════════════════
 let _syncInFlight = false;
 
-async function autoSync(showNotification = false) {
+async function autoSync(showNotification = false, force = false) {
   const syncUrl = window._syncUrl;
   const uid = getTgUserId();
   if (!syncUrl || !uid) return;
-  // Не отправляем дубли
   const completed = _stateCompletedCount();
-  if (state.totalScore === _lastSyncedScore && completed === _lastSyncedCompleted) return;
+  const chapterId = _stateCurrentChapterId();
+  const chapterScore = Number(state.chapterScore || 0);
+  const achievementCount = Object.keys(state.achievements || {}).length;
+  const achievementPts = Number(state.achievementPts || 0);
+  const syncSignature = [
+    Number(state.totalScore || 0),
+    completed,
+    chapterId,
+    chapterScore,
+    Number(state.cipherIdx || 0),
+    Number(state.lives || 0),
+    state.gameOver ? 1 : 0,
+    achievementCount,
+    achievementPts
+  ].join('|');
+  if (!force && syncSignature === _lastSyncedSignature) return;
   if (_syncInFlight) return;
   _syncInFlight = true;
 
   const data = {
     type: completed > 0 ? 'chapter_complete' : 'sync',
-    chapter: completed > 0 ? Math.max(...Object.keys(state.completedChapters).map(Number)) : 0,
-    score: 0,
-    total_score: state.totalScore,
+    chapter: chapterId,
+    score: chapterScore,
+    total_score: Number(state.totalScore || 0),
     completed: completed,
     game_over: state.gameOver || false,
+    achievement_count: achievementCount,
+    achievement_pts: achievementPts,
     user_id: uid,
   };
   const initDataRaw = getTgInitDataRaw();
@@ -581,6 +609,17 @@ async function autoSync(showNotification = false) {
       }
       _lastSyncedScore = Number(state.totalScore || 0);
       _lastSyncedCompleted = _stateCompletedCount();
+      _lastSyncedSignature = [
+        Number(state.totalScore || 0),
+        _lastSyncedCompleted,
+        _stateCurrentChapterId(),
+        Number(state.chapterScore || 0),
+        Number(state.cipherIdx || 0),
+        Number(state.lives || 0),
+        state.gameOver ? 1 : 0,
+        Object.keys(state.achievements || {}).length,
+        Number(state.achievementPts || 0)
+      ].join('|');
       console.log('autoSync OK:', state.totalScore, 'pts,', _lastSyncedCompleted, 'chapters');
       if (showNotification) showToast('Progress saved');
     }
@@ -660,6 +699,47 @@ function _stateCompletedCount() {
   return Object.keys(state.completedChapters || {}).length;
 }
 
+function _stateCurrentChapterId() {
+  const chapter = CHAPTERS[state.chapter];
+  if (chapter && Number.isFinite(Number(chapter.id))) return Number(chapter.id);
+  const completedIds = Object.keys(state.completedChapters || {}).map(Number).filter(Number.isFinite);
+  return completedIds.length ? Math.max(...completedIds) : 0;
+}
+
+function _livesBadgeText() {
+  if (state.adminMode) return '∞';
+  const n = Math.max(0, Math.min(5, Number(state.lives || 0)));
+  return '❤️'.repeat(n) + '🖤'.repeat(5 - n);
+}
+
+function syncTopStatusBars() {
+  const totalScore = Number(state.totalScore || 0);
+  const completed = _stateCompletedCount();
+  const totalChapters = CHAPTERS.length;
+  const livesLabel = _livesBadgeText();
+
+  const chaptersScore = document.getElementById('chapters-score-display');
+  if (chaptersScore) chaptersScore.textContent = String(totalScore);
+
+  const statScore = document.getElementById('stat-score');
+  if (statScore) statScore.textContent = totalScore + ' оч';
+
+  const chaptersLives = document.getElementById('chapters-lives-display');
+  if (chaptersLives) chaptersLives.textContent = livesLabel;
+
+  const lbScore = document.getElementById('lb-score-display');
+  if (lbScore) lbScore.textContent = String(totalScore);
+
+  const lbChapters = document.getElementById('lb-chapters-display');
+  if (lbChapters) lbChapters.textContent = String(completed);
+
+  const lbTotal = document.getElementById('lb-chapters-total');
+  if (lbTotal) lbTotal.textContent = String(totalChapters);
+
+  const lbLives = document.getElementById('lb-lives-display');
+  if (lbLives) lbLives.textContent = state.adminMode ? '∞' : String(Math.max(0, Math.min(5, Number(state.lives || 0))));
+}
+
 function _applyServerProgress(serverScore, serverCompleted, serverGameOver, force = false) {
   const srvScore = Math.max(0, Number(serverScore || 0));
   const srvCompleted = Math.max(0, Math.min(CHAPTERS.length, Number(serverCompleted || 0)));
@@ -696,6 +776,7 @@ function _applyServerProgress(serverScore, serverCompleted, serverGameOver, forc
 }
 
 function _refreshCurrentTabAfterSync() {
+  syncTopStatusBars();
   if (currentTab === 'leaderboard') {
     renderLeaderboardTab();
     return;
@@ -807,6 +888,7 @@ function saveState() {
     });
     localStorage.setItem(storageKey(), JSON.stringify(toSave));
   } catch(e) {}
+  syncTopStatusBars();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1025,7 +1107,7 @@ function renderChapters() {
   const clEl = document.getElementById('stat-completed-label');
   if (clEl) clEl.textContent = completedCount + ' / ' + total + ' глав';
   const scEl = document.getElementById('stat-score');
-  if (scEl) scEl.textContent = state.totalScore;
+  if (scEl) scEl.textContent = state.totalScore + ' оч';
   // Кнопка сброса — только для admin (не тестер!)
   const resetBtn = document.getElementById('btn-reset-header');
   if (resetBtn) resetBtn.style.display = (state.adminMode || window._adminMode) ? 'inline-block' : 'none';
@@ -1038,6 +1120,7 @@ function renderChapters() {
   } else {
     document.getElementById('btn-to-final').style.display = 'none';
   }
+  syncTopStatusBars();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1256,9 +1339,13 @@ function loadCipher() {
 
 function renderLives() {
   const el = document.getElementById('cipher-attempts-label');
-  if (!el) return;
+  if (!el) {
+    syncTopStatusBars();
+    return;
+  }
   if (state.adminMode) {
     el.innerHTML = '<div style="line-height:1.2;text-align:center;color:gold">♾️ АДМИН</div>';
+    syncTopStatusBars();
     return;
   }
   // Тестировщик и игрок — обычные 5 жизней
@@ -1270,6 +1357,7 @@ function renderLives() {
     ? '<div style="font-size:9px;color:rgba(100,200,255,.7);letter-spacing:.06em">🧪 ТЕСТ</div>'
     : '';
   el.innerHTML = '<div style="line-height:1.2;text-align:center"><div>' + row1 + '</div><div>' + row2 + '</div>' + badge + '</div>';
+  syncTopStatusBars();
 }
 
 function animateLifeLoss() {
@@ -1574,7 +1662,7 @@ async function checkAnswer() {
     const pts      = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
-    autoSync(false);
+    autoSync(false, true);
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
     const isFirstTry = (state._chapterErrors || 0) === 0;
@@ -1606,12 +1694,12 @@ async function checkAnswer() {
       playSound('life_lost');
     }
     saveState();
-    autoSync(false);
+    autoSync(false, true);
 
     if (state.lives <= 0) {
       if (state.adminMode) {
         // Режим администратора — восстанавливаем жизни
-        state.lives = 5; saveState(); autoSync(false); renderLives();
+        state.lives = 5; saveState(); autoSync(false, true); renderLives();
         const hb = document.getElementById('cipher-hint-box');
         const ht = document.getElementById('cipher-hint-text');
         if (hb && ht) {
@@ -2271,15 +2359,16 @@ function confirmReset() {
   showToast('🗑 Прогресс сброшен');
 }
 
-function clearLocalGameCache() {
+function clearLocalGameCache(withProgress = false) {
   const keys = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key) continue;
-      if (key.startsWith('cipher_v4_')) keys.push(key);
+      if (withProgress && key.startsWith('cipher_v4_')) keys.push(key);
     }
     keys.forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem('pending_results');
     localStorage.removeItem(AUDIO_PREF_KEY);
     localStorage.removeItem(LEGACY_MUSIC_PREF_KEY);
   } catch (e) {
@@ -2287,12 +2376,23 @@ function clearLocalGameCache() {
   }
 }
 
-function confirmCacheReset() {
-  const msg = 'Очистить локальный кеш игры на этом устройстве? Рейтинг в базе не удаляется.';
+function confirmCacheReset(mode = 'keep_progress') {
+  const withProgress = mode === 'with_progress';
+  const msg = withProgress
+    ? 'Очистить кэш вместе с локальным прогрессом на этом устройстве?'
+    : 'Очистить кэш без удаления прогресса? (прогресс и главы останутся)';
   if (!confirm(msg)) return;
-  clearLocalGameCache();
-  showToast('🧹 Кеш очищен. Перезагрузка...');
+  clearLocalGameCache(withProgress);
+  showToast(withProgress ? '🧹 Кэш и локальный прогресс очищены. Перезагрузка...' : '🧹 Кэш очищен без удаления прогресса. Перезагрузка...');
   setTimeout(() => window.location.reload(), 250);
+}
+
+function confirmCacheResetKeepProgress() {
+  confirmCacheReset('keep_progress');
+}
+
+function confirmCacheResetWithProgress() {
+  confirmCacheReset('with_progress');
 }
 
 function openBugReportModal() {
@@ -3060,6 +3160,7 @@ function applyAboutBuildVersion() {
 function renderLeaderboardTab() {
   const list = document.getElementById('lb-list-tab');
   if (!list) return;
+  syncTopStatusBars();
   // Если leaderboard пустой но tgInitLB есть — подгружаем
   if (!state.leaderboard.length && tgInitLB.length) mergeBotLeaderboard();
   const lb    = state.leaderboard || [];
@@ -3481,7 +3582,7 @@ function quizSubmit() {
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
-    autoSync(false);
+    autoSync(false, true);
     stopTimer();
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
     try {
@@ -3515,7 +3616,7 @@ function quizSubmit() {
       playSound('life_lost');
     }
     saveState();
-    autoSync(false);
+    autoSync(false, true);
     renderLives();
 
     if (state.lives <= 0 && !state.adminMode) {
@@ -3626,7 +3727,7 @@ async function checkAnagram() {
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
-    autoSync(false);
+    autoSync(false, true);
     setTimeout(() => showSuccess(cipher, pts, elapsed), 600);
   } else {
     slots.forEach(s => { s.style.borderColor = '#ff3a3a'; s.style.background = 'rgba(255,58,58,.1)'; });
@@ -3634,10 +3735,10 @@ async function checkAnagram() {
     state.lives--;
     playSound('life_lost');
     saveState();
-    autoSync(false);
+    autoSync(false, true);
     if (state.lives <= 0) {
       if (state.adminMode) {
-        state.lives = 5; saveState(); autoSync(false); renderLives();
+        state.lives = 5; saveState(); autoSync(false, true); renderLives();
         setTimeout(resetAnagram, 500);
       } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
     } else { renderLives(); setTimeout(resetAnagram, 900); }
@@ -3711,7 +3812,7 @@ async function checkMapAnswer(clicked, target) {
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     saveState();
-    autoSync(false);
+    autoSync(false, true);
     setTimeout(() => showSuccess(cipher, pts, elapsed), 800);
   } else {
     if (dotEl) {
@@ -3723,10 +3824,10 @@ async function checkMapAnswer(clicked, target) {
     state.lives--;
     playSound('life_lost');
     saveState();
-    autoSync(false);
+    autoSync(false, true);
     if (state.lives <= 0) {
       if (state.adminMode) {
-        state.lives = 5; saveState(); autoSync(false); renderLives();
+        state.lives = 5; saveState(); autoSync(false, true); renderLives();
         document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
       } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
     } else { renderLives(); }
@@ -4639,7 +4740,10 @@ function renderSettingsTab() {
       <div class="settings-card">
         <div class="settings-card-title">🧹 СБРОС КЕША</div>
         <div class="settings-caption" style="margin-top:0;margin-bottom:10px;">Очищает локальный кеш игры для этого устройства во всех режимах (player/tester/admin).</div>
-        <button onclick="confirmCacheReset();" class="btn btn-danger" style="width:auto;padding:8px 20px;">🧹 ОЧИСТИТЬ КЕШ</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="confirmCacheResetKeepProgress();" class="btn" style="width:auto;padding:8px 16px;">🧹 БЕЗ ПРОГРЕССА</button>
+          <button onclick="confirmCacheResetWithProgress();" class="btn btn-danger" style="width:auto;padding:8px 16px;">🗑 С ПРОГРЕССОМ</button>
+        </div>
       </div>
       ${(state.adminMode || window._adminMode) ? `
       <div class="settings-card">
@@ -4660,6 +4764,8 @@ window.setMusicVolume = setMusicVolume;
 window.setSfxVolume = setSfxVolume;
 window.cancelCipherTimer = cancelCipherTimer;
 window.confirmCacheReset = confirmCacheReset;
+window.confirmCacheResetKeepProgress = confirmCacheResetKeepProgress;
+window.confirmCacheResetWithProgress = confirmCacheResetWithProgress;
 window.openBugReportModal = openBugReportModal;
 window.closeBugReportModal = closeBugReportModal;
 window.contactGameAdmin = contactGameAdmin;
@@ -4810,6 +4916,17 @@ async function fetchAndApplyState() {
 
     _lastSyncedScore = Number(state.totalScore || 0);
     _lastSyncedCompleted = _stateCompletedCount();
+    _lastSyncedSignature = [
+      Number(state.totalScore || 0),
+      _lastSyncedCompleted,
+      _stateCurrentChapterId(),
+      Number(state.chapterScore || 0),
+      Number(state.cipherIdx || 0),
+      Number(state.lives || 0),
+      state.gameOver ? 1 : 0,
+      Object.keys(state.achievements || {}).length,
+      Number(state.achievementPts || 0)
+    ].join('|');
     _refreshCurrentTabAfterSync();
   } catch (e) {
     console.warn('fetchAndApplyState:', e);

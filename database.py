@@ -1499,6 +1499,49 @@ def get_game_players_count():
     finally:
         release_connection(conn)
 
+
+def get_game_player_rank(user_id):
+    """Возвращает позицию игрока в публичном рейтинге (role=player), либо (None, total_players)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            WITH ranked AS (
+                SELECT
+                    gr.user_id,
+                    ROW_NUMBER() OVER (ORDER BY gr.total_score DESC, gr.updated_at ASC) AS pos,
+                    COUNT(*) OVER () AS total_players
+                FROM game_results gr
+                LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
+                WHERE NOT COALESCE(gr.banned, FALSE)
+                  AND COALESCE(rol.role, 'player') = 'player'
+                  AND gr.total_score > 0
+            )
+            SELECT pos, total_players
+            FROM ranked
+            WHERE user_id = %s
+        ''', (user_id,))
+        row = cur.fetchone()
+        if row:
+            return int(row[0]), int(row[1])
+
+        cur.execute('''
+            SELECT COUNT(*)
+            FROM game_results gr
+            LEFT JOIN game_roles rol ON gr.user_id = rol.user_id
+            WHERE NOT COALESCE(gr.banned, FALSE)
+              AND COALESCE(rol.role, 'player') = 'player'
+              AND gr.total_score > 0
+        ''')
+        total = cur.fetchone()[0] or 0
+        return None, int(total)
+    except Exception as e:
+        logger.error(f"get_game_player_rank error {user_id}: {e}")
+        return None, 0
+    finally:
+        release_connection(conn)
+
 def get_game_leaderboard(limit=20):
     """Возвращает публичный топ игроков.
     Админы, тестировщики и игроки с 0 очков НЕ включаются."""
@@ -1537,7 +1580,11 @@ def get_game_result(user_id):
         cur = conn.cursor()
         cur.execute('''
             SELECT user_id, user_name, total_score, completed, game_over, updated_at,
-                   COALESCE(banned, FALSE) as banned
+                   COALESCE(banned, FALSE) as banned,
+                   COALESCE(achievement_count, 0) as achievement_count,
+                   COALESCE(achievement_pts, 0) as achievement_pts,
+                   COALESCE(chapter, 0) as chapter,
+                   COALESCE(score, 0) as score
             FROM game_results
             WHERE user_id = %s
         ''', (user_id,))

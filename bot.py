@@ -3059,14 +3059,23 @@ async def menu_game(query, context):
         current_role = role
 
     # Читаем данные игрока и расписание глав
+    my_rank_info = (None, 0)
     try:
-        my_result, chapter_schedule = await asyncio.gather(
+        tasks = [
             asyncio.to_thread(db.get_game_result, user.id),
             asyncio.to_thread(db.get_chapter_schedule_for_game),
-        )
+        ]
+        if current_role == 'player':
+            tasks.append(asyncio.to_thread(db.get_game_player_rank, user.id))
+        gathered = await asyncio.gather(*tasks)
+        my_result = gathered[0]
+        chapter_schedule = gathered[1]
+        if current_role == 'player' and len(gathered) > 2 and isinstance(gathered[2], tuple):
+            my_rank_info = gathered[2]
     except Exception as e:
         logger.warning(f"menu_game: DB error reading game result: {e}")
         my_result, chapter_schedule = None, []
+        my_rank_info = (None, 0)
 
     # ── Открытые главы по роли ──────────────────────────────────
     if current_role in ('admin', 'tester'):
@@ -3119,6 +3128,8 @@ async def menu_game(query, context):
             'score': my_result[2], 'completed': my_result[3],
             'game_over': my_result[4], 'role': current_role,
             'banned': bool(my_result[6]) if len(my_result) > 6 else False,
+            'achievement_count': int(my_result[7]) if len(my_result) > 7 else 0,
+            'achievement_pts': int(my_result[8]) if len(my_result) > 8 else 0,
             'restart_mode': restart_mode,
             'admin_mode': admin_mode,
             'tester_mode': tester_mode,
@@ -3181,13 +3192,26 @@ async def menu_game(query, context):
     # Формируем описание результата
     if my_result:
         uid2, uname, total, comp, game_over, updated, *_ = my_result
+        ach_count = int(my_result[7] or 0) if len(my_result) > 7 else 0
+        ach_pts = int(my_result[8] or 0) if len(my_result) > 8 else 0
         updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y') if updated else '—'
         pct = round((comp / 6) * 100)
         status = " ✅ <b>ВСЕ ГЛАВЫ!</b>" if game_over else ""
+        rank_pos, rank_total = my_rank_info if isinstance(my_rank_info, tuple) else (None, 0)
+        if current_role != 'player':
+            rank_line = "\n🏆 Рейтинг: <i>не учитывается для этой роли</i>"
+        elif rank_pos:
+            rank_line = f"\n🏆 Рейтинг: <b>#{rank_pos}</b> из {rank_total}"
+        elif (total or 0) > 0 and (rank_total or 0) > 0:
+            rank_line = f"\n🏆 Рейтинг: <b>вне топ-20</b> · участников: {rank_total}"
+        else:
+            rank_line = "\n🏆 Рейтинг: <i>пока без позиции</i>"
         my_info = (
             f"\n\n📊 Ваш прогресс: <b>{comp}/6 глав</b> · {pct}%{status}"
             f"\n⭐ Очков: <b>{total}</b>"
+            f"\n🏅 Достижения: <b>{ach_count}</b> · +{ach_pts} оч"
             f"\n📅 Последняя игра: {updated_str}"
+            + rank_line
         )
     else:
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
@@ -6391,9 +6415,11 @@ async def handle_game_sync(request):
             user_id, trusted_user_name, chapter, score, total_score,
             completed, game_over, False
         )
-        # Сохраняем достижения ТОЛЬКО если серверный счёт до сохранения был > 0
-        # (защита от перезаписи после сброса администратором)
-        if (achievement_count > 0 or achievement_pts > 0) and db_score_before > 0:
+        # reset_token уже защищает от устаревшего sync после админ-сброса.
+        # Поэтому достижения сохраняем при наличии реального прогресса
+        # (до или после текущего sync), чтобы не терять их на первом проходе.
+        has_progress = (db_score_before > 0) or (total_score > 0) or (completed > 0)
+        if (achievement_count > 0 or achievement_pts > 0) and has_progress:
             await asyncio.to_thread(
                 db.update_achievement_stats, user_id, achievement_count, achievement_pts
             )
