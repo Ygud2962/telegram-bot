@@ -168,7 +168,7 @@ if not (1 <= PORT <= 65535):
     logger.warning(f"Некорректный PORT={PORT}, использую 8080")
     PORT = 8080
 # Версии релизов (показываются в /version и используются для cache-bust игры)
-BOT_VERSION = os.environ.get('BOT_VERSION', '8.0.0').strip() or '8.0.0'
+BOT_VERSION = os.environ.get('BOT_VERSION', '9.0.0').strip() or '9.0.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.2.17').strip() or '1.2.17'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
