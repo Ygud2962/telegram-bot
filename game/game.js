@@ -686,6 +686,8 @@ const DEFAULT_STATE = () => ({
   streak: 0, retryPenalty: false,
   chapterFailCounts: {}, chapterStats: {},
   _chapterInProgress: false,
+  _awaitingNextCipher: false,
+  _pendingChapterFinish: false,
   gameOver: false, leaderboard: [],
   adminMode: false,
   testerMode: false,   // 🧪 тестировщик — все главы открыты, 5 жизней, не в рейтинге
@@ -757,7 +759,12 @@ function _getInProgressChapterState(chapterIdx = null) {
     Number(state._chapterHints || 0) > 0 ||
     (!state.adminMode && Number.isFinite(livesNum) && livesNum < 5)
   );
-  const hasProgress = !!state._chapterInProgress || legacyProgress;
+  const hasProgress = (
+    !!state._chapterInProgress ||
+    !!state._awaitingNextCipher ||
+    !!state._pendingChapterFinish ||
+    legacyProgress
+  );
   if (!hasProgress) return null;
 
   if (!state.adminMode && Number.isFinite(livesNum) && livesNum <= 0) return null;
@@ -772,6 +779,35 @@ function _getInProgressChapterState(chapterIdx = null) {
     score: Math.max(0, Number(state.chapterScore || 0)),
     lives: state.adminMode ? Infinity : Math.max(0, Math.min(5, Number(state.lives || 5)))
   };
+}
+
+function _recoverPendingSuccessCheckpoint() {
+  if (!state || !state._chapterInProgress) return false;
+  if (!state._awaitingNextCipher && !state._pendingChapterFinish) return false;
+
+  const chapter = CHAPTERS[Number(state.chapter || 0)];
+  if (!chapter || !Array.isArray(chapter.ciphers) || chapter.ciphers.length === 0) {
+    state._awaitingNextCipher = false;
+    state._pendingChapterFinish = false;
+    return false;
+  }
+
+  const safeIdx = Math.max(0, Math.min(chapter.ciphers.length - 1, Number(state.cipherIdx || 0)));
+  state.cipherIdx = safeIdx;
+
+  if (state._pendingChapterFinish) return true;
+  if (!state._awaitingNextCipher) return false;
+
+  if (safeIdx < chapter.ciphers.length - 1) {
+    state.cipherIdx = safeIdx + 1;
+    state._awaitingNextCipher = false;
+    state._pendingChapterFinish = false;
+    return true;
+  }
+
+  state._awaitingNextCipher = false;
+  state._pendingChapterFinish = true;
+  return true;
 }
 
 function _briefLivesLabel(livesValue) {
@@ -876,6 +912,8 @@ function _applyServerProgress(serverScore, serverCompleted, serverGameOver, forc
   state.gameOver = !!serverGameOver;
   if (_isChapterCompletedByIndex(Number(state.chapter || 0))) {
     state._chapterInProgress = false;
+    state._awaitingNextCipher = false;
+    state._pendingChapterFinish = false;
   }
 
   return { applied: true, localAhead: false };
@@ -930,6 +968,8 @@ function _wipeLocalProgressForServerReset() {
   state.gameOver = false;
   state.retryPenalty = false;
   state._chapterInProgress = false;
+  state._awaitingNextCipher = false;
+  state._pendingChapterFinish = false;
   state._noptsMode = false;
   state._isRetryAttempt = false;
   state._fastAnswers = 0;
@@ -1023,6 +1063,8 @@ function mergeBotLeaderboard() {
       state.chapterScore = 0;
       state.lives = state.adminMode ? Infinity : 5;
       state._chapterInProgress = false;
+      state._awaitingNextCipher = false;
+      state._pendingChapterFinish = false;
       state.gameOver = false;
       state.retryPenalty = dbRestartMode === 'penalty';
       state._noptsMode = dbRestartMode === 'nopts';
@@ -1062,12 +1104,18 @@ function loadState() {
       if (!state.solvedTypeCounts || typeof state.solvedTypeCounts !== 'object') state.solvedTypeCounts = {};
       if (!Number.isFinite(Number(state.achievementPts || 0))) state.achievementPts = 0;
       if (typeof state._chapterInProgress !== 'boolean') state._chapterInProgress = false;
+      if (typeof state._awaitingNextCipher !== 'boolean') state._awaitingNextCipher = false;
+      if (typeof state._pendingChapterFinish !== 'boolean') state._pendingChapterFinish = false;
       // Роль ВСЕГДА приходит от сервера — никогда не берём из кэша.
       // Иначе при смене роли с admin на player — adminMode останется true из кэша.
       state.adminMode  = false;
       state.testerMode = false;
       state.gameRole   = 'player';
       state._noptsMode = false;
+      if (_recoverPendingSuccessCheckpoint()) {
+        // Фиксируем обновлённый курсор сразу, чтобы не потерять чекпоинт при резком закрытии.
+        saveState();
+      }
     }
   } catch(e) {}
 }
@@ -1444,7 +1492,26 @@ function resumeChapter(idx) {
     const safeLives = Math.max(1, Math.min(5, Number(state.lives || 5)));
     state.lives = Number.isFinite(safeLives) ? safeLives : 5;
   }
-  _activeCipherKey = _makeCipherKey(idx, resume.cipherIdx);
+  _recoverPendingSuccessCheckpoint();
+  const chapter = CHAPTERS[idx];
+  if (
+    chapter &&
+    Array.isArray(chapter.ciphers) &&
+    chapter.ciphers.length > 0 &&
+    state._pendingChapterFinish === true &&
+    Number(state.cipherIdx || 0) >= chapter.ciphers.length - 1
+  ) {
+    state._pendingChapterFinish = false;
+    state._awaitingNextCipher = false;
+    saveState();
+    Promise.resolve(finishChapter()).catch((err) => {
+      console.error('resumeChapter -> finishChapter failed:', err);
+      showChapterEndFallback();
+    });
+    return;
+  }
+
+  _activeCipherKey = _makeCipherKey(idx, state.cipherIdx);
   _clearActiveCipherResolved();
   _nextCipherBusy = false;
   saveState();
@@ -1529,6 +1596,8 @@ function startChapter(idx) {
   state.chapter           = idx;
   state.cipherIdx         = 0;
   state._chapterInProgress = true;
+  state._awaitingNextCipher = false;
+  state._pendingChapterFinish = false;
   _activeCipherKey        = _makeCipherKey(idx, 0);
   _clearActiveCipherResolved();
   _nextCipherBusy         = false;
@@ -2220,6 +2289,10 @@ function showHint() {
 // ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
   _markActiveCipherResolved();
+  state._awaitingNextCipher = true;
+  state._pendingChapterFinish = false;
+  saveState();
+  autoSync(false, true);
   const quizOption = (cipher.options && cipher.options[cipher.correctIndex]) || 'Верно';
   const solvedLabel = cipher.type === 'quiz'
     ? quizOption
@@ -2272,6 +2345,8 @@ async function nextCipher(expectedCipherKey = null) {
   }
   _nextCipherBusy = true;
   try {
+    state._awaitingNextCipher = false;
+    state._pendingChapterFinish = false;
     const ch = CHAPTERS[state.chapter];
     if (!ch || !Array.isArray(ch.ciphers)) {
       console.warn('nextCipher: chapter is unavailable', state.chapter);
@@ -2292,6 +2367,8 @@ async function nextCipher(expectedCipherKey = null) {
       } catch (err) {
         console.error('nextCipher: loadCipher failed, rollback to previous cipher:', err);
         state.cipherIdx = prevIdx;
+        state._awaitingNextCipher = true;
+        state._pendingChapterFinish = false;
         saveState();
         _markActiveCipherResolved();
         const btn = document.getElementById('succ-next-btn');
@@ -2351,6 +2428,8 @@ async function finishChapter() {
   };
   state.completedChapters[ch.id] = true;
   state._chapterInProgress = false;
+  state._awaitingNextCipher = false;
+  state._pendingChapterFinish = false;
   if (!alreadyDone && !state._noptsMode) {
     state.chapterScores[ch.id] = state.chapterScore;
     state.totalScore          += state.chapterScore;
@@ -2535,6 +2614,8 @@ function restartChapterFromStart(idx) {
   state.chapter = idx;
   state.cipherIdx = 0;
   state._chapterInProgress = true;
+  state._awaitingNextCipher = false;
+  state._pendingChapterFinish = false;
   _activeCipherKey = _makeCipherKey(idx, 0);
   _clearActiveCipherResolved();
   _nextCipherBusy = false;
@@ -2573,6 +2654,8 @@ async function failChapter() {
   // Штраф за провал: 5% * количество провалов (макс 50%)
   const penaltyPct = Math.min(0.50, failCount * 0.05);
   state._chapterInProgress = false;
+  state._awaitingNextCipher = false;
+  state._pendingChapterFinish = false;
 
   if (!alreadyDone && !state._noptsMode) {
     state.chapterScores[ch.id] = state.chapterScore;
@@ -2661,6 +2744,8 @@ function retryChapterWithPenalty(idx) {
   state._chapterErrors = 0;
   state._chapterHints = 0;
   state._chapterInProgress = false;
+  state._awaitingNextCipher = false;
+  state._pendingChapterFinish = false;
 
   saveState();
   // Синхронизируем с БД сразу — фиксируем штраф
@@ -5516,6 +5601,8 @@ async function fetchAndApplyState() {
       state.chapterScore = 0;
       state.lives = state.adminMode ? Infinity : 5;
       state._chapterInProgress = false;
+      state._awaitingNextCipher = false;
+      state._pendingChapterFinish = false;
       state.gameOver = false;
       state.retryPenalty = data.restart_mode === 'penalty';
       state._noptsMode = data.restart_mode === 'nopts';
