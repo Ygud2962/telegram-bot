@@ -404,8 +404,10 @@ function getTgInitDataRaw() {
 }
 function _applySyncResponse(result, forceServerState = false) {
   if (!result || typeof result !== 'object') return;
+  const prevResetToken = Math.max(_serverResetToken || 0, _getStoredResetToken());
   if (typeof result.db_reset_token === 'number' && result.db_reset_token > 0) {
     _serverResetToken = result.db_reset_token;
+    _storeResetToken(_serverResetToken);
   }
 
   const hasDbSnapshot = (typeof result.db_score === 'number') || (typeof result.db_completed === 'number');
@@ -413,6 +415,14 @@ function _applySyncResponse(result, forceServerState = false) {
 
   const dbScore = Number(result.db_score || 0);
   const dbCompleted = Number(result.db_completed || 0);
+  const tokenChanged = (_serverResetToken > 0) && (_serverResetToken !== prevResetToken);
+  if (tokenChanged && dbScore === 0 && dbCompleted === 0 && _hasLocalProgressData()) {
+    _wipeLocalProgressForServerReset();
+    saveState();
+    _refreshCurrentTabAfterSync();
+    return;
+  }
+
   const mergeRes = _applyServerProgress(dbScore, dbCompleted, state.gameOver, !!forceServerState);
   if (mergeRes.applied) {
     saveState();
@@ -632,9 +642,13 @@ async function autoSync(showNotification = false, force = false) {
 
 // Автосинк при сворачивании / переключении вкладки
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && state.totalScore > 0) {
+  if (!document.hidden) {
+    fetchAndApplyState();
+    return;
+  }
+  if (state.totalScore > 0) {
     saveState();
-    autoSync(false); // тихо, без тоста
+    autoSync(false);
   }
 });
 
@@ -776,6 +790,68 @@ function _applyServerProgress(serverScore, serverCompleted, serverGameOver, forc
   return { applied: true, localAhead: false };
 }
 
+function _resetTokenStorageKey() {
+  const uid = getTgUserId();
+  return uid ? `cipher_reset_token_v1_${uid}` : 'cipher_reset_token_v1_guest';
+}
+
+function _getStoredResetToken() {
+  try {
+    const raw = localStorage.getItem(_resetTokenStorageKey());
+    const token = Math.floor(Number(raw || 0));
+    return Number.isFinite(token) && token > 0 ? token : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function _storeResetToken(tokenLike) {
+  const token = Math.floor(Number(tokenLike || 0));
+  if (!Number.isFinite(token) || token <= 0) return;
+  try {
+    localStorage.setItem(_resetTokenStorageKey(), String(token));
+  } catch (e) {}
+}
+
+function _hasLocalProgressData() {
+  return (
+    Number(state.totalScore || 0) > 0 ||
+    _stateCompletedCount() > 0 ||
+    Number(state.chapterScore || 0) > 0 ||
+    Number(state.cipherIdx || 0) > 0 ||
+    Object.keys(state.chapterScores || {}).length > 0 ||
+    Object.keys(state.achievements || {}).length > 0 ||
+    Number(state.achievementPts || 0) > 0
+  );
+}
+
+function _wipeLocalProgressForServerReset() {
+  state.totalScore = 0;
+  state.chapterScore = 0;
+  state.chapter = 0;
+  state.cipherIdx = 0;
+  state.startTime = 0;
+  state.streak = 0;
+  state.completedChapters = {};
+  state.chapterScores = {};
+  state.chapterStats = {};
+  state.chapterFailCounts = {};
+  state.gameOver = false;
+  state.retryPenalty = false;
+  state._noptsMode = false;
+  state._isRetryAttempt = false;
+  state._fastAnswers = 0;
+  state._perfectChapters = 0;
+  state._noHintChapters = 0;
+  state.achievements = {};
+  state.achievementPts = 0;
+  state.artifacts = {};
+  state.solvedTypes = {};
+  state.solvedTypeCounts = {};
+  state.lives = state.adminMode ? Infinity : 5;
+  try { localStorage.removeItem('pending_results'); } catch (e) {}
+}
+
 function _refreshCurrentTabAfterSync() {
   syncTopStatusBars();
   if (currentTab === 'leaderboard') {
@@ -813,14 +889,20 @@ function mergeBotLeaderboard() {
   }
 
   if (tgInitMe && myUid) {
-    if (typeof tgInitMe.reset_token === 'number' && tgInitMe.reset_token > 0) {
-      _serverResetToken = tgInitMe.reset_token;
-    }
+    const prevResetToken = _getStoredResetToken();
+    const incomingResetToken = (typeof tgInitMe.reset_token === 'number' && tgInitMe.reset_token > 0)
+      ? Math.floor(tgInitMe.reset_token)
+      : 0;
+    if (incomingResetToken > 0) _serverResetToken = incomingResetToken;
 
     const dbScore = Number(tgInitMe.score || 0);
     const dbCompleted = Number(tgInitMe.completed || 0);
     const dbGameOver = !!tgInitMe.game_over;
     const dbRestartMode = tgInitMe.restart_mode || null;
+    const tokenChanged = incomingResetToken > 0 && (
+      prevResetToken <= 0 ? _hasLocalProgressData() : (incomingResetToken !== prevResetToken)
+    );
+    const forcedByTokenReset = tokenChanged && dbScore === 0 && dbCompleted === 0 && _hasLocalProgressData();
 
     const dbAdminMode = (tgInitMe.admin_mode === true) || window._adminMode === true;
     const dbTesterMode = (tgInitMe.tester_mode === true) || window._testerMode === true;
@@ -849,15 +931,25 @@ function mergeBotLeaderboard() {
       state._noptsMode = dbRestartMode === 'nopts';
       state.achievements = {};
       state.achievementPts = 0;
+      if (incomingResetToken > 0) _storeResetToken(incomingResetToken);
+      saveState();
+      return;
+    }
+
+    if (forcedByTokenReset) {
+      _wipeLocalProgressForServerReset();
+      if (incomingResetToken > 0) _storeResetToken(incomingResetToken);
       saveState();
       return;
     }
 
     const mergeResult = _applyServerProgress(dbScore, dbCompleted, dbGameOver, false);
     if (!mergeResult.applied) {
+      if (incomingResetToken > 0) _storeResetToken(incomingResetToken);
       // Р›РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРіСЂРµСЃСЃ РЅРѕРІРµРµ СЃРµСЂРІРµСЂРЅРѕРіРѕ вЂ” РїРѕРґРЅРёРјР°РµРј Р‘Р” Р°РІС‚РѕСЃРёРЅРєРѕРј.
       setTimeout(() => autoSync(false), 0);
     } else {
+      if (incomingResetToken > 0) _storeResetToken(incomingResetToken);
       saveState();
     }
   }
@@ -5144,9 +5236,10 @@ async function fetchAndApplyState() {
       tgChapterSchedule = data.chapter_schedule;
     }
 
-    const prevResetToken = _serverResetToken;
+    const prevResetToken = _getStoredResetToken();
     if (typeof data.reset_token === 'number' && data.reset_token > 0) {
       _serverResetToken = data.reset_token;
+      _storeResetToken(_serverResetToken);
     }
 
     tgInitMe = Object.assign({}, (tgInitMe || {}), {
@@ -5164,9 +5257,14 @@ async function fetchAndApplyState() {
 
     const srvScore = typeof data.score === 'number' ? data.score : state.totalScore;
     const srvCompleted = typeof data.completed === 'number' ? data.completed : _stateCompletedCount();
+    const tokenChanged = (_serverResetToken > 0) && (
+      prevResetToken <= 0 ? _hasLocalProgressData() : (_serverResetToken !== prevResetToken)
+    );
     const forcedByTokenReset = (
-      prevResetToken > 0 && _serverResetToken > 0 && prevResetToken !== _serverResetToken &&
-      Number(srvScore || 0) === 0 && Number(srvCompleted || 0) === 0
+      tokenChanged &&
+      Number(srvScore || 0) === 0 &&
+      Number(srvCompleted || 0) === 0 &&
+      _hasLocalProgressData()
     );
 
     if (data.restart_mode === 'penalty' || data.restart_mode === 'nopts') {
@@ -5181,16 +5279,15 @@ async function fetchAndApplyState() {
       state.achievements = {};
       state.achievementPts = 0;
       saveState();
+    } else if (forcedByTokenReset) {
+      _wipeLocalProgressForServerReset();
+      saveState();
     } else {
       const mergeResult = _applyServerProgress(srvScore, srvCompleted, !!data.game_over, forcedByTokenReset);
       if (!mergeResult.applied) {
         // Server is behind local cache; push local snapshot to backend.
         autoSync(false);
       } else {
-        if (forcedByTokenReset) {
-          state.achievements = {};
-          state.achievementPts = 0;
-        }
         saveState();
       }
     }
