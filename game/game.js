@@ -646,27 +646,20 @@ document.addEventListener('visibilitychange', () => {
     fetchAndApplyState();
     return;
   }
-  if (state.totalScore > 0) {
-    saveState();
-    autoSync(false);
-  }
+  saveState();
+  autoSync(false, true);
+  _sendSyncBeaconIfPossible();
 });
 
 // Автосинк при закрытии
 window.addEventListener('beforeunload', () => {
-  if (state.totalScore > 0 && window._syncUrl && getTgUserId()) {
-    // Используем navigator.sendBeacon — не блокирует закрытие
-    const data = {
-      type: 'sync', total_score: state.totalScore,
-      completed: _stateCompletedCount(),
-      game_over: state.gameOver || false,
-      user_id: getTgUserId(),
-    };
-    const initDataRaw = getTgInitDataRaw();
-    if (initDataRaw) data.init_data = initDataRaw;
-    if (_serverResetToken > 0) data.reset_token = _serverResetToken;
-    navigator.sendBeacon(window._syncUrl, JSON.stringify(data));
-  }
+  saveState();
+  _sendSyncBeaconIfPossible();
+});
+
+window.addEventListener('pagehide', () => {
+  saveState();
+  _sendSyncBeaconIfPossible();
 });
 
 // ═══════════════════════════════════════════════════════
@@ -692,6 +685,7 @@ const DEFAULT_STATE = () => ({
   completedChapters: {}, chapterScores: {},
   streak: 0, retryPenalty: false,
   chapterFailCounts: {}, chapterStats: {},
+  _chapterInProgress: false,
   gameOver: false, leaderboard: [],
   adminMode: false,
   testerMode: false,   // 🧪 тестировщик — все главы открыты, 5 жизней, не в рейтинге
@@ -740,6 +734,79 @@ function _stateCurrentChapterId() {
   if (chapter && Number.isFinite(Number(chapter.id))) return Number(chapter.id);
   const completedIds = Object.keys(state.completedChapters || {}).map(Number).filter(Number.isFinite);
   return completedIds.length ? Math.max(...completedIds) : 0;
+}
+
+function _isChapterCompletedByIndex(chapterIdx) {
+  const chapter = CHAPTERS[chapterIdx];
+  if (!chapter) return false;
+  return !!(state.completedChapters && state.completedChapters[chapter.id]);
+}
+
+function _getInProgressChapterState(chapterIdx = null) {
+  const idx = Number.isInteger(chapterIdx) ? chapterIdx : Number(state.chapter || 0);
+  const chapter = CHAPTERS[idx];
+  if (!chapter || !Array.isArray(chapter.ciphers) || chapter.ciphers.length === 0) return null;
+  if (Number(state.chapter) !== idx) return null;
+  if (_isChapterCompletedByIndex(idx)) return null;
+
+  const livesNum = Number(state.lives);
+  const legacyProgress = (
+    Number(state.cipherIdx || 0) > 0 ||
+    Number(state.chapterScore || 0) > 0 ||
+    Number(state._chapterErrors || 0) > 0 ||
+    Number(state._chapterHints || 0) > 0 ||
+    (!state.adminMode && Number.isFinite(livesNum) && livesNum < 5)
+  );
+  const hasProgress = !!state._chapterInProgress || legacyProgress;
+  if (!hasProgress) return null;
+
+  if (!state.adminMode && Number.isFinite(livesNum) && livesNum <= 0) return null;
+
+  const cipherIdx = Math.max(0, Math.min(chapter.ciphers.length - 1, Number(state.cipherIdx || 0)));
+  return {
+    chapterIdx: idx,
+    chapterId: Number(chapter.id || 0),
+    cipherIdx,
+    step: cipherIdx + 1,
+    total: chapter.ciphers.length,
+    score: Math.max(0, Number(state.chapterScore || 0)),
+    lives: state.adminMode ? Infinity : Math.max(0, Math.min(5, Number(state.lives || 5)))
+  };
+}
+
+function _briefLivesLabel(livesValue) {
+  if (state.adminMode) return '♾️';
+  const n = Math.max(0, Math.min(5, Number(livesValue || 0)));
+  return '❤️'.repeat(n) + '🖤'.repeat(5 - n);
+}
+
+function _buildUnloadSyncData() {
+  return {
+    type: 'sync',
+    chapter: _stateCurrentChapterId(),
+    score: Number(state.chapterScore || 0),
+    total_score: Number(state.totalScore || 0),
+    completed: _stateCompletedCount(),
+    game_over: state.gameOver || false,
+    user_id: getTgUserId(),
+    chapter_idx: Number(state.chapter || 0),
+    cipher_idx: Number(state.cipherIdx || 0),
+    lives: state.adminMode ? -1 : Number(state.lives || 0),
+    chapter_in_progress: !!state._chapterInProgress
+  };
+}
+
+function _sendSyncBeaconIfPossible() {
+  const syncUrl = window._syncUrl;
+  const uid = getTgUserId();
+  if (!syncUrl || !uid || !navigator || typeof navigator.sendBeacon !== 'function') return;
+  const data = _buildUnloadSyncData();
+  const initDataRaw = getTgInitDataRaw();
+  if (initDataRaw) data.init_data = initDataRaw;
+  if (_serverResetToken > 0) data.reset_token = _serverResetToken;
+  try {
+    navigator.sendBeacon(syncUrl, JSON.stringify(data));
+  } catch (e) {}
 }
 
 function _livesBadgeText() {
@@ -807,6 +874,9 @@ function _applyServerProgress(serverScore, serverCompleted, serverGameOver, forc
   state.chapterStats = nextStats;
   state.chapterFailCounts = nextFailCounts;
   state.gameOver = !!serverGameOver;
+  if (_isChapterCompletedByIndex(Number(state.chapter || 0))) {
+    state._chapterInProgress = false;
+  }
 
   return { applied: true, localAhead: false };
 }
@@ -859,6 +929,7 @@ function _wipeLocalProgressForServerReset() {
   state.chapterFailCounts = {};
   state.gameOver = false;
   state.retryPenalty = false;
+  state._chapterInProgress = false;
   state._noptsMode = false;
   state._isRetryAttempt = false;
   state._fastAnswers = 0;
@@ -947,6 +1018,11 @@ function mergeBotLeaderboard() {
       state.chapterScores = {};
       state.chapterStats = {};
       state.chapterFailCounts = {};
+      state.chapter = 0;
+      state.cipherIdx = 0;
+      state.chapterScore = 0;
+      state.lives = state.adminMode ? Infinity : 5;
+      state._chapterInProgress = false;
       state.gameOver = false;
       state.retryPenalty = dbRestartMode === 'penalty';
       state._noptsMode = dbRestartMode === 'nopts';
@@ -985,6 +1061,7 @@ function loadState() {
       if (!state.solvedTypes || typeof state.solvedTypes !== 'object') state.solvedTypes = {};
       if (!state.solvedTypeCounts || typeof state.solvedTypeCounts !== 'object') state.solvedTypeCounts = {};
       if (!Number.isFinite(Number(state.achievementPts || 0))) state.achievementPts = 0;
+      if (typeof state._chapterInProgress !== 'boolean') state._chapterInProgress = false;
       // Роль ВСЕГДА приходит от сервера — никогда не берём из кэша.
       // Иначе при смене роли с admin на player — adminMode останется true из кэша.
       state.adminMode  = false;
@@ -1113,6 +1190,7 @@ function renderChapters() {
 
   CHAPTERS.forEach((ch, i) => {
     const isDone  = !!state.completedChapters[ch.id];
+    const inProgress = _getInProgressChapterState(i);
     if (isDone) completedCount++;
 
     // Логика блокировки по роли:
@@ -1149,6 +1227,7 @@ function renderChapters() {
     let statusText, badgeIcon;
     if (isDone && state.chapterScores[ch.id] > 0) { statusText='✅ ЗАВЕРШЕНО'; badgeIcon='✅'; }
     else if (isDone) { statusText='💔 ПРОВАЛЕНО'; badgeIcon='💔'; }
+    else if (inProgress) { statusText=`⏯ В ПРОЦЕССЕ ${inProgress.step}/${inProgress.total}`; badgeIcon='⏯'; }
     else if (state.adminMode) { statusText='👑 ОТКРЫТО'; badgeIcon='▶'; }
     else if (state.testerMode) { statusText='🧪 ОТКРЫТО'; badgeIcon='▶'; }
     else if (schedInfo) { statusText='⏰ СКОРО'; badgeIcon='⏰'; }
@@ -1156,7 +1235,9 @@ function renderChapters() {
     // isLocked остаётся — просто улучшаем отображение
     else { statusText='▶ ДОСТУПНО'; badgeIcon='▶'; }
 
-    const scoreVal = isDone && state.chapterScores[ch.id] ? state.chapterScores[ch.id] : '';
+    const scoreVal = isDone && state.chapterScores[ch.id]
+      ? state.chapterScores[ch.id]
+      : (inProgress && inProgress.score > 0 ? inProgress.score : '');
 
     // HTML карточки — с опциональным таймером обратного отсчёта
     const countdownId = `ch-countdown-${ch.id}`;
@@ -1185,7 +1266,7 @@ function renderChapters() {
 
     // Кто может играть
     const canRepeat = state.retryPenalty || state._noptsMode;
-    const canPlay = state.adminMode || state.testerMode || (!isLocked && (!isDone || canRepeat));
+    const canPlay = !!inProgress || state.adminMode || state.testerMode || (!isLocked && (!isDone || canRepeat));
     if (canPlay) {
       card.onclick = () => { showBriefing(i); };
       card.style.cursor = 'pointer';
@@ -1296,6 +1377,9 @@ function showBriefing(idx) {
   if (idx < 0 || idx >= CHAPTERS.length) { showScreen('s-chapters'); renderChapters(); return; }
   currentChapter = idx;
   const ch = CHAPTERS[idx];
+  const resume = _getInProgressChapterState(idx);
+  const isDone = !!state.completedChapters[ch.id];
+
   document.getElementById('brief-num').textContent   = ch.subtitle + ' — ' + ch.place;
   document.getElementById('brief-title').textContent = ch.title;
   document.getElementById('brief-place').textContent = ch.place;
@@ -1303,7 +1387,69 @@ function showBriefing(idx) {
   document.getElementById('brief-meta').innerHTML    = ch.meta.replace(/\n/g,'<br>');
   document.getElementById('brief-text').textContent  = ch.briefing;
   document.getElementById('brief-mission').textContent = ch.mission;
+
+  const livesEl = document.getElementById('briefing-lives-display');
+  if (livesEl) {
+    const livesForView = resume ? resume.lives : (state.adminMode ? Infinity : 5);
+    livesEl.textContent = _briefLivesLabel(livesForView);
+  }
+  const scoreEl = document.getElementById('briefing-score-display');
+  if (scoreEl) {
+    const doneScore = Number((state.chapterScores && state.chapterScores[ch.id]) || 0);
+    scoreEl.textContent = String(resume ? resume.score : (isDone ? doneScore : 0));
+  }
+
+  const noteEl = document.getElementById('brief-progress-note');
+  if (noteEl) {
+    if (resume) {
+      noteEl.style.display = 'block';
+      noteEl.textContent = `Сохранён прогресс: задание ${resume.step}/${resume.total} · ${resume.score} оч · ${state.adminMode ? '∞' : resume.lives} жизней.`;
+    } else {
+      noteEl.style.display = 'none';
+      noteEl.textContent = '';
+    }
+  }
+
+  const startBtn = document.getElementById('brief-start-btn');
+  if (startBtn) {
+    startBtn.textContent = resume
+      ? `▶ ПРОДОЛЖИТЬ С ЗАДАНИЯ ${resume.step}/${resume.total}`
+      : '▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ';
+  }
   showScreen('s-briefing');
+}
+
+function onBriefStartClicked() {
+  const resume = _getInProgressChapterState(currentChapter);
+  if (resume) {
+    resumeChapter(currentChapter);
+    return;
+  }
+  startChapter(currentChapter);
+}
+
+function resumeChapter(idx) {
+  const resume = _getInProgressChapterState(idx);
+  if (!resume) {
+    startChapter(idx);
+    return;
+  }
+  unlockAudioInteraction();
+  state.chapter = idx;
+  state.cipherIdx = resume.cipherIdx;
+  state._chapterInProgress = true;
+  if (state.adminMode) {
+    state.lives = Infinity;
+  } else {
+    const safeLives = Math.max(1, Math.min(5, Number(state.lives || 5)));
+    state.lives = Number.isFinite(safeLives) ? safeLives : 5;
+  }
+  _activeCipherKey = _makeCipherKey(idx, resume.cipherIdx);
+  _clearActiveCipherResolved();
+  _nextCipherBusy = false;
+  saveState();
+  loadCipher();
+  showScreen('s-cipher');
 }
 
 let _missionCinematicTimer = null;
@@ -1382,6 +1528,7 @@ function startChapter(idx) {
   unlockAudioInteraction();
   state.chapter           = idx;
   state.cipherIdx         = 0;
+  state._chapterInProgress = true;
   _activeCipherKey        = _makeCipherKey(idx, 0);
   _clearActiveCipherResolved();
   _nextCipherBusy         = false;
@@ -2180,6 +2327,7 @@ async function finishChapter() {
     max: ch.ciphers.reduce((s,c) => s+c.points, 0)
   };
   state.completedChapters[ch.id] = true;
+  state._chapterInProgress = false;
   if (!alreadyDone && !state._noptsMode) {
     state.chapterScores[ch.id] = state.chapterScore;
     state.totalScore          += state.chapterScore;
@@ -2363,6 +2511,7 @@ function restartChapterFromStart(idx) {
   }
   state.chapter = idx;
   state.cipherIdx = 0;
+  state._chapterInProgress = true;
   _activeCipherKey = _makeCipherKey(idx, 0);
   _clearActiveCipherResolved();
   _nextCipherBusy = false;
@@ -2400,6 +2549,7 @@ async function failChapter() {
 
   // Штраф за провал: 5% * количество провалов (макс 50%)
   const penaltyPct = Math.min(0.50, failCount * 0.05);
+  state._chapterInProgress = false;
 
   if (!alreadyDone && !state._noptsMode) {
     state.chapterScores[ch.id] = state.chapterScore;
@@ -2487,6 +2637,7 @@ function retryChapterWithPenalty(idx) {
   state.streak = 0;
   state._chapterErrors = 0;
   state._chapterHints = 0;
+  state._chapterInProgress = false;
 
   saveState();
   // Синхронизируем с БД сразу — фиксируем штраф
@@ -3812,18 +3963,27 @@ function resumeGame() {
 
 function goToChapters() {
   unlockAudioInteraction();
+  const cipherScreen = document.getElementById('s-cipher');
+  if (cipherScreen && cipherScreen.classList.contains('active')) {
+    state._chapterInProgress = true;
+  }
   stopTimer();
   saveState();
   showScreen('s-chapters');
   renderChapters();
   showBottomNav();
   // Синхронизация
-  autoSync(false);
+  autoSync(false, true);
 }
 
 function exitToMain() {
+  const cipherScreen = document.getElementById('s-cipher');
+  if (cipherScreen && cipherScreen.classList.contains('active')) {
+    state._chapterInProgress = true;
+  }
   saveState();
-  autoSync(false); // сохраняем перед выходом
+  autoSync(false, true); // сохраняем перед выходом
+  _sendSyncBeaconIfPossible();
   if (tg) {
     setTimeout(() => tg.close(), 300); // даём время на отправку
   } else {
@@ -5170,6 +5330,8 @@ function renderSettingsTab() {
 window.showScreen = showScreen;
 window.switchTab = switchTab;
 window.renderChapters = renderChapters;
+window.onBriefStartClicked = onBriefStartClicked;
+window.resumeChapter = resumeChapter;
 window.toggleMusicEnabled = toggleMusicEnabled;
 window.toggleSfxEnabled = toggleSfxEnabled;
 window.setMusicTrack = setMusicTrack;
@@ -5191,6 +5353,18 @@ window.copyChapterReportCard = copyChapterReportCard;
 // ═══════════════════════════════════════════════════════
 if (document.readyState === "loading") { showSplash(); } else { showSplash(); }
 loadState();
+if (tg && typeof tg.onEvent === 'function') {
+  try {
+    tg.onEvent('deactivated', () => {
+      saveState();
+      autoSync(false, true);
+      _sendSyncBeaconIfPossible();
+    });
+    tg.onEvent('activated', () => {
+      fetchAndApplyState();
+    });
+  } catch (e) {}
+}
 syncMusicButtons();
 applyBackgroundMusic(false);
 const _cipherInput = document.getElementById('cipher-input');
@@ -5314,6 +5488,11 @@ async function fetchAndApplyState() {
       state.chapterScores = {};
       state.chapterStats = {};
       state.chapterFailCounts = {};
+      state.chapter = 0;
+      state.cipherIdx = 0;
+      state.chapterScore = 0;
+      state.lives = state.adminMode ? Infinity : 5;
+      state._chapterInProgress = false;
       state.gameOver = false;
       state.retryPenalty = data.restart_mode === 'penalty';
       state._noptsMode = data.restart_mode === 'nopts';

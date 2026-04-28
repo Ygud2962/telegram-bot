@@ -727,7 +727,8 @@
             <div id="brief-meta" style="background:rgba(255,224,51,.05);border:1px solid rgba(255,224,51,.15);border-radius:6px;padding:12px;font-size:var(--fs-xs);color:var(--accent);line-height:1.8;margin-bottom:20px;"></div>
             <div id="brief-text" style="font-size:var(--fs-base);color:#e8dfbf;line-height:1.7;margin-bottom:20px;"></div>
             <div id="brief-mission" style="background:rgba(85,221,85,.08);border-left:3px solid var(--green);padding:12px;font-size:var(--fs-sm);color:var(--green);margin-bottom:24px;"></div>
-            <button class="btn btn-accent" onclick="startChapter(currentChapter)">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
+            <div id="brief-progress-note" style="display:none;margin:-12px 0 12px 0;padding:10px 12px;border-radius:8px;background:rgba(255,224,51,.08);border:1px solid rgba(255,224,51,.25);font-size:var(--fs-xs);color:#ffe9a7;line-height:1.5"></div>
+            <button id="brief-start-btn" class="btn btn-accent" onclick="onBriefStartClicked()">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
         </div>
         
         <div id="s-cipher" class="screen">
