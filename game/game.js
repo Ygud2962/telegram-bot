@@ -1595,45 +1595,54 @@ function loadCipher() {
 
   // Прогресс-точки (5 штук)
   const prog = document.getElementById('cipher-progress');
-  prog.innerHTML = ch.ciphers.map((c, i) =>
-    `<div class="cipher-prog-dot ${i < state.cipherIdx ? 'done' : i === state.cipherIdx ? 'active' : ''}"></div>`
-  ).join('');
+  if (prog) {
+    prog.innerHTML = ch.ciphers.map((c, i) =>
+      `<div class="cipher-prog-dot ${i < state.cipherIdx ? 'done' : i === state.cipherIdx ? 'active' : ''}"></div>`
+    ).join('');
+  }
 
-  document.getElementById('cipher-chapter-label').textContent = ch.subtitle + ' · ' + ch.place;
+  const chapterLabelEl = document.getElementById('cipher-chapter-label');
+  if (chapterLabelEl) chapterLabelEl.textContent = ch.subtitle + ' · ' + ch.place;
   const scoreEl = document.getElementById('cipher-score-display');
   if (scoreEl) scoreEl.textContent = state.chapterScore + ' оч';
-  document.getElementById('cipher-type-label').textContent    = cipher.typeLabel;
-  document.getElementById('cipher-task').textContent          = cipher.task;
+  const typeLabelEl = document.getElementById('cipher-type-label');
+  if (typeLabelEl) typeLabelEl.textContent = cipher.typeLabel;
+  const taskEl = document.getElementById('cipher-task');
+  if (taskEl) taskEl.textContent = cipher.task;
 
   // Шифрованный текст / задание
   const box = document.getElementById('cipher-box');
-  if (box) { if (cipher.type !== 'quiz') box.style.display = ''; }
-  box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
-  box.style.position = 'relative';
+  if (box) {
+    if (cipher.type !== 'quiz') box.style.display = '';
+    box.setAttribute('data-num', String(state.cipherIdx + 1).padStart(3,'0'));
+    box.style.position = 'relative';
 
-  if (cipher.type === 'morse') {
-    box.innerHTML = '';
-    animateMorse(box, cipher.encrypted);
-  } else if (cipher.type === 'quiz') {
-    box.style.display = '';
-    box.innerHTML = '';
-  } else if (cipher.type === 'anagram') {
-    box.textContent = '';
-    box.style.display = 'none';
-  } else if (cipher.type === 'math') {
-    box.style.display = '';
-    box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`;
-  } else if (cipher.type === 'photo') {
-    box.style.display = '';
-    box.innerHTML = `<div class="photo-task-img">${cipher.image}</div>
-      <div style="font-family:var(--mono);font-size:var(--fs-2xl);text-align:center;padding:8px 0">${cipher.encrypted}</div>`;
-  } else if (cipher.type === 'map') {
-    box.style.display = '';
-    box.innerHTML = '';
-    renderMap(cipher);
+    if (cipher.type === 'morse') {
+      box.innerHTML = '';
+      animateMorse(box, cipher.encrypted);
+    } else if (cipher.type === 'quiz') {
+      box.style.display = '';
+      box.innerHTML = '';
+    } else if (cipher.type === 'anagram') {
+      box.textContent = '';
+      box.style.display = 'none';
+    } else if (cipher.type === 'math') {
+      box.style.display = '';
+      box.innerHTML = `<div class="math-formula">${cipher.encrypted}</div>`;
+    } else if (cipher.type === 'photo') {
+      box.style.display = '';
+      box.innerHTML = `<div class="photo-task-img">${cipher.image}</div>
+        <div style="font-family:var(--mono);font-size:var(--fs-2xl);text-align:center;padding:8px 0">${cipher.encrypted}</div>`;
+    } else if (cipher.type === 'map') {
+      box.style.display = '';
+      box.innerHTML = '';
+      renderMap(cipher);
+    } else {
+      box.style.display = '';
+      box.textContent = cipher.encrypted;
+    }
   } else {
-    box.style.display = '';
-    box.textContent = cipher.encrypted;
+    console.warn('loadCipher: cipher-box element not found');
   }
 
   // Поле ввода — скрываем для карты и анаграммы
@@ -2250,7 +2259,7 @@ function showSuccess(cipher, pts, elapsed) {
   showScreen('s-success');
 }
 
-function nextCipher(expectedCipherKey = null) {
+async function nextCipher(expectedCipherKey = null) {
   if (_nextCipherBusy) return;
   const activeKey = _activeCipherKey || _makeCipherKey();
   if (expectedCipherKey && expectedCipherKey !== activeKey) {
@@ -2262,29 +2271,43 @@ function nextCipher(expectedCipherKey = null) {
     return;
   }
   _nextCipherBusy = true;
-  const ch = CHAPTERS[state.chapter];
-  if (!ch || !Array.isArray(ch.ciphers)) {
-    console.warn('nextCipher: chapter is unavailable', state.chapter);
-    showScreen('s-chapters');
-    renderChapters();
-    _nextCipherBusy = false;
-    return;
-  }
-  if (state.cipherIdx < ch.ciphers.length - 1) {
-    state.cipherIdx++;
-    // Жизни НЕ сбрасываются между шифрами — они общие на главу
-    saveState();
-    _clearActiveCipherResolved();
-    loadCipher();
-    showScreen('s-cipher');
-    _nextCipherBusy = false;
-  } else {
-    Promise.resolve(finishChapter()).catch((err) => {
+  try {
+    const ch = CHAPTERS[state.chapter];
+    if (!ch || !Array.isArray(ch.ciphers)) {
+      console.warn('nextCipher: chapter is unavailable', state.chapter);
+      showScreen('s-chapters');
+      renderChapters();
+      return;
+    }
+    if (state.cipherIdx < ch.ciphers.length - 1) {
+      const prevIdx = Number(state.cipherIdx || 0);
+      const nextIdx = prevIdx + 1;
+      state.cipherIdx = nextIdx;
+      // Жизни НЕ сбрасываются между шифрами — они общие на главу
+      saveState();
+      _clearActiveCipherResolved();
+      try {
+        loadCipher();
+        showScreen('s-cipher');
+      } catch (err) {
+        console.error('nextCipher: loadCipher failed, rollback to previous cipher:', err);
+        state.cipherIdx = prevIdx;
+        saveState();
+        _markActiveCipherResolved();
+        const btn = document.getElementById('succ-next-btn');
+        if (btn) btn.disabled = false;
+        showToast('⚠ Ошибка перехода. Нажмите «Следующий шифр» ещё раз');
+      }
+      return;
+    }
+    try {
+      await Promise.resolve(finishChapter());
+    } catch (err) {
       console.error('finishChapter failed:', err);
       showChapterEndFallback();
-    }).finally(() => {
-      _nextCipherBusy = false;
-    });
+    }
+  } finally {
+    _nextCipherBusy = false;
   }
 }
 
