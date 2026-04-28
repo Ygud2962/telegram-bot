@@ -810,6 +810,30 @@ function _recoverPendingSuccessCheckpoint() {
   return true;
 }
 
+function _recoverSolvedCipherStall(source = 'unknown') {
+  if (!_isActiveCipherResolved()) return false;
+  const cipherScreen = document.getElementById('s-cipher');
+  if (!cipherScreen || !cipherScreen.classList.contains('active')) return false;
+  const chapter = CHAPTERS[state.chapter];
+  if (!chapter || !Array.isArray(chapter.ciphers)) return false;
+
+  state._chapterInProgress = true;
+  state._awaitingNextCipher = true;
+  state._pendingChapterFinish = false;
+  saveState();
+  autoSync(false, true);
+  const currentKey = _activeCipherKey || _makeCipherKey();
+  console.warn(`recoverSolvedCipherStall(${source}): forcing nextCipher for`, currentKey);
+  setTimeout(() => {
+    try {
+      nextCipher(currentKey);
+    } catch (e) {
+      console.error('recoverSolvedCipherStall: nextCipher failed', e);
+    }
+  }, 0);
+  return true;
+}
+
 function _briefLivesLabel(livesValue) {
   if (state.adminMode) return '♾️';
   const n = Math.max(0, Math.min(5, Number(livesValue || 0)));
@@ -2108,7 +2132,10 @@ async function sha256(str) {
 }
 
 async function checkAnswer() {
-  if (_isActiveCipherResolved()) return;
+  if (_isActiveCipherResolved()) {
+    _recoverSolvedCipherStall('checkAnswer');
+    return;
+  }
   const chapter = CHAPTERS[state.chapter];
   if (!chapter || !Array.isArray(chapter.ciphers)) {
     console.warn('checkAnswer: chapter is unavailable', state.chapter);
@@ -2289,8 +2316,10 @@ function showHint() {
 // ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
   _markActiveCipherResolved();
-  state._awaitingNextCipher = true;
-  state._pendingChapterFinish = false;
+  const ch     = CHAPTERS[state.chapter];
+  const isLast = !!(ch && Array.isArray(ch.ciphers) && state.cipherIdx === ch.ciphers.length - 1);
+  state._awaitingNextCipher = !isLast;
+  state._pendingChapterFinish = isLast;
   saveState();
   autoSync(false, true);
   const quizOption = (cipher.options && cipher.options[cipher.correctIndex]) || 'Верно';
@@ -2320,8 +2349,6 @@ function showSuccess(cipher, pts, elapsed) {
     speedEl.style.color = speedColor;
   }
 
-  const ch     = CHAPTERS[state.chapter];
-  const isLast = state.cipherIdx === ch.ciphers.length - 1;
   const btn    = document.getElementById('succ-next-btn');
   if (btn) {
     const successKey = _activeCipherKey || _makeCipherKey();
@@ -2336,8 +2363,17 @@ async function nextCipher(expectedCipherKey = null) {
   if (_nextCipherBusy) return;
   const activeKey = _activeCipherKey || _makeCipherKey();
   if (expectedCipherKey && expectedCipherKey !== activeKey) {
-    console.warn('nextCipher: stale success action ignored', expectedCipherKey, activeKey);
-    return;
+    if (!state._awaitingNextCipher && !state._pendingChapterFinish) {
+      console.warn('nextCipher: stale success action ignored', expectedCipherKey, activeKey);
+      return;
+    }
+    console.warn('nextCipher: stale key recovered via checkpoint flags', expectedCipherKey, activeKey);
+  }
+  if (!_isActiveCipherResolved()) {
+    if (state._awaitingNextCipher || state._pendingChapterFinish) {
+      console.warn('nextCipher: resolved flag recovered from checkpoint flags', activeKey);
+      _markActiveCipherResolved();
+    }
   }
   if (!_isActiveCipherResolved()) {
     console.warn('nextCipher: unresolved cipher transition blocked', activeKey);
@@ -4168,7 +4204,10 @@ function quizSelect(idx) {
 
 function quizSubmit() {
   if (_quizState.answered) return;
-  if (_isActiveCipherResolved()) return;
+  if (_isActiveCipherResolved()) {
+    _recoverSolvedCipherStall('quizSubmit');
+    return;
+  }
   const chapter = CHAPTERS[state.chapter];
   const fallbackCipher = chapter && Array.isArray(chapter.ciphers) ? chapter.ciphers[state.cipherIdx] : null;
   if (!_quizState.cipher && fallbackCipher && fallbackCipher.type === 'quiz') {
@@ -4376,7 +4415,10 @@ function resetAnagram() {
 }
 
 async function checkAnagram() {
-  if (_isActiveCipherResolved()) return;
+  if (_isActiveCipherResolved()) {
+    _recoverSolvedCipherStall('checkAnagram');
+    return;
+  }
   const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
   const answer  = anagramState.placed.map(i => i !== null ? anagramState.letters[i] : '').join('');
   const elapsed = getEffectiveElapsed(state.startTime);
@@ -4485,7 +4527,10 @@ function renderMap(cipher) {
 
 async function checkMapAnswer(clicked, target) {
   if (mapAnswered) return;
-  if (_isActiveCipherResolved()) return;
+  if (_isActiveCipherResolved()) {
+    _recoverSolvedCipherStall('checkMapAnswer');
+    return;
+  }
   const elapsed = getEffectiveElapsed(state.startTime);
   const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
 
