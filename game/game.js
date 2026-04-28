@@ -704,6 +704,27 @@ let state = DEFAULT_STATE();
 const GAME_ADMIN_USERNAME = 'Yury_hud';
 const GAME_ADMIN_CHAT_URL = 'https://t.me/' + GAME_ADMIN_USERNAME;
 
+let _activeCipherKey = '';
+let _resolvedCipherKey = '';
+let _nextCipherBusy = false;
+
+function _makeCipherKey(chapterIdx = state.chapter, cipherIdx = state.cipherIdx) {
+  return String(Number(chapterIdx || 0)) + ':' + String(Number(cipherIdx || 0));
+}
+
+function _markActiveCipherResolved() {
+  _resolvedCipherKey = _activeCipherKey || _makeCipherKey();
+}
+
+function _isActiveCipherResolved() {
+  const key = _activeCipherKey || _makeCipherKey();
+  return key === _resolvedCipherKey;
+}
+
+function _clearActiveCipherResolved() {
+  _resolvedCipherKey = '';
+}
+
 function storageKey() {
   const uid = getTgUserId();
   return uid ? `cipher_v4_${uid}` : 'cipher_v4_guest';
@@ -1361,6 +1382,9 @@ function startChapter(idx) {
   unlockAudioInteraction();
   state.chapter           = idx;
   state.cipherIdx         = 0;
+  _activeCipherKey        = _makeCipherKey(idx, 0);
+  _clearActiveCipherResolved();
+  _nextCipherBusy         = false;
   // Жизни: бесконечные только для adminMode, для testerMode и player — 5
   state.lives             = state.adminMode ? Infinity : 5;
   state.chapterScore      = 0;
@@ -1390,6 +1414,9 @@ function loadCipher() {
     });
     return;
   }
+  _activeCipherKey = _makeCipherKey();
+  _clearActiveCipherResolved();
+  _nextCipherBusy = false;
 
   // Сбрасываем quiz-container
   const qc = document.getElementById('quiz-container');
@@ -1406,14 +1433,14 @@ function loadCipher() {
     // Обычные задания — показываем всё
     if (inp)      { inp.style.display = ''; inp.value = ''; inp.disabled = false; inp.className = 'cipher-input'; }
     if (inpWrap)  inpWrap.style.display  = '';
-    if (checkBtn) checkBtn.style.display = '';
+    if (checkBtn) { checkBtn.style.display = ''; checkBtn.disabled = false; }
     if (hintBtn)  { hintBtn.style.display = ''; hintBtn.disabled = false; hintBtn.textContent = '💡 ПОДСКАЗКА'; }
     if (boxEl)    boxEl.style.display    = '';
   } else {
     // Quiz — скрываем input, показываем только quiz-container
     if (inp)      inp.style.display      = 'none';
     if (inpWrap)  inpWrap.style.display  = 'none';
-    if (checkBtn) checkBtn.style.display = 'none';
+    if (checkBtn) { checkBtn.style.display = 'none'; checkBtn.disabled = false; }
     // hint оставляем видимым для quiz тоже
     if (boxEl)    boxEl.style.display    = 'none';
   }
@@ -1468,13 +1495,13 @@ function loadCipher() {
   const btnCheck  = document.querySelector('.btn-check');
   if (cipher.type === 'map') {
     if (inputWrap) inputWrap.style.display = 'none';
-    if (btnCheck) btnCheck.style.display = 'none';
+    if (btnCheck) { btnCheck.style.display = 'none'; btnCheck.disabled = false; }
   } else if (cipher.type === 'anagram') {
     if (inputWrap) inputWrap.style.display = 'none';
-    if (btnCheck) btnCheck.style.display = 'none';
+    if (btnCheck) { btnCheck.style.display = 'none'; btnCheck.disabled = false; }
   } else {
     if (inputWrap) inputWrap.style.display = '';
-    if (btnCheck) btnCheck.style.display = '';
+    if (btnCheck) { btnCheck.style.display = ''; btnCheck.disabled = false; }
   }
 
   // Жизни
@@ -1856,6 +1883,7 @@ async function sha256(str) {
 }
 
 async function checkAnswer() {
+  if (_isActiveCipherResolved()) return;
   const chapter = CHAPTERS[state.chapter];
   if (!chapter || !Array.isArray(chapter.ciphers)) {
     console.warn('checkAnswer: chapter is unavailable', state.chapter);
@@ -1908,6 +1936,9 @@ async function checkAnswer() {
     // ── ПРАВИЛЬНО ──
     inp.className  = 'cipher-input correct';
     inp.disabled   = true;
+    _markActiveCipherResolved();
+    const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
+    if (checkBtn) checkBtn.disabled = true;
     state.streak = (state.streak || 0) + 1;
     playSound('correct');
     const pts      = calcPoints(cipher, elapsed);
@@ -2032,6 +2063,7 @@ function showHint() {
 //  ЭКРАН УСПЕХА (один шифр)
 // ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
+  _markActiveCipherResolved();
   const quizOption = (cipher.options && cipher.options[cipher.correctIndex]) || 'Верно';
   const solvedLabel = cipher.type === 'quiz'
     ? quizOption
@@ -2063,31 +2095,48 @@ function showSuccess(cipher, pts, elapsed) {
   const isLast = state.cipherIdx === ch.ciphers.length - 1;
   const btn    = document.getElementById('succ-next-btn');
   if (btn) {
+    const successKey = _activeCipherKey || _makeCipherKey();
     btn.textContent = isLast ? 'ЗАВЕРШИТЬ ГЛАВУ →' : 'СЛЕДУЮЩИЙ ШИФР →';
     btn.disabled = false;
-    btn.onclick = nextCipher;
+    btn.onclick = () => nextCipher(successKey);
   }
   showScreen('s-success');
 }
 
-function nextCipher() {
+function nextCipher(expectedCipherKey = null) {
+  if (_nextCipherBusy) return;
+  const activeKey = _activeCipherKey || _makeCipherKey();
+  if (expectedCipherKey && expectedCipherKey !== activeKey) {
+    console.warn('nextCipher: stale success action ignored', expectedCipherKey, activeKey);
+    return;
+  }
+  if (!_isActiveCipherResolved()) {
+    console.warn('nextCipher: unresolved cipher transition blocked', activeKey);
+    return;
+  }
+  _nextCipherBusy = true;
   const ch = CHAPTERS[state.chapter];
   if (!ch || !Array.isArray(ch.ciphers)) {
     console.warn('nextCipher: chapter is unavailable', state.chapter);
     showScreen('s-chapters');
     renderChapters();
+    _nextCipherBusy = false;
     return;
   }
   if (state.cipherIdx < ch.ciphers.length - 1) {
     state.cipherIdx++;
     // Жизни НЕ сбрасываются между шифрами — они общие на главу
     saveState();
+    _clearActiveCipherResolved();
     loadCipher();
     showScreen('s-cipher');
+    _nextCipherBusy = false;
   } else {
     Promise.resolve(finishChapter()).catch((err) => {
       console.error('finishChapter failed:', err);
       showChapterEndFallback();
+    }).finally(() => {
+      _nextCipherBusy = false;
     });
   }
 }
@@ -2314,6 +2363,9 @@ function restartChapterFromStart(idx) {
   }
   state.chapter = idx;
   state.cipherIdx = 0;
+  _activeCipherKey = _makeCipherKey(idx, 0);
+  _clearActiveCipherResolved();
+  _nextCipherBusy = false;
   state.lives = state.adminMode ? Infinity : 5;
   state.chapterScore = 0;
   state.streak = 0;
@@ -3295,49 +3347,29 @@ const _origCheck = checkAnswer;
 let _checkAnswerBusy = false;
 checkAnswer = async function(){
   if (_checkAnswerBusy) return;
+  if (_isActiveCipherResolved()) return;
   _checkAnswerBusy = true;
   const btn = document.querySelector('.btn-check');
-  if(btn) pulseBtn(btn);
+  if (btn) {
+    pulseBtn(btn);
+    btn.disabled = true;
+  }
   try {
     await _origCheck();
   } catch (e) {
     console.error('checkAnswer failed:', e);
     const chapter = CHAPTERS[state.chapter];
     const cipher = chapter && Array.isArray(chapter.ciphers) ? chapter.ciphers[state.cipherIdx] : null;
-    const inp = document.getElementById('cipher-input');
-
-    // Ответ уже принят (поле ввода заблокировано), но упали вторичные эффекты.
-    // Не блокируем игрока — принудительно показываем успех/продвигаем дальше.
-    if (cipher && inp && inp.disabled) {
-      console.warn('checkAnswer recover: forcing next step after accepted answer');
-      try { showSuccess(cipher, 0, getEffectiveElapsed(state.startTime || Date.now())); }
-      catch (_) {
-        try { nextCipher(); } catch (_) {}
-      }
-      return;
-    }
 
     if (cipher && cipher.type === 'quiz' && (!_quizState || !_quizState.cipher)) {
       console.warn('checkAnswer recover: empty quiz state, reloading cipher');
       try { loadCipher(); } catch (reloadErr) { console.error('quiz reload failed:', reloadErr); }
       showToast('⚠ Задание обновлено. Нажмите «Проверить» снова');
-    } else if (
-      cipher &&
-      cipher.type === 'quiz' &&
-      _quizState &&
-      _quizState.answered &&
-      _quizState.cipher &&
-      _quizState.selected === _quizState.cipher.correctIndex
-    ) {
-      console.warn('checkAnswer recover: forcing quiz success transition');
-      try { showSuccess(cipher, 0, getEffectiveElapsed(_quizState.startTime || Date.now())); }
-      catch (_) {
-        try { nextCipher(); } catch (_) {}
-      }
     } else {
       showToast('⚠ Ошибка проверки. Попробуйте ещё раз');
     }
   } finally {
+    if (btn && !_isActiveCipherResolved()) btn.disabled = false;
     setTimeout(() => { _checkAnswerBusy = false; }, 120);
   }
 };
@@ -3349,7 +3381,7 @@ showSuccess = function(cipher, pts, elapsed){
     _origSuccess(cipher, pts, elapsed);
   } catch (e) {
     console.error('showSuccess failed:', e);
-    try { nextCipher(); } catch (nextErr) { console.error('nextCipher fallback failed:', nextErr); }
+    showToast('⚠ Ошибка экрана результата. Попробуйте ещё раз');
     return;
   }
   if(pts > 0) {
@@ -3841,6 +3873,7 @@ function renderQuiz(cipher) {
   if (checkBtn) {
     checkBtn.style.display = '';
     checkBtn.textContent = '✓ ПРОВЕРИТЬ';
+    checkBtn.disabled = false;
   }
 }
 
@@ -3867,6 +3900,7 @@ function quizSelect(idx) {
 
 function quizSubmit() {
   if (_quizState.answered) return;
+  if (_isActiveCipherResolved()) return;
   const chapter = CHAPTERS[state.chapter];
   const fallbackCipher = chapter && Array.isArray(chapter.ciphers) ? chapter.ciphers[state.cipherIdx] : null;
   if (!_quizState.cipher && fallbackCipher && fallbackCipher.type === 'quiz') {
@@ -3925,6 +3959,9 @@ function quizSubmit() {
   const feedback = document.getElementById('quiz-feedback');
 
   if (isOk) {
+    _markActiveCipherResolved();
+    const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
+    if (checkBtn) checkBtn.disabled = true;
     playSound('correct');
     if (feedback) {
       feedback.style.display = 'block';
@@ -4071,6 +4108,7 @@ function resetAnagram() {
 }
 
 async function checkAnagram() {
+  if (_isActiveCipherResolved()) return;
   const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
   const answer  = anagramState.placed.map(i => i !== null ? anagramState.letters[i] : '').join('');
   const elapsed = getEffectiveElapsed(state.startTime);
@@ -4079,6 +4117,7 @@ async function checkAnagram() {
   const slots = document.querySelectorAll('.anagram-slot');
   const ansHash = await sha256(answer.toUpperCase());
   if (ansHash === cipher.answer) {
+    _markActiveCipherResolved();
     state.streak = (state.streak || 0) + 1;
     playSound('correct');
     stopTimer();
@@ -4178,6 +4217,7 @@ function renderMap(cipher) {
 
 async function checkMapAnswer(clicked, target) {
   if (mapAnswered) return;
+  if (_isActiveCipherResolved()) return;
   const elapsed = getEffectiveElapsed(state.startTime);
   const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
 
@@ -4186,11 +4226,12 @@ async function checkMapAnswer(clicked, target) {
   const clickedHash = await sha256(clicked);
   if (clickedHash === cipher.answer) {
     mapAnswered = true;
+    _markActiveCipherResolved();
     state.streak = (state.streak || 0) + 1;
     playSound('correct');
     stopTimer();
     if (dotEl) dotEl.querySelector('circle').setAttribute('fill','#55dd55');
-    document.getElementById('map-hint-text').textContent = '✅ Верно! ' + target;
+    document.getElementById('map-hint-text').textContent = '✅ Верно! ' + (cipher.mapCity || clicked);
     const pts = calcPoints(cipher, elapsed);
     state.chapterScore += pts;
     if (elapsed <= 5) state._fastAnswers = (state._fastAnswers || 0) + 1;
