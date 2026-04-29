@@ -973,12 +973,9 @@ function _applyServerProgress(serverScore, serverCompleted, serverGameOver, forc
   state.chapterStats = nextStats;
   state.chapterFailCounts = nextFailCounts;
   state.gameOver = !!serverGameOver;
-  if (_isChapterCompletedByIndex(Number(state.chapter || 0))) {
-    state._chapterInProgress = false;
-    state._awaitingNextCipher = false;
-    state._pendingChapterFinish = false;
-    state._nextCipherTargetIdx = null;
-  }
+  // Не трогаем runtime-чекпоинт текущей главы при merge с сервером.
+  // Иначе в повторном прохождении уже "пройденной" главы можно потерять
+  // флаг перехода на следующий шифр и зациклиться на том же задании.
 
   return { applied: true, localAhead: false };
 }
@@ -1015,6 +1012,16 @@ function _hasLocalProgressData() {
     Object.keys(state.chapterScores || {}).length > 0 ||
     Object.keys(state.achievements || {}).length > 0 ||
     Number(state.achievementPts || 0) > 0
+  );
+}
+
+function _canApplyServerResetNow() {
+  return (
+    state._chapterInProgress !== true &&
+    state._awaitingNextCipher !== true &&
+    state._pendingChapterFinish !== true &&
+    Number(state.chapterScore || 0) === 0 &&
+    Number(state.cipherIdx || 0) === 0
   );
 }
 
@@ -1099,7 +1106,11 @@ function mergeBotLeaderboard() {
     const tokenChanged = incomingResetToken > 0 && (
       prevResetToken <= 0 ? _hasLocalProgressData() : (incomingResetToken !== prevResetToken)
     );
-    const forcedByTokenReset = tokenChanged && dbScore === 0 && dbCompleted === 0 && _hasLocalProgressData();
+    const forcedByTokenReset = tokenChanged &&
+      dbScore === 0 &&
+      dbCompleted === 0 &&
+      _hasLocalProgressData() &&
+      _canApplyServerResetNow();
 
     const dbAdminMode = (tgInitMe.admin_mode === true) || window._adminMode === true;
     const dbTesterMode = (tgInitMe.tester_mode === true) || window._testerMode === true;
@@ -1117,7 +1128,11 @@ function mergeBotLeaderboard() {
     }
     state.gameRole = dbRole;
 
-    if (dbRestartMode === 'penalty' || dbRestartMode === 'nopts') {
+    const canApplyRestartMode = (
+      (dbRestartMode === 'penalty' || dbRestartMode === 'nopts') &&
+      _canApplyServerResetNow()
+    );
+    if (canApplyRestartMode) {
       state.totalScore = 0;
       state.completedChapters = {};
       state.chapterScores = {};
@@ -2185,7 +2200,8 @@ async function checkAnswer() {
   _checkAnswerBusy = true;
   try {
   if (_isActiveCipherResolved()) {
-    // Already solved: ignore repeated taps.
+    // Already solved: if transition flags were dropped by sync, recover.
+    _recoverSolvedCipherStall('checkAnswer');
     return;
   }
   const chapter = CHAPTERS[state.chapter];
@@ -2466,12 +2482,30 @@ async function nextCipher(expectedCipherKey = null) {
       renderChapters();
       return;
     }
-
-    const wasAwaiting = state._awaitingNextCipher === true;
-    const wasPendingFinish = state._pendingChapterFinish === true;
-    if (!wasAwaiting && !wasPendingFinish) {
-      console.warn('nextCipher: transition ignored because no pending success checkpoint');
+    const activeKey = _activeCipherKey || _makeCipherKey();
+    if (expectedCipherKey && expectedCipherKey !== activeKey) {
+      console.warn('nextCipher: stale checkpoint ignored', expectedCipherKey, activeKey);
       return;
+    }
+
+    let wasAwaiting = state._awaitingNextCipher === true;
+    let wasPendingFinish = state._pendingChapterFinish === true;
+    if (!wasAwaiting && !wasPendingFinish) {
+      const successScreen = document.getElementById('s-success');
+      const successActive = !!(successScreen && successScreen.classList.contains('active'));
+      const canRecover = successActive && _isActiveCipherResolved();
+      if (!canRecover) {
+        console.warn('nextCipher: transition ignored because no pending success checkpoint');
+        return;
+      }
+      const currentIdx = Math.max(0, Math.min(ch.ciphers.length - 1, Number(state.cipherIdx || 0)));
+      const isLast = currentIdx >= (ch.ciphers.length - 1);
+      state._awaitingNextCipher = !isLast;
+      state._pendingChapterFinish = isLast;
+      state._nextCipherTargetIdx = isLast ? null : (currentIdx + 1);
+      wasAwaiting = state._awaitingNextCipher === true;
+      wasPendingFinish = state._pendingChapterFinish === true;
+      console.warn('nextCipher: restored lost checkpoint flags from success screen');
     }
 
     if (wasPendingFinish) {
@@ -5739,18 +5773,14 @@ async function fetchAndApplyState() {
       tokenChanged &&
       Number(srvScore || 0) === 0 &&
       Number(srvCompleted || 0) === 0 &&
-      _hasLocalProgressData()
+      _hasLocalProgressData() &&
+      _canApplyServerResetNow()
     );
 
     const restartMode = (data.restart_mode === 'penalty' || data.restart_mode === 'nopts')
       ? data.restart_mode
       : null;
-    const canApplyRestartMode = (
-      !!restartMode &&
-      state._chapterInProgress !== true &&
-      Number(state.chapterScore || 0) === 0 &&
-      Number(state.cipherIdx || 0) === 0
-    );
+    const canApplyRestartMode = !!restartMode && _canApplyServerResetNow();
 
     if (canApplyRestartMode) {
       state.totalScore = 0;
