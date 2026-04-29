@@ -2066,7 +2066,7 @@ function _utf8Bytes(str) {
 }
 
 function _sha256Fallback(str) {
-  const bytes = _utf8Bytes(String(str ?? ''));
+  const bytes = _utf8Bytes(String(str == null ? '' : str));
   const bitLen = bytes.length * 8;
   bytes.push(0x80);
   while ((bytes.length % 64) !== 56) bytes.push(0);
@@ -2125,7 +2125,7 @@ function _sha256Fallback(str) {
 }
 
 async function sha256(str) {
-  const text = String(str ?? '');
+  const text = String(str == null ? '' : str);
   try {
     if (window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === 'function') {
       const buf = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -2277,6 +2277,7 @@ async function checkAnswer() {
     } else {
       renderLives();
     }
+  }
   } finally {
     _checkAnswerBusy = false;
   }
