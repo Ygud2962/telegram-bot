@@ -1025,8 +1025,9 @@
 
             var version = encodeURIComponent(getBootVersion());
             // Hard cache-bust for Telegram WebView/CDN caches on hotfix releases.
-            var buildRev = "r20260429_task2_loop_fix";
+            var buildRev = "r20260429_reset_token_fix";
             var versionQuery = "v=" + version + "&rev=" + encodeURIComponent(buildRev);
+            var scriptLoadTimeoutMs = 45000;
             var baseOrigin = window.location.origin || "";
 
             function buildScriptUrls(fileName) {
@@ -1066,8 +1067,8 @@
                 bootState.loading = true;
                 clearBootError();
                 clearBootScripts();
-                bootState.promise = appendScript(securityUrls, 12000)
-                    .then(function () { return appendScript(gameUrls, 12000); })
+                bootState.promise = appendScript(securityUrls, scriptLoadTimeoutMs)
+                    .then(function () { return appendScript(gameUrls, scriptLoadTimeoutMs); })
                     .then(function () {
                         return new Promise(function (resolve, reject) {
                             setTimeout(function () {

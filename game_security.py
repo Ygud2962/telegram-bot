@@ -17,7 +17,8 @@ def is_stale_sync_token(client_token: int, server_token: int) -> bool:
         s = int(server_token or 0)
     except Exception:
         return False
-    return c > 0 and s > 0 and c != s
+    # server_token changes only on explicit reset; any mismatch means stale client state.
+    return s > 0 and c != s
 
 
 def validate_webapp_init_data(

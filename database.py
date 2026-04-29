@@ -399,6 +399,7 @@ def init_db():
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS achievement_count INTEGER DEFAULT 0')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS achievement_pts INTEGER DEFAULT 0')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS restart_mode VARCHAR(20) DEFAULT NULL')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS reset_token BIGINT DEFAULT 0')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS failed BOOLEAN DEFAULT FALSE')
         # Таблица управления главами игры
         cur.execute('''
@@ -1584,7 +1585,8 @@ def get_game_result(user_id):
                    COALESCE(achievement_count, 0) as achievement_count,
                    COALESCE(achievement_pts, 0) as achievement_pts,
                    COALESCE(chapter, 0) as chapter,
-                   COALESCE(score, 0) as score
+                   COALESCE(score, 0) as score,
+                   COALESCE(reset_token, 0) as reset_token
             FROM game_results
             WHERE user_id = %s
         ''', (user_id,))
@@ -1607,6 +1609,7 @@ def reset_game_result(user_id):
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE,
                 achievement_count=0, achievement_pts=0,
+                reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
             WHERE user_id=%s
         """, (user_id,))
@@ -1658,7 +1661,9 @@ def reset_game_result_soft(user_id, mode='penalty'):
         """)
         cur.execute("""
             UPDATE game_results
-            SET game_over=FALSE, restart_mode=%s, updated_at=NOW()
+            SET game_over=FALSE, restart_mode=%s,
+                reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
+                updated_at=NOW()
             WHERE user_id=%s
         """, (mode, user_id))
         updated = cur.rowcount
@@ -1718,6 +1723,7 @@ def reset_all_game_results():
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE,
                 achievement_count=0, achievement_pts=0,
+                reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
         """)
         updated = cur.rowcount
@@ -2558,6 +2564,7 @@ def reset_game_result_full(user_id: int) -> bool:
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE, restart_mode=NULL,
                 achievement_count=0, achievement_pts=0,
+                reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
             WHERE user_id=%s
         """, (user_id,))

@@ -416,7 +416,8 @@ function _applySyncResponse(result, forceServerState = false) {
   const dbScore = Number(result.db_score || 0);
   const dbCompleted = Number(result.db_completed || 0);
   const tokenChanged = (_serverResetToken > 0) && (_serverResetToken !== prevResetToken);
-  if (tokenChanged && dbScore === 0 && dbCompleted === 0 && _hasLocalProgressData()) {
+  const serverRequestedReset = (result && (result.reset_required === true || result.stale === true));
+  if (serverRequestedReset && tokenChanged && dbScore === 0 && dbCompleted === 0 && _hasLocalProgressData()) {
     _wipeLocalProgressForServerReset();
     saveState();
     _refreshCurrentTabAfterSync();

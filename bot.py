@@ -40,6 +40,19 @@ def _treg(t) -> str:
     return '—'
 
 
+def _game_reset_token(result_row) -> int:
+    """Стабильный reset_token из game_results (меняется только при сбросе)."""
+    if not result_row:
+        return 0
+    try:
+        if len(result_row) > 11:
+            token = int(result_row[11] or 0)
+            return token if token > 0 else 0
+    except Exception:
+        return 0
+    return 0
+
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -3133,7 +3146,7 @@ async def menu_game(query, context):
             'restart_mode': restart_mode,
             'admin_mode': admin_mode,
             'tester_mode': tester_mode,
-            'reset_token': int(my_result[5].timestamp()) if my_result[5] else 0,
+            'reset_token': _game_reset_token(my_result),
         }
 
     # sync_url ОБЯЗАТЕЛЕН
@@ -6194,9 +6207,8 @@ async def handle_game_state(request):
         score     = result[2] if result else 0
         completed = result[3] if result else 0
         game_over = bool(result[4]) if result else False
-        # reset_token — timestamp последнего обновления записи, используется клиентом
-        # для детектирования сброса даже при score=0 → score=0
-        reset_token = int(result[5].timestamp()) if result and result[5] else 0
+        # reset_token — стабильный токен, меняется только при админ/игровом сбросе.
+        reset_token = _game_reset_token(result)
         restart_mode = None
         if result:
             try:
@@ -6391,7 +6403,7 @@ async def handle_game_sync(request):
         current_result = await asyncio.to_thread(db.get_game_result, user_id)
         db_score_before = current_result[2] if current_result else 0
         db_completed_before = current_result[3] if current_result else 0
-        db_reset_token_before = int(current_result[5].timestamp()) if current_result and current_result[5] else 0
+        db_reset_token_before = _game_reset_token(current_result)
         restart_mode_before = None
         try:
             restart_mode_before = await asyncio.to_thread(db.get_restart_mode, user_id)
@@ -6455,7 +6467,7 @@ async def handle_game_sync(request):
         banned = bool(result[6]) if result and len(result) > 6 else False
         db_score = result[2] if result else 0
         db_completed = result[3] if result else 0
-        db_reset_token = int(result[5].timestamp()) if result and result[5] else 0
+        db_reset_token = _game_reset_token(result)
         logger.info(
             "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s banned=%s",
             user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx, chapter_in_progress, event_type, banned
