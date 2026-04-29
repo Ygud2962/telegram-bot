@@ -703,6 +703,8 @@ const GAME_ADMIN_CHAT_URL = 'https://t.me/' + GAME_ADMIN_USERNAME;
 let _activeCipherKey = '';
 let _resolvedCipherKey = '';
 let _nextCipherBusy = false;
+let _successAutoAdvanceTimer = null;
+let _checkAnswerBusy = false;
 
 function _makeCipherKey(chapterIdx = state.chapter, cipherIdx = state.cipherIdx) {
   return String(Number(chapterIdx || 0)) + ':' + String(Number(cipherIdx || 0));
@@ -1644,6 +1646,10 @@ function startChapter(idx) {
 //  ЗАГРУЗКА ШИФРА
 // ═══════════════════════════════════════════════════════
 function loadCipher() {
+  if (_successAutoAdvanceTimer) {
+    clearTimeout(_successAutoAdvanceTimer);
+    _successAutoAdvanceTimer = null;
+  }
   const ch = CHAPTERS[state.chapter];
   if (!ch) { showScreen('s-chapters'); renderChapters(); return; }
   const cipher = ch.ciphers[state.cipherIdx];
@@ -2132,28 +2138,36 @@ async function sha256(str) {
 }
 
 async function checkAnswer() {
+  if (_checkAnswerBusy) return;
+  _checkAnswerBusy = true;
+  try {
   if (_isActiveCipherResolved()) {
     _recoverSolvedCipherStall('checkAnswer');
+    _checkAnswerBusy = false;
     return;
   }
   const chapter = CHAPTERS[state.chapter];
   if (!chapter || !Array.isArray(chapter.ciphers)) {
     console.warn('checkAnswer: chapter is unavailable', state.chapter);
+    _checkAnswerBusy = false;
     return;
   }
   const cipher = chapter.ciphers[state.cipherIdx];
   if (!cipher) {
     console.warn('checkAnswer: cipher is unavailable', state.cipherIdx);
+    _checkAnswerBusy = false;
     return;
   }
   // Если текущее задание — quiz, делегируем в quizSubmit
   if (cipher.type === 'quiz') {
     if (typeof quizSubmit === 'function') quizSubmit();
+    _checkAnswerBusy = false;
     return;
   }
   const inp    = document.getElementById('cipher-input');
   if (!inp) {
     console.warn('checkAnswer: cipher-input element not found');
+    _checkAnswerBusy = false;
     return;
   }
   const rawVal = inp.value || '';
@@ -2161,10 +2175,11 @@ async function checkAnswer() {
   const correct = cipher.answer; // хеш
   if (!correct || typeof correct !== 'string') {
     console.warn('checkAnswer: missing answer hash for cipher', cipher);
+    _checkAnswerBusy = false;
     return;
   }
 
-  if (!val) { inp.focus(); return; }
+  if (!val) { inp.focus(); _checkAnswerBusy = false; return; }
 
   const elapsed = getEffectiveElapsed(state.startTime);
 
@@ -2262,6 +2277,8 @@ async function checkAnswer() {
     } else {
       renderLives();
     }
+  } finally {
+    _checkAnswerBusy = false;
   }
 }
 
@@ -2315,6 +2332,10 @@ function showHint() {
 //  ЭКРАН УСПЕХА (один шифр)
 // ═══════════════════════════════════════════════════════
 function showSuccess(cipher, pts, elapsed) {
+  if (_successAutoAdvanceTimer) {
+    clearTimeout(_successAutoAdvanceTimer);
+    _successAutoAdvanceTimer = null;
+  }
   _markActiveCipherResolved();
   const ch     = CHAPTERS[state.chapter];
   const isLast = !!(ch && Array.isArray(ch.ciphers) && state.cipherIdx === ch.ciphers.length - 1);
@@ -2349,40 +2370,41 @@ function showSuccess(cipher, pts, elapsed) {
     speedEl.style.color = speedColor;
   }
 
-  const btn    = document.getElementById('succ-next-btn');
+  const successKey = _activeCipherKey || _makeCipherKey();
+  const btn = document.getElementById('succ-next-btn');
   if (btn) {
-    const successKey = _activeCipherKey || _makeCipherKey();
     btn.textContent = isLast ? 'ЗАВЕРШИТЬ ГЛАВУ →' : 'СЛЕДУЮЩИЙ ШИФР →';
     btn.disabled = false;
     btn.onclick = () => nextCipher(successKey);
   }
+  if (pts > 0) {
+    launchConfetti();
+    setTimeout(() => {
+      const pointsEl = document.getElementById('succ-pts');
+      if (pointsEl) flashScore(pointsEl);
+    }, 300);
+  }
   showScreen('s-success');
+  _successAutoAdvanceTimer = setTimeout(() => {
+    const successScreen = document.getElementById('s-success');
+    if (!successScreen || !successScreen.classList.contains('active')) return;
+    if (!state._awaitingNextCipher && !state._pendingChapterFinish) return;
+    try {
+      nextCipher(successKey);
+    } catch (e) {
+      console.error('showSuccess auto-advance failed:', e);
+    }
+  }, 12000);
 }
 
 async function nextCipher(expectedCipherKey = null) {
+  if (_successAutoAdvanceTimer) {
+    clearTimeout(_successAutoAdvanceTimer);
+    _successAutoAdvanceTimer = null;
+  }
   if (_nextCipherBusy) return;
-  const activeKey = _activeCipherKey || _makeCipherKey();
-  if (expectedCipherKey && expectedCipherKey !== activeKey) {
-    if (!state._awaitingNextCipher && !state._pendingChapterFinish) {
-      console.warn('nextCipher: stale success action ignored', expectedCipherKey, activeKey);
-      return;
-    }
-    console.warn('nextCipher: stale key recovered via checkpoint flags', expectedCipherKey, activeKey);
-  }
-  if (!_isActiveCipherResolved()) {
-    if (state._awaitingNextCipher || state._pendingChapterFinish) {
-      console.warn('nextCipher: resolved flag recovered from checkpoint flags', activeKey);
-      _markActiveCipherResolved();
-    }
-  }
-  if (!_isActiveCipherResolved()) {
-    console.warn('nextCipher: unresolved cipher transition blocked', activeKey);
-    return;
-  }
   _nextCipherBusy = true;
   try {
-    state._awaitingNextCipher = false;
-    state._pendingChapterFinish = false;
     const ch = CHAPTERS[state.chapter];
     if (!ch || !Array.isArray(ch.ciphers)) {
       console.warn('nextCipher: chapter is unavailable', state.chapter);
@@ -2390,26 +2412,35 @@ async function nextCipher(expectedCipherKey = null) {
       renderChapters();
       return;
     }
-    if (state.cipherIdx < ch.ciphers.length - 1) {
-      const prevIdx = Number(state.cipherIdx || 0);
-      const nextIdx = prevIdx + 1;
+    const hasCheckpoint = !!(state._awaitingNextCipher || state._pendingChapterFinish || _isActiveCipherResolved());
+    if (!hasCheckpoint) {
+      const activeKey = _activeCipherKey || _makeCipherKey();
+      console.warn('nextCipher: transition ignored because no solved checkpoint', expectedCipherKey, activeKey);
+      return;
+    }
+
+    state._awaitingNextCipher = false;
+    state._pendingChapterFinish = false;
+
+    const currentIdx = Math.max(0, Math.min(ch.ciphers.length - 1, Number(state.cipherIdx || 0)));
+    const nextIdx = currentIdx + 1;
+    if (nextIdx < ch.ciphers.length) {
       state.cipherIdx = nextIdx;
-      // Жизни НЕ сбрасываются между шифрами — они общие на главу
       saveState();
       _clearActiveCipherResolved();
       try {
         loadCipher();
         showScreen('s-cipher');
       } catch (err) {
-        console.error('nextCipher: loadCipher failed, rollback to previous cipher:', err);
-        state.cipherIdx = prevIdx;
+        console.error('nextCipher: failed to open next cipher', err);
+        state.cipherIdx = nextIdx;
         state._awaitingNextCipher = true;
         state._pendingChapterFinish = false;
         saveState();
         _markActiveCipherResolved();
         const btn = document.getElementById('succ-next-btn');
         if (btn) btn.disabled = false;
-        showToast('⚠ Ошибка перехода. Нажмите «Следующий шифр» ещё раз');
+        showToast('Failed to open next task. Tap again.');
       }
       return;
     }
@@ -3620,6 +3651,7 @@ function flashScore(el){
 }
 
 // ── Переопределяем loadCipher — добавляем typewriter ──
+if (false) {
 const _origLoadCipher = loadCipher;
 loadCipher = function(){
   _origLoadCipher();
@@ -3689,6 +3721,8 @@ showSuccess = function(cipher, pts, elapsed){
 };
 
 // ── Переопределяем showBriefing — запускаем радар ──
+}
+
 const _origBriefing = showBriefing;
 showBriefing = function(idx){
   _origBriefing(idx);
