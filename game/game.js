@@ -435,6 +435,9 @@ async function sendResultToBot(data) {
   data.total_score = state.totalScore;
   data.achievement_count = Object.keys(state.achievements || {}).length;
   data.achievement_pts = state.achievementPts || 0;
+  data.chapter_idx = Number(state.chapter || 0);
+  data.cipher_idx = Number(state.cipherIdx || 0);
+  data.chapter_in_progress = !!state._chapterInProgress;
   data.user_id = getTgUserId();
   if (_serverResetToken > 0) data.reset_token = _serverResetToken;
 
@@ -598,6 +601,9 @@ async function autoSync(showNotification = false, force = false) {
     game_over: state.gameOver || false,
     achievement_count: achievementCount,
     achievement_pts: achievementPts,
+    chapter_idx: Number(state.chapter || 0),
+    cipher_idx: Number(state.cipherIdx || 0),
+    chapter_in_progress: !!state._chapterInProgress,
     user_id: uid,
   };
   const initDataRaw = getTgInitDataRaw();
@@ -5736,7 +5742,17 @@ async function fetchAndApplyState() {
       _hasLocalProgressData()
     );
 
-    if (data.restart_mode === 'penalty' || data.restart_mode === 'nopts') {
+    const restartMode = (data.restart_mode === 'penalty' || data.restart_mode === 'nopts')
+      ? data.restart_mode
+      : null;
+    const canApplyRestartMode = (
+      !!restartMode &&
+      state._chapterInProgress !== true &&
+      Number(state.chapterScore || 0) === 0 &&
+      Number(state.cipherIdx || 0) === 0
+    );
+
+    if (canApplyRestartMode) {
       state.totalScore = 0;
       state.completedChapters = {};
       state.chapterScores = {};
@@ -5751,8 +5767,8 @@ async function fetchAndApplyState() {
       state._pendingChapterFinish = false;
       state._nextCipherTargetIdx = null;
       state.gameOver = false;
-      state.retryPenalty = data.restart_mode === 'penalty';
-      state._noptsMode = data.restart_mode === 'nopts';
+      state.retryPenalty = restartMode === 'penalty';
+      state._noptsMode = restartMode === 'nopts';
       state.achievements = {};
       state.achievementPts = 0;
       saveState();

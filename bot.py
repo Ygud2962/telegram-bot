@@ -6347,6 +6347,10 @@ async def handle_game_sync(request):
     chapter = _clamp_int(data.get('chapter', 0), 0, 6)
     score = _clamp_int(data.get('score', 0), 0, 50000)
     game_over = _to_bool(data.get('game_over', False))
+    event_type = str(data.get('type', '') or '')
+    chapter_idx = _clamp_int(data.get('chapter_idx', -1), -1, 999)
+    cipher_idx = _clamp_int(data.get('cipher_idx', -1), -1, 9999)
+    chapter_in_progress = _to_bool(data.get('chapter_in_progress', False))
     achievement_count = _clamp_int(data.get('achievement_count', 0), 0, 500)
     achievement_pts = _clamp_int(data.get('achievement_pts', 0), 0, 50000)
     client_reset_token = _clamp_int(data.get('reset_token', 0), 0, 2147483647)
@@ -6388,6 +6392,11 @@ async def handle_game_sync(request):
         db_score_before = current_result[2] if current_result else 0
         db_completed_before = current_result[3] if current_result else 0
         db_reset_token_before = int(current_result[5].timestamp()) if current_result and current_result[5] else 0
+        restart_mode_before = None
+        try:
+            restart_mode_before = await asyncio.to_thread(db.get_restart_mode, user_id)
+        except Exception:
+            restart_mode_before = None
         trusted_user_name = (
             _extract_user_name_from_init_data(init_data_raw)
             or (current_result[1] if current_result and len(current_result) > 1 and current_result[1] else None)
@@ -6423,6 +6432,17 @@ async def handle_game_sync(request):
             await asyncio.to_thread(
                 db.update_achievement_stats, user_id, achievement_count, achievement_pts
             )
+        # restart_mode должен быть одноразовым:
+        # после первого успешного sync очищаем флаг, чтобы клиент не сбрасывал прогресс повторно.
+        if restart_mode_before in ('penalty', 'nopts'):
+            try:
+                await asyncio.to_thread(db.clear_restart_mode, user_id)
+                logger.info(
+                    "game_sync cleared restart_mode: user=%s mode=%s type=%s chapter_idx=%s cipher_idx=%s in_progress=%s",
+                    user_id, restart_mode_before, event_type, chapter_idx, cipher_idx, chapter_in_progress
+                )
+            except Exception as clear_err:
+                logger.warning(f"game_sync clear_restart_mode failed: user={user_id}, err={clear_err}")
         current_role = await asyncio.to_thread(db.get_game_role, user_id)
         if not current_role or current_role == 'player':
             # Назначаем роль только при первом входе
@@ -6436,7 +6456,10 @@ async def handle_game_sync(request):
         db_score = result[2] if result else 0
         db_completed = result[3] if result else 0
         db_reset_token = int(result[5].timestamp()) if result and result[5] else 0
-        logger.info(f"game_sync OK: user={user_id}, role={current_role}, score={total_score}, completed={completed}, banned={banned}")
+        logger.info(
+            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s banned=%s",
+            user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx, chapter_in_progress, event_type, banned
+        )
         return aiohttp_web.json_response(
             {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
              'banned': banned, 'db_score': db_score, 'db_completed': db_completed,
