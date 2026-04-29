@@ -693,7 +693,8 @@ const DEFAULT_STATE = () => ({
   testerMode: false,   // 🧪 тестировщик — все главы открыты, 5 жизней, не в рейтинге
   gameRole: 'player',  // 'admin' | 'tester' | 'player'
   achievements: {}, achievementPts: 0,
-  artifacts: {}, solvedTypes: {}, solvedTypeCounts: {}
+  artifacts: {}, solvedTypes: {}, solvedTypeCounts: {},
+  _nextCipherTargetIdx: null
 });
 
 let state = DEFAULT_STATE();
@@ -804,11 +805,13 @@ function _recoverPendingSuccessCheckpoint() {
     state.cipherIdx = safeIdx + 1;
     state._awaitingNextCipher = false;
     state._pendingChapterFinish = false;
+    state._nextCipherTargetIdx = null;
     return true;
   }
 
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = true;
+  state._nextCipherTargetIdx = null;
   return true;
 }
 
@@ -822,6 +825,7 @@ function _recoverSolvedCipherStall(source = 'unknown') {
   state._chapterInProgress = true;
   state._awaitingNextCipher = true;
   state._pendingChapterFinish = false;
+  state._nextCipherTargetIdx = Number(state.cipherIdx || 0) + 1;
   saveState();
   autoSync(false, true);
   const currentKey = _activeCipherKey || _makeCipherKey();
@@ -940,6 +944,7 @@ function _applyServerProgress(serverScore, serverCompleted, serverGameOver, forc
     state._chapterInProgress = false;
     state._awaitingNextCipher = false;
     state._pendingChapterFinish = false;
+    state._nextCipherTargetIdx = null;
   }
 
   return { applied: true, localAhead: false };
@@ -996,6 +1001,7 @@ function _wipeLocalProgressForServerReset() {
   state._chapterInProgress = false;
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
+  state._nextCipherTargetIdx = null;
   state._noptsMode = false;
   state._isRetryAttempt = false;
   state._fastAnswers = 0;
@@ -1091,6 +1097,7 @@ function mergeBotLeaderboard() {
       state._chapterInProgress = false;
       state._awaitingNextCipher = false;
       state._pendingChapterFinish = false;
+      state._nextCipherTargetIdx = null;
       state.gameOver = false;
       state.retryPenalty = dbRestartMode === 'penalty';
       state._noptsMode = dbRestartMode === 'nopts';
@@ -1132,6 +1139,8 @@ function loadState() {
       if (typeof state._chapterInProgress !== 'boolean') state._chapterInProgress = false;
       if (typeof state._awaitingNextCipher !== 'boolean') state._awaitingNextCipher = false;
       if (typeof state._pendingChapterFinish !== 'boolean') state._pendingChapterFinish = false;
+      if (!Number.isFinite(Number(state._nextCipherTargetIdx))) state._nextCipherTargetIdx = null;
+      else state._nextCipherTargetIdx = Math.max(0, Math.floor(Number(state._nextCipherTargetIdx)));
       // Роль ВСЕГДА приходит от сервера — никогда не берём из кэша.
       // Иначе при смене роли с admin на player — adminMode останется true из кэша.
       state.adminMode  = false;
@@ -1624,6 +1633,7 @@ function startChapter(idx) {
   state._chapterInProgress = true;
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
+  state._nextCipherTargetIdx = null;
   _activeCipherKey        = _makeCipherKey(idx, 0);
   _clearActiveCipherResolved();
   _nextCipherBusy         = false;
@@ -2342,6 +2352,7 @@ function showSuccess(cipher, pts, elapsed) {
   const isLast = !!(ch && Array.isArray(ch.ciphers) && state.cipherIdx === ch.ciphers.length - 1);
   state._awaitingNextCipher = !isLast;
   state._pendingChapterFinish = isLast;
+  state._nextCipherTargetIdx = isLast ? null : (Number(state.cipherIdx || 0) + 1);
   saveState();
   autoSync(false, true);
   const quizOption = (cipher.options && cipher.options[cipher.correctIndex]) || 'Верно';
@@ -2424,9 +2435,15 @@ async function nextCipher(expectedCipherKey = null) {
     state._pendingChapterFinish = false;
 
     const currentIdx = Math.max(0, Math.min(ch.ciphers.length - 1, Number(state.cipherIdx || 0)));
-    const nextIdx = currentIdx + 1;
+    let nextIdx = currentIdx + 1;
+    const checkpointTarget = Number(state._nextCipherTargetIdx);
+    if (Number.isFinite(checkpointTarget)) {
+      const safeTarget = Math.max(0, Math.min(ch.ciphers.length, Math.floor(checkpointTarget)));
+      nextIdx = Math.max(nextIdx, safeTarget);
+    }
     if (nextIdx < ch.ciphers.length) {
       state.cipherIdx = nextIdx;
+      state._nextCipherTargetIdx = null;
       saveState();
       _clearActiveCipherResolved();
       try {
@@ -2437,6 +2454,7 @@ async function nextCipher(expectedCipherKey = null) {
         state.cipherIdx = nextIdx;
         state._awaitingNextCipher = true;
         state._pendingChapterFinish = false;
+        state._nextCipherTargetIdx = nextIdx;
         saveState();
         _markActiveCipherResolved();
         const btn = document.getElementById('succ-next-btn');
@@ -2445,6 +2463,7 @@ async function nextCipher(expectedCipherKey = null) {
       }
       return;
     }
+    state._nextCipherTargetIdx = null;
     try {
       await Promise.resolve(finishChapter());
     } catch (err) {
@@ -2498,6 +2517,7 @@ async function finishChapter() {
   state._chapterInProgress = false;
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
+  state._nextCipherTargetIdx = null;
   if (!alreadyDone && !state._noptsMode) {
     state.chapterScores[ch.id] = state.chapterScore;
     state.totalScore          += state.chapterScore;
@@ -2684,6 +2704,7 @@ function restartChapterFromStart(idx) {
   state._chapterInProgress = true;
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
+  state._nextCipherTargetIdx = null;
   _activeCipherKey = _makeCipherKey(idx, 0);
   _clearActiveCipherResolved();
   _nextCipherBusy = false;
@@ -2724,6 +2745,7 @@ async function failChapter() {
   state._chapterInProgress = false;
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
+  state._nextCipherTargetIdx = null;
 
   if (!alreadyDone && !state._noptsMode) {
     state.chapterScores[ch.id] = state.chapterScore;
@@ -2814,6 +2836,7 @@ function retryChapterWithPenalty(idx) {
   state._chapterInProgress = false;
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
+  state._nextCipherTargetIdx = null;
 
   saveState();
   // Синхронизируем с БД сразу — фиксируем штраф
@@ -5683,6 +5706,7 @@ async function fetchAndApplyState() {
       state._chapterInProgress = false;
       state._awaitingNextCipher = false;
       state._pendingChapterFinish = false;
+      state._nextCipherTargetIdx = null;
       state.gameOver = false;
       state.retryPenalty = data.restart_mode === 'penalty';
       state._noptsMode = data.restart_mode === 'nopts';
