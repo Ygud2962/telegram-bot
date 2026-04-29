@@ -701,7 +701,8 @@ const DEFAULT_STATE = () => ({
   gameRole: 'player',  // 'admin' | 'tester' | 'player'
   achievements: {}, achievementPts: 0,
   artifacts: {}, solvedTypes: {}, solvedTypeCounts: {},
-  _nextCipherTargetIdx: null
+  _nextCipherTargetIdx: null,
+  _manualRestartPenaltyPoints: 0
 });
 
 let state = DEFAULT_STATE();
@@ -880,6 +881,12 @@ function _briefLivesLabel(livesValue) {
   return '❤️'.repeat(n) + '🖤'.repeat(5 - n);
 }
 
+function _calcManualRestartPenaltyPoints(chapterScoreValue) {
+  const base = Math.max(0, Math.floor(Number(chapterScoreValue || 0)));
+  if (base <= 0) return 0;
+  return Math.max(1, Math.round(base * 0.10));
+}
+
 function _buildUnloadSyncData() {
   return {
     type: 'sync',
@@ -1043,6 +1050,7 @@ function _wipeLocalProgressForServerReset() {
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
   state._nextCipherTargetIdx = null;
+  state._manualRestartPenaltyPoints = 0;
   state._noptsMode = false;
   state._isRetryAttempt = false;
   state._fastAnswers = 0;
@@ -1146,6 +1154,7 @@ function mergeBotLeaderboard() {
       state._awaitingNextCipher = false;
       state._pendingChapterFinish = false;
       state._nextCipherTargetIdx = null;
+      state._manualRestartPenaltyPoints = 0;
       state.gameOver = false;
       state.retryPenalty = dbRestartMode === 'penalty';
       state._noptsMode = dbRestartMode === 'nopts';
@@ -1187,6 +1196,7 @@ function loadState() {
       if (typeof state._chapterInProgress !== 'boolean') state._chapterInProgress = false;
       if (typeof state._awaitingNextCipher !== 'boolean') state._awaitingNextCipher = false;
       if (typeof state._pendingChapterFinish !== 'boolean') state._pendingChapterFinish = false;
+      if (!Number.isFinite(Number(state._manualRestartPenaltyPoints || 0))) state._manualRestartPenaltyPoints = 0;
       const loadedTargetIdx = _readNextCipherTargetIdx();
       state._nextCipherTargetIdx = loadedTargetIdx === null ? null : Math.max(0, loadedTargetIdx);
       // Роль ВСЕГДА приходит от сервера — никогда не берём из кэша.
@@ -1533,8 +1543,9 @@ function showBriefing(idx) {
   const noteEl = document.getElementById('brief-progress-note');
   if (noteEl) {
     if (resume) {
+      const penaltyPreview = _calcManualRestartPenaltyPoints(resume.score);
       noteEl.style.display = 'block';
-      noteEl.textContent = `Сохранён прогресс: задание ${resume.step}/${resume.total} · ${resume.score} оч · ${state.adminMode ? '∞' : resume.lives} жизней.`;
+      noteEl.textContent = `Сохранён прогресс: задание ${resume.step}/${resume.total} · ${resume.score} оч · ${state.adminMode ? '∞' : resume.lives} жизней. Начать сначала: штраф -10% (${penaltyPreview} оч).`;
     } else {
       noteEl.style.display = 'none';
       noteEl.textContent = '';
@@ -1549,7 +1560,7 @@ function showBriefing(idx) {
     if (startBtn) startBtn.style.display = 'none';
     if (resumeActions) resumeActions.style.display = 'flex';
     if (resumeBtn) resumeBtn.textContent = `ПРОДОЛЖИТЬ С ЗАДАНИЯ ${resume.step}/${resume.total}`;
-    if (restartBtn) restartBtn.textContent = 'НАЧАТЬ ГЛАВУ СНАЧАЛА';
+    if (restartBtn) restartBtn.textContent = 'НАЧАТЬ СНАЧАЛА (-10%)';
   } else {
     if (startBtn) {
       startBtn.style.display = '';
@@ -1559,7 +1570,6 @@ function showBriefing(idx) {
   }
   showScreen('s-briefing');
 }
-
 function onBriefStartClicked() {
   startChapter(currentChapter);
 }
@@ -1574,8 +1584,57 @@ function onBriefResumeClicked() {
 }
 
 function onBriefRestartClicked() {
-  restartChapterFromStart(currentChapter);
+  const resume = _getInProgressChapterState(currentChapter);
+  if (!resume) {
+    startChapter(currentChapter);
+    return;
+  }
+  const scoreNow = Math.max(0, Number(resume.score || 0));
+  const penaltyPoints = _calcManualRestartPenaltyPoints(scoreNow);
+  openRestartCostModal({ scoreNow, penaltyPoints });
+}
+
+let _restartCostPayload = null;
+
+function openRestartCostModal(payload) {
+  const modal = document.getElementById('restart-cost-modal');
+  const textEl = document.getElementById('restart-cost-modal-text');
+  if (!modal || !textEl) {
+    restartCostConfirmRestart();
+    return;
+  }
+  const safeScore = Math.max(0, Number(payload && payload.scoreNow || 0));
+  const safePenalty = Math.max(0, Number(payload && payload.penaltyPoints || 0));
+  _restartCostPayload = { scoreNow: safeScore, penaltyPoints: safePenalty };
+  textEl.textContent = `Если начать главу сначала, будет применён штраф -10% от полученного результата этой главы. Сейчас: ${safeScore} оч. Штраф: -${safePenalty} оч. Продолжить текущую главу можно бесплатно.`;
+  modal.classList.add('show');
+}
+
+function closeRestartCostModal() {
+  const modal = document.getElementById('restart-cost-modal');
+  if (!modal) return;
+  modal.classList.remove('show');
+  _restartCostPayload = null;
+}
+
+function restartCostContinueFree() {
+  closeRestartCostModal();
+  onBriefResumeClicked();
+}
+
+function restartCostConfirmRestart() {
+  const resume = _getInProgressChapterState(currentChapter);
+  const scoreNow = resume ? Math.max(0, Number(resume.score || 0)) : 0;
+  const payloadPenalty = _restartCostPayload ? Number(_restartCostPayload.penaltyPoints || 0) : 0;
+  const penaltyPoints = Math.max(0, payloadPenalty || _calcManualRestartPenaltyPoints(scoreNow));
+  closeRestartCostModal();
+  restartChapterFromStart(currentChapter, { manualPenaltyPoints: penaltyPoints });
   autoSync(false, true);
+  if (penaltyPoints > 0) {
+    showToast(`Штраф перезапуска: -${penaltyPoints} оч (10%)`);
+  } else {
+    showToast('Перезапуск главы без штрафа');
+  }
 }
 
 function resumeChapter(idx) {
@@ -1707,6 +1766,7 @@ function startChapter(idx) {
   // Жизни: бесконечные только для adminMode, для testerMode и player — 5
   state.lives             = state.adminMode ? Infinity : 5;
   state.chapterScore      = 0;
+  state._manualRestartPenaltyPoints = 0;
   state.streak            = 0;
   state._chapterStartTime = Date.now();
   state._chapterErrors    = 0;
@@ -2609,10 +2669,14 @@ async function finishChapter() {
   const ch = CHAPTERS[state.chapter];
   const alreadyDone = !!state.completedChapters[ch.id];
   const chTime = Math.round((Date.now() - (state._chapterStartTime || Date.now())) / 1000);
+  const rawChapterScore = Math.max(0, Number(state.chapterScore || 0));
+  const restartPenaltyPoints = Math.max(0, Math.floor(Number(state._manualRestartPenaltyPoints || 0)));
+  const finalChapterScore = Math.max(0, rawChapterScore - restartPenaltyPoints);
+  state.chapterScore = finalChapterScore;
   if (!state.chapterStats) state.chapterStats = {};
   state.chapterStats[ch.id] = {
     time: chTime, errors: state._chapterErrors || 0,
-    hints: state._chapterHints || 0, score: state.chapterScore,
+    hints: state._chapterHints || 0, score: finalChapterScore,
     max: ch.ciphers.reduce((s,c) => s+c.points, 0)
   };
   state.completedChapters[ch.id] = true;
@@ -2620,9 +2684,10 @@ async function finishChapter() {
   state._awaitingNextCipher = false;
   state._pendingChapterFinish = false;
   state._nextCipherTargetIdx = null;
+  state._manualRestartPenaltyPoints = 0;
   if (!alreadyDone && !state._noptsMode) {
-    state.chapterScores[ch.id] = state.chapterScore;
-    state.totalScore          += state.chapterScore;
+    state.chapterScores[ch.id] = finalChapterScore;
+    state.totalScore          += finalChapterScore;
     if (state.retryPenalty) state.retryPenalty = false;
   } else if (state._noptsMode) {
     // Без очков — просто отмечаем главу пройденной
@@ -2631,7 +2696,7 @@ async function finishChapter() {
 
   // Медали
   const maxPossible = ch.ciphers.reduce((s,c)=>s+c.points, 0);
-  const pct = state.chapterScore / maxPossible;
+  const pct = finalChapterScore / maxPossible;
   let medal = '🥉';
   if (pct >= 0.85) medal = '🥇';
   else if (pct >= 0.60) medal = '🥈';
@@ -2649,7 +2714,7 @@ async function finishChapter() {
     type: 'chapter_complete',
     chapter: ch.id,
     chapter_title: ch.title,
-    score: state.chapterScore,
+    score: finalChapterScore,
     total_score: state.totalScore,
     user_id: getTgUserId(),
     game_over: allDone
@@ -2657,7 +2722,7 @@ async function finishChapter() {
 
   document.getElementById('chend-chapter-name').textContent = ch.title;
   document.getElementById('chend-medal').textContent = medal;
-  document.getElementById('chend-score').textContent = state.chapterScore;
+  document.getElementById('chend-score').textContent = finalChapterScore;
   document.getElementById('chend-total').textContent = state.totalScore;
   document.getElementById('chend-pct').textContent = Math.round(pct*100) + '%';
 
@@ -2793,7 +2858,7 @@ function renderChapterEpicSummary(chapter, stats, pct, medal, artifactsGained) {
 }
 
 
-function restartChapterFromStart(idx) {
+function restartChapterFromStart(idx, options = {}) {
   unlockAudioInteraction();
   const ch = CHAPTERS[idx];
   if (!ch) {
@@ -2812,6 +2877,8 @@ function restartChapterFromStart(idx) {
   _nextCipherBusy = false;
   state.lives = state.adminMode ? Infinity : 5;
   state.chapterScore = 0;
+  const manualPenaltyPoints = Math.max(0, Math.floor(Number(options && options.manualPenaltyPoints || 0)));
+  state._manualRestartPenaltyPoints = manualPenaltyPoints;
   state.streak = 0;
   state.hintsUsed = false;
   state.startTime = Date.now();
@@ -3281,9 +3348,15 @@ function contactGameAdmin() {
 }
 
 document.addEventListener('click', (event) => {
-  const modal = document.getElementById('bug-report-modal');
-  if (!modal || !modal.classList.contains('show')) return;
-  if (event.target === modal) closeBugReportModal();
+  const bugModal = document.getElementById('bug-report-modal');
+  if (bugModal && bugModal.classList.contains('show') && event.target === bugModal) {
+    closeBugReportModal();
+    return;
+  }
+  const restartModal = document.getElementById('restart-cost-modal');
+  if (restartModal && restartModal.classList.contains('show') && event.target === restartModal) {
+    closeRestartCostModal();
+  }
 });
 
 // ══════════════════════════════════════════════
@@ -5660,6 +5733,10 @@ window.confirmCacheResetWithProgress = confirmCacheResetWithProgress;
 window.openBugReportModal = openBugReportModal;
 window.closeBugReportModal = closeBugReportModal;
 window.contactGameAdmin = contactGameAdmin;
+window.openRestartCostModal = openRestartCostModal;
+window.closeRestartCostModal = closeRestartCostModal;
+window.restartCostContinueFree = restartCostContinueFree;
+window.restartCostConfirmRestart = restartCostConfirmRestart;
 window.checkAnswer = checkAnswer;
 window.nextCipher = nextCipher;
 window.showHint = showHint;
@@ -5817,6 +5894,7 @@ async function fetchAndApplyState() {
       state._awaitingNextCipher = false;
       state._pendingChapterFinish = false;
       state._nextCipherTargetIdx = null;
+      state._manualRestartPenaltyPoints = 0;
       state.gameOver = false;
       state.retryPenalty = restartMode === 'penalty';
       state._noptsMode = restartMode === 'nopts';

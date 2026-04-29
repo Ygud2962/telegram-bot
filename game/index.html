@@ -880,6 +880,18 @@
         </div>
     </div>
     
+    <div id="restart-cost-modal" class="bug-modal-backdrop">
+        <div class="bug-modal-card">
+            <div class="bug-modal-title">⚠ ОТХОД НА ПЕРЕГРУППИРОВКУ</div>
+            <div id="restart-cost-modal-text" class="bug-modal-text"></div>
+            <div class="bug-modal-actions">
+                <button class="btn btn-accent" onclick="restartCostContinueFree()">▶ ПРОДОЛЖИТЬ БЕЗ ШТРАФА</button>
+                <button class="btn btn-danger" onclick="restartCostConfirmRestart()">↺ НАЧАТЬ СНАЧАЛА (-10%)</button>
+                <button class="btn" onclick="closeRestartCostModal()">ОТМЕНА</button>
+            </div>
+        </div>
+    </div>
+    
     <div id="bottom-nav">
         <div class="bn-tab active" id="bn-chapters" onclick="switchTab('chapters')">
             <span class="bn-tab-icon">🗺</span>
