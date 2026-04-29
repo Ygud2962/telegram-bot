@@ -2179,8 +2179,7 @@ async function checkAnswer() {
   _checkAnswerBusy = true;
   try {
   if (_isActiveCipherResolved()) {
-    _recoverSolvedCipherStall('checkAnswer');
-    _checkAnswerBusy = false;
+    // Already solved: ignore repeated taps.
     return;
   }
   const chapter = CHAPTERS[state.chapter];
@@ -2375,32 +2374,34 @@ function showSuccess(cipher, pts, elapsed) {
     _successAutoAdvanceTimer = null;
   }
   _markActiveCipherResolved();
-  const ch     = CHAPTERS[state.chapter];
-  const currentIdx = Number(state.cipherIdx || 0);
-  const isLast = !!(ch && Array.isArray(ch.ciphers) && currentIdx === ch.ciphers.length - 1);
+  const ch = CHAPTERS[state.chapter];
+  const chapterLen = (ch && Array.isArray(ch.ciphers)) ? ch.ciphers.length : 0;
+  const currentIdx = Math.max(0, Number(state.cipherIdx || 0));
+  const isLast = chapterLen > 0 ? currentIdx >= (chapterLen - 1) : true;
+  state._chapterInProgress = true;
   state._awaitingNextCipher = !isLast;
   state._pendingChapterFinish = isLast;
   state._nextCipherTargetIdx = isLast ? null : (currentIdx + 1);
-  if (!isLast) {
-    // Advance logical cursor immediately after success.
-    // This prevents returning to the just-solved task on UI/sync races.
-    state.cipherIdx = state._nextCipherTargetIdx;
-  }
   saveState();
   autoSync(false, true);
+
   const quizOption = (cipher.options && cipher.options[cipher.correctIndex]) || 'Верно';
-  const solvedLabel = cipher.type === 'quiz'
-    ? quizOption
-    : 'Ответ принят';
+  const solvedLabel = cipher.type === 'quiz' ? quizOption : 'Ответ принят';
   document.getElementById('succ-answer').textContent = solvedLabel;
   document.getElementById('succ-cipher-name').textContent = '// ' + cipher.typeLabel;
   const factEl = document.getElementById('succ-fact');
-  if (factEl) factEl.innerHTML = cipher.fact ? '<span style="color:var(--accent3);margin-right:4px">📜</span>' + cipher.fact : '';
-  document.getElementById('succ-pts').textContent  = pts > 0 ? '+' + pts : '0';
+  if (factEl) {
+    factEl.innerHTML = cipher.fact
+      ? '<span style="color:var(--accent3);margin-right:4px">📜</span>' + cipher.fact
+      : '';
+  }
+  document.getElementById('succ-pts').textContent = pts > 0 ? '+' + pts : '0';
   document.getElementById('succ-time').textContent = typeof elapsed === 'number' ? elapsed + 'с' : elapsed;
+
   const speedEl = document.getElementById('succ-speed');
   const streak = state.streak || 0;
-  let speedText = '', speedColor = 'var(--muted)';
+  let speedText = '';
+  let speedColor = 'var(--muted)';
   if (elapsed <= 10) { speedText = '⚡ Молниеносно!'; speedColor = 'var(--green)'; }
   else if (elapsed <= 20) { speedText = '🔥 Быстро!'; speedColor = 'var(--accent)'; }
   else if (elapsed > 60) { speedText = '🐢 Медленно...'; }
@@ -2415,13 +2416,13 @@ function showSuccess(cipher, pts, elapsed) {
     speedEl.style.color = speedColor;
   }
 
-  const successKey = _activeCipherKey || _makeCipherKey();
   const btn = document.getElementById('succ-next-btn');
   if (btn) {
     btn.textContent = isLast ? 'ЗАВЕРШИТЬ ГЛАВУ →' : 'СЛЕДУЮЩИЙ ШИФР →';
     btn.disabled = false;
-    btn.onclick = () => nextCipher(successKey);
+    btn.onclick = () => nextCipher();
   }
+
   if (pts > 0) {
     launchConfetti();
     setTimeout(() => {
@@ -2429,13 +2430,14 @@ function showSuccess(cipher, pts, elapsed) {
       if (pointsEl) flashScore(pointsEl);
     }, 300);
   }
+
   showScreen('s-success');
   _successAutoAdvanceTimer = setTimeout(() => {
     const successScreen = document.getElementById('s-success');
     if (!successScreen || !successScreen.classList.contains('active')) return;
     if (!state._awaitingNextCipher && !state._pendingChapterFinish) return;
     try {
-      nextCipher(successKey);
+      nextCipher();
     } catch (e) {
       console.error('showSuccess auto-advance failed:', e);
     }
@@ -2449,6 +2451,7 @@ async function nextCipher(expectedCipherKey = null) {
   }
   if (_nextCipherBusy) return;
   _nextCipherBusy = true;
+
   try {
     const ch = CHAPTERS[state.chapter];
     if (!ch || !Array.isArray(ch.ciphers)) {
@@ -2457,20 +2460,19 @@ async function nextCipher(expectedCipherKey = null) {
       renderChapters();
       return;
     }
-    const wasAwaiting = !!state._awaitingNextCipher;
-    const wasPendingFinish = !!state._pendingChapterFinish;
-    const checkpointTargetRaw = _readNextCipherTargetIdx();
-    const hasCheckpoint = !!(wasAwaiting || wasPendingFinish || _isActiveCipherResolved());
-    if (!hasCheckpoint) {
-      const activeKey = _activeCipherKey || _makeCipherKey();
-      console.warn('nextCipher: transition ignored because no solved checkpoint', expectedCipherKey, activeKey);
+
+    const wasAwaiting = state._awaitingNextCipher === true;
+    const wasPendingFinish = state._pendingChapterFinish === true;
+    if (!wasAwaiting && !wasPendingFinish) {
+      console.warn('nextCipher: transition ignored because no pending success checkpoint');
       return;
     }
 
-    state._awaitingNextCipher = false;
-    state._pendingChapterFinish = false;
     if (wasPendingFinish) {
+      state._awaitingNextCipher = false;
+      state._pendingChapterFinish = false;
       state._nextCipherTargetIdx = null;
+      saveState();
       try {
         await Promise.resolve(finishChapter());
       } catch (err) {
@@ -2480,43 +2482,36 @@ async function nextCipher(expectedCipherKey = null) {
       return;
     }
 
-    let targetIdx = Number(state.cipherIdx || 0);
-    if (checkpointTargetRaw !== null) {
-      targetIdx = checkpointTargetRaw;
-    } else if (_isActiveCipherResolved() || wasAwaiting) {
-      // Legacy fallback for old state snapshots.
-      targetIdx = Math.max(targetIdx, Number(state.cipherIdx || 0) + 1);
+    let targetIdx = _readNextCipherTargetIdx();
+    if (targetIdx === null) {
+      targetIdx = Number(state.cipherIdx || 0) + 1;
     }
-    targetIdx = Math.max(0, Math.min(ch.ciphers.length, targetIdx));
+    targetIdx = Math.max(0, Math.min(ch.ciphers.length, Math.floor(Number(targetIdx || 0))));
 
-    if (targetIdx < ch.ciphers.length) {
-      state.cipherIdx = targetIdx;
-      state._nextCipherTargetIdx = null;
+    state._awaitingNextCipher = false;
+    state._pendingChapterFinish = false;
+    state._nextCipherTargetIdx = null;
+
+    if (targetIdx >= ch.ciphers.length) {
       saveState();
-      _clearActiveCipherResolved();
       try {
-        loadCipher();
-        showScreen('s-cipher');
+        await Promise.resolve(finishChapter());
       } catch (err) {
-        console.error('nextCipher: failed to open next cipher', err);
-        state.cipherIdx = targetIdx;
-        state._awaitingNextCipher = true;
-        state._pendingChapterFinish = false;
-        state._nextCipherTargetIdx = targetIdx;
-        saveState();
-        _markActiveCipherResolved();
-        const btn = document.getElementById('succ-next-btn');
-        if (btn) btn.disabled = false;
-        showToast('Failed to open next task. Tap again.');
+        console.error('finishChapter failed:', err);
+        showChapterEndFallback();
       }
       return;
     }
-    state._nextCipherTargetIdx = null;
+
+    state.cipherIdx = targetIdx;
+    saveState();
+    _clearActiveCipherResolved();
     try {
-      await Promise.resolve(finishChapter());
+      loadCipher();
+      showScreen('s-cipher');
     } catch (err) {
-      console.error('finishChapter failed:', err);
-      showChapterEndFallback();
+      console.error('nextCipher: failed to open next cipher', err);
+      showToast('Failed to open next task. Tap again.');
     }
   } finally {
     _nextCipherBusy = false;
@@ -4311,7 +4306,7 @@ function quizSelect(idx) {
 function quizSubmit() {
   if (_quizState.answered) return;
   if (_isActiveCipherResolved()) {
-    _recoverSolvedCipherStall('quizSubmit');
+    // Already solved: ignore repeated taps.
     return;
   }
   const chapter = CHAPTERS[state.chapter];
@@ -4522,7 +4517,7 @@ function resetAnagram() {
 
 async function checkAnagram() {
   if (_isActiveCipherResolved()) {
-    _recoverSolvedCipherStall('checkAnagram');
+    // Already solved: ignore repeated taps.
     return;
   }
   const cipher  = CHAPTERS[state.chapter].ciphers[state.cipherIdx];
@@ -4634,7 +4629,7 @@ function renderMap(cipher) {
 async function checkMapAnswer(clicked, target) {
   if (mapAnswered) return;
   if (_isActiveCipherResolved()) {
-    _recoverSolvedCipherStall('checkMapAnswer');
+    // Already solved: ignore repeated taps.
     return;
   }
   const elapsed = getEffectiveElapsed(state.startTime);
