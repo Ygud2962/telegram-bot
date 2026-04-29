@@ -2559,18 +2559,38 @@ def reset_game_result_full(user_id: int) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
+        token_now = int(datetime.utcnow().timestamp())
         cur.execute("""
             UPDATE game_results
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE, restart_mode=NULL,
                 achievement_count=0, achievement_pts=0,
-                reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
+                reset_token=%s,
                 updated_at=NOW()
             WHERE user_id=%s
-        """, (user_id,))
+        """, (token_now, user_id))
+        updated = cur.rowcount
+        if updated == 0:
+            # Страховка: создаём запись, если её не было, затем повторяем сброс.
+            cur.execute("""
+                INSERT INTO game_results
+                    (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
+                VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+            """, (user_id, 'Игрок'))
+            cur.execute("""
+                UPDATE game_results
+                SET chapter=0, score=0, total_score=0, completed=0,
+                    game_over=FALSE, failed=FALSE, restart_mode=NULL,
+                    achievement_count=0, achievement_pts=0,
+                    reset_token=%s,
+                    updated_at=NOW()
+                WHERE user_id=%s
+            """, (token_now, user_id))
+            updated = cur.rowcount
         cur.execute('DELETE FROM player_chapter_access WHERE user_id = %s', (user_id,))
         conn.commit()
-        return True
+        return updated > 0
     except Exception as e:
         logger.error(f"reset_game_result_full error {user_id}: {e}")
         _safe_rollback(conn)

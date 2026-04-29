@@ -1110,8 +1110,7 @@ function mergeBotLeaderboard() {
     const forcedByTokenReset = tokenChanged &&
       dbScore === 0 &&
       dbCompleted === 0 &&
-      _hasLocalProgressData() &&
-      _canApplyServerResetNow();
+      _hasLocalProgressData();
 
     const dbAdminMode = (tgInitMe.admin_mode === true) || window._adminMode === true;
     const dbTesterMode = (tgInitMe.tester_mode === true) || window._testerMode === true;
@@ -5796,8 +5795,7 @@ async function fetchAndApplyState() {
       tokenChanged &&
       Number(srvScore || 0) === 0 &&
       Number(srvCompleted || 0) === 0 &&
-      _hasLocalProgressData() &&
-      _canApplyServerResetNow()
+      _hasLocalProgressData()
     );
 
     const restartMode = (data.restart_mode === 'penalty' || data.restart_mode === 'nopts')
