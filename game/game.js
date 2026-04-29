@@ -1543,21 +1543,40 @@ function showBriefing(idx) {
   }
 
   const startBtn = document.getElementById('brief-start-btn');
-  if (startBtn) {
-    startBtn.textContent = resume
-      ? `▶ ПРОДОЛЖИТЬ С ЗАДАНИЯ ${resume.step}/${resume.total}`
-      : '▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ';
+  const resumeActions = document.getElementById('brief-resume-actions');
+  const resumeBtn = document.getElementById('brief-resume-btn');
+  const restartBtn = document.getElementById('brief-restart-btn');
+  if (resume) {
+    if (startBtn) startBtn.style.display = 'none';
+    if (resumeActions) resumeActions.style.display = 'flex';
+    if (resumeBtn) resumeBtn.textContent = `ПРОДОЛЖИТЬ С ЗАДАНИЯ ${resume.step}/${resume.total}`;
+    if (restartBtn) restartBtn.textContent = 'НАЧАТЬ ГЛАВУ СНАЧАЛА';
+  } else {
+    if (startBtn) {
+      startBtn.style.display = '';
+      startBtn.textContent = 'ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ';
+    }
+    if (resumeActions) resumeActions.style.display = 'none';
   }
   showScreen('s-briefing');
 }
 
 function onBriefStartClicked() {
+  startChapter(currentChapter);
+}
+
+function onBriefResumeClicked() {
   const resume = _getInProgressChapterState(currentChapter);
-  if (resume) {
-    resumeChapter(currentChapter);
+  if (!resume) {
+    startChapter(currentChapter);
     return;
   }
-  startChapter(currentChapter);
+  resumeChapter(currentChapter);
+}
+
+function onBriefRestartClicked() {
+  restartChapterFromStart(currentChapter);
+  autoSync(false, true);
 }
 
 function resumeChapter(idx) {
@@ -4260,6 +4279,7 @@ function goToChapters() {
   showBottomNav();
   // Синхронизация
   autoSync(false, true);
+  _sendSyncBeaconIfPossible();
 }
 
 function exitToMain() {
@@ -5626,6 +5646,8 @@ window.showScreen = showScreen;
 window.switchTab = switchTab;
 window.renderChapters = renderChapters;
 window.onBriefStartClicked = onBriefStartClicked;
+window.onBriefResumeClicked = onBriefResumeClicked;
+window.onBriefRestartClicked = onBriefRestartClicked;
 window.resumeChapter = resumeChapter;
 window.toggleMusicEnabled = toggleMusicEnabled;
 window.toggleSfxEnabled = toggleSfxEnabled;

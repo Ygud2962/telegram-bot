@@ -730,6 +730,10 @@
             <div id="brief-mission" style="background:rgba(85,221,85,.08);border-left:3px solid var(--green);padding:12px;font-size:var(--fs-sm);color:var(--green);margin-bottom:24px;"></div>
             <div id="brief-progress-note" style="display:none;margin:-12px 0 12px 0;padding:10px 12px;border-radius:8px;background:rgba(255,224,51,.08);border:1px solid rgba(255,224,51,.25);font-size:var(--fs-xs);color:#ffe9a7;line-height:1.5"></div>
             <button id="brief-start-btn" class="btn btn-accent" onclick="onBriefStartClicked()">▶ ПРИСТУПИТЬ К ВЫПОЛНЕНИЮ</button>
+            <div id="brief-resume-actions" style="display:none;gap:8px;flex-direction:column;">
+                <button id="brief-resume-btn" class="btn btn-accent" onclick="onBriefResumeClicked()">▶ ПРОДОЛЖИТЬ</button>
+                <button id="brief-restart-btn" class="btn" onclick="onBriefRestartClicked()">↺ НАЧАТЬ ЗАНОВО</button>
+            </div>
         </div>
         
         <div id="s-cipher" class="screen">
