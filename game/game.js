@@ -724,6 +724,14 @@ function _clearActiveCipherResolved() {
   _resolvedCipherKey = '';
 }
 
+function _readNextCipherTargetIdx() {
+  const raw = state ? state._nextCipherTargetIdx : null;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.floor(n);
+}
+
 function storageKey() {
   const uid = getTgUserId();
   return uid ? `cipher_v4_${uid}` : 'cipher_v4_guest';
@@ -798,8 +806,27 @@ function _recoverPendingSuccessCheckpoint() {
   const safeIdx = Math.max(0, Math.min(chapter.ciphers.length - 1, Number(state.cipherIdx || 0)));
   state.cipherIdx = safeIdx;
 
-  if (state._pendingChapterFinish) return true;
+  if (state._pendingChapterFinish) {
+    state._nextCipherTargetIdx = null;
+    return true;
+  }
   if (!state._awaitingNextCipher) return false;
+
+  const explicitTarget = _readNextCipherTargetIdx();
+  if (explicitTarget !== null) {
+    const safeTarget = Math.max(0, Math.min(chapter.ciphers.length, explicitTarget));
+    if (safeTarget >= chapter.ciphers.length) {
+      state._awaitingNextCipher = false;
+      state._pendingChapterFinish = true;
+      state._nextCipherTargetIdx = null;
+      return true;
+    }
+    state.cipherIdx = safeTarget;
+    state._awaitingNextCipher = false;
+    state._pendingChapterFinish = false;
+    state._nextCipherTargetIdx = null;
+    return true;
+  }
 
   if (safeIdx < chapter.ciphers.length - 1) {
     state.cipherIdx = safeIdx + 1;
@@ -1139,8 +1166,8 @@ function loadState() {
       if (typeof state._chapterInProgress !== 'boolean') state._chapterInProgress = false;
       if (typeof state._awaitingNextCipher !== 'boolean') state._awaitingNextCipher = false;
       if (typeof state._pendingChapterFinish !== 'boolean') state._pendingChapterFinish = false;
-      if (!Number.isFinite(Number(state._nextCipherTargetIdx))) state._nextCipherTargetIdx = null;
-      else state._nextCipherTargetIdx = Math.max(0, Math.floor(Number(state._nextCipherTargetIdx)));
+      const loadedTargetIdx = _readNextCipherTargetIdx();
+      state._nextCipherTargetIdx = loadedTargetIdx === null ? null : Math.max(0, loadedTargetIdx);
       // Роль ВСЕГДА приходит от сервера — никогда не берём из кэша.
       // Иначе при смене роли с admin на player — adminMode останется true из кэша.
       state.adminMode  = false;
@@ -2349,10 +2376,16 @@ function showSuccess(cipher, pts, elapsed) {
   }
   _markActiveCipherResolved();
   const ch     = CHAPTERS[state.chapter];
-  const isLast = !!(ch && Array.isArray(ch.ciphers) && state.cipherIdx === ch.ciphers.length - 1);
+  const currentIdx = Number(state.cipherIdx || 0);
+  const isLast = !!(ch && Array.isArray(ch.ciphers) && currentIdx === ch.ciphers.length - 1);
   state._awaitingNextCipher = !isLast;
   state._pendingChapterFinish = isLast;
-  state._nextCipherTargetIdx = isLast ? null : (Number(state.cipherIdx || 0) + 1);
+  state._nextCipherTargetIdx = isLast ? null : (currentIdx + 1);
+  if (!isLast) {
+    // Advance logical cursor immediately after success.
+    // This prevents returning to the just-solved task on UI/sync races.
+    state.cipherIdx = state._nextCipherTargetIdx;
+  }
   saveState();
   autoSync(false, true);
   const quizOption = (cipher.options && cipher.options[cipher.correctIndex]) || 'Верно';
@@ -2424,7 +2457,10 @@ async function nextCipher(expectedCipherKey = null) {
       renderChapters();
       return;
     }
-    const hasCheckpoint = !!(state._awaitingNextCipher || state._pendingChapterFinish || _isActiveCipherResolved());
+    const wasAwaiting = !!state._awaitingNextCipher;
+    const wasPendingFinish = !!state._pendingChapterFinish;
+    const checkpointTargetRaw = _readNextCipherTargetIdx();
+    const hasCheckpoint = !!(wasAwaiting || wasPendingFinish || _isActiveCipherResolved());
     if (!hasCheckpoint) {
       const activeKey = _activeCipherKey || _makeCipherKey();
       console.warn('nextCipher: transition ignored because no solved checkpoint', expectedCipherKey, activeKey);
@@ -2433,16 +2469,28 @@ async function nextCipher(expectedCipherKey = null) {
 
     state._awaitingNextCipher = false;
     state._pendingChapterFinish = false;
-
-    const currentIdx = Math.max(0, Math.min(ch.ciphers.length - 1, Number(state.cipherIdx || 0)));
-    let nextIdx = currentIdx + 1;
-    const checkpointTarget = Number(state._nextCipherTargetIdx);
-    if (Number.isFinite(checkpointTarget)) {
-      const safeTarget = Math.max(0, Math.min(ch.ciphers.length, Math.floor(checkpointTarget)));
-      nextIdx = Math.max(nextIdx, safeTarget);
+    if (wasPendingFinish) {
+      state._nextCipherTargetIdx = null;
+      try {
+        await Promise.resolve(finishChapter());
+      } catch (err) {
+        console.error('finishChapter failed:', err);
+        showChapterEndFallback();
+      }
+      return;
     }
-    if (nextIdx < ch.ciphers.length) {
-      state.cipherIdx = nextIdx;
+
+    let targetIdx = Number(state.cipherIdx || 0);
+    if (checkpointTargetRaw !== null) {
+      targetIdx = checkpointTargetRaw;
+    } else if (_isActiveCipherResolved() || wasAwaiting) {
+      // Legacy fallback for old state snapshots.
+      targetIdx = Math.max(targetIdx, Number(state.cipherIdx || 0) + 1);
+    }
+    targetIdx = Math.max(0, Math.min(ch.ciphers.length, targetIdx));
+
+    if (targetIdx < ch.ciphers.length) {
+      state.cipherIdx = targetIdx;
       state._nextCipherTargetIdx = null;
       saveState();
       _clearActiveCipherResolved();
@@ -2451,10 +2499,10 @@ async function nextCipher(expectedCipherKey = null) {
         showScreen('s-cipher');
       } catch (err) {
         console.error('nextCipher: failed to open next cipher', err);
-        state.cipherIdx = nextIdx;
+        state.cipherIdx = targetIdx;
         state._awaitingNextCipher = true;
         state._pendingChapterFinish = false;
-        state._nextCipherTargetIdx = nextIdx;
+        state._nextCipherTargetIdx = targetIdx;
         saveState();
         _markActiveCipherResolved();
         const btn = document.getElementById('succ-next-btn');

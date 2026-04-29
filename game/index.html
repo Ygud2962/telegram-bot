@@ -1024,7 +1024,9 @@
             }
 
             var version = encodeURIComponent(getBootVersion());
-            var versionQuery = "v=" + version;
+            // Hard cache-bust for Telegram WebView/CDN caches on hotfix releases.
+            var buildRev = "r20260429_progress_fix";
+            var versionQuery = "v=" + version + "&rev=" + encodeURIComponent(buildRev);
             var baseOrigin = window.location.origin || "";
 
             function buildScriptUrls(fileName) {
