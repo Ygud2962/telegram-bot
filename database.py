@@ -438,7 +438,18 @@ def init_db():
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         ''')
-
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_referrals (
+                referred_id          BIGINT PRIMARY KEY,
+                referrer_id          BIGINT NOT NULL,
+                start_bonus_awarded  BOOLEAN DEFAULT FALSE,
+                rewarded_chapters    INTEGER DEFAULT 0,
+                total_referrer_bonus INTEGER DEFAULT 0,
+                created_at           TIMESTAMPTZ DEFAULT NOW(),
+                updated_at           TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_game_referrals_referrer ON game_referrals(referrer_id)')
         # Таблица доступа к главам для конкретных игроков
         # (для обычных игроков главы открываются индивидуально через админа)
         cur.execute('''
@@ -1425,6 +1436,9 @@ def get_peak_hours():
 #  ИГРА "ШИВРОВАЛЬЩИК"
 # ──────────────────────────────────────────────
 
+REFERRAL_START_BONUS = 50
+REFERRAL_CHAPTER_BONUS = 30
+
 def save_game_result(user_id, user_name, chapter, score, total_score,
                      completed, game_over=False, failed=False):
     """Save/update player game result with monotonic score/completed/chapter fields.
@@ -1482,6 +1496,292 @@ def register_game_player(user_id, user_name=None):
     except Exception as e:
         logger.error(f"register_game_player error {user_id}: {e}")
         _safe_rollback(conn)
+    finally:
+        release_connection(conn)
+
+
+
+def attach_game_referral(referrer_id: int, referred_id: int, referred_name: str | None = None) -> dict:
+    """Attach referrer to a new player and grant one-time start bonus."""
+    conn = None
+    try:
+        referrer_id = int(referrer_id or 0)
+        referred_id = int(referred_id or 0)
+        if referrer_id <= 0 or referred_id <= 0:
+            return {'ok': False, 'status': 'invalid_ids'}
+        if referrer_id == referred_id:
+            return {'ok': False, 'status': 'self_referral'}
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute(
+            "INSERT INTO users (user_id, last_active) VALUES (%s, NOW()) "
+            "ON CONFLICT (user_id) DO UPDATE SET last_active = NOW()",
+            (referrer_id,),
+        )
+        cur.execute(
+            "INSERT INTO users (user_id, first_name, last_active) VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (user_id) DO UPDATE SET first_name = COALESCE(EXCLUDED.first_name, users.first_name), last_active = NOW()",
+            (referred_id, referred_name),
+        )
+
+        # Referral link is immutable per invited user.
+        cur.execute(
+            '''
+            SELECT referrer_id
+            FROM game_referrals
+            WHERE referred_id = %s
+            FOR UPDATE
+            ''',
+            (referred_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            existing_referrer = int(row[0] or 0)
+            conn.commit()
+            if existing_referrer == referrer_id:
+                return {'ok': True, 'status': 'already_linked_same'}
+            return {'ok': False, 'status': 'already_linked_other', 'referrer_id': existing_referrer}
+
+        # Link only before first actual game progress.
+        cur.execute(
+            '''
+            INSERT INTO game_results (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
+            VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
+            ON CONFLICT (user_id) DO NOTHING
+            ''',
+            (referred_id, referred_name or 'Игрок'),
+        )
+        cur.execute(
+            '''
+            SELECT COALESCE(total_score, 0), COALESCE(completed, 0), COALESCE(chapter, 0)
+            FROM game_results
+            WHERE user_id = %s
+            FOR UPDATE
+            ''',
+            (referred_id,),
+        )
+        progress = cur.fetchone()
+        cur_total = int(progress[0] or 0) if progress else 0
+        cur_completed = int(progress[1] or 0) if progress else 0
+        cur_chapter = int(progress[2] or 0) if progress else 0
+        if cur_total > 0 or cur_completed > 0 or cur_chapter > 0:
+            conn.commit()
+            return {'ok': False, 'status': 'already_has_progress'}
+
+        # Only regular players can participate.
+        cur.execute("SELECT role FROM game_roles WHERE user_id = %s", (referred_id,))
+        role_row = cur.fetchone()
+        referred_role = (role_row[0] if role_row and role_row[0] else 'player')
+        if referred_role in ('admin', 'tester'):
+            conn.commit()
+            return {'ok': False, 'status': 'role_not_allowed'}
+
+        cur.execute(
+            '''
+            INSERT INTO game_referrals
+                (referred_id, referrer_id, start_bonus_awarded, rewarded_chapters, total_referrer_bonus, created_at, updated_at)
+            VALUES (%s, %s, TRUE, 0, 0, NOW(), NOW())
+            ''',
+            (referred_id, referrer_id),
+        )
+        cur.execute(
+            '''
+            UPDATE game_results
+            SET total_score = COALESCE(total_score, 0) + %s,
+                updated_at = NOW()
+            WHERE user_id = %s
+            ''',
+            (REFERRAL_START_BONUS, referred_id),
+        )
+
+        conn.commit()
+        return {
+            'ok': True,
+            'status': 'attached',
+            'start_bonus': REFERRAL_START_BONUS,
+            'referrer_id': referrer_id,
+            'referred_id': referred_id,
+        }
+    except Exception as e:
+        logger.error(f"attach_game_referral error ref={referrer_id} referred={referred_id}: {e}")
+        _safe_rollback(conn)
+        return {'ok': False, 'status': 'error'}
+    finally:
+        release_connection(conn)
+
+
+def apply_referral_bonus_for_completed(referred_id: int, completed_after: int) -> dict:
+    """Grant referrer bonus for newly completed chapters by referred player."""
+    conn = None
+    try:
+        referred_id = int(referred_id or 0)
+        completed_after = max(0, min(6, int(completed_after or 0)))
+        if referred_id <= 0:
+            return {'ok': False, 'status': 'invalid_user'}
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute(
+            '''
+            SELECT referrer_id,
+                   COALESCE(rewarded_chapters, 0),
+                   COALESCE(total_referrer_bonus, 0)
+            FROM game_referrals
+            WHERE referred_id = %s
+            FOR UPDATE
+            ''',
+            (referred_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.commit()
+            return {'ok': True, 'status': 'no_referral', 'awarded_points': 0}
+
+        referrer_id = int(row[0] or 0)
+        rewarded_chapters = max(0, int(row[1] or 0))
+        total_bonus_before = max(0, int(row[2] or 0))
+
+        cur.execute("SELECT role FROM game_roles WHERE user_id = %s", (referred_id,))
+        role_row = cur.fetchone()
+        referred_role = (role_row[0] if role_row and role_row[0] else 'player')
+        if referred_role in ('admin', 'tester'):
+            conn.commit()
+            return {'ok': True, 'status': 'role_not_allowed', 'awarded_points': 0}
+
+        new_chapters = max(0, completed_after - rewarded_chapters)
+        if new_chapters <= 0:
+            conn.commit()
+            return {'ok': True, 'status': 'nothing_to_award', 'awarded_points': 0}
+
+        bonus_points = new_chapters * REFERRAL_CHAPTER_BONUS
+
+        cur.execute(
+            '''
+            INSERT INTO game_results (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
+            VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
+            ON CONFLICT (user_id) DO NOTHING
+            ''',
+            (referrer_id, 'Игрок'),
+        )
+        cur.execute(
+            '''
+            UPDATE game_results
+            SET total_score = COALESCE(total_score, 0) + %s,
+                updated_at = NOW()
+            WHERE user_id = %s
+            ''',
+            (bonus_points, referrer_id),
+        )
+        cur.execute(
+            '''
+            UPDATE game_referrals
+            SET rewarded_chapters = %s,
+                total_referrer_bonus = %s,
+                updated_at = NOW()
+            WHERE referred_id = %s
+            ''',
+            (completed_after, total_bonus_before + bonus_points, referred_id),
+        )
+
+        conn.commit()
+        return {
+            'ok': True,
+            'status': 'awarded',
+            'referrer_id': referrer_id,
+            'awarded_points': int(bonus_points),
+            'awarded_chapters': int(new_chapters),
+        }
+    except Exception as e:
+        logger.error(f"apply_referral_bonus_for_completed error referred={referred_id}: {e}")
+        _safe_rollback(conn)
+        return {'ok': False, 'status': 'error', 'awarded_points': 0}
+    finally:
+        release_connection(conn)
+
+
+def get_referral_summary(referrer_id: int) -> dict:
+    """Aggregate referral stats for inviter."""
+    conn = None
+    try:
+        referrer_id = int(referrer_id or 0)
+        if referrer_id <= 0:
+            return {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                COUNT(*) AS invited_count,
+                COALESCE(SUM(CASE WHEN COALESCE(rewarded_chapters, 0) > 0 THEN 1 ELSE 0 END), 0) AS active_count,
+                COALESCE(SUM(COALESCE(rewarded_chapters, 0)), 0) AS rewarded_chapters,
+                COALESCE(SUM(COALESCE(total_referrer_bonus, 0)), 0) AS bonus_points
+            FROM game_referrals
+            WHERE referrer_id = %s
+            ''',
+            (referrer_id,),
+        )
+        row = cur.fetchone() or (0, 0, 0, 0)
+        return {
+            'invited_count': int(row[0] or 0),
+            'active_count': int(row[1] or 0),
+            'rewarded_chapters': int(row[2] or 0),
+            'bonus_points': int(row[3] or 0),
+        }
+    except Exception as e:
+        logger.error(f"get_referral_summary error {referrer_id}: {e}")
+        return {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+    finally:
+        release_connection(conn)
+
+
+def get_referral_agents(referrer_id: int, limit: int = 15) -> list:
+    """Return referred players list for inviter."""
+    conn = None
+    try:
+        referrer_id = int(referrer_id or 0)
+        limit = max(1, min(50, int(limit or 15)))
+        if referrer_id <= 0:
+            return []
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                rf.referred_id,
+                COALESCE(NULLIF(u.first_name, ''), NULLIF(gr.user_name, ''), 'Игрок') AS display_name,
+                COALESCE(gr.completed, 0) AS completed,
+                COALESCE(gr.total_score, 0) AS total_score,
+                COALESCE(rf.rewarded_chapters, 0) AS rewarded_chapters,
+                COALESCE(rf.total_referrer_bonus, 0) AS total_referrer_bonus,
+                rf.created_at
+            FROM game_referrals rf
+            LEFT JOIN users u ON u.user_id = rf.referred_id
+            LEFT JOIN game_results gr ON gr.user_id = rf.referred_id
+            WHERE rf.referrer_id = %s
+            ORDER BY rf.created_at DESC
+            LIMIT %s
+            ''',
+            (referrer_id, limit),
+        )
+        rows = cur.fetchall() or []
+        result = []
+        for r in rows:
+            result.append({
+                'user_id': int(r[0]),
+                'name': r[1] or 'Игрок',
+                'completed': int(r[2] or 0),
+                'total_score': int(r[3] or 0),
+                'rewarded_chapters': int(r[4] or 0),
+                'bonus_points': int(r[5] or 0),
+                'created_at': r[6],
+            })
+        return result
+    except Exception as e:
+        logger.error(f"get_referral_agents error {referrer_id}: {e}")
+        return []
     finally:
         release_connection(conn)
 
@@ -2994,3 +3294,9 @@ def get_chapter_schedule_for_game() -> list:
         return []
     finally:
         release_connection(conn)
+
+
+
+
+
+

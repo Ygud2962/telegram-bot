@@ -2255,6 +2255,48 @@ async def cmd_start(update: Update, context: CallbackContext):
     for k in ('profile_cache', 'profile_cache_id', 'teacher_name_cache', 'news_shown'):
         context.user_data.pop(k, None)
 
+    # Deep-link: /start ref_<USER_ID>
+    start_param = ''
+    try:
+        if getattr(context, 'args', None):
+            start_param = str(context.args[0] or '').strip()
+        elif update.message and update.message.text:
+            parts = update.message.text.split(maxsplit=1)
+            if len(parts) > 1:
+                start_param = parts[1].strip()
+    except Exception:
+        start_param = ''
+
+    referral_notice = None
+    if start_param.lower().startswith('ref_'):
+        referrer_id = _to_int(start_param[4:], 0)
+        if referrer_id > 0:
+            try:
+                ref_result = await asyncio.to_thread(
+                    db.attach_game_referral, referrer_id, user.id, user.first_name
+                )
+                status = str((ref_result or {}).get('status') or '')
+                if status == 'attached':
+                    bonus = int(ref_result.get('start_bonus', 50) or 50)
+                    referral_notice = (
+                        "✅ <b>Вы завербованы в отряд</b>\n\n"
+                        f"🎁 Стартовый бонус: <b>+{bonus} очков</b>\n"
+                        "Теперь проходите главы — ваш пригласивший получает бонус за каждый прогресс."
+                    )
+                elif status == 'already_linked_same':
+                    referral_notice = "ℹ️ Реферальная ссылка уже была активирована для вашего аккаунта."
+                elif status == 'self_referral':
+                    referral_notice = "⚠️ Нельзя использовать свою собственную реферальную ссылку."
+                elif status in ('already_has_progress', 'already_linked_other'):
+                    referral_notice = "ℹ️ Реферальная ссылка действует только для нового игрока без прогресса."
+                elif status == 'role_not_allowed':
+                    referral_notice = "ℹ️ Для тестеров/админов игры реферальная программа недоступна."
+            except Exception as e:
+                logger.warning(f"cmd_start referral attach failed: uid={user.id}, err={e}")
+
+    if referral_notice:
+        await update.message.reply_text(referral_notice, parse_mode='HTML')
+
     # Уведомление о новых новостях
     new_cnt = await asyncio.to_thread(db.count_new_news_since, user.id)
     if new_cnt > 0 and not context.user_data.get('news_shown'):
@@ -3073,6 +3115,7 @@ async def menu_game(query, context):
 
     # Читаем данные игрока и расписание глав
     my_rank_info = (None, 0)
+    ref_summary = {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
     try:
         tasks = [
             asyncio.to_thread(db.get_game_result, user.id),
@@ -3080,15 +3123,19 @@ async def menu_game(query, context):
         ]
         if current_role == 'player':
             tasks.append(asyncio.to_thread(db.get_game_player_rank, user.id))
+            tasks.append(asyncio.to_thread(db.get_referral_summary, user.id))
         gathered = await asyncio.gather(*tasks)
         my_result = gathered[0]
         chapter_schedule = gathered[1]
         if current_role == 'player' and len(gathered) > 2 and isinstance(gathered[2], tuple):
             my_rank_info = gathered[2]
+        if current_role == 'player' and len(gathered) > 3 and isinstance(gathered[3], dict):
+            ref_summary = gathered[3]
     except Exception as e:
         logger.warning(f"menu_game: DB error reading game result: {e}")
         my_result, chapter_schedule = None, []
         my_rank_info = (None, 0)
+        ref_summary = {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
 
     # ── Открытые главы по роли ──────────────────────────────────
     if current_role in ('admin', 'tester'):
@@ -3227,6 +3274,10 @@ async def menu_game(query, context):
             f"\n📅 Последняя игра: {updated_str}"
             + rank_line
         )
+        if current_role == 'player':
+            invited_count = int(ref_summary.get('invited_count', 0) or 0)
+            ref_bonus = int(ref_summary.get('bonus_points', 0) or 0)
+            my_info += f"\n🕵️ Мои агенты: <b>{invited_count}</b> · 🎁 Рефбонус: <b>+{ref_bonus} оч</b>"
     else:
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
 
@@ -3262,12 +3313,16 @@ async def menu_game(query, context):
                 [InlineKeyboardButton("👁 Пройти снова (без очков)",      callback_data=f'game_restart_nopts_{user.id}')],
                 [InlineKeyboardButton("🎮 Открыть игру (смотреть)",       web_app=WebAppInfo(url=game_url))],
                 [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
+                [InlineKeyboardButton("🕵️ Завербовать агента", callback_data='game_ref_invite')],
+                [InlineKeyboardButton("🧾 Мои агенты", callback_data='game_ref_stats')],
                 [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
             ])
         else:
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎮 ОТКРЫТЬ ИГРУ", web_app=WebAppInfo(url=game_url))],
                 [InlineKeyboardButton("🏆 Таблица лидеров", callback_data='game_leaderboard')],
+                [InlineKeyboardButton("🕵️ Завербовать агента", callback_data='game_ref_invite')],
+                [InlineKeyboardButton("🧾 Мои агенты", callback_data='game_ref_stats')],
                 [InlineKeyboardButton("🏠 Главное меню",    callback_data='back_to_main')],
             ])
     await query.message.edit_text(
@@ -3284,6 +3339,95 @@ async def menu_game(query, context):
         + my_info + role_hint,
         parse_mode='HTML', reply_markup=kb
     )
+
+
+async def game_ref_invite(query, context):
+    """Shows personal referral link for the game."""
+    uid = query.from_user.id
+    username = context.bot.username
+    if not username:
+        try:
+            me = await context.bot.get_me()
+            username = me.username
+        except Exception:
+            username = None
+    if not username:
+        await safe_edit(
+            query,
+            "❌ Не удалось получить username бота для генерации ссылки.",
+            [[btn("↩️ Назад", "menu_game")]],
+        )
+        return
+
+    summary = await asyncio.to_thread(db.get_referral_summary, uid)
+    invited_count = int(summary.get('invited_count', 0) or 0)
+    bonus_points = int(summary.get('bonus_points', 0) or 0)
+    active_count = int(summary.get('active_count', 0) or 0)
+
+    ref_link = f"https://t.me/{username}?start=ref_{uid}"
+    share_text = (
+        "Присоединяйся к игре «Шифровальщик». "
+        "По моей ссылке ты получишь +50 стартовых очков."
+    )
+    share_url = (
+        "https://t.me/share/url"
+        f"?url={urllib.parse.quote(ref_link, safe='')}"
+        f"&text={urllib.parse.quote(share_text)}"
+    )
+
+    msg = (
+        "🕵️ <b>ЗАВЕРБОВАТЬ АГЕНТА</b>\n\n"
+        "Пригласи друга по своей ссылке:\n"
+        f"<code>{ref_link}</code>\n\n"
+        "🎁 Бонусы:\n"
+        "• новому игроку: <b>+50 очков</b>\n"
+        "• вам: <b>+30 очков</b> за каждую завершённую им главу\n\n"
+        f"👥 Приглашено: <b>{invited_count}</b>\n"
+        f"✅ Активных агентов: <b>{active_count}</b>\n"
+        f"⭐ Начислено бонусом: <b>+{bonus_points} оч</b>"
+    )
+    kb = [
+        [InlineKeyboardButton("📨 Поделиться ссылкой", url=share_url)],
+        [btn("🧾 Мои агенты", "game_ref_stats")],
+        [btn("↩️ Назад к игре", "menu_game")],
+    ]
+    await safe_edit(query, msg, kb)
+
+
+async def game_ref_stats(query, context):
+    """Shows referral stats and invited players list."""
+    uid = query.from_user.id
+    summary, agents = await asyncio.gather(
+        asyncio.to_thread(db.get_referral_summary, uid),
+        asyncio.to_thread(db.get_referral_agents, uid, 15),
+    )
+    invited_count = int(summary.get('invited_count', 0) or 0)
+    bonus_points = int(summary.get('bonus_points', 0) or 0)
+    rewarded_chapters = int(summary.get('rewarded_chapters', 0) or 0)
+    active_count = int(summary.get('active_count', 0) or 0)
+
+    lines = []
+    for i, a in enumerate(agents, 1):
+        name = str(a.get('name') or 'Игрок').replace('<', '').replace('>', '')
+        completed = int(a.get('completed', 0) or 0)
+        ref_bonus = int(a.get('bonus_points', 0) or 0)
+        lines.append(f"{i}. {name} — {completed}/6 глав · +{ref_bonus} оч")
+
+    details = "\n".join(lines) if lines else "Пока никого не пригласили."
+    msg = (
+        "🧾 <b>МОИ АГЕНТЫ</b>\n\n"
+        f"👥 Приглашено: <b>{invited_count}</b>\n"
+        f"✅ Активных: <b>{active_count}</b>\n"
+        f"📚 Оплаченных глав: <b>{rewarded_chapters}</b>\n"
+        f"⭐ Реферальный бонус: <b>+{bonus_points} оч</b>\n\n"
+        "Список:\n"
+        f"{details}"
+    )
+    kb = [
+        [btn("🕵️ Завербовать агента", "game_ref_invite")],
+        [btn("↩️ Назад к игре", "menu_game")],
+    ]
+    await safe_edit(query, msg, kb)
 
 
 async def game_restart_select(query, context, uid, mode):
@@ -5433,6 +5577,8 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'admin_game_reset_all':   admin_game_reset_all,
         'admin_player_chapters':  admin_player_chapters,
         'game_leaderboard':       game_leaderboard,
+        'game_ref_invite':        game_ref_invite,
+        'game_ref_stats':         game_ref_stats,
         'admin_users':            show_users_stats,
         'game_admin_self_reset':         game_admin_self_reset,
         'game_admin_self_reset_confirm': game_admin_self_reset_confirm,
@@ -6490,18 +6636,34 @@ async def handle_game_sync(request):
         db_completed = result[3] if result else 0
         db_reset_token = _game_reset_token(result)
         retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count_saved
+        ref_award_points = 0
+        ref_award_chapters = 0
+        if current_role == 'player':
+            try:
+                ref_award = await asyncio.to_thread(
+                    db.apply_referral_bonus_for_completed,
+                    user_id,
+                    db_completed,
+                )
+                ref_award_points = _clamp_int(ref_award.get('awarded_points', 0), 0, 999999)
+                ref_award_chapters = _clamp_int(ref_award.get('awarded_chapters', 0), 0, 6)
+            except Exception as ref_err:
+                logger.warning(f"game_sync referral bonus failed: user={user_id}, err={ref_err}")
         logger.info(
-            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s",
+            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s ref_bonus=%s ref_chapters=%s",
             user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx,
-            chapter_in_progress, event_type, server_penalty_applied, retreat_count, banned
+            chapter_in_progress, event_type, server_penalty_applied, retreat_count, banned,
+            ref_award_points, ref_award_chapters
         )
         return aiohttp_web.json_response(
             {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
               'banned': banned, 'db_score': db_score, 'db_completed': db_completed,
-             'db_reset_token': db_reset_token, 'stale': False, 'role': current_role,
-             'server_penalty_applied': server_penalty_applied,
-             'retreat_count': retreat_count,
-             'force_state': bool(server_penalty_applied > 0)},
+              'db_reset_token': db_reset_token, 'stale': False, 'role': current_role,
+              'server_penalty_applied': server_penalty_applied,
+              'retreat_count': retreat_count,
+              'ref_bonus_awarded': ref_award_points,
+              'ref_bonus_chapters': ref_award_chapters,
+              'force_state': bool(server_penalty_applied > 0)},
             headers=headers)
     except Exception as e:
         logger.error(f"game_sync error: {e}")
