@@ -430,7 +430,7 @@ function _applySyncResponse(result, forceServerState = false) {
     _refreshCurrentTabAfterSync();
   }
   if (Number(result.server_penalty_applied || 0) > 0) {
-    showToast(`⚖ Сервер применил штраф отхода: -${Number(result.server_penalty_applied || 0)} оч`);
+    showPenaltyNotice(`Сервер применил штраф: -${Number(result.server_penalty_applied || 0)} оч`);
   }
 }
 
@@ -565,6 +565,65 @@ function showToast(text, duration = 2500) {
     toast.style.opacity = '0';
     setTimeout(() => toast.remove(), 300);
   }, duration);
+}
+
+function showPenaltyNotice(text, duration = 5600) {
+  const old = document.getElementById('game-penalty-notice');
+  if (old) old.remove();
+
+  const notice = document.createElement('div');
+  notice.id = 'game-penalty-notice';
+  notice.style.cssText = `
+    position:fixed;
+    left:50%;
+    bottom:96px;
+    transform:translate(-50%, 12px);
+    width:min(92vw, 560px);
+    background:linear-gradient(160deg, rgba(49,17,8,.98), rgba(20,12,8,.98));
+    border:1px solid rgba(255,128,93,.62);
+    border-left:4px solid #ff835f;
+    box-shadow:0 18px 48px rgba(0,0,0,.55);
+    border-radius:12px;
+    padding:12px 14px;
+    z-index:10020;
+    pointer-events:none;
+    opacity:0;
+    transition:opacity .25s ease, transform .25s ease;
+  `;
+
+  const title = document.createElement('div');
+  title.textContent = '⚖ ИЗМЕНЕНИЕ ОЧКОВ';
+  title.style.cssText = `
+    font-family:var(--head);
+    font-size:clamp(12px, 2.8vw, 15px);
+    letter-spacing:.08em;
+    color:#ffb69f;
+    margin-bottom:6px;
+  `;
+
+  const body = document.createElement('div');
+  body.textContent = text;
+  body.style.cssText = `
+    font-family:var(--head);
+    font-size:clamp(15px, 3.8vw, 20px);
+    line-height:1.35;
+    letter-spacing:.03em;
+    color:#fff3d8;
+  `;
+
+  notice.appendChild(title);
+  notice.appendChild(body);
+  document.body.appendChild(notice);
+  requestAnimationFrame(() => {
+    notice.style.opacity = '1';
+    notice.style.transform = 'translate(-50%, 0)';
+  });
+
+  setTimeout(() => {
+    notice.style.opacity = '0';
+    notice.style.transform = 'translate(-50%, 12px)';
+    setTimeout(() => notice.remove(), 320);
+  }, Math.max(2500, Number(duration || 0)));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -933,7 +992,7 @@ function _handleOutOfLives() {
     hb.className = 'cipher-hint-box show';
     ht.textContent = msg;
   }
-  showToast(msg);
+  showPenaltyNotice(msg, 6200);
   renderLives();
 
   const inp = document.getElementById('cipher-input');
@@ -1747,7 +1806,7 @@ function restartCostConfirmRestart() {
   restartChapterFromStart(currentChapter, { manualPenaltyPoints: penaltyPoints });
   autoSync(false, true);
   if (penaltyPoints > 0) {
-    showToast(`Штраф перезапуска: -${penaltyPoints} оч (10%)`);
+    showPenaltyNotice(`Штраф перезапуска: -${penaltyPoints} оч (10%)`, 6200);
   } else {
     showToast('Перезапуск главы без штрафа');
   }
@@ -3102,6 +3161,11 @@ function retryChapterWithPenalty(idx) {
   // Вычитаем штраф из ОБЩЕГО счёта
   const penalty = Math.round(state.totalScore * penaltyPct);
   state.totalScore = Math.max(0, state.totalScore - penalty);
+  if (penalty > 0) {
+    showPenaltyNotice(`Снижение общего счёта: -${penalty} оч (${Math.round(penaltyPct * 100)}%)`, 6200);
+  } else {
+    showToast('Повтор главы без списания очков');
+  }
 
   // Убираем главу из завершённых чтобы можно было пройти снова
   delete state.completedChapters[ch.id];
