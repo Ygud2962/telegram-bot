@@ -1469,7 +1469,8 @@ function renderChapters() {
       // Fallback: если tgOpenChapters не получен от бота, открываем первую главу
       const serverAllows = tgOpenChapters !== null ? tgOpenChapters.has(ch.id) : (i === 0);
       const prevDone = i === 0 || !!state.completedChapters[CHAPTERS[i-1].id];
-      isLocked = !(serverAllows && prevDone);
+      const keepDoneOpen = isDone === true;
+      isLocked = !((serverAllows && prevDone) || keepDoneOpen);
       visuallyLocked = isLocked;
       // Таймер — если глава не открыта но есть расписание open_at
       if (isLocked && scheduleMap[ch.id] && scheduleMap[ch.id].open_at) {
@@ -1527,8 +1528,7 @@ function renderChapters() {
     }
 
     // Кто может играть
-    const canRepeat = state.retryPenalty || state._noptsMode;
-    const canPlay = !!inProgress || state.adminMode || state.testerMode || (!isLocked && (!isDone || canRepeat));
+    const canPlay = !!inProgress || state.adminMode || state.testerMode || !isLocked;
     if (canPlay) {
       card.onclick = () => { showBriefing(i); };
       card.style.cursor = 'pointer';
@@ -1667,6 +1667,11 @@ function showBriefing(idx) {
       const penaltyPreview = _calcManualRestartPenaltyPoints(resume.score);
       noteEl.style.display = 'block';
       noteEl.textContent = `Сохранён прогресс: задание ${resume.step}/${resume.total} · ${resume.score} оч · ${state.adminMode ? '∞' : resume.lives} жизней. Начать сначала: штраф -10% (${penaltyPreview} оч).`;
+    } else if (isDone) {
+      const doneScore = Number((state.chapterScores && state.chapterScores[ch.id]) || 0);
+      const penaltyPreview = _calcManualRestartPenaltyPoints(doneScore);
+      noteEl.style.display = 'block';
+      noteEl.textContent = `Глава уже пройдена: ${doneScore} оч. При повторе очки этой главы будут сняты с общего рейтинга, глава обнулится и начнётся заново со штрафом -10% (${penaltyPreview} оч).`;
     } else {
       noteEl.style.display = 'none';
       noteEl.textContent = '';
@@ -1682,6 +1687,12 @@ function showBriefing(idx) {
     if (resumeActions) resumeActions.style.display = 'flex';
     if (resumeBtn) resumeBtn.textContent = `ПРОДОЛЖИТЬ С ЗАДАНИЯ ${resume.step}/${resume.total}`;
     if (restartBtn) restartBtn.textContent = 'НАЧАТЬ СНАЧАЛА (-10%)';
+  } else if (isDone) {
+    if (startBtn) {
+      startBtn.style.display = '';
+      startBtn.textContent = '↺ ПЕРЕИГРАТЬ ГЛАВУ (-10%)';
+    }
+    if (resumeActions) resumeActions.style.display = 'none';
   } else {
     if (startBtn) {
       startBtn.style.display = '';
@@ -1692,6 +1703,13 @@ function showBriefing(idx) {
   showScreen('s-briefing');
 }
 function onBriefStartClicked() {
+  const ch = CHAPTERS[currentChapter];
+  const resume = _getInProgressChapterState(currentChapter);
+  const isDone = !!(ch && state.completedChapters && state.completedChapters[ch.id]);
+  if (!resume && isDone) {
+    startCompletedChapterReplay(currentChapter);
+    return;
+  }
   startChapter(currentChapter);
 }
 
@@ -1707,12 +1725,71 @@ function onBriefResumeClicked() {
 function onBriefRestartClicked() {
   const resume = _getInProgressChapterState(currentChapter);
   if (!resume) {
+    const ch = CHAPTERS[currentChapter];
+    const isDone = !!(ch && state.completedChapters && state.completedChapters[ch.id]);
+    if (isDone) {
+      startCompletedChapterReplay(currentChapter);
+      return;
+    }
     startChapter(currentChapter);
     return;
   }
   const scoreNow = Math.max(0, Number(resume.score || 0));
   const penaltyPoints = _calcManualRestartPenaltyPoints(scoreNow);
   openRestartCostModal({ scoreNow, penaltyPoints });
+}
+
+function startCompletedChapterReplay(idx) {
+  const ch = CHAPTERS[idx];
+  if (!ch) return;
+  const chapterId = ch.id;
+  const oldChapterScore = Math.max(0, Math.floor(Number((state.chapterScores && state.chapterScores[chapterId]) || 0)));
+  const penaltyPoints = _calcManualRestartPenaltyPoints(oldChapterScore);
+
+  if (state.completedChapters && state.completedChapters[chapterId]) {
+    delete state.completedChapters[chapterId];
+  }
+  if (state.chapterScores && state.chapterScores[chapterId] !== undefined) {
+    delete state.chapterScores[chapterId];
+  }
+  if (state.chapterStats && state.chapterStats[chapterId] !== undefined) {
+    delete state.chapterStats[chapterId];
+  }
+
+  if (oldChapterScore > 0) {
+    state.totalScore = Math.max(0, Number(state.totalScore || 0) - oldChapterScore);
+  }
+  state.gameOver = false;
+  state._isRetryAttempt = true;
+
+  saveState();
+  updateLeaderboard();
+  syncTopStatusBars();
+
+  const completedAfterReplayStart = _stateCompletedCount();
+  Promise.resolve(sendResultToBot({
+    type: 'chapter_replay_start',
+    chapter: chapterId,
+    score: 0,
+    total_score: Number(state.totalScore || 0),
+    completed: completedAfterReplayStart,
+    chapter_idx: idx,
+    cipher_idx: 0,
+    chapter_in_progress: true,
+    restart_penalty_points: penaltyPoints,
+    game_over: false
+  })).catch(() => {});
+
+  if (oldChapterScore > 0) {
+    showPenaltyNotice(`Глава обнулена: -${oldChapterScore} оч из общего рейтинга. Повтор стартует со штрафом -${penaltyPoints} оч (10%).`, 7000);
+  } else if (penaltyPoints > 0) {
+    showPenaltyNotice(`Повтор главы запущен. Штраф к итогу главы: -${penaltyPoints} оч (10%).`, 6200);
+  } else {
+    showToast('Повтор главы запущен');
+  }
+
+  restartChapterFromStart(idx, { manualPenaltyPoints: penaltyPoints });
+  autoSync(false, true);
 }
 
 let _restartCostPayload = null;
@@ -3378,7 +3455,7 @@ function updateLeaderboard() {
   const entry = { uid, name, score: state.totalScore, completed: Object.keys(state.completedChapters).length };
   const idx   = state.leaderboard.findIndex(e => e.uid === uid);
   if (idx >= 0) {
-    if (state.totalScore >= state.leaderboard[idx].score) state.leaderboard[idx] = entry;
+    state.leaderboard[idx] = entry;
   } else {
     state.leaderboard.push(entry);
   }

@@ -1593,6 +1593,69 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
         sync_max_score = max(0, int(sync_max_score or 0))
         sync_max_cipher = int(sync_max_cipher if sync_max_cipher is not None else -1)
 
+        # Явный старт повтора завершённой главы:
+        # разрешаем понизить total_score/completed, чтобы обнуление главы
+        # корректно отражалось в игре и в рейтинге.
+        explicit_replay_start = event_type == 'chapter_replay_start'
+        if explicit_replay_start:
+            if restart_penalty_points > 0:
+                pending_penalty = max(pending_penalty, restart_penalty_points)
+                pending_chapter = chapter
+            retreat_count += 1
+            sync_chapter = chapter
+            sync_max_score = 0
+            sync_max_cipher = -1
+
+            new_user_name = user_name or db_user_name or 'Игрок'
+            new_chapter = max(int(db_chapter or 0), chapter)
+            new_score = 0
+            new_total_score = max(0, int(total_score or 0))
+            new_completed = max(0, int(completed or 0))
+            new_game_over = False
+
+            cur.execute('''
+                UPDATE game_results
+                SET user_name = %s,
+                    chapter = %s,
+                    score = %s,
+                    total_score = %s,
+                    completed = %s,
+                    game_over = %s,
+                    failed = %s,
+                    retreat_count = %s,
+                    pending_retreat_penalty = %s,
+                    pending_retreat_chapter = %s,
+                    sync_chapter = %s,
+                    sync_max_chapter_score = %s,
+                    sync_max_cipher_idx = %s,
+                    updated_at = NOW()
+                WHERE user_id = %s
+            ''', (
+                new_user_name,
+                new_chapter,
+                new_score,
+                new_total_score,
+                new_completed,
+                new_game_over,
+                False,
+                retreat_count,
+                pending_penalty,
+                pending_chapter,
+                sync_chapter,
+                sync_max_score,
+                sync_max_cipher,
+                user_id
+            ))
+
+            conn.commit()
+            return {
+                'ok': True,
+                'db_score': int(new_total_score),
+                'db_completed': int(new_completed),
+                'server_penalty_applied': 0,
+                'retreat_count': int(retreat_count),
+            }
+
         # Явный ручной "отход" с клиента.
         explicit_manual_retreat = event_type == 'manual_restart'
         if explicit_manual_retreat:
