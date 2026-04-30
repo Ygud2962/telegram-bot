@@ -2304,7 +2304,7 @@ def clear_restart_mode(user_id):
         release_connection(conn)
 
 
-def reset_all_game_results():
+def reset_all_game_results(drop_referrals: bool = False):
     """Сбрасывает прогресс всех игроков включая достижения и доступ к главам."""
     conn = None
     try:
@@ -2323,6 +2323,8 @@ def reset_all_game_results():
         """)
         updated = cur.rowcount
         cur.execute("DELETE FROM player_chapter_access")
+        if drop_referrals:
+            cur.execute("DELETE FROM game_referrals")
         conn.commit()
         return updated
     except Exception as e:
@@ -3155,7 +3157,19 @@ def get_player_chapter_access_map(user_id: int) -> set:
         release_connection(conn)
 
 
-def reset_game_result_full(user_id: int) -> bool:
+def _delete_game_referrals_for_user(cur, user_id: int) -> int:
+    """Delete referral links where user is inviter or invited."""
+    cur.execute(
+        '''
+        DELETE FROM game_referrals
+        WHERE referrer_id = %s OR referred_id = %s
+        ''',
+        (user_id, user_id),
+    )
+    return int(cur.rowcount or 0)
+
+
+def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
     """Полный сброс игрока: обнуляет прогресс, достижения И закрывает все индивидуальные главы."""
     conn = None
     try:
@@ -3197,6 +3211,8 @@ def reset_game_result_full(user_id: int) -> bool:
             """, (token_now, user_id))
             updated = cur.rowcount
         cur.execute('DELETE FROM player_chapter_access WHERE user_id = %s', (user_id,))
+        if drop_referrals:
+            _delete_game_referrals_for_user(cur, user_id)
         conn.commit()
         return updated > 0
     except Exception as e:

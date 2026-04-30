@@ -762,6 +762,8 @@ const DEFAULT_STATE = () => ({
   testerMode: false,   // 🧪 тестировщик — все главы открыты, 5 жизней, не в рейтинге
   gameRole: 'player',  // 'admin' | 'tester' | 'player'
   achievements: {}, achievementPts: 0,
+  referralSummary: { invited_count: 0, active_count: 0, rewarded_chapters: 0, bonus_points: 0 },
+  referralAgents: [],
   artifacts: {}, solvedTypes: {}, solvedTypeCounts: {},
   _nextCipherTargetIdx: null,
   _manualRestartPenaltyPoints: 0
@@ -770,6 +772,43 @@ const DEFAULT_STATE = () => ({
 let state = DEFAULT_STATE();
 const GAME_ADMIN_USERNAME = 'Yury_hud';
 const GAME_ADMIN_CHAT_URL = 'https://t.me/' + GAME_ADMIN_USERNAME;
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toSafeNonNegNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function normalizeReferralSummary(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  return {
+    invited_count: toSafeNonNegNumber(src.invited_count),
+    active_count: toSafeNonNegNumber(src.active_count),
+    rewarded_chapters: toSafeNonNegNumber(src.rewarded_chapters),
+    bonus_points: toSafeNonNegNumber(src.bonus_points),
+  };
+}
+
+function normalizeReferralAgents(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.slice(0, 20).map((item) => {
+    const src = item && typeof item === 'object' ? item : {};
+    return {
+      user_id: String(src.user_id || ''),
+      name: String(src.name || 'Игрок'),
+      completed: toSafeNonNegNumber(src.completed),
+      bonus_points: toSafeNonNegNumber(src.bonus_points),
+    };
+  });
+}
 
 let _activeCipherKey = '';
 let _resolvedCipherKey = '';
@@ -1256,6 +1295,8 @@ function mergeBotLeaderboard() {
       state.testerMode = false;
     }
     state.gameRole = dbRole;
+    state.referralSummary = normalizeReferralSummary(tgInitMe.ref_summary || state.referralSummary);
+    state.referralAgents = normalizeReferralAgents(tgInitMe.ref_agents || state.referralAgents);
 
     const canApplyRestartMode = (
       (dbRestartMode === 'penalty' || dbRestartMode === 'nopts') &&
@@ -1310,6 +1351,16 @@ function loadState() {
     if (s) {
       Object.assign(state, JSON.parse(s));
       if (!state.achievements || typeof state.achievements !== 'object') state.achievements = {};
+      if (!state.referralSummary || typeof state.referralSummary !== 'object') {
+        state.referralSummary = normalizeReferralSummary(null);
+      } else {
+        state.referralSummary = normalizeReferralSummary(state.referralSummary);
+      }
+      if (!Array.isArray(state.referralAgents)) {
+        state.referralAgents = [];
+      } else {
+        state.referralAgents = normalizeReferralAgents(state.referralAgents);
+      }
       if (!state.artifacts || typeof state.artifacts !== 'object') state.artifacts = {};
       if (!state.solvedTypes || typeof state.solvedTypes !== 'object') state.solvedTypes = {};
       if (!state.solvedTypeCounts || typeof state.solvedTypeCounts !== 'object') state.solvedTypeCounts = {};
@@ -3497,29 +3548,29 @@ function renderLeaderboard() {
 function confirmReset() {
   const isAdmin = state.adminMode || window._adminMode === true;
   if (!isAdmin) {
-    // Обычный пользователь — сброс запрещён
     if (getTgUserId()) {
-      alert('Прогресс сохранён в системе и не может быть удалён.');
+      alert('Прогресс сохранён в системе и не может быть удалён игроком.');
     }
     return;
   }
 
-  // Для админа — сброс тестового прогресса
-  if (!confirm('Сбросить тестовый прогресс к нулю? Все главы останутся открытыми.')) return;
+  if (!confirm('Сбросить тестовый прогресс к нулю?')) return;
 
-  // 1. Сбрасываем state но сохраняем adminMode
   try { localStorage.removeItem(storageKey()); } catch(e) {}
   state = DEFAULT_STATE();
-  state.adminMode = true; // сохраняем режим!
+  state.adminMode = true;
+  state.gameRole = 'admin';
   state.achievements = {};
   state.achievementPts = 0;
+  state.referralSummary = normalizeReferralSummary(null);
+  state.referralAgents = [];
 
-  // 2. Отправляем сброс в БД через /game_reset (полный сброс, игнорирует GREATEST)
   const syncUrl = window._syncUrl;
   const uid = getTgUserId();
   if (syncUrl && uid) {
+    const dropReferrals = confirm('Удалить также связи агентов? ОК = сброс с агентами, Отмена = только очки/главы.');
     const resetUrl = syncUrl.replace('/game_sync', '/game_reset');
-    const payload = { user_id: uid };
+    const payload = { user_id: uid, drop_referrals: !!dropReferrals };
     const initDataRaw = getTgInitDataRaw();
     if (initDataRaw) payload.init_data = initDataRaw;
     fetch(resetUrl, {
@@ -3527,12 +3578,12 @@ function confirmReset() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     }).then(r => r.json())
-      .then(d => console.log('✅ Прогресс сброшен в БД:', d))
+      .then(d => console.log('Reset result:', d))
       .catch(e => console.warn('reset sync error:', e));
   }
 
-  // 3. Перерендеривем — в adminMode все главы открыты
   renderChapters();
+  setTimeout(() => { try { fetchAndApplyState(); } catch(_) {} }, 120);
   showToast('🗑 Прогресс сброшен');
 }
 
@@ -4489,6 +4540,20 @@ function renderProfileTab() {
   const nextRankData = titles.find(([t]) => scorePct < t);
   const toNextRank = nextRankData ? Math.max(0, Math.ceil(nextRankData[0] / 100 * maxScore) - state.totalScore) : 0;
   const nextRankName2 = nextRankData ? nextRankData[1] : null;
+  const refSummary = normalizeReferralSummary(state.referralSummary || (tgInitMe && tgInitMe.ref_summary));
+  const refAgents = normalizeReferralAgents(state.referralAgents || (tgInitMe && tgInitMe.ref_agents));
+  state.referralSummary = refSummary;
+  state.referralAgents = refAgents;
+  const referralRows = refAgents.length
+    ? refAgents.map((a, idx) => (
+        `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+          <div style="font-size:11px;color:var(--muted);min-width:18px">${idx + 1}.</div>
+          <div style="flex:1;min-width:0;font-size:var(--fs-sm);color:#fdfaf0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(a.name)}</div>
+          <div style="font-size:11px;color:var(--muted)">${a.completed}/6</div>
+          <div style="font-family:var(--head);font-size:11px;color:var(--accent)">+${a.bonus_points}</div>
+        </div>`
+      )).join('')
+    : '<div style="font-size:var(--fs-sm);color:var(--muted);font-style:italic">Пока нет завербованных агентов.</div>';
 
   // Строим историю глав
   const chapterHistory = CHAPTERS.map(ch => {
@@ -4541,6 +4606,25 @@ function renderProfileTab() {
       <div style="margin-top:12px;background:rgba(255,255,255,.06);border-radius:4px;height:6px;overflow:hidden">
         <div style="height:100%;background:var(--accent);border-radius:4px;width:${pct}%;transition:width .5s"></div>
       </div>
+    </div>
+    <div style="background:#141108;border:1px solid rgba(120,215,255,.22);border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="font-family:var(--head);font-size:var(--fs-xs);color:#9edfff;letter-spacing:.1em;margin-bottom:10px">🕵️ МОИ АГЕНТЫ</div>
+      <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:10px">
+        <div style="flex:1;background:rgba(120,215,255,.07);border:1px solid rgba(120,215,255,.16);border-radius:6px;padding:8px;text-align:center">
+          <div style="font-family:var(--head);font-size:var(--fs-lg);color:#9edfff">${refSummary.invited_count}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">ПРИГЛАШЕНО</div>
+        </div>
+        <div style="flex:1;background:rgba(120,215,255,.07);border:1px solid rgba(120,215,255,.16);border-radius:6px;padding:8px;text-align:center">
+          <div style="font-family:var(--head);font-size:var(--fs-lg);color:#9edfff">${refSummary.active_count}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">АКТИВНЫХ</div>
+        </div>
+        <div style="flex:1;background:rgba(120,215,255,.07);border:1px solid rgba(120,215,255,.16);border-radius:6px;padding:8px;text-align:center">
+          <div style="font-family:var(--head);font-size:var(--fs-lg);color:#9edfff">+${refSummary.bonus_points}</div>
+          <div style="font-size:10px;color:var(--muted);letter-spacing:.06em">БОНУС</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Список агентов</div>
+      ${referralRows}
     </div>
     <div style="margin-top:16px">
       <div style="font-family:var(--head);font-size:var(--fs-xs);color:var(--muted);
@@ -5596,6 +5680,9 @@ const ACHIEVEMENTS = [
   { id:'survivor', icon:'🛡️', name:'На волоске', desc:'Заверши главу с 1 жизнью', pts:35 },
   { id:'school_time', icon:'🏫', name:'Школьный час', desc:'Играй с 8:00 до 15:00', pts:10 },
   { id:'weekend', icon:'📆', name:'Выходной разведчик', desc:'Играй в субботу или воскресенье', pts:10 },
+  { id:'agent_1', icon:'🕵️', name:'Вербовщик', desc:'Пригласи первого агента', pts:20 },
+  { id:'agent_3', icon:'🧩', name:'Сеть информаторов', desc:'Пригласи 3 агентов', pts:45 },
+  { id:'agent_bonus_150', icon:'🎁', name:'Премия штаба', desc:'Получи +150 реферальных очков', pts:60 },
   { id:'collector_8', icon:'🗃️', name:'Коллекционер', desc:'Получи 8 достижений', pts:30 },
   { id:'collector_16', icon:'🧩', name:'Архивариус', desc:'Получи 16 достижений', pts:65 },
 ];
@@ -5787,6 +5874,10 @@ function checkAchievements(context = {}) {
   const day = new Date().getDay();
   if (hour >= 8 && hour < 15) unlockAchievement('school_time');
   if (day === 0 || day === 6) unlockAchievement('weekend');
+  const ref = normalizeReferralSummary(state.referralSummary);
+  if (ref.invited_count >= 1) unlockAchievement('agent_1');
+  if (ref.invited_count >= 3) unlockAchievement('agent_3');
+  if (ref.bonus_points >= 150) unlockAchievement('agent_bonus_150');
 
   const count = Object.keys(state.achievements || {}).length;
   if (count >= 8) unlockAchievement('collector_8');
@@ -6078,6 +6169,10 @@ async function fetchAndApplyState() {
       state.testerMode = false;
     }
     if (data.role) state.gameRole = data.role;
+    const refSummary = normalizeReferralSummary(data.ref_summary || (tgInitMe && tgInitMe.ref_summary) || state.referralSummary);
+    const refAgents = normalizeReferralAgents(data.ref_agents || (tgInitMe && tgInitMe.ref_agents) || state.referralAgents);
+    state.referralSummary = refSummary;
+    state.referralAgents = refAgents;
 
     if (Array.isArray(data.open_chapters)) {
       let chaptersToOpen = data.open_chapters;
@@ -6107,6 +6202,8 @@ async function fetchAndApplyState() {
       restart_mode: data.restart_mode || null,
       reset_token: _serverResetToken || 0,
       banned: !!data.banned,
+      ref_summary: refSummary,
+      ref_agents: refAgents,
     });
 
     const srvScore = typeof data.score === 'number' ? data.score : state.totalScore;
@@ -6158,6 +6255,11 @@ async function fetchAndApplyState() {
       } else {
         saveState();
       }
+    }
+    try {
+      checkAchievements({});
+    } catch (achErr) {
+      console.warn('fetchAndApplyState achievements update skipped', achErr);
     }
 
     _lastSyncedScore = Number(state.totalScore || 0);

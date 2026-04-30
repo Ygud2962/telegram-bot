@@ -3195,6 +3195,7 @@ async def menu_game(query, context):
             'admin_mode': admin_mode,
             'tester_mode': tester_mode,
             'reset_token': _game_reset_token(my_result),
+            'ref_summary': ref_summary if current_role == 'player' else None,
         }
 
     # sync_url ОБЯЗАТЕЛЕН
@@ -3232,6 +3233,7 @@ async def menu_game(query, context):
             'banned': my_data.get('banned', False),
             'admin_mode': admin_mode, 'tester_mode': tester_mode,
             'reset_token': my_data.get('reset_token', 0),
+            'ref_summary': my_data.get('ref_summary'),
         } if my_data else None
         game_payload = _build_payload(lb=None, me=slim_me, full=False)
         payload = urllib.parse.quote(json.dumps(game_payload, ensure_ascii=False))
@@ -3456,16 +3458,18 @@ async def game_admin_self_reset(query, context):
     await query.answer()
     await safe_edit(query,
         "⚠️ <b>Сбросить свой рейтинг?</b>\n\n"
-        "Все ваши очки и прогресс будут обнулены.\n"
-        "Это действие необратимо.\n\n"
+        "Выберите вариант:\n"
+        "• 🧹 <b>Только очки/главы</b> — агенты остаются\n"
+        "• 💣 <b>С агентами</b> — реферальные связи удаляются\n\n"
         "<i>Роль администратора сохранится.</i>",
         [
-            [btn("🗑 Да, сбросить мой рейтинг", 'game_admin_self_reset_confirm')],
+            [btn("🧹 Только очки/главы", 'game_admin_self_reset_confirm_points')],
+            [btn("💣 С агентами",        'game_admin_self_reset_confirm_agents')],
             [btn("❌ Отмена",                     'menu_game')],
         ])
 
 
-async def game_admin_self_reset_confirm(query, context):
+async def game_admin_self_reset_confirm(query, context, drop_referrals: bool = False):
     """Подтверждение сброса рейтинга администратора."""
     uid = query.from_user.id
     role = await asyncio.to_thread(db.get_game_role, uid)
@@ -3473,9 +3477,11 @@ async def game_admin_self_reset_confirm(query, context):
         await query.answer("⛔ Только администратор", show_alert=True)
         return
     await query.answer()
-    ok = await asyncio.to_thread(db.reset_game_result_full, uid)
+    ok = await asyncio.to_thread(db.reset_game_result_full, uid, drop_referrals)
+    mode_label = "с агентами" if drop_referrals else "без удаления агентов"
     await safe_edit(query,
-        "✅ <b>Ваш рейтинг сброшен.</b>\n\nОчки обнулены, прогресс и достижения сброшены.\nРоль администратора сохранена."
+        f"✅ <b>Ваш рейтинг сброшен ({mode_label}).</b>\n\n"
+        "Очки обнулены, прогресс и достижения сброшены.\nРоль администратора сохранена."
         if ok else "❌ Не удалось сбросить рейтинг.",
         [[btn("🎮 Открыть игру", 'menu_game')], [btn("🏠 Главное меню", 'back_to_main')]])
 
@@ -4556,21 +4562,26 @@ async def admin_game_reset_player(query, context, uid):
             f"♻️ <b>Перезапуск игры для {name}</b>\n\n"
             "Игрок прошёл все главы. Выберите режим перезапуска:\n\n"
             "🔥 <b>С штрафом</b> — +10 сек к заданию, очки считаются (но меньше)\n"
-            "👁 <b>Без очков</b> — повтор без начисления очков, только для практики"
+            "👁 <b>Без очков</b> — повтор без начисления очков, только для практики\n\n"
+            "Либо выполните полный сброс:"
         )
         kb = [
             [btn("🔥 С штрафом (+10с)", f'agame_restart_penalty_{uid}')],
             [btn("👁 Без очков",         f'agame_restart_nopts_{uid}')],
-            [btn("❌ Полный сброс",       f'agame_reset_confirm_{uid}')],
+            [btn("🧹 Сброс: только очки/главы", f'agame_reset_points_{uid}')],
+            [btn("💣 Сброс: с агентами",        f'agame_reset_agents_{uid}')],
             [btn("↩️ Назад", f'agame_player_{uid}'), btn("🏠 Меню", 'back_to_main')],
         ]
     else:
         text = (
-            f"⚠️ Сбросить прогресс игрока <b>{name}</b>?\n\nВсе очки и главы будут обнулены."
-            f"Все очки и главы будут обнулены."
+            f"⚠️ Сбросить прогресс игрока <b>{name}</b>?\n\n"
+            "Выберите вариант:\n"
+            "• 🧹 <b>Только очки/главы</b> — прогресс обнуляется, агенты остаются\n"
+            "• 💣 <b>С агентами</b> — прогресс обнуляется и реферальные связи удаляются"
         )
         kb = [
-            [btn("✅ Да, сбросить", f'agame_reset_confirm_{uid}')],
+            [btn("🧹 Только очки/главы", f'agame_reset_points_{uid}')],
+            [btn("💣 С агентами",        f'agame_reset_agents_{uid}')],
             [btn("↩️ Назад", f'agame_player_{uid}'), btn("🏠 Меню", 'back_to_main')],
         ]
     await safe_edit(query, text, kb)
@@ -4611,16 +4622,17 @@ async def admin_game_restart_nopts(query, context, uid):
     await safe_edit(query, text, kb)
 
 
-async def admin_game_reset_confirm(query, context, uid):
-    """Полный сброс прогресса — очки обнуляются."""
+async def admin_game_reset_confirm(query, context, uid, drop_referrals: bool = False):
+    """Полный сброс прогресса игрока. Optionally drop referrals too."""
     if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
     r = await asyncio.to_thread(db.get_game_result_detail, uid)
     name = (r[1] if r else str(uid)) or str(uid)
-    ok = await asyncio.to_thread(db.reset_game_result_full, uid)
+    ok = await asyncio.to_thread(db.reset_game_result_full, uid, drop_referrals)
+    mode_label = "с агентами" if drop_referrals else "без удаления агентов"
     text = (
-        f"✅ Прогресс игрока <b>{name}</b> полностью сброшен."
+        f"✅ Прогресс игрока <b>{name}</b> полностью сброшен (<b>{mode_label}</b>)."
         if ok else "❌ Не удалось сбросить."
     )
     kb = [[btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')]]
@@ -4673,22 +4685,24 @@ async def admin_game_reset_all(query, context):
         "⚠️ <b>ВНИМАНИЕ!</b>\n\n"
         "Вы собираетесь <b>удалить прогресс ВСЕХ игроков</b>.\n"
         "Это действие необратимо.\n\n"
-        "Вы уверены?",
+        "Выберите вариант:",
         [
-            [btn("🗑 ДА, СБРОСИТЬ ВСЕХ", 'agame_reset_all_confirm')],
+            [btn("🧹 Сбросить всех (без агентов)", 'agame_reset_all_points_confirm')],
+            [btn("💣 Сбросить всех (с агентами)",  'agame_reset_all_agents_confirm')],
             [btn("❌ Отмена",             'admin_game_panel')],
         ])
 
 
-async def admin_game_reset_all_confirm(query, context):
+async def admin_game_reset_all_confirm(query, context, drop_referrals: bool = False):
     """Подтверждённый сброс всех игроков."""
     if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
 
-    deleted = await asyncio.to_thread(db.reset_all_game_results)
+    deleted = await asyncio.to_thread(db.reset_all_game_results, drop_referrals)
+    mode_label = "с удалением агентов" if drop_referrals else "без удаления агентов"
     await safe_edit(query,
-        f"✅ Сброшено игроков: <b>{deleted}</b>",
+        f"✅ Сброшено игроков: <b>{deleted}</b>\nРежим: <b>{mode_label}</b>",
         [[btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Меню", 'back_to_main')]])
 
 
@@ -5350,9 +5364,17 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             uid = int(d.replace('agame_restart_nopts_', ''))
             await admin_game_restart_nopts(query, context, uid)
             return
+        if d.startswith('agame_reset_points_'):
+            uid = int(d.replace('agame_reset_points_', ''))
+            await admin_game_reset_confirm(query, context, uid, False)
+            return
+        if d.startswith('agame_reset_agents_'):
+            uid = int(d.replace('agame_reset_agents_', ''))
+            await admin_game_reset_confirm(query, context, uid, True)
+            return
         if d.startswith('agame_reset_confirm_'):
             uid = int(d.replace('agame_reset_confirm_', ''))
-            await admin_game_reset_confirm(query, context, uid)
+            await admin_game_reset_confirm(query, context, uid, False)
             return
         if d.startswith('agame_player_'):
             uid = int(d.replace('agame_player_', ''))
@@ -5370,8 +5392,11 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             uid = int(d.replace('agame_unban_', ''))
             await admin_game_unban_player(query, context, uid)
             return
-        if d == 'agame_reset_all_confirm':
-            await admin_game_reset_all_confirm(query, context)
+        if d == 'agame_reset_all_confirm' or d == 'agame_reset_all_points_confirm':
+            await admin_game_reset_all_confirm(query, context, False)
+            return
+        if d == 'agame_reset_all_agents_confirm':
+            await admin_game_reset_all_confirm(query, context, True)
             return
 
     if d.startswith('edit_news_') and user_is_admin:
@@ -5581,7 +5606,9 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'game_ref_stats':         game_ref_stats,
         'admin_users':            show_users_stats,
         'game_admin_self_reset':         game_admin_self_reset,
-        'game_admin_self_reset_confirm': game_admin_self_reset_confirm,
+        'game_admin_self_reset_confirm': lambda q, c: game_admin_self_reset_confirm(q, c, False),
+        'game_admin_self_reset_confirm_points': lambda q, c: game_admin_self_reset_confirm(q, c, False),
+        'game_admin_self_reset_confirm_agents': lambda q, c: game_admin_self_reset_confirm(q, c, True),
         'noop':                   lambda q, c: asyncio.sleep(0),
     }
 
@@ -6254,6 +6281,7 @@ async def handle_game_reset(request):
     except Exception:
         return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
     user_id = data.get('user_id')
+    drop_referrals = _to_bool(data.get('drop_referrals') or data.get('reset_with_agents'))
     init_data_raw = data.get('init_data', '')
     if not user_id:
         return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
@@ -6285,9 +6313,12 @@ async def handle_game_reset(request):
             return aiohttp_web.json_response(
                 {'ok': False, 'error': 'only admin can self-reset'},
                 status=403, headers=headers)
-        ok = await asyncio.to_thread(db.reset_game_result_full, user_id)
-        logger.info(f"game_reset (admin self-reset): user={user_id}, ok={ok}")
-        return aiohttp_web.json_response({'ok': ok}, headers=headers)
+        ok = await asyncio.to_thread(db.reset_game_result_full, user_id, drop_referrals)
+        logger.info(
+            "game_reset (admin self-reset): user=%s ok=%s drop_referrals=%s",
+            user_id, ok, drop_referrals
+        )
+        return aiohttp_web.json_response({'ok': ok, 'drop_referrals': bool(drop_referrals)}, headers=headers)
     except Exception as e:
         logger.error(f"handle_game_reset error: {e}")
         return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
@@ -6370,6 +6401,9 @@ async def handle_game_state(request):
             except Exception:
                 pass
 
+        ref_summary = {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+        ref_agents = []
+
         # ── Доступ к главам по роли ──────────────────────────────
         if role == 'admin':
             # Все главы открыты, бесконечные жизни
@@ -6384,8 +6418,23 @@ async def handle_game_state(request):
             tester_mode   = True
             in_rating     = False
         else:  # player
-            # Только открытые индивидуально + глобально
-            accessible = await asyncio.to_thread(db.get_player_accessible_chapters, user_id)
+            # Только открытые индивидуально + глобально + реферальная статистика
+            accessible, ref_summary, ref_agents = await asyncio.gather(
+                asyncio.to_thread(db.get_player_accessible_chapters, user_id),
+                asyncio.to_thread(db.get_referral_summary, user_id),
+                asyncio.to_thread(db.get_referral_agents, user_id, 12),
+            )
+            safe_agents = []
+            for agent in ref_agents or []:
+                if not isinstance(agent, dict):
+                    continue
+                safe_agents.append({
+                    'user_id': int(agent.get('user_id', 0) or 0),
+                    'name': str(agent.get('name') or 'Игрок')[:64],
+                    'completed': int(agent.get('completed', 0) or 0),
+                    'bonus_points': int(agent.get('bonus_points', 0) or 0),
+                })
+            ref_agents = safe_agents
             # Если у игрока нет доступных глав — автоматически открываем главу 1
             if not accessible:
                 try:
@@ -6427,6 +6476,8 @@ async def handle_game_state(request):
             'chapters': chapters_payload,
             'reset_token':  reset_token,
             'retreat_count': retreat_count,
+            'ref_summary': ref_summary,
+            'ref_agents': ref_agents,
         }
         if restart_mode:
             resp['restart_mode'] = restart_mode
