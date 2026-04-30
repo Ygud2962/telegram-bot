@@ -429,6 +429,9 @@ function _applySyncResponse(result, forceServerState = false) {
     saveState();
     _refreshCurrentTabAfterSync();
   }
+  if (Number(result.server_penalty_applied || 0) > 0) {
+    showToast(`⚖ Сервер применил штраф отхода: -${Number(result.server_penalty_applied || 0)} оч`);
+  }
 }
 
 async function sendResultToBot(data) {
@@ -462,7 +465,7 @@ async function sendResultToBot(data) {
           try { localStorage.removeItem(storageKey()); } catch(e2) {}
           return;
         }
-        _applySyncResponse(result, !!result.stale);
+        _applySyncResponse(result, !!result.stale || !!result.force_state);
         _lastSyncedScore = Number(state.totalScore || data.total_score || 0);
         _lastSyncedCompleted = _stateCompletedCount();
         _lastSyncedSignature = [
@@ -521,7 +524,7 @@ async function flushPendingResults() {
       });
       if (resp.ok) {
         const result = await resp.json().catch(() => ({}));
-        _applySyncResponse(result, !!result.stale);
+        _applySyncResponse(result, !!result.stale || !!result.force_state);
         localStorage.removeItem('pending_results');
         console.log('flushPendingResults: HTTP POST OK');
         return;
@@ -594,7 +597,7 @@ async function autoSync(showNotification = false, force = false) {
   _syncInFlight = true;
 
   const data = {
-    type: completed > 0 ? 'chapter_complete' : 'sync',
+    type: 'sync',
     chapter: chapterId,
     score: chapterScore,
     total_score: Number(state.totalScore || 0),
@@ -622,7 +625,7 @@ async function autoSync(showNotification = false, force = false) {
       if (result.stale) {
         _applySyncResponse(result, true);
       } else {
-        _applySyncResponse(result, false);
+        _applySyncResponse(result, !!result.force_state);
       }
       _lastSyncedScore = Number(state.totalScore || 0);
       _lastSyncedCompleted = _stateCompletedCount();
@@ -1595,6 +1598,39 @@ function onBriefRestartClicked() {
 }
 
 let _restartCostPayload = null;
+let _restartConfirmCooldownUntil = 0;
+let _restartConfirmCooldownTimer = null;
+
+function _setRestartConfirmButtonEnabled(enabled, label) {
+  const btn = document.getElementById('restart-cost-confirm-btn');
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.style.opacity = enabled ? '' : '0.6';
+  btn.textContent = label || '↺ НАЧАТЬ СНАЧАЛА (-10%)';
+}
+
+function _startRestartConfirmCooldown(ms = 2500) {
+  _restartConfirmCooldownUntil = Date.now() + Math.max(0, Number(ms || 0));
+  if (_restartConfirmCooldownTimer) {
+    clearInterval(_restartConfirmCooldownTimer);
+    _restartConfirmCooldownTimer = null;
+  }
+  const tick = () => {
+    const leftMs = Math.max(0, _restartConfirmCooldownUntil - Date.now());
+    if (leftMs <= 0) {
+      if (_restartConfirmCooldownTimer) {
+        clearInterval(_restartConfirmCooldownTimer);
+        _restartConfirmCooldownTimer = null;
+      }
+      _setRestartConfirmButtonEnabled(true, '↺ НАЧАТЬ СНАЧАЛА (-10%)');
+      return;
+    }
+    const leftSec = Math.ceil(leftMs / 1000);
+    _setRestartConfirmButtonEnabled(false, `↺ НАЧАТЬ СНАЧАЛА (-10%) · ${leftSec}с`);
+  };
+  tick();
+  _restartConfirmCooldownTimer = setInterval(tick, 200);
+}
 
 function openRestartCostModal(payload) {
   const modal = document.getElementById('restart-cost-modal');
@@ -1607,6 +1643,7 @@ function openRestartCostModal(payload) {
   const safePenalty = Math.max(0, Number(payload && payload.penaltyPoints || 0));
   _restartCostPayload = { scoreNow: safeScore, penaltyPoints: safePenalty };
   textEl.textContent = `Если начать главу сначала, будет применён штраф -10% от полученного результата этой главы. Сейчас: ${safeScore} оч. Штраф: -${safePenalty} оч. Продолжить текущую главу можно бесплатно.`;
+  _startRestartConfirmCooldown(2500);
   modal.classList.add('show');
 }
 
@@ -1615,6 +1652,12 @@ function closeRestartCostModal() {
   if (!modal) return;
   modal.classList.remove('show');
   _restartCostPayload = null;
+  _restartConfirmCooldownUntil = 0;
+  if (_restartConfirmCooldownTimer) {
+    clearInterval(_restartConfirmCooldownTimer);
+    _restartConfirmCooldownTimer = null;
+  }
+  _setRestartConfirmButtonEnabled(true, '↺ НАЧАТЬ СНАЧАЛА (-10%)');
 }
 
 function restartCostContinueFree() {
@@ -1623,10 +1666,24 @@ function restartCostContinueFree() {
 }
 
 function restartCostConfirmRestart() {
+  if (Date.now() < _restartConfirmCooldownUntil) {
+    showToast('⏳ Подождите секунду перед перезапуском');
+    return;
+  }
   const resume = _getInProgressChapterState(currentChapter);
   const scoreNow = resume ? Math.max(0, Number(resume.score || 0)) : 0;
   const payloadPenalty = _restartCostPayload ? Number(_restartCostPayload.penaltyPoints || 0) : 0;
   const penaltyPoints = Math.max(0, payloadPenalty || _calcManualRestartPenaltyPoints(scoreNow));
+  const chapterId = _stateCurrentChapterId();
+  if (chapterId > 0) {
+    Promise.resolve(sendResultToBot({
+      type: 'manual_restart',
+      chapter: chapterId,
+      score: scoreNow,
+      restart_penalty_points: penaltyPoints,
+      game_over: false
+    })).catch(() => {});
+  }
   closeRestartCostModal();
   restartChapterFromStart(currentChapter, { manualPenaltyPoints: penaltyPoints });
   autoSync(false, true);
@@ -2649,11 +2706,16 @@ function showChapterEndFallback() {
   const scoreEl = document.getElementById('chend-score');
   const totalEl = document.getElementById('chend-total');
   const pctEl = document.getElementById('chend-pct');
+  const penaltyEl = document.getElementById('chend-penalty');
   if (nameEl) nameEl.textContent = ch.title;
   if (medalEl) medalEl.textContent = '🥈';
   if (scoreEl) scoreEl.textContent = String(state.chapterScore || 0);
   if (totalEl) totalEl.textContent = String(state.totalScore || 0);
   if (pctEl) pctEl.textContent = '';
+  if (penaltyEl) {
+    penaltyEl.style.display = 'none';
+    penaltyEl.textContent = '';
+  }
   const nextBtn = document.getElementById('chend-next-btn');
   if (nextBtn) {
     nextBtn.textContent = '← К ЗАДАНИЯМ';
@@ -2715,6 +2777,7 @@ async function finishChapter() {
     chapter: ch.id,
     chapter_title: ch.title,
     score: finalChapterScore,
+    restart_penalty_points: restartPenaltyPoints,
     total_score: state.totalScore,
     user_id: getTgUserId(),
     game_over: allDone
@@ -2725,6 +2788,16 @@ async function finishChapter() {
   document.getElementById('chend-score').textContent = finalChapterScore;
   document.getElementById('chend-total').textContent = state.totalScore;
   document.getElementById('chend-pct').textContent = Math.round(pct*100) + '%';
+  const penaltyEl = document.getElementById('chend-penalty');
+  if (penaltyEl) {
+    if (restartPenaltyPoints > 0) {
+      penaltyEl.style.display = 'block';
+      penaltyEl.textContent = `⚖ Штраф за перезапуск: -${restartPenaltyPoints} оч`;
+    } else {
+      penaltyEl.style.display = 'none';
+      penaltyEl.textContent = '';
+    }
+  }
 
   const nextBtn = document.getElementById('chend-next-btn');
   if (allDone) {

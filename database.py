@@ -401,6 +401,12 @@ def init_db():
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS restart_mode VARCHAR(20) DEFAULT NULL')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS reset_token BIGINT DEFAULT 0')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS failed BOOLEAN DEFAULT FALSE')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS retreat_count INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS pending_retreat_penalty INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS pending_retreat_chapter INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS sync_chapter INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS sync_max_chapter_score INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS sync_max_cipher_idx INTEGER DEFAULT -1')
         # Таблица управления главами игры
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_chapters (
@@ -1501,6 +1507,221 @@ def get_game_players_count():
         release_connection(conn)
 
 
+def _calc_retreat_penalty_points(score_value: int) -> int:
+    base = max(0, int(score_value or 0))
+    if base <= 0:
+        return 0
+    return max(1, int(round(base * 0.10)))
+
+
+def save_game_sync_result(user_id, user_name, chapter, score, total_score,
+                          completed, game_over=False, failed=False,
+                          event_type='sync', chapter_idx=-1, cipher_idx=-1,
+                          chapter_in_progress=False, restart_penalty_points=0):
+    """Сохраняет sync из игры с серверной фиксацией штрафа "отхода/перегруппировки".
+
+    Возвращает dict:
+      {
+        ok: bool,
+        db_score: int,
+        db_completed: int,
+        server_penalty_applied: int,
+        retreat_count: int
+      }
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        chapter = max(0, int(chapter or 0))
+        score = max(0, int(score or 0))
+        total_score = max(0, int(total_score or 0))
+        completed = max(0, int(completed or 0))
+        game_over = bool(game_over)
+        failed = bool(failed)
+        chapter_idx = int(chapter_idx or 0)
+        cipher_idx = int(cipher_idx if cipher_idx is not None else -1)
+        chapter_in_progress = bool(chapter_in_progress)
+        event_type = str(event_type or 'sync')
+        restart_penalty_points = max(0, int(restart_penalty_points or 0))
+
+        cur.execute('''
+            SELECT user_id, user_name, chapter, score, total_score, completed, game_over, failed,
+                   COALESCE(retreat_count, 0),
+                   COALESCE(pending_retreat_penalty, 0),
+                   COALESCE(pending_retreat_chapter, 0),
+                   COALESCE(sync_chapter, 0),
+                   COALESCE(sync_max_chapter_score, 0),
+                   COALESCE(sync_max_cipher_idx, -1)
+            FROM game_results
+            WHERE user_id = %s
+            FOR UPDATE
+        ''', (user_id,))
+        row = cur.fetchone()
+
+        if not row:
+            cur.execute('''
+                INSERT INTO game_results
+                    (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
+                VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+            ''', (user_id, user_name or 'Игрок'))
+            cur.execute('''
+                SELECT user_id, user_name, chapter, score, total_score, completed, game_over, failed,
+                       COALESCE(retreat_count, 0),
+                       COALESCE(pending_retreat_penalty, 0),
+                       COALESCE(pending_retreat_chapter, 0),
+                       COALESCE(sync_chapter, 0),
+                       COALESCE(sync_max_chapter_score, 0),
+                       COALESCE(sync_max_cipher_idx, -1)
+                FROM game_results
+                WHERE user_id = %s
+                FOR UPDATE
+            ''', (user_id,))
+            row = cur.fetchone()
+
+        (
+            _uid, db_user_name, db_chapter, db_score, db_total, db_completed, db_game_over, _db_failed,
+            retreat_count, pending_penalty, pending_chapter, sync_chapter, sync_max_score, sync_max_cipher
+        ) = row
+
+        retreat_count = int(retreat_count or 0)
+        pending_penalty = max(0, int(pending_penalty or 0))
+        pending_chapter = max(0, int(pending_chapter or 0))
+        sync_chapter = max(0, int(sync_chapter or 0))
+        sync_max_score = max(0, int(sync_max_score or 0))
+        sync_max_cipher = int(sync_max_cipher if sync_max_cipher is not None else -1)
+
+        # Явный ручной "отход" с клиента.
+        explicit_manual_retreat = event_type == 'manual_restart'
+        if explicit_manual_retreat:
+            if restart_penalty_points <= 0:
+                restart_penalty_points = _calc_retreat_penalty_points(score)
+            pending_penalty = max(pending_penalty, restart_penalty_points)
+            pending_chapter = chapter
+            retreat_count += 1
+            sync_chapter = chapter
+            sync_max_score = max(0, score)
+            sync_max_cipher = max(-1, cipher_idx)
+
+        # Резервное авто-детектирование перезапуска (если клиентский event не пришёл).
+        auto_retreat_detected = False
+        if (
+            not explicit_manual_retreat and
+            chapter_in_progress and
+            chapter > 0 and
+            sync_chapter == chapter and
+            pending_chapter != chapter
+        ):
+            score_drop = score + 5 < sync_max_score
+            cipher_drop = (cipher_idx >= 0 and sync_max_cipher >= 0 and (cipher_idx + 1) < sync_max_cipher)
+            if score_drop or cipher_drop:
+                auto_retreat_detected = True
+                penalty_base = max(sync_max_score, score)
+                detected_penalty = _calc_retreat_penalty_points(penalty_base)
+                pending_penalty = max(pending_penalty, detected_penalty)
+                pending_chapter = chapter
+                retreat_count += 1
+                sync_max_score = max(0, score)
+                sync_max_cipher = max(-1, cipher_idx)
+
+        # Поддерживаем максимум прогресса внутри текущей главы.
+        if chapter_in_progress and chapter > 0 and not explicit_manual_retreat and not auto_retreat_detected:
+            if sync_chapter != chapter:
+                sync_chapter = chapter
+                sync_max_score = max(0, score)
+                sync_max_cipher = max(-1, cipher_idx)
+            else:
+                sync_max_score = max(sync_max_score, max(0, score))
+                if cipher_idx >= 0:
+                    sync_max_cipher = max(sync_max_cipher, cipher_idx)
+
+        # Серверное применение штрафа при завершении главы.
+        server_penalty_applied = 0
+        if event_type == 'chapter_complete' and pending_penalty > 0 and pending_chapter == chapter:
+            client_penalty_applied = max(0, int(restart_penalty_points or 0))
+            penalty_to_apply_server = max(0, pending_penalty - client_penalty_applied)
+            server_penalty_applied = min(penalty_to_apply_server, score)
+            score = max(0, score - server_penalty_applied)
+            total_score = max(0, total_score - server_penalty_applied)
+            pending_penalty = 0
+            pending_chapter = 0
+            sync_max_score = 0
+            sync_max_cipher = -1
+            sync_chapter = 0
+        elif event_type == 'chapter_complete':
+            # Глава завершена без ожидающего штрафа — закрываем runtime-трекер.
+            sync_max_score = 0
+            sync_max_cipher = -1
+            sync_chapter = 0
+
+        new_chapter = max(int(db_chapter or 0), chapter)
+        if total_score >= int(db_total or 0) or completed >= int(db_completed or 0):
+            new_score = score
+        else:
+            new_score = int(db_score or 0)
+        new_total_score = max(int(db_total or 0), total_score)
+        new_completed = max(int(db_completed or 0), completed)
+        new_game_over = bool(db_game_over) or bool(game_over)
+        new_user_name = user_name or db_user_name or 'Игрок'
+
+        cur.execute('''
+            UPDATE game_results
+            SET user_name = %s,
+                chapter = %s,
+                score = %s,
+                total_score = %s,
+                completed = %s,
+                game_over = %s,
+                failed = %s,
+                retreat_count = %s,
+                pending_retreat_penalty = %s,
+                pending_retreat_chapter = %s,
+                sync_chapter = %s,
+                sync_max_chapter_score = %s,
+                sync_max_cipher_idx = %s,
+                updated_at = NOW()
+            WHERE user_id = %s
+        ''', (
+            new_user_name,
+            new_chapter,
+            new_score,
+            new_total_score,
+            new_completed,
+            new_game_over,
+            failed,
+            retreat_count,
+            pending_penalty,
+            pending_chapter,
+            sync_chapter,
+            sync_max_score,
+            sync_max_cipher,
+            user_id
+        ))
+
+        conn.commit()
+        return {
+            'ok': True,
+            'db_score': int(new_total_score),
+            'db_completed': int(new_completed),
+            'server_penalty_applied': int(server_penalty_applied),
+            'retreat_count': int(retreat_count),
+        }
+    except Exception as e:
+        logger.error(f"save_game_sync_result error {user_id}: {e}")
+        _safe_rollback(conn)
+        return {
+            'ok': False,
+            'db_score': 0,
+            'db_completed': 0,
+            'server_penalty_applied': 0,
+            'retreat_count': 0,
+        }
+    finally:
+        release_connection(conn)
+
+
 def get_game_player_rank(user_id):
     """Возвращает позицию игрока в публичном рейтинге (role=player), либо (None, total_players)."""
     conn = None
@@ -1586,7 +1807,10 @@ def get_game_result(user_id):
                    COALESCE(achievement_pts, 0) as achievement_pts,
                    COALESCE(chapter, 0) as chapter,
                    COALESCE(score, 0) as score,
-                   COALESCE(reset_token, 0) as reset_token
+                   COALESCE(reset_token, 0) as reset_token,
+                   COALESCE(retreat_count, 0) as retreat_count,
+                   COALESCE(pending_retreat_penalty, 0) as pending_retreat_penalty,
+                   COALESCE(pending_retreat_chapter, 0) as pending_retreat_chapter
             FROM game_results
             WHERE user_id = %s
         ''', (user_id,))
@@ -1609,6 +1833,9 @@ def reset_game_result(user_id):
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE,
                 achievement_count=0, achievement_pts=0,
+                retreat_count=0,
+                pending_retreat_penalty=0, pending_retreat_chapter=0,
+                sync_chapter=0, sync_max_chapter_score=0, sync_max_cipher_idx=-1,
                 reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
             WHERE user_id=%s
@@ -1662,6 +1889,8 @@ def reset_game_result_soft(user_id, mode='penalty'):
         cur.execute("""
             UPDATE game_results
             SET game_over=FALSE, restart_mode=%s,
+                pending_retreat_penalty=0, pending_retreat_chapter=0,
+                sync_chapter=0, sync_max_chapter_score=0, sync_max_cipher_idx=-1,
                 reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
             WHERE user_id=%s
@@ -1723,6 +1952,9 @@ def reset_all_game_results():
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE,
                 achievement_count=0, achievement_pts=0,
+                retreat_count=0,
+                pending_retreat_penalty=0, pending_retreat_chapter=0,
+                sync_chapter=0, sync_max_chapter_score=0, sync_max_cipher_idx=-1,
                 reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
         """)
@@ -1751,7 +1983,10 @@ def ban_game_user(user_id):
         ''')
         cur.execute('''
             UPDATE game_results
-            SET total_score = 0, score = 0, banned = TRUE, updated_at = NOW()
+            SET total_score = 0, score = 0, banned = TRUE,
+                pending_retreat_penalty = 0, pending_retreat_chapter = 0,
+                sync_chapter = 0, sync_max_chapter_score = 0, sync_max_cipher_idx = -1,
+                updated_at = NOW()
             WHERE user_id = %s
         ''', (user_id,))
         updated = cur.rowcount
@@ -1786,7 +2021,7 @@ def unban_game_user(user_id):
 
 
 def get_game_leaderboard_admin(limit=50):
-    """Полный список для админа: user_id, user_name, total_score, completed, game_over, failed, banned, updated_at."""
+    """Полный список для админа: user_id, user_name, total_score, completed, game_over, failed, banned, updated_at, retreat_count."""
     conn = None
     try:
         conn = get_connection()
@@ -1795,7 +2030,8 @@ def get_game_leaderboard_admin(limit=50):
             SELECT user_id, user_name, total_score, completed, game_over,
                    COALESCE(failed, FALSE),
                    COALESCE(banned, FALSE),
-                   updated_at
+                   updated_at,
+                   COALESCE(retreat_count, 0) as retreat_count
             FROM game_results
             ORDER BY total_score DESC, updated_at ASC
             LIMIT %s
@@ -1817,7 +2053,10 @@ def get_game_result_detail(user_id):
         cur.execute('''
             SELECT user_id, user_name, total_score, completed, game_over,
                    chapter, score, COALESCE(failed, FALSE),
-                   COALESCE(banned, FALSE), updated_at
+                   COALESCE(banned, FALSE), updated_at,
+                   COALESCE(retreat_count, 0) as retreat_count,
+                   COALESCE(pending_retreat_penalty, 0) as pending_retreat_penalty,
+                   COALESCE(pending_retreat_chapter, 0) as pending_retreat_chapter
             FROM game_results
             WHERE user_id = %s
         ''', (user_id,))
@@ -2565,6 +2804,9 @@ def reset_game_result_full(user_id: int) -> bool:
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE, restart_mode=NULL,
                 achievement_count=0, achievement_pts=0,
+                retreat_count=0,
+                pending_retreat_penalty=0, pending_retreat_chapter=0,
+                sync_chapter=0, sync_max_chapter_score=0, sync_max_cipher_idx=-1,
                 reset_token=%s,
                 updated_at=NOW()
             WHERE user_id=%s
@@ -2583,6 +2825,9 @@ def reset_game_result_full(user_id: int) -> bool:
                 SET chapter=0, score=0, total_score=0, completed=0,
                     game_over=FALSE, failed=FALSE, restart_mode=NULL,
                     achievement_count=0, achievement_pts=0,
+                    retreat_count=0,
+                    pending_retreat_penalty=0, pending_retreat_chapter=0,
+                    sync_chapter=0, sync_max_chapter_score=0, sync_max_cipher_idx=-1,
                     reset_token=%s,
                     updated_at=NOW()
                 WHERE user_id=%s

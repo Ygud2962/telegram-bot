@@ -3143,6 +3143,7 @@ async def menu_game(query, context):
             'banned': bool(my_result[6]) if len(my_result) > 6 else False,
             'achievement_count': int(my_result[7]) if len(my_result) > 7 else 0,
             'achievement_pts': int(my_result[8]) if len(my_result) > 8 else 0,
+            'retreat_count': int(my_result[12]) if len(my_result) > 12 else 0,
             'restart_mode': restart_mode,
             'admin_mode': admin_mode,
             'tester_mode': tester_mode,
@@ -4268,6 +4269,7 @@ async def admin_game_panel(query, context):
     finished = sum(1 for r in rows if r[4])
     banned = sum(1 for r in rows if r[6])
     active = sum(1 for r in rows if r[2] > 0)
+    total_retreats = sum(int(r[8] or 0) if len(r) > 8 else 0 for r in rows)
     beta_count = len(beta_users)
 
     mode_labels = {
@@ -4283,6 +4285,7 @@ async def admin_game_panel(query, context):
         f"\U0001f4ca \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0438\u0433\u0440\u043e\u043a\u043e\u0432: <b>{active}</b>\n"
         f"\U0001f3c1 \u0417\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0438 \u0438\u0433\u0440\u0443: <b>{finished}</b>\n"
         f"\U0001f6ab \u0417\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u044b: <b>{banned}</b>\n\n"
+        f"\U0001f503 \u041e\u0442\u0445\u043e\u0434\u043e\u0432/\u043f\u0435\u0440\u0435\u0433\u0440\u0443\u043f\u043f\u0438\u0440\u043e\u0432\u043e\u043a: <b>{total_retreats}</b>\n\n"
         f"\U0001f516 \u0412\u0435\u0440\u0441\u0438\u0438: \u0431\u043e\u0442 <b>{BOT_VERSION}</b> \u00b7 \u0438\u0433\u0440\u0430 <b>{GAME_VERSION}</b>\n\n"
         "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435:"
     )
@@ -4344,11 +4347,11 @@ async def admin_game_leaderboard(query, context):
     kb    = []
     medals = ['🥇','🥈','🥉']
     for i, r in enumerate(rows[:20]):
-        uid, name, score, comp, done, failed, banned, upd = r
-        status = "🚫" if banned else ("✅" if done else f"{comp}/4")
+        uid, name, score, comp, done, failed, banned, upd, retreats = r
+        status = "🚫" if banned else ("✅" if done else f"{comp}/6")
         m      = medals[i] if i < 3 else f"{i+1}."
-        lines.append(f"{m} <b>{name or 'Игрок'}</b> — {score} оч {status}")
-        kb.append([btn(f"{'🚫 ' if banned else ''}{name or 'Игрок'} ({score}оч)", f'agame_view_{uid}')])
+        lines.append(f"{m} <b>{name or 'Игрок'}</b> — {score} оч {status} · отходов: {int(retreats or 0)}")
+        kb.append([btn(f"{'🚫 ' if banned else ''}{name or 'Игрок'} ({score}оч · ⤴{int(retreats or 0)})", f'agame_view_{uid}')])
 
     kb.append([btn("◀️ Назад", 'admin_game_panel'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, '\n'.join(lines), kb)
@@ -4365,7 +4368,7 @@ async def admin_game_view_player(query, context, uid):
         await safe_edit(query, "❌ Игрок не найден.",
             [[btn("↩️ Список", 'admin_game_leaderboard'), btn("🏠 Меню", 'back_to_main')]]); return
 
-    uid2, name, total, completed, game_over, chapter, chap_score, failed, banned, upd = r
+    uid2, name, total, completed, game_over, chapter, chap_score, failed, banned, upd, retreat_count, pending_retreat_penalty, pending_retreat_chapter = r
     upd_str = upd.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M') if upd else '—'
 
     status_icon = "🚫 ЗАБАНЕН" if banned else ("✅ ЗАВЕРШИЛ" if game_over else f"▶ В ПРОЦЕССЕ ({completed}/6 глав)")
@@ -4377,6 +4380,9 @@ async def admin_game_view_player(query, context, uid):
         f"📖 Глав пройдено: <b>{completed}/6</b>\n"
         f"📌 Последняя гл.: <b>{chapter}</b> ({chap_score} оч)\n"
         f"💔 Провалена:      {'Да' if failed else 'Нет'}\n"
+        f"🔁 Отходов:        <b>{int(retreat_count or 0)}</b>\n"
+        f"⚖ Ожидающий штраф: <b>{int(pending_retreat_penalty or 0)}</b> оч"
+        f"{f' (глава {int(pending_retreat_chapter or 0)})' if int(pending_retreat_chapter or 0) > 0 else ''}\n"
         f"📅 Последнее обновление: {upd_str}\n"
     )
 
@@ -6207,6 +6213,7 @@ async def handle_game_state(request):
         score     = result[2] if result else 0
         completed = result[3] if result else 0
         game_over = bool(result[4]) if result else False
+        retreat_count = int(result[12]) if result and len(result) > 12 else 0
         # reset_token — стабильный токен, меняется только при админ/игровом сбросе.
         reset_token = _game_reset_token(result)
         restart_mode = None
@@ -6273,6 +6280,7 @@ async def handle_game_state(request):
             'chapter_schedule': chapter_schedule,
             'chapters': chapters_payload,
             'reset_token':  reset_token,
+            'retreat_count': retreat_count,
         }
         if restart_mode:
             resp['restart_mode'] = restart_mode
@@ -6365,6 +6373,7 @@ async def handle_game_sync(request):
     chapter_in_progress = _to_bool(data.get('chapter_in_progress', False))
     achievement_count = _clamp_int(data.get('achievement_count', 0), 0, 500)
     achievement_pts = _clamp_int(data.get('achievement_pts', 0), 0, 50000)
+    restart_penalty_points = _clamp_int(data.get('restart_penalty_points', 0), 0, 50000)
     client_reset_token = _clamp_int(data.get('reset_token', 0), 0, 2147483647)
 
     if not user_id:
@@ -6431,15 +6440,27 @@ async def handle_game_sync(request):
                  'db_reset_token': db_reset_token_before, 'role': current_role},
                 headers=headers)
 
-        await asyncio.to_thread(
-            db.save_game_result,
+        sync_saved = await asyncio.to_thread(
+            db.save_game_sync_result,
             user_id, trusted_user_name, chapter, score, total_score,
-            completed, game_over, False
+            completed, game_over, False,
+            event_type, chapter_idx, cipher_idx, chapter_in_progress, restart_penalty_points
         )
+        if not sync_saved or not sync_saved.get('ok'):
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'save_failed'},
+                status=500,
+                headers=headers
+            )
+
+        server_penalty_applied = _clamp_int(sync_saved.get('server_penalty_applied', 0), 0, 50000)
+        retreat_count_saved = _clamp_int(sync_saved.get('retreat_count', 0), 0, 999999)
+        db_score_after_save = _clamp_int(sync_saved.get('db_score', db_score_before), 0, 999999)
+        db_completed_after_save = _clamp_int(sync_saved.get('db_completed', db_completed_before), 0, 6)
         # reset_token уже защищает от устаревшего sync после админ-сброса.
         # Поэтому достижения сохраняем при наличии реального прогресса
         # (до или после текущего sync), чтобы не терять их на первом проходе.
-        has_progress = (db_score_before > 0) or (total_score > 0) or (completed > 0)
+        has_progress = (db_score_before > 0) or (db_score_after_save > 0) or (completed > 0) or (db_completed_after_save > 0)
         if (achievement_count > 0 or achievement_pts > 0) and has_progress:
             await asyncio.to_thread(
                 db.update_achievement_stats, user_id, achievement_count, achievement_pts
@@ -6468,14 +6489,19 @@ async def handle_game_sync(request):
         db_score = result[2] if result else 0
         db_completed = result[3] if result else 0
         db_reset_token = _game_reset_token(result)
+        retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count_saved
         logger.info(
-            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s banned=%s",
-            user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx, chapter_in_progress, event_type, banned
+            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s",
+            user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx,
+            chapter_in_progress, event_type, server_penalty_applied, retreat_count, banned
         )
         return aiohttp_web.json_response(
             {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
-             'banned': banned, 'db_score': db_score, 'db_completed': db_completed,
-             'db_reset_token': db_reset_token, 'stale': False, 'role': current_role},
+              'banned': banned, 'db_score': db_score, 'db_completed': db_completed,
+             'db_reset_token': db_reset_token, 'stale': False, 'role': current_role,
+             'server_penalty_applied': server_penalty_applied,
+             'retreat_count': retreat_count,
+             'force_state': bool(server_penalty_applied > 0)},
             headers=headers)
     except Exception as e:
         logger.error(f"game_sync error: {e}")

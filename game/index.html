@@ -801,6 +801,7 @@
                 <div id="chend-score" class="chend-score"></div>
                 <div id="chend-total" class="chend-total"></div>
                 <div id="chend-pct" style="font-size:var(--fs-sm);color:var(--muted);margin-top:8px;"></div>
+                <div id="chend-penalty" style="display:none;font-size:var(--fs-xs);color:#ffb7a6;margin-top:8px;"></div>
             </div>
             <button id="chend-next-btn" class="btn btn-accent"></button>
         </div>
@@ -886,7 +887,7 @@
             <div id="restart-cost-modal-text" class="bug-modal-text"></div>
             <div class="bug-modal-actions">
                 <button class="btn btn-accent" onclick="restartCostContinueFree()">▶ ПРОДОЛЖИТЬ БЕЗ ШТРАФА</button>
-                <button class="btn btn-danger" onclick="restartCostConfirmRestart()">↺ НАЧАТЬ СНАЧАЛА (-10%)</button>
+                <button id="restart-cost-confirm-btn" class="btn btn-danger" onclick="restartCostConfirmRestart()">↺ НАЧАТЬ СНАЧАЛА (-10%)</button>
                 <button class="btn" onclick="closeRestartCostModal()">ОТМЕНА</button>
             </div>
         </div>
