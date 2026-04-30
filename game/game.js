@@ -184,9 +184,9 @@ const CHAPTERS = [
         fact:"Операция «Багратион» привела к полному освобождению Беларуси и уничтожению группы армий «Центр».", points:120 },
       { type:"morse", typeLabel:"АЗБУКА МОРЗЕ",
         task:"Радиограмма от командира бригады. Расшифруй одно слово:",
-        encrypted:"---/..../-.../---/--./-.././.-.../---/-..",
-        answer:"e4d2f03d6cacba6f4636f7a06005337f496fb959510878462cb55d1e688ab307",
-        hint:"ПОРОДЭ: П(17)→34-17=17=П, О(16)→18=Р, Р(18)→16=О, О→Р, Д(5)→29=Ы, Э(31)→3=В. Читай обратное: ПРОРЫВ!",
+        encrypted:".--./.-./---/.-./-.--/.--",
+        answer:"3c52700fe62c8bff58582f5a574ddc38f0a83f05b7220763744bb61bc933b64d",
+        hint:"П=.--., Р=.-., О=---, Р=.-., Ы=-.--, В=.--. Собери по порядку: ПРОРЫВ.",
         fact:"3 июля 1944 года был освобождён Минск. В окружении оказалось 100 000 немецких солдат.", points:140 },
       { type:"atbash", typeLabel:"ШИФР АТБАШ",
         task:"Срочное донесение от командира бригады. Шифр Атбаш. Расшифруй:",
@@ -888,6 +888,65 @@ function _calcManualRestartPenaltyPoints(chapterScoreValue) {
   const base = Math.max(0, Math.floor(Number(chapterScoreValue || 0)));
   if (base <= 0) return 0;
   return Math.max(1, Math.round(base * 0.10));
+}
+
+function _calcOutOfLivesPenaltyPoints(chapterScoreValue) {
+  const base = Math.max(0, Math.floor(Number(chapterScoreValue || 0)));
+  if (base <= 0) return 0;
+  return Math.max(1, Math.round(base * 0.03));
+}
+
+let _outOfLivesRestartTimer = null;
+
+function _handleOutOfLives() {
+  if (state.adminMode) {
+    state.lives = 5;
+    saveState();
+    autoSync(false, true);
+    renderLives();
+    const hb = document.getElementById('cipher-hint-box');
+    const ht = document.getElementById('cipher-hint-text');
+    if (hb && ht) {
+      hb.className = 'cipher-hint-box show';
+      ht.textContent = '⚡ Режим админа: жизни восстановлены';
+      setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
+    }
+    return;
+  }
+
+  if (_outOfLivesRestartTimer) return;
+
+  stopTimer();
+  const chapterIdx = Math.max(0, Math.floor(Number(state.chapter || 0)));
+  const scoreNow = Math.max(0, Math.floor(Number(state.chapterScore || 0)));
+  const penaltyPoints = _calcOutOfLivesPenaltyPoints(scoreNow);
+  const carryPenaltyPoints = Math.max(0, Math.floor(Number(state._manualRestartPenaltyPoints || 0)));
+  const totalPenaltyPoints = carryPenaltyPoints + penaltyPoints;
+
+  const msg = penaltyPoints > 0
+    ? `Жизни закончились. Глава будет перезапущена. Штраф -${penaltyPoints} оч (3%).`
+    : 'Жизни закончились. Глава будет перезапущена.';
+
+  const hb = document.getElementById('cipher-hint-box');
+  const ht = document.getElementById('cipher-hint-text');
+  if (hb && ht) {
+    hb.className = 'cipher-hint-box show';
+    ht.textContent = msg;
+  }
+  showToast(msg);
+  renderLives();
+
+  const inp = document.getElementById('cipher-input');
+  if (inp) inp.disabled = true;
+  const checkBtn = document.getElementById('btn-check') || document.querySelector('.btn-check');
+  if (checkBtn) checkBtn.disabled = true;
+
+  _outOfLivesRestartTimer = setTimeout(() => {
+    _outOfLivesRestartTimer = null;
+    if (hb) hb.className = 'cipher-hint-box';
+    restartChapterFromStart(chapterIdx, { manualPenaltyPoints: totalPenaltyPoints });
+    autoSync(false, true);
+  }, 1800);
 }
 
 function _buildUnloadSyncData() {
@@ -2442,32 +2501,7 @@ async function checkAnswer() {
     autoSync(false, true);
 
     if (state.lives <= 0) {
-      if (state.adminMode) {
-        // Режим администратора — восстанавливаем жизни
-        state.lives = 5; saveState(); autoSync(false, true); renderLives();
-        const hb = document.getElementById('cipher-hint-box');
-        const ht = document.getElementById('cipher-hint-text');
-        if (hb && ht) {
-          hb.className = 'cipher-hint-box show';
-          ht.textContent = '⚡ Режим админа: жизни восстановлены';
-          setTimeout(() => { hb.className = 'cipher-hint-box'; }, 2000);
-        }
-      } else {
-        // Для tester/player: при 0 жизней начинаем эту же главу заново
-        inp.disabled = true;
-        renderLives();
-        stopTimer();
-        const hb = document.getElementById('cipher-hint-box');
-        const ht = document.getElementById('cipher-hint-text');
-        if (hb && ht) {
-          hb.className = 'cipher-hint-box show';
-          ht.textContent = 'Жизни закончились. Глава начата заново.';
-        }
-        setTimeout(() => {
-          if (hb) hb.className = 'cipher-hint-box';
-          restartChapterFromStart(state.chapter);
-        }, 900);
-      }
+      _handleOutOfLives();
     } else {
       renderLives();
     }
@@ -2932,6 +2966,10 @@ function renderChapterEpicSummary(chapter, stats, pct, medal, artifactsGained) {
 
 
 function restartChapterFromStart(idx, options = {}) {
+  if (_outOfLivesRestartTimer) {
+    clearTimeout(_outOfLivesRestartTimer);
+    _outOfLivesRestartTimer = null;
+  }
   unlockAudioInteraction();
   const ch = CHAPTERS[idx];
   if (!ch) {
@@ -4626,9 +4664,8 @@ function quizSubmit() {
     autoSync(false, true);
     renderLives();
 
-    if (state.lives <= 0 && !state.adminMode) {
-      stopTimer();
-      setTimeout(() => restartChapterFromStart(state.chapter), 900);
+    if (state.lives <= 0) {
+      _handleOutOfLives();
     } else {
       // Сбрасываем через 1.5с — убираем подсветку, даём выбрать снова
       setTimeout(() => {
@@ -4772,10 +4809,7 @@ async function checkAnagram() {
     saveState();
     autoSync(false, true);
     if (state.lives <= 0) {
-      if (state.adminMode) {
-        state.lives = 5; saveState(); autoSync(false, true); renderLives();
-        setTimeout(resetAnagram, 500);
-      } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
+      _handleOutOfLives();
     } else { renderLives(); setTimeout(resetAnagram, 900); }
   }
 }
@@ -4889,10 +4923,7 @@ async function checkMapAnswer(clicked, target) {
     saveState();
     autoSync(false, true);
     if (state.lives <= 0) {
-      if (state.adminMode) {
-        state.lives = 5; saveState(); autoSync(false, true); renderLives();
-        document.getElementById('map-hint-text').textContent = '⚡ Режим админа: жизни восстановлены';
-      } else { setTimeout(() => restartChapterFromStart(state.chapter), 900); }
+      _handleOutOfLives();
     } else { renderLives(); }
   }
 }
