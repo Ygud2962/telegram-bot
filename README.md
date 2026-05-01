@@ -13,12 +13,12 @@
 
 <!-- AUTOVERSION:START -->
 [![Версия бота](https://img.shields.io/badge/🤖_ВЕРСИЯ-9.0.0-2196F3?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ygud2962/telegram-bot)
-[![Версия игры](https://img.shields.io/badge/🎮_ВЕРСИЯ-1.2.17-FF9800?style=for-the-badge&logo=html5&logoColor=white)](https://ygud2962.github.io/telegram-bot/)
+[![Версия игры](https://img.shields.io/badge/🎮_ВЕРСИЯ-1.2.40-FF9800?style=for-the-badge&logo=html5&logoColor=white)](https://ygud2962.github.io/telegram-bot/)
 
 | Компонент | Версия |
 |---|---|
 | 🤖 Bot | **9.0.0** |
-| 🎮 Game | **1.2.17** |
+| 🎮 Game | **1.2.40** |
 <!-- AUTOVERSION:END -->
 
 </div>
