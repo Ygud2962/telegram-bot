@@ -1,7 +1,15 @@
-# 🏫 School Telegram Bot + Mini App
+<div align="center">
 
-## 🔐 «Шифровальщик» (1941–1945)
-Школьный Telegram-бот с расписанием/заменами/новостями и встроенной образовательной Mini App-игрой.
+# 🏫 School Telegram Bot + Mini App
+### 🔐 «Шифровальщик» · 1941–1945
+
+Школьная экосистема в Telegram: **расписание, замены, новости, AI-помощник и образовательная игра**.
+
+[![Telegram](https://img.shields.io/badge/Telegram-@school__hoiniki__sch3__bot-27A7E7?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Railway](https://img.shields.io/badge/Deploy-Railway-6B5CFF?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app/)
+[![AI](https://img.shields.io/badge/AI-Groq-FF6B35?style=for-the-badge&logo=openai&logoColor=white)](https://groq.com/)
 
 <!-- AUTOVERSION:START -->
 [![Версия бота](https://img.shields.io/badge/🤖_ВЕРСИЯ-9.0.0-2196F3?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ygud2962/telegram-bot)
@@ -13,73 +21,85 @@
 | 🎮 Game | **1.2.17** |
 <!-- AUTOVERSION:END -->
 
-[Бот в Telegram](https://t.me/school_hoiniki_sch3_bot)
+</div>
 
 ---
 
-## Что в проекте
+## ⚡ Быстрая навигация
 
-- Telegram-бот на `python-telegram-bot`.
-- PostgreSQL (пользователи, расписание, замены, новости, прогресс игры).
-- Встроенный HTTP-сервер `aiohttp` в том же процессе:
-  - отдает Mini App (`/game`, `/game/`, `/index.html`);
-  - принимает API синхронизации игры (`/game_sync`, `/game_state`, `/game_leaderboard`, `/game_reset`).
-- Клиент игры на `HTML/CSS/Vanilla JS` (`game/index.html`, `game/game.js`).
+| Раздел | Что внутри |
+|---|---|
+| [Возможности](#-возможности) | Что умеет бот и игра |
+| [Архитектура](#-архитектура) | Как устроен проект |
+| [Быстрый старт](#-быстрый-старт) | Запуск локально |
+| [Переменные окружения](#-переменные-окружения) | Все env для Railway |
+| [Railway setup](#-настройка-railway) | Пошаговая настройка |
+| [API Mini App](#-api-mini-app) | `/game_sync`, `/game_state` и т.д. |
+| [Troubleshooting](#-частые-проблемы) | Что делать при сбоях |
 
 ---
 
-## Основные возможности
+## ✨ Возможности
 
-### Бот
-- Расписание по классам/учителям.
-- Замены (вручную и через фото с AI-разбором).
-- Новости с разделением на:
+### 🤖 Бот
+- 📚 Расписание по классам и учителям.
+- 🔄 Замены (вручную + AI-распознавание с фото).
+- 📰 Новости с разделением:
   - `🏫 Новости школы`
   - `🤖 Новости бота`
-- Админ-панель: пользователи, режимы игры, роли, публикации, техрежим.
-- AI-помощник (через `GROQ_API_KEY`, если ключ задан).
+- 🛠 Админ-панель: пользователи, режимы игры, роли, рассылки, техрежим.
+- 🤖 AI-помощник через Groq (`GROQ_API_KEY`).
 
-### Игра
-- 6 глав, 36 заданий, 6 типов шифров/задач.
-- Рейтинг, достижения, артефакты.
-- Автосохранение прогресса в БД.
-- Продолжение главы после выхода.
-- Перезапуск главы с подтверждением и штрафом.
-- Настройки звука:
+### 🎮 Игра «Шифровальщик»
+- 🗺 6 глав, 36 заданий, 6 типов шифров.
+- 🏆 Рейтинг, достижения, артефакты.
+- 💾 Автосохранение прогресса в БД.
+- ⏯ Продолжение главы после выхода из Mini App.
+- ⚖ Штрафы/правила перезапуска главы.
+- 🔊 Аудио-система:
   - 5 CC0-треков;
   - вкл/выкл музыки и эффектов;
-  - отдельная громкость музыки/эффектов.
-- Кнопка «Сообщить об ошибке» с переходом к админу игры.
+  - отдельная громкость музыки и SFX.
+- 🚨 Кнопка «Сообщить об ошибке» с быстрым переходом к администратору.
 
-### Реферальная система («Агенты»)
+### 🕵 Реферальная система «Агенты»
 - Личная ссылка: `https://t.me/<bot_username>?start=ref_<user_id>`.
 - Бонусы:
-  - новому игроку: `+50` стартовых очков;
-  - пригласившему: `+30` за каждую главу, пройденную агентом.
-- В игре в профиле показываются:
-  - агрегированная статистика по агентам;
+  - новичку: `+50` стартовых очков;
+  - пригласившему: `+30` за каждую завершенную главу агентом.
+- В профиле игры отображаются:
+  - агрегированная статистика;
   - список агентов и их вклад.
-- Добавлены достижения за рефералов (первый агент, 3 агента, бонусные очки).
+- Дополнительные достижения за рефералов.
 
 ---
 
-## Роли и доступ (важно)
+## 🧭 Архитектура
 
-В проекте разделены **админ бота** и **роль в игре**.
+```mermaid
+flowchart LR
+  U["Пользователь Telegram"] --> B["Telegram Bot (python-telegram-bot)"]
+  U --> W["Mini App (index.html + game.js)"]
+  B --> D["PostgreSQL"]
+  W --> A["aiohttp API: /game_sync /game_state /game_leaderboard /game_reset"]
+  A --> D
+  B --> A
+  B --> G["Groq API (опционально)"]
+```
 
-- `bot_admin` (таблица `bot_admins`): права на админку бота.
-- `game_role` (таблица `game_roles`): `admin`, `tester`, `player`.
+### Ключевая логика доступа
 
-`bot_admin` **не делает пользователя автоматически** `game admin`.
+| Уровень | Где хранится | Значения |
+|---|---|---|
+| Права админки бота | `bot_admins` | bot admin / user |
+| Игровая роль | `game_roles` | `admin`, `tester`, `player` |
+| Режим игры | `game_settings` | `closed`, `beta`, `open` |
 
-### Режимы доступа к игре
-- `closed`: доступ только `game admin`.
-- `beta`: `game admin` + `tester` + пользователи из beta-списка.
-- `open`: доступ всем.
+`bot_admin` и `game admin` — **разные сущности**.
 
 ---
 
-## Быстрый старт (локально)
+## 🚀 Быстрый старт
 
 ```bash
 git clone https://github.com/ygud2962/telegram-bot.git
@@ -92,7 +112,7 @@ python bot.py
 
 ---
 
-## Переменные окружения
+## ⚙️ Переменные окружения
 
 ### Обязательные
 
@@ -100,80 +120,71 @@ python bot.py
 |---|---|
 | `BOT_TOKEN` | токен Telegram-бота |
 | `DATABASE_URL` | строка подключения PostgreSQL |
-| `GAME_URL` | публичный URL Mini App (рекомендуется `https://<domain>/game/`) |
-| `BOT_PUBLIC_URL` | публичный URL backend бота (`https://<domain>`) |
+| `GAME_URL` | публичный URL игры (обычно `https://<domain>/game/`) |
+| `BOT_PUBLIC_URL` | публичный URL backend (`https://<domain>`) |
 
 ### Рекомендуемые/опциональные
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
 | `PORT` | `8080` | порт HTTP-сервера |
-| `BOT_VERSION` | `9.0.0` | версия бота (показывается в `/version`) |
-| `GAME_VERSION` | `1.2.17` | версия игры (cache-bust Mini App) |
-| `GAME_BETA` | `0` | legacy-флаг беты (текущий режим задается через админку/БД) |
-| `GAME_AUTH_REQUIRED` | `1` | проверять подпись Telegram `init_data` |
-| `GAME_AUTH_TTL_SEC` | `86400` | TTL `init_data` в секундах |
-| `GROQ_API_KEY` | пусто | ключ для AI-помощника |
-| `DB_STARTUP_MAX_WAIT_SEC` | `180` | сколько ждать БД при старте |
-| `DB_STARTUP_RETRY_SEC` | `5` | шаг повторной попытки БД |
-| `SLOW_DB_MS` | `350` | порог warning для медленных DB-вызовов |
-| `SLOW_CALLBACK_MS` | `1000` | порог warning для медленных callback-обработчиков |
+| `BOT_VERSION` | `9.0.0` | версия бота (по умолчанию `9.0.0`) |
+| `GAME_VERSION` | `1.2.17` | версия игры (по умолчанию `1.2.17`) |
+| `GAME_BETA` | `0` | legacy-флаг беты |
+| `GAME_AUTH_REQUIRED` | `1` | валидация Telegram `init_data` |
+| `GAME_AUTH_TTL_SEC` | `86400` | срок жизни `init_data` (сек) |
+| `GROQ_API_KEY` | пусто | ключ AI-помощника |
+| `DB_STARTUP_MAX_WAIT_SEC` | `180` | максимум ожидания БД при старте |
+| `DB_STARTUP_RETRY_SEC` | `5` | интервал повторных попыток БД |
+| `SLOW_DB_MS` | `350` | порог логов slow DB |
+| `SLOW_CALLBACK_MS` | `1000` | порог логов slow callback |
 
-`RAILWAY_PUBLIC_DOMAIN` / `RAILWAY_STATIC_URL` могут использоваться как fallback для `BOT_PUBLIC_URL`.
+Также поддерживаются fallback-переменные Railway: `RAILWAY_PUBLIC_DOMAIN`, `RAILWAY_STATIC_URL`.
 
 ---
 
-## Настройка Railway (рекомендуемая схема)
+## 🧩 Настройка Railway
 
-1. Подключите PostgreSQL в Railway.
-2. Добавьте переменные:
+1. Подключить PostgreSQL к сервису.
+2. В Variables задать:
    - `BOT_TOKEN`
    - `DATABASE_URL`
    - `BOT_PUBLIC_URL=https://<your-service>.up.railway.app`
    - `GAME_URL=https://<your-service>.up.railway.app/game/`
    - `GAME_VERSION=<текущая версия>`
-3. После изменений фронта увеличивайте `GAME_VERSION` (например, `1.2.17 -> 1.2.18`).
-4. Открывайте игру только через кнопку бота, а не старую вкладку WebView.
+3. После изменений фронта увеличивать `GAME_VERSION`.
+4. Открывать игру из кнопки бота (не из старой вкладки WebView).
 
 ---
 
-## Сброс прогресса и «агенты»
+## ♻️ Сброс прогресса
 
-Админ-панель поддерживает 2 режима сброса:
-
-- `Только очки/главы` — реферальные связи остаются.
+В админке доступны 2 режима:
+- `Только очки/главы` — реферальные связи сохраняются.
 - `С агентами` — реферальные связи удаляются.
 
-Это доступно:
-- для сброса конкретного игрока;
-- для массового сброса;
-- для self-reset у `game admin`.
+Применяется для:
+- сброса конкретного игрока;
+- массового сброса;
+- self-reset у `game admin`.
 
 ---
 
-## API Mini App (внутренний)
+## 🔌 API Mini App
 
-- `POST /game_sync` — синхронизация прогресса из клиента в БД.
-- `GET /game_state?user_id=...` — состояние игрока (роль, очки, главы, reset_token, агенты).
-- `GET /game_leaderboard?user_id=...` — рейтинг.
-- `POST /game_reset` — self-reset (разрешен только `game admin`, с опцией `drop_referrals`).
-- `GET /health` — healthcheck.
+| Endpoint | Метод | Назначение |
+|---|---|---|
+| `/game_sync` | `POST` | синхронизация прогресса из клиента |
+| `/game_state?user_id=...` | `GET` | актуальное состояние игрока |
+| `/game_leaderboard?user_id=...` | `GET` | рейтинг |
+| `/game_reset` | `POST` | self-reset (только `game admin`) |
+| `/health` | `GET` | healthcheck |
 
-При включенном `GAME_AUTH_REQUIRED=1` API ожидает валидный Telegram `init_data`.
-
----
-
-## Команды бота
-
-- `/start` — главное меню
-- `/cancel` — отмена текущего сценария
-- `/version` — версия и базовый статус
-- `/teacher` — регистрация учителя
-- `/claim_admin` — техническая команда первичного назначения админа
+Если `GAME_AUTH_REQUIRED=1`, API проверяет подпись Telegram `init_data`.
 
 ---
 
-## Проверка перед деплоем
+## 🧪 Проверки перед деплоем
 
 ```bash
 python -m py_compile bot.py database.py game_security.py
@@ -183,24 +194,24 @@ python scripts/update_readme_versions.py
 
 ---
 
-## Частые проблемы
+## 🧯 Частые проблемы
 
-### 1) `Game failed to load` / зависание экрана загрузки
-- Убедитесь, что `GAME_URL` и `BOT_PUBLIC_URL` корректны.
-- Увеличьте `GAME_VERSION`.
-- Переоткройте Mini App из кнопки в боте.
+### 1) `Game failed to load`
+- Проверить `GAME_URL` и `BOT_PUBLIC_URL`.
+- Увеличить `GAME_VERSION`.
+- Переоткрыть игру из кнопки в боте.
 
-### 2) В логах `409 Conflict getUpdates`
-В проекте есть lock и фильтрация шума при overlap-редеплоях. Кратковременный `409` во время переключения инстанса допустим.
+### 2) `409 Conflict getUpdates`
+Во время overlap-редеплоя кратковременный `409` допустим. В проекте есть lock и фильтрация шумных логов.
 
-### 3) Прогресс «не совпадает» между ботом и игрой
-- Проверьте, что игра открыта с актуальным `GAME_VERSION`.
-- Проверьте, что backend доступен по `BOT_PUBLIC_URL`.
-- Проверьте ответы `/game_state` и `/game_sync`.
+### 3) Прогресс в боте и игре расходится
+- Проверить актуальный `GAME_VERSION`.
+- Проверить доступность backend по `BOT_PUBLIC_URL`.
+- Проверить ответы `/game_state` и `/game_sync`.
 
 ---
 
-## Структура проекта
+## 🗂 Структура проекта
 
 ```text
 telegram-bot/
@@ -224,15 +235,15 @@ telegram-bot/
 
 ---
 
-## Полезные скрипты
+## 🛠 Полезные скрипты
 
-- `deploy.bat` — деплой через `main` (с авто-обновлением версий README).
-- `scripts/update_readme_versions.py` — синхронизация блока версий в README.
-- `scripts/update_latest_bot_news.py` — обновление тех-новостей (если используется в процессе релизов).
+- `deploy.bat` — деплой в `main` с автообновлением версий README.
+- `scripts/update_readme_versions.py` — обновление блока версий.
+- `scripts/update_latest_bot_news.py` — вспомогательное обновление техновостей.
 
 ---
 
-## Контакты
+## 📮 Контакты
 
 - Бот: [@school_hoiniki_sch3_bot](https://t.me/school_hoiniki_sch3_bot)
 - Админ: [@Yury_hud](https://t.me/Yury_hud)
