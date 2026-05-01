@@ -3587,15 +3587,8 @@ function confirmReset() {
   showToast('🗑 Прогресс сброшен');
 }
 
-function clearLocalGameCache(withProgress = false) {
-  const keys = [];
+function clearLocalGameCache() {
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (withProgress && key.startsWith('cipher_v4_')) keys.push(key);
-    }
-    keys.forEach(k => localStorage.removeItem(k));
     localStorage.removeItem('pending_results');
     localStorage.removeItem(AUDIO_PREF_KEY);
     localStorage.removeItem(LEGACY_MUSIC_PREF_KEY);
@@ -3604,23 +3597,11 @@ function clearLocalGameCache(withProgress = false) {
   }
 }
 
-function confirmCacheReset(mode = 'keep_progress') {
-  const withProgress = mode === 'with_progress';
-  const msg = withProgress
-    ? 'Очистить кэш вместе с локальным прогрессом на этом устройстве?'
-    : 'Очистить кэш без удаления прогресса? (прогресс и главы останутся)';
-  if (!confirm(msg)) return;
-  clearLocalGameCache(withProgress);
-  showToast(withProgress ? '🧹 Кэш и локальный прогресс очищены. Перезагрузка...' : '🧹 Кэш очищен без удаления прогресса. Перезагрузка...');
+function confirmCacheReset() {
+  if (!confirm('Очистить кеш? Прогресс и главы останутся.')) return;
+  clearLocalGameCache();
+  showToast('🧹 Кеш очищен. Перезагрузка...');
   setTimeout(() => window.location.reload(), 250);
-}
-
-function confirmCacheResetKeepProgress() {
-  confirmCacheReset('keep_progress');
-}
-
-function confirmCacheResetWithProgress() {
-  confirmCacheReset('with_progress');
 }
 
 function openBugReportModal() {
@@ -6037,10 +6018,7 @@ function renderSettingsTab() {
       <div class="settings-card">
         <div class="settings-card-title">🧹 СБРОС КЕША</div>
         <div class="settings-caption" style="margin-top:0;margin-bottom:10px;">Очищает локальный кеш игры для этого устройства во всех режимах (player/tester/admin).</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button onclick="confirmCacheResetKeepProgress();" class="btn" style="width:auto;padding:8px 16px;">🧹 БЕЗ ПРОГРЕССА</button>
-          <button onclick="confirmCacheResetWithProgress();" class="btn btn-danger" style="width:auto;padding:8px 16px;">🗑 С ПРОГРЕССОМ</button>
-        </div>
+        <button onclick="confirmCacheReset();" class="btn" style="width:auto;padding:8px 16px;">🧹 ОЧИСТКА КЕША</button>
       </div>
       ${(state.adminMode || window._adminMode) ? `
       <div class="settings-card">
@@ -6065,8 +6043,6 @@ window.setMusicVolume = setMusicVolume;
 window.setSfxVolume = setSfxVolume;
 window.cancelCipherTimer = cancelCipherTimer;
 window.confirmCacheReset = confirmCacheReset;
-window.confirmCacheResetKeepProgress = confirmCacheResetKeepProgress;
-window.confirmCacheResetWithProgress = confirmCacheResetWithProgress;
 window.openBugReportModal = openBugReportModal;
 window.closeBugReportModal = closeBugReportModal;
 window.contactGameAdmin = contactGameAdmin;

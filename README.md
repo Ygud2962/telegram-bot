@@ -1,145 +1,179 @@
 # 🏫 School Telegram Bot + Mini App
 
-<div align="center">
-
-# 🔐 ШИВРОВАЛЬЩИК · 1941-1945
-### Школьный Telegram-бот + образовательная Telegram Mini App
+## 🔐 «Шифровальщик» (1941–1945)
+Школьный Telegram-бот с расписанием/заменами/новостями и встроенной образовательной Mini App-игрой.
 
 <!-- AUTOVERSION:START -->
-[![Версия бота](https://img.shields.io/badge/🤖_ВЕРСИЯ-8.0.0-2196F3?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ygud2962/telegram-bot)
+[![Версия бота](https://img.shields.io/badge/🤖_ВЕРСИЯ-9.0.0-2196F3?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ygud2962/telegram-bot)
 [![Версия игры](https://img.shields.io/badge/🎮_ВЕРСИЯ-1.2.17-FF9800?style=for-the-badge&logo=html5&logoColor=white)](https://ygud2962.github.io/telegram-bot/)
 
 | Компонент | Версия |
 |---|---|
-| 🤖 Bot | **8.0.0** |
+| 🤖 Bot | **9.0.0** |
 | 🎮 Game | **1.2.17** |
 <!-- AUTOVERSION:END -->
 
-[![Статус](https://img.shields.io/badge/✅_СТАТУС-РАБОТАЕТ-brightgreen?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
-[![Python](https://img.shields.io/badge/🐍_PYTHON-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![PostgreSQL](https://img.shields.io/badge/🗄_POSTGRESQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Deploy](https://img.shields.io/badge/🚀_DEPLOY-Railway-6f4cff?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app/)
-[![AI](https://img.shields.io/badge/🤖_AI-Groq_llama--3.3--70b-FF6B35?style=for-the-badge&logo=openai&logoColor=white)](https://groq.com/)
-
-**Расписание · Замены · Новости · ИИ-помощник · Игра "Шивровальщик"**
-
-[📱 Открыть бота](https://t.me/school_hoiniki_sch3_bot) · [🎮 Играть в Шивровальщика](https://ygud2962.github.io/telegram-bot/)
-
-</div>
+[Бот в Telegram](https://t.me/school_hoiniki_sch3_bot)
 
 ---
 
-## ✨ Что это
+## Что в проекте
 
-Единая школьная система в Telegram:
-- бот для учеников, родителей, учителей и администраторов;
-- оперативные замены и новости;
-- Telegram Mini App игра "Шивровальщик" с рейтингом и достижениями.
-
----
-
-## ⚡ Основные возможности
-
-- 📚 Расписание по классам и учителям (день/неделя/сейчас).
-- 🔄 Замены уроков (вручную и через фото с ИИ-распознаванием).
-- 📣 Новости школы с публикацией и рассылкой.
-- ⭐ Раздел "Избранное" для быстрого доступа.
-- 🤖 ИИ-помощник (режимы ученик/педагог).
-- 🎮 Игра "Шивровальщик" с синхронизацией прогресса.
-- 👑 Админ-панель: пользователи, техрежим, игра, аналитика.
+- Telegram-бот на `python-telegram-bot`.
+- PostgreSQL (пользователи, расписание, замены, новости, прогресс игры).
+- Встроенный HTTP-сервер `aiohttp` в том же процессе:
+  - отдает Mini App (`/game`, `/game/`, `/index.html`);
+  - принимает API синхронизации игры (`/game_sync`, `/game_state`, `/game_leaderboard`, `/game_reset`).
+- Клиент игры на `HTML/CSS/Vanilla JS` (`game/index.html`, `game/game.js`).
 
 ---
 
-## 🎮 Игра "Шивровальщик"
+## Основные возможности
 
-Мини-игра о событиях 1941-1945 годов на территории Беларуси:
-- 6 глав и 36 заданий;
-- 6 типов шифров;
-- таблица лидеров и достижения;
-- доступ через кнопку `🎮 Шивровальщик` в боте.
+### Бот
+- Расписание по классам/учителям.
+- Замены (вручную и через фото с AI-разбором).
+- Новости с разделением на:
+  - `🏫 Новости школы`
+  - `🤖 Новости бота`
+- Админ-панель: пользователи, режимы игры, роли, публикации, техрежим.
+- AI-помощник (через `GROQ_API_KEY`, если ключ задан).
+
+### Игра
+- 6 глав, 36 заданий, 6 типов шифров/задач.
+- Рейтинг, достижения, артефакты.
+- Автосохранение прогресса в БД.
+- Продолжение главы после выхода.
+- Перезапуск главы с подтверждением и штрафом.
+- Настройки звука:
+  - 5 CC0-треков;
+  - вкл/выкл музыки и эффектов;
+  - отдельная громкость музыки/эффектов.
+- Кнопка «Сообщить об ошибке» с переходом к админу игры.
+
+### Реферальная система («Агенты»)
+- Личная ссылка: `https://t.me/<bot_username>?start=ref_<user_id>`.
+- Бонусы:
+  - новому игроку: `+50` стартовых очков;
+  - пригласившему: `+30` за каждую главу, пройденную агентом.
+- В игре в профиле показываются:
+  - агрегированная статистика по агентам;
+  - список агентов и их вклад.
+- Добавлены достижения за рефералов (первый агент, 3 агента, бонусные очки).
 
 ---
 
-## 🚀 Быстрый старт
+## Роли и доступ (важно)
+
+В проекте разделены **админ бота** и **роль в игре**.
+
+- `bot_admin` (таблица `bot_admins`): права на админку бота.
+- `game_role` (таблица `game_roles`): `admin`, `tester`, `player`.
+
+`bot_admin` **не делает пользователя автоматически** `game admin`.
+
+### Режимы доступа к игре
+- `closed`: доступ только `game admin`.
+- `beta`: `game admin` + `tester` + пользователи из beta-списка.
+- `open`: доступ всем.
+
+---
+
+## Быстрый старт (локально)
 
 ```bash
 git clone https://github.com/ygud2962/telegram-bot.git
 cd telegram-bot
 python -m venv venv
-# Windows:
 venv\Scripts\activate
-# Linux/macOS:
-# source venv/bin/activate
 pip install -r requirements.txt
 python bot.py
 ```
 
 ---
 
-## ⚙️ Переменные окружения
+## Переменные окружения
 
-| Переменная | Обязательно | Описание |
-|---|---:|---|
-| `BOT_TOKEN` | ✅ | Токен Telegram-бота |
-| `DATABASE_URL` | ✅ | Подключение к PostgreSQL |
-| `GAME_URL` | ✅ | Публичный URL игры |
-| `BOT_PUBLIC_URL` | ✅ | Публичный URL бота для `/game_sync`, `/game_state` и `/game_leaderboard` |
-| `BOT_VERSION` | ⛳ | Версия бота (по умолчанию `8.0.0`) |
-| `GAME_VERSION` | ⛳ | Версия игры (по умолчанию `1.2.17`) |
-| `GROQ_API_KEY` | ⛳ | Ключ Groq для ИИ-помощника |
-| `GAME_BETA` | ⛳ | Режим беты игры (`0` или `1`) |
-| `GAME_AUTH_REQUIRED` | ⛳ | Обязательная проверка Telegram `init_data` для API игры (`1` по умолчанию) |
-| `GAME_AUTH_TTL_SEC` | ⛳ | Срок жизни `init_data` в секундах (по умолчанию `86400`) |
+### Обязательные
 
----
+| Переменная | Описание |
+|---|---|
+| `BOT_TOKEN` | токен Telegram-бота |
+| `DATABASE_URL` | строка подключения PostgreSQL |
+| `GAME_URL` | публичный URL Mini App (рекомендуется `https://<domain>/game/`) |
+| `BOT_PUBLIC_URL` | публичный URL backend бота (`https://<domain>`) |
 
-## 🔄 Автообновление версий в README
+### Рекомендуемые/опциональные
 
-В проекте есть скрипт:
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `PORT` | `8080` | порт HTTP-сервера |
+| `BOT_VERSION` | `9.0.0` | версия бота (показывается в `/version`) |
+| `GAME_VERSION` | `1.2.17` | версия игры (cache-bust Mini App) |
+| `GAME_BETA` | `0` | legacy-флаг беты (текущий режим задается через админку/БД) |
+| `GAME_AUTH_REQUIRED` | `1` | проверять подпись Telegram `init_data` |
+| `GAME_AUTH_TTL_SEC` | `86400` | TTL `init_data` в секундах |
+| `GROQ_API_KEY` | пусто | ключ для AI-помощника |
+| `DB_STARTUP_MAX_WAIT_SEC` | `180` | сколько ждать БД при старте |
+| `DB_STARTUP_RETRY_SEC` | `5` | шаг повторной попытки БД |
+| `SLOW_DB_MS` | `350` | порог warning для медленных DB-вызовов |
+| `SLOW_CALLBACK_MS` | `1000` | порог warning для медленных callback-обработчиков |
 
-```bash
-python scripts/update_readme_versions.py
-```
-
-Он автоматически берёт версии из `bot.py` (`BOT_VERSION` и `GAME_VERSION`) и обновляет:
-- блок `AUTOVERSION` в начале README;
-- значения по умолчанию в таблице переменных окружения.
-
-Скрипт также запускается в `deploy.bat` перед коммитом/пушем.
+`RAILWAY_PUBLIC_DOMAIN` / `RAILWAY_STATIC_URL` могут использоваться как fallback для `BOT_PUBLIC_URL`.
 
 ---
 
-## 🧱 Стек
+## Настройка Railway (рекомендуемая схема)
 
-- `python-telegram-bot` 20.x
-- `aiohttp`
-- `httpx`
-- `PostgreSQL`
-- `pytz`
-- HTML/CSS/Vanilla JS (Mini App)
-
----
-
-## 🗂 Структура проекта
-
-```text
-telegram-bot/
-├─ bot.py
-├─ database.py
-├─ game/
-│  ├─ index.html
-│  └─ game.js (legacy-файл, текущий runtime использует inline-скрипт в `index.html`)
-├─ scripts/
-│  ├─ deploy-vscode.ps1
-│  └─ update_readme_versions.py
-├─ deploy.bat
-├─ requirements.txt
-└─ README.md
-```
+1. Подключите PostgreSQL в Railway.
+2. Добавьте переменные:
+   - `BOT_TOKEN`
+   - `DATABASE_URL`
+   - `BOT_PUBLIC_URL=https://<your-service>.up.railway.app`
+   - `GAME_URL=https://<your-service>.up.railway.app/game/`
+   - `GAME_VERSION=<текущая версия>`
+3. После изменений фронта увеличивайте `GAME_VERSION` (например, `1.2.17 -> 1.2.18`).
+4. Открывайте игру только через кнопку бота, а не старую вкладку WebView.
 
 ---
 
-## 🧪 Проверки перед деплоем
+## Сброс прогресса и «агенты»
+
+Админ-панель поддерживает 2 режима сброса:
+
+- `Только очки/главы` — реферальные связи остаются.
+- `С агентами` — реферальные связи удаляются.
+
+Это доступно:
+- для сброса конкретного игрока;
+- для массового сброса;
+- для self-reset у `game admin`.
+
+---
+
+## API Mini App (внутренний)
+
+- `POST /game_sync` — синхронизация прогресса из клиента в БД.
+- `GET /game_state?user_id=...` — состояние игрока (роль, очки, главы, reset_token, агенты).
+- `GET /game_leaderboard?user_id=...` — рейтинг.
+- `POST /game_reset` — self-reset (разрешен только `game admin`, с опцией `drop_referrals`).
+- `GET /health` — healthcheck.
+
+При включенном `GAME_AUTH_REQUIRED=1` API ожидает валидный Telegram `init_data`.
+
+---
+
+## Команды бота
+
+- `/start` — главное меню
+- `/cancel` — отмена текущего сценария
+- `/version` — версия и базовый статус
+- `/teacher` — регистрация учителя
+- `/claim_admin` — техническая команда первичного назначения админа
+
+---
+
+## Проверка перед деплоем
 
 ```bash
 python -m py_compile bot.py database.py game_security.py
@@ -147,24 +181,59 @@ python -m unittest tests.test_game_security
 python scripts/update_readme_versions.py
 ```
 
-Рекомендуется проверить вручную в Telegram:
-1. `/version`
-2. Главное меню и кнопки
-3. Разделы `Расписание`, `Замены`, `Новости`
-4. Открытие Mini App и синхронизацию игры
+---
+
+## Частые проблемы
+
+### 1) `Game failed to load` / зависание экрана загрузки
+- Убедитесь, что `GAME_URL` и `BOT_PUBLIC_URL` корректны.
+- Увеличьте `GAME_VERSION`.
+- Переоткройте Mini App из кнопки в боте.
+
+### 2) В логах `409 Conflict getUpdates`
+В проекте есть lock и фильтрация шума при overlap-редеплоях. Кратковременный `409` во время переключения инстанса допустим.
+
+### 3) Прогресс «не совпадает» между ботом и игрой
+- Проверьте, что игра открыта с актуальным `GAME_VERSION`.
+- Проверьте, что backend доступен по `BOT_PUBLIC_URL`.
+- Проверьте ответы `/game_state` и `/game_sync`.
 
 ---
 
-## 💬 Контакты
+## Структура проекта
+
+```text
+telegram-bot/
+├─ bot.py
+├─ database.py
+├─ game_security.py
+├─ ui_texts.py
+├─ game/
+│  ├─ index.html
+│  ├─ game.js
+│  └─ security_patch.js
+├─ scripts/
+│  ├─ deploy-vscode.ps1
+│  ├─ update_readme_versions.py
+│  └─ update_latest_bot_news.py
+├─ tests/
+│  └─ test_game_security.py
+├─ deploy.bat
+└─ README.md
+```
+
+---
+
+## Полезные скрипты
+
+- `deploy.bat` — деплой через `main` (с авто-обновлением версий README).
+- `scripts/update_readme_versions.py` — синхронизация блока версий в README.
+- `scripts/update_latest_bot_news.py` — обновление тех-новостей (если используется в процессе релизов).
+
+---
+
+## Контакты
 
 - Бот: [@school_hoiniki_sch3_bot](https://t.me/school_hoiniki_sch3_bot)
-- Администратор: [@Yury_hud](https://t.me/Yury_hud)
+- Админ: [@Yury_hud](https://t.me/Yury_hud)
 
----
-
-## 📜 Лицензия
-
-Проект создан в образовательных целях.  
-Использование кода разрешено с указанием автора.
-
-© 2026 ГУО "Средняя школа №3 г. Хойники"
