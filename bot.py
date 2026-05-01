@@ -6403,6 +6403,11 @@ async def handle_game_state(request):
 
         ref_summary = {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
         ref_agents = []
+        secret_state = {
+            'mode': 'none',
+            'summary': {'completed': 0, 'total': 10, 'bonus_points': 0},
+            'missions': [],
+        }
 
         # ── Доступ к главам по роли ──────────────────────────────
         if role == 'admin':
@@ -6419,10 +6424,11 @@ async def handle_game_state(request):
             in_rating     = False
         else:  # player
             # Только открытые индивидуально + глобально + реферальная статистика
-            accessible, ref_summary, ref_agents = await asyncio.gather(
+            accessible, ref_summary, ref_agents, secret_state = await asyncio.gather(
                 asyncio.to_thread(db.get_player_accessible_chapters, user_id),
                 asyncio.to_thread(db.get_referral_summary, user_id),
                 asyncio.to_thread(db.get_referral_agents, user_id, 12),
+                asyncio.to_thread(db.get_secret_missions_state, user_id),
             )
             safe_agents = []
             for agent in ref_agents or []:
@@ -6435,6 +6441,12 @@ async def handle_game_state(request):
                     'bonus_points': int(agent.get('bonus_points', 0) or 0),
                 })
             ref_agents = safe_agents
+            if not isinstance(secret_state, dict):
+                secret_state = {
+                    'mode': 'none',
+                    'summary': {'completed': 0, 'total': 10, 'bonus_points': 0},
+                    'missions': [],
+                }
             # Если у игрока нет доступных глав — автоматически открываем главу 1
             if not accessible:
                 try:
@@ -6478,6 +6490,9 @@ async def handle_game_state(request):
             'retreat_count': retreat_count,
             'ref_summary': ref_summary,
             'ref_agents': ref_agents,
+            'secret_mode': secret_state.get('mode', 'none') if isinstance(secret_state, dict) else 'none',
+            'secret_summary': secret_state.get('summary') if isinstance(secret_state, dict) else {'completed': 0, 'total': 10, 'bonus_points': 0},
+            'secret_missions': secret_state.get('missions', []) if isinstance(secret_state, dict) else [],
         }
         if restart_mode:
             resp['restart_mode'] = restart_mode
@@ -6572,6 +6587,17 @@ async def handle_game_sync(request):
     achievement_pts = _clamp_int(data.get('achievement_pts', 0), 0, 50000)
     restart_penalty_points = _clamp_int(data.get('restart_penalty_points', 0), 0, 50000)
     client_reset_token = _clamp_int(data.get('reset_token', 0), 0, 2147483647)
+    secret_mode = str(data.get('secret_mode', 'none') or 'none').strip().lower()
+    mission_answer_token = _clamp_int(data.get('mission_answer_token', 0), 0, 2147483647)
+    mission_break_token = _clamp_int(data.get('mission_break_token', 0), 0, 2147483647)
+    mission_last_answer_elapsed = _clamp_int(data.get('mission_last_answer_elapsed', 0), 0, 9999)
+    mission_last_answer_no_hint = _to_bool(data.get('mission_last_answer_no_hint', False))
+    mission_last_answer_one_life = _to_bool(data.get('mission_last_answer_one_life', False))
+    mission_last_answer_type = str(data.get('mission_last_answer_type', '') or '').strip().lower()[:24]
+    mission_last_answer_streak = _clamp_int(data.get('mission_last_answer_streak', 0), 0, 200)
+    chapter_hints = _clamp_int(data.get('chapter_hints', 0), 0, 999)
+    chapter_errors = _clamp_int(data.get('chapter_errors', 0), 0, 999)
+    lives = _clamp_int(data.get('lives', 0), -1, 99)
 
     if not user_id:
         return aiohttp_web.json_response(
@@ -6689,6 +6715,11 @@ async def handle_game_sync(request):
         retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count_saved
         ref_award_points = 0
         ref_award_chapters = 0
+        secret_mode_saved = 'none'
+        secret_summary = {'completed': 0, 'total': 10, 'bonus_points': 0}
+        secret_missions = []
+        secret_awards = []
+        secret_awarded_points = 0
         if current_role == 'player':
             try:
                 ref_award = await asyncio.to_thread(
@@ -6700,11 +6731,49 @@ async def handle_game_sync(request):
                 ref_award_chapters = _clamp_int(ref_award.get('awarded_chapters', 0), 0, 6)
             except Exception as ref_err:
                 logger.warning(f"game_sync referral bonus failed: user={user_id}, err={ref_err}")
+            try:
+                secret_sync = await asyncio.to_thread(
+                    db.apply_secret_missions_sync,
+                    user_id,
+                    {
+                        'type': event_type,
+                        'event_type': event_type,
+                        'secret_mode': secret_mode,
+                        'chapter_score': score,
+                        'chapter_errors': chapter_errors,
+                        'chapter_hints': chapter_hints,
+                        'lives': lives,
+                        'mission_answer_token': mission_answer_token,
+                        'mission_break_token': mission_break_token,
+                        'mission_last_answer_elapsed': mission_last_answer_elapsed,
+                        'mission_last_answer_no_hint': mission_last_answer_no_hint,
+                        'mission_last_answer_one_life': mission_last_answer_one_life,
+                        'mission_last_answer_type': mission_last_answer_type,
+                        'mission_last_answer_streak': mission_last_answer_streak,
+                    },
+                )
+                if isinstance(secret_sync, dict):
+                    secret_mode_saved = str(secret_sync.get('mode', 'none') or 'none')
+                    if isinstance(secret_sync.get('summary'), dict):
+                        secret_summary = secret_sync.get('summary')
+                    if isinstance(secret_sync.get('missions'), list):
+                        secret_missions = secret_sync.get('missions')
+                    if isinstance(secret_sync.get('awards'), list):
+                        secret_awards = secret_sync.get('awards')
+                    secret_awarded_points = _clamp_int(secret_sync.get('awarded_points', 0), 0, 999999)
+                    if secret_awarded_points > 0:
+                        result = await asyncio.to_thread(db.get_game_result, user_id)
+                        db_score = result[2] if result else db_score
+                        db_completed = result[3] if result else db_completed
+                        db_reset_token = _game_reset_token(result)
+                        retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
+            except Exception as secret_err:
+                logger.warning(f"game_sync secret missions failed: user={user_id}, err={secret_err}")
         logger.info(
-            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s ref_bonus=%s ref_chapters=%s",
+            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s ref_bonus=%s ref_chapters=%s secret_bonus=%s secret_mode=%s",
             user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx,
             chapter_in_progress, event_type, server_penalty_applied, retreat_count, banned,
-            ref_award_points, ref_award_chapters
+            ref_award_points, ref_award_chapters, secret_awarded_points, secret_mode_saved
         )
         return aiohttp_web.json_response(
             {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
@@ -6714,6 +6783,11 @@ async def handle_game_sync(request):
               'retreat_count': retreat_count,
               'ref_bonus_awarded': ref_award_points,
               'ref_bonus_chapters': ref_award_chapters,
+              'secret_mode': secret_mode_saved,
+              'secret_summary': secret_summary,
+              'secret_missions': secret_missions,
+              'secret_awards': secret_awards,
+              'secret_awarded_points': secret_awarded_points,
               'force_state': bool(server_penalty_applied > 0)},
             headers=headers)
     except Exception as e:

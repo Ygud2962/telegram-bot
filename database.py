@@ -2,6 +2,7 @@ import psycopg2
 from psycopg2 import pool
 import os
 import time
+import json
 from datetime import datetime, timedelta
 import pytz
 import logging
@@ -21,6 +22,139 @@ _POLLING_LOCK_KEY = 82445031
 # Параметры retry при потере связи с БД
 _DB_RETRY_ATTEMPTS = 5        # попыток переподключения
 _DB_RETRY_DELAYS   = [1, 2, 4, 8, 15]  # секунды между попытками
+
+_SECRET_MODES = {
+    'none':    {'title': 'Обычный режим', 'bonus_pct': 0},
+    'silent':  {'title': 'Тихий шифр', 'bonus_pct': 20},
+    'speed':   {'title': 'Скоростной радист', 'bonus_pct': 12},
+    'iron':    {'title': 'Железная воля', 'bonus_pct': 16},
+    'recruit': {'title': 'Вербовщик', 'bonus_pct': 10},
+    'night':   {'title': 'Ночной дозор', 'bonus_pct': 14},
+}
+
+_SECRET_MISSIONS = [
+    {
+        'id': 'sm_silent_no_hint',
+        'order': 1,
+        'tier': 'starter',
+        'mode': 'silent',
+        'icon': '🤫',
+        'name': 'Тихий шифр',
+        'desc': 'Пройти 1 задание без подсказки.',
+        'target': 1,
+        'bonus_pct': 20,
+        'min_bonus': 35,
+    },
+    {
+        'id': 'sm_speed_three',
+        'order': 2,
+        'tier': 'starter',
+        'mode': 'speed',
+        'icon': '📡',
+        'name': 'Скоростной радист',
+        'desc': '3 быстрых правильных ответа подряд (<= 14 сек).',
+        'target': 3,
+        'bonus_pct': 12,
+        'min_bonus': 28,
+    },
+    {
+        'id': 'sm_iron_one_life',
+        'order': 3,
+        'tier': 'starter',
+        'mode': 'iron',
+        'icon': '❤️‍🔥',
+        'name': 'Железная воля',
+        'desc': 'Решить задание, когда осталась 1 жизнь.',
+        'target': 1,
+        'bonus_pct': 16,
+        'min_bonus': 34,
+    },
+    {
+        'id': 'sm_recruit_one',
+        'order': 4,
+        'tier': 'starter',
+        'mode': 'recruit',
+        'icon': '🕵️',
+        'name': 'Вербовщик',
+        'desc': 'Пригласить 1 агента.',
+        'target': 1,
+        'bonus_pct': 10,
+        'min_bonus': 25,
+    },
+    {
+        'id': 'sm_night_watch',
+        'order': 5,
+        'tier': 'starter',
+        'mode': 'night',
+        'icon': '🌙',
+        'name': 'Ночной дозор',
+        'desc': 'Дать правильный ответ в редкое время (23:00-05:59).',
+        'target': 1,
+        'bonus_pct': 14,
+        'min_bonus': 30,
+    },
+    {
+        'id': 'sm_flawless_chapter',
+        'order': 6,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': '🎯',
+        'name': 'Операция без следов',
+        'desc': 'Завершить главу без ошибок и без подсказок.',
+        'target': 1,
+        'bonus_pct': 18,
+        'min_bonus': 48,
+    },
+    {
+        'id': 'sm_morse_five_fast',
+        'order': 7,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': '📻',
+        'name': 'Радиоэфир',
+        'desc': 'Решить 5 заданий Морзе быстрее 14 секунд.',
+        'target': 5,
+        'bonus_pct': 17,
+        'min_bonus': 45,
+    },
+    {
+        'id': 'sm_week_discipline',
+        'order': 8,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': '📅',
+        'name': 'Дисциплина штаба',
+        'desc': 'Играть в 4 разные даты.',
+        'target': 4,
+        'bonus_pct': 13,
+        'min_bonus': 40,
+    },
+    {
+        'id': 'sm_network_three',
+        'order': 9,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': '🧩',
+        'name': 'Сеть информаторов',
+        'desc': 'Иметь 3 активных агента.',
+        'target': 3,
+        'bonus_pct': 15,
+        'min_bonus': 42,
+    },
+    {
+        'id': 'sm_last_life_chapter',
+        'order': 10,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': '⚔️',
+        'name': 'Последний рубеж',
+        'desc': 'Завершить главу с 1 жизнью.',
+        'target': 1,
+        'bonus_pct': 22,
+        'min_bonus': 55,
+    },
+]
+_SECRET_MISSIONS_BY_ID = {m['id']: m for m in _SECRET_MISSIONS}
 
 
 def init_pool():
@@ -159,6 +293,189 @@ def _safe_rollback(conn):
             conn.rollback()
     except Exception:
         pass
+
+
+def _secret_to_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _secret_to_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return False
+
+
+def _secret_now_minsk() -> datetime:
+    try:
+        tz = pytz.timezone('Europe/Minsk')
+        return datetime.now(tz)
+    except Exception:
+        return datetime.utcnow()
+
+
+def _sanitize_secret_mode(mode_value) -> str:
+    mode = str(mode_value or 'none').strip().lower()
+    if mode not in _SECRET_MODES:
+        return 'none'
+    return mode
+
+
+def _secret_empty_missions_state() -> dict:
+    missions = {}
+    for mission in _SECRET_MISSIONS:
+        missions[mission['id']] = {
+            'progress': 0,
+            'completed': False,
+            'completed_at': None,
+            'reward_points': 0,
+        }
+    return missions
+
+
+def _secret_default_runtime() -> dict:
+    return {
+        'last_answer_token': 0,
+        'last_break_token': 0,
+        'speed_streak': 0,
+        'morse_fast_count': 0,
+        'active_days': [],
+    }
+
+
+def _secret_json_load(value, fallback):
+    if value is None:
+        return fallback
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return fallback
+        try:
+            parsed = json.loads(value)
+            return parsed if parsed is not None else fallback
+        except Exception:
+            return fallback
+    return fallback
+
+
+def _secret_normalize_missions(raw) -> dict:
+    src = _secret_json_load(raw, {})
+    if not isinstance(src, dict):
+        src = {}
+    normalized = _secret_empty_missions_state()
+    for mission in _SECRET_MISSIONS:
+        mission_id = mission['id']
+        target = max(1, _secret_to_int(mission.get('target'), 1))
+        row = src.get(mission_id, {})
+        if not isinstance(row, dict):
+            row = {}
+        progress = _secret_to_int(row.get('progress', 0), 0)
+        progress = max(0, min(target, progress))
+        completed = _secret_to_bool(row.get('completed', False))
+        reward_points = max(0, _secret_to_int(row.get('reward_points', 0), 0))
+        completed_at = row.get('completed_at')
+        if completed:
+            progress = target
+        normalized[mission_id] = {
+            'progress': progress,
+            'completed': completed,
+            'completed_at': completed_at,
+            'reward_points': reward_points,
+        }
+    return normalized
+
+
+def _secret_normalize_runtime(raw) -> dict:
+    src = _secret_json_load(raw, {})
+    if not isinstance(src, dict):
+        src = {}
+    data = _secret_default_runtime()
+    data['last_answer_token'] = max(0, _secret_to_int(src.get('last_answer_token', 0), 0))
+    data['last_break_token'] = max(0, _secret_to_int(src.get('last_break_token', 0), 0))
+    data['speed_streak'] = max(0, _secret_to_int(src.get('speed_streak', 0), 0))
+    data['morse_fast_count'] = max(0, _secret_to_int(src.get('morse_fast_count', 0), 0))
+    active_days = src.get('active_days', [])
+    if isinstance(active_days, list):
+        clean_days = []
+        for day in active_days:
+            d = str(day or '').strip()
+            if not d or d in clean_days:
+                continue
+            clean_days.append(d)
+        data['active_days'] = clean_days[-14:]
+    return data
+
+
+def _secret_bonus_points(mission: dict, chapter_score: int) -> int:
+    score = max(0, _secret_to_int(chapter_score, 0))
+    pct = max(0, _secret_to_int(mission.get('bonus_pct', 0), 0))
+    min_bonus = max(0, _secret_to_int(mission.get('min_bonus', 0), 0))
+    pct_points = int(round(score * (pct / 100.0))) if pct > 0 else 0
+    return max(min_bonus, pct_points)
+
+
+def _secret_summary_from_missions(missions_map: dict) -> dict:
+    completed = 0
+    bonus_points = 0
+    for mission in _SECRET_MISSIONS:
+        row = missions_map.get(mission['id'], {})
+        if not isinstance(row, dict):
+            continue
+        if _secret_to_bool(row.get('completed', False)):
+            completed += 1
+            bonus_points += max(0, _secret_to_int(row.get('reward_points', 0), 0))
+    return {
+        'completed': completed,
+        'total': len(_SECRET_MISSIONS),
+        'bonus_points': bonus_points,
+    }
+
+
+def _secret_export(mode: str, missions_map: dict) -> dict:
+    summary = _secret_summary_from_missions(missions_map)
+    missions = []
+    for mission in sorted(_SECRET_MISSIONS, key=lambda m: m['order']):
+        mission_id = mission['id']
+        row = missions_map.get(mission_id, {})
+        if not isinstance(row, dict):
+            row = {}
+        progress = max(0, _secret_to_int(row.get('progress', 0), 0))
+        target = max(1, _secret_to_int(mission.get('target', 1), 1))
+        if progress > target:
+            progress = target
+        completed = _secret_to_bool(row.get('completed', False))
+        if completed:
+            progress = target
+        missions.append({
+            'id': mission_id,
+            'order': mission['order'],
+            'tier': mission['tier'],
+            'mode': mission['mode'],
+            'icon': mission['icon'],
+            'name': mission['name'],
+            'desc': mission['desc'],
+            'target': target,
+            'progress': progress,
+            'completed': completed,
+            'completed_at': row.get('completed_at'),
+            'bonus_pct': max(0, _secret_to_int(mission.get('bonus_pct', 0), 0)),
+            'reward_points': max(0, _secret_to_int(row.get('reward_points', 0), 0)),
+        })
+    return {
+        'mode': _sanitize_secret_mode(mode),
+        'summary': summary,
+        'missions': missions,
+    }
 
 
 def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
@@ -461,6 +778,23 @@ def init_db():
                 PRIMARY KEY (user_id, chapter_id)
             )
         ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS game_secret_state (
+                user_id BIGINT PRIMARY KEY,
+                selected_mode TEXT NOT NULL DEFAULT 'none',
+                missions_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                runtime_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                completed_count INTEGER DEFAULT 0,
+                bonus_points INTEGER DEFAULT 0,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS selected_mode TEXT NOT NULL DEFAULT 'none'")
+        cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS missions_json JSONB NOT NULL DEFAULT '{}'::jsonb")
+        cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS runtime_json JSONB NOT NULL DEFAULT '{}'::jsonb")
+        cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS completed_count INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS bonus_points INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()")
 
         cur.execute('''
             INSERT INTO game_chapters (chapter_id, is_open)
@@ -1785,6 +2119,300 @@ def get_referral_agents(referrer_id: int, limit: int = 15) -> list:
     finally:
         release_connection(conn)
 
+def get_secret_missions_state(user_id: int) -> dict:
+    conn = None
+    try:
+        uid = _secret_to_int(user_id, 0)
+        if uid <= 0:
+            return {
+                'ok': False,
+                'mode': 'none',
+                'summary': {'completed': 0, 'total': len(_SECRET_MISSIONS), 'bonus_points': 0},
+                'missions': [],
+            }
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT selected_mode, missions_json
+            FROM game_secret_state
+            WHERE user_id = %s
+            ''',
+            (uid,),
+        )
+        row = cur.fetchone()
+        if not row:
+            missions_map = _secret_empty_missions_state()
+            exported = _secret_export('none', missions_map)
+            return {
+                'ok': True,
+                'mode': exported['mode'],
+                'summary': exported['summary'],
+                'missions': exported['missions'],
+            }
+        mode = _sanitize_secret_mode(row[0])
+        missions_map = _secret_normalize_missions(row[1])
+        exported = _secret_export(mode, missions_map)
+        return {
+            'ok': True,
+            'mode': exported['mode'],
+            'summary': exported['summary'],
+            'missions': exported['missions'],
+        }
+    except Exception as e:
+        logger.error(f"get_secret_missions_state error {user_id}: {e}")
+        return {
+            'ok': False,
+            'mode': 'none',
+            'summary': {'completed': 0, 'total': len(_SECRET_MISSIONS), 'bonus_points': 0},
+            'missions': [],
+        }
+    finally:
+        release_connection(conn)
+
+
+def apply_secret_missions_sync(user_id: int, payload: dict | None = None) -> dict:
+    conn = None
+    payload = payload or {}
+    try:
+        uid = _secret_to_int(user_id, 0)
+        if uid <= 0:
+            return {
+                'ok': False,
+                'mode': 'none',
+                'summary': {'completed': 0, 'total': len(_SECRET_MISSIONS), 'bonus_points': 0},
+                'missions': [],
+                'awards': [],
+                'awarded_points': 0,
+            }
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute(
+            '''
+            SELECT selected_mode, missions_json, runtime_json
+            FROM game_secret_state
+            WHERE user_id = %s
+            FOR UPDATE
+            ''',
+            (uid,),
+        )
+        row = cur.fetchone()
+        if not row:
+            mode = 'none'
+            missions_map = _secret_empty_missions_state()
+            runtime = _secret_default_runtime()
+            cur.execute(
+                '''
+                INSERT INTO game_secret_state (
+                    user_id, selected_mode, missions_json, runtime_json,
+                    completed_count, bonus_points, updated_at
+                )
+                VALUES (%s, %s, %s::jsonb, %s::jsonb, %s, %s, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+                ''',
+                (
+                    uid,
+                    mode,
+                    json.dumps(missions_map, ensure_ascii=False),
+                    json.dumps(runtime, ensure_ascii=False),
+                    0,
+                    0,
+                ),
+            )
+        else:
+            mode = _sanitize_secret_mode(row[0])
+            missions_map = _secret_normalize_missions(row[1])
+            runtime = _secret_normalize_runtime(row[2])
+
+        if 'secret_mode' in payload:
+            mode = _sanitize_secret_mode(payload.get('secret_mode'))
+
+        event_type = str(payload.get('event_type') or payload.get('type') or 'sync').strip().lower()
+        chapter_score = max(0, _secret_to_int(payload.get('chapter_score', payload.get('score', 0)), 0))
+        chapter_errors = max(0, _secret_to_int(payload.get('chapter_errors', 0), 0))
+        chapter_hints = max(0, _secret_to_int(payload.get('chapter_hints', 0), 0))
+        lives = max(-1, _secret_to_int(payload.get('lives', 0), 0))
+
+        answer_token = max(0, _secret_to_int(payload.get('mission_answer_token', payload.get('answer_token', 0)), 0))
+        break_token = max(0, _secret_to_int(payload.get('mission_break_token', payload.get('break_token', 0)), 0))
+        answer_elapsed = max(0, min(9999, _secret_to_int(payload.get('mission_last_answer_elapsed', payload.get('answer_elapsed', 0)), 0)))
+        answer_no_hint = _secret_to_bool(payload.get('mission_last_answer_no_hint', payload.get('answer_no_hint', False)))
+        answer_one_life = _secret_to_bool(payload.get('mission_last_answer_one_life', payload.get('answer_one_life', False)))
+        answer_type = str(payload.get('mission_last_answer_type', payload.get('answer_type', '')) or '').strip().lower()
+        answer_streak = max(0, min(200, _secret_to_int(payload.get('mission_last_answer_streak', payload.get('answer_streak', 0)), 0)))
+
+        if break_token > runtime.get('last_break_token', 0):
+            runtime['last_break_token'] = break_token
+            runtime['speed_streak'] = 0
+
+        answer_event = answer_token > runtime.get('last_answer_token', 0)
+        now_dt = _secret_now_minsk()
+        now_iso = now_dt.isoformat()
+        now_hour = int(now_dt.hour)
+        if answer_event:
+            runtime['last_answer_token'] = answer_token
+            if answer_elapsed > 0 and answer_elapsed <= 14:
+                runtime['speed_streak'] = max(0, _secret_to_int(runtime.get('speed_streak', 0), 0)) + 1
+            else:
+                runtime['speed_streak'] = 0
+            if answer_type == 'morse' and answer_elapsed > 0 and answer_elapsed <= 14:
+                runtime['morse_fast_count'] = max(0, _secret_to_int(runtime.get('morse_fast_count', 0), 0)) + 1
+            active_days = runtime.get('active_days', [])
+            if not isinstance(active_days, list):
+                active_days = []
+            day_key = now_dt.strftime('%Y-%m-%d')
+            if day_key not in active_days:
+                active_days.append(day_key)
+            runtime['active_days'] = active_days[-14:]
+
+        cur.execute(
+            '''
+            SELECT
+                COUNT(*)::INT AS invited_count,
+                COUNT(*) FILTER (WHERE COALESCE(gr.completed, 0) > 0)::INT AS active_count,
+                COALESCE(SUM(rf.rewarded_chapters), 0)::INT AS rewarded_chapters
+            FROM game_referrals rf
+            LEFT JOIN game_results gr ON gr.user_id = rf.referred_id
+            WHERE rf.referrer_id = %s
+            ''',
+            (uid,),
+        )
+        ref_row = cur.fetchone() or (0, 0, 0)
+        invited_count = max(0, _secret_to_int(ref_row[0], 0))
+        active_count = max(0, _secret_to_int(ref_row[1], 0))
+        rewarded_chapters = max(0, _secret_to_int(ref_row[2], 0))
+
+        awards = []
+        awarded_points = 0
+
+        def _apply_progress(mission_id: str, candidate_progress: int, base_score: int):
+            nonlocal awarded_points
+            mission = _SECRET_MISSIONS_BY_ID.get(mission_id)
+            if not mission:
+                return
+            target = max(1, _secret_to_int(mission.get('target', 1), 1))
+            row_state = missions_map.get(mission_id, {})
+            if not isinstance(row_state, dict):
+                row_state = {'progress': 0, 'completed': False, 'completed_at': None, 'reward_points': 0}
+            progress_now = max(0, _secret_to_int(row_state.get('progress', 0), 0))
+            completed_now = _secret_to_bool(row_state.get('completed', False))
+            if completed_now:
+                row_state['progress'] = target
+                missions_map[mission_id] = row_state
+                return
+            progress_now = max(progress_now, max(0, min(target, _secret_to_int(candidate_progress, 0))))
+            row_state['progress'] = progress_now
+            if progress_now >= target:
+                bonus_points = _secret_bonus_points(mission, base_score)
+                row_state['progress'] = target
+                row_state['completed'] = True
+                row_state['completed_at'] = now_iso
+                row_state['reward_points'] = bonus_points
+                awarded_points += bonus_points
+                awards.append({
+                    'id': mission_id,
+                    'name': mission['name'],
+                    'icon': mission['icon'],
+                    'bonus_pct': max(0, _secret_to_int(mission.get('bonus_pct', 0), 0)),
+                    'points': bonus_points,
+                })
+            missions_map[mission_id] = row_state
+
+        if mode == 'silent' and answer_event and answer_no_hint:
+            _apply_progress('sm_silent_no_hint', 1, chapter_score)
+
+        if mode == 'speed' and answer_event:
+            if answer_elapsed > 0 and answer_elapsed <= 14 and answer_streak >= 1:
+                _apply_progress('sm_speed_three', runtime.get('speed_streak', 0), chapter_score)
+            else:
+                runtime['speed_streak'] = 0
+
+        if mode == 'iron' and answer_event and answer_one_life:
+            _apply_progress('sm_iron_one_life', 1, chapter_score)
+
+        if mode == 'recruit':
+            _apply_progress('sm_recruit_one', min(1, invited_count), chapter_score)
+
+        if mode == 'night' and answer_event and (now_hour >= 23 or now_hour <= 5):
+            _apply_progress('sm_night_watch', 1, chapter_score)
+
+        if event_type == 'chapter_complete' and chapter_hints <= 0 and chapter_errors <= 0:
+            _apply_progress('sm_flawless_chapter', 1, chapter_score)
+
+        _apply_progress('sm_morse_five_fast', runtime.get('morse_fast_count', 0), chapter_score)
+        _apply_progress('sm_week_discipline', len(runtime.get('active_days', [])), chapter_score)
+        _apply_progress('sm_network_three', active_count, chapter_score)
+
+        if event_type == 'chapter_complete' and lives == 1:
+            _apply_progress('sm_last_life_chapter', 1, chapter_score)
+
+        if awarded_points > 0:
+            cur.execute(
+                '''
+                UPDATE game_results
+                SET total_score = GREATEST(0, COALESCE(total_score, 0) + %s),
+                    updated_at = NOW()
+                WHERE user_id = %s
+                ''',
+                (awarded_points, uid),
+            )
+
+        exported = _secret_export(mode, missions_map)
+        summary = exported['summary']
+        cur.execute(
+            '''
+            INSERT INTO game_secret_state (
+                user_id, selected_mode, missions_json, runtime_json,
+                completed_count, bonus_points, updated_at
+            )
+            VALUES (%s, %s, %s::jsonb, %s::jsonb, %s, %s, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                selected_mode = EXCLUDED.selected_mode,
+                missions_json = EXCLUDED.missions_json,
+                runtime_json = EXCLUDED.runtime_json,
+                completed_count = EXCLUDED.completed_count,
+                bonus_points = EXCLUDED.bonus_points,
+                updated_at = NOW()
+            ''',
+            (
+                uid,
+                mode,
+                json.dumps(missions_map, ensure_ascii=False),
+                json.dumps(runtime, ensure_ascii=False),
+                summary['completed'],
+                summary['bonus_points'],
+            ),
+        )
+        conn.commit()
+
+        return {
+            'ok': True,
+            'mode': exported['mode'],
+            'summary': exported['summary'],
+            'missions': exported['missions'],
+            'awards': awards,
+            'awarded_points': awarded_points,
+            'invited_count': invited_count,
+            'active_count': active_count,
+            'rewarded_chapters': rewarded_chapters,
+        }
+    except Exception as e:
+        logger.error(f"apply_secret_missions_sync error {user_id}: {e}")
+        _safe_rollback(conn)
+        return {
+            'ok': False,
+            'mode': 'none',
+            'summary': {'completed': 0, 'total': len(_SECRET_MISSIONS), 'bonus_points': 0},
+            'missions': [],
+            'awards': [],
+            'awarded_points': 0,
+        }
+    finally:
+        release_connection(conn)
+
+
 def get_game_players_count():
     """Возвращает количество участников рейтинга (только role=player)."""
     conn = None
@@ -2204,6 +2832,7 @@ def reset_game_result(user_id):
             WHERE user_id=%s
         """, (user_id,))
         updated = cur.rowcount
+        cur.execute("DELETE FROM game_secret_state WHERE user_id=%s", (user_id,))
         conn.commit()
         return updated > 0
     except Exception as e:
@@ -2323,6 +2952,7 @@ def reset_all_game_results(drop_referrals: bool = False):
         """)
         updated = cur.rowcount
         cur.execute("DELETE FROM player_chapter_access")
+        cur.execute("DELETE FROM game_secret_state")
         if drop_referrals:
             cur.execute("DELETE FROM game_referrals")
         conn.commit()
