@@ -2277,11 +2277,13 @@ async def cmd_start(update: Update, context: CallbackContext):
                 )
                 status = str((ref_result or {}).get('status') or '')
                 if status == 'attached':
-                    bonus = int(ref_result.get('start_bonus', 50) or 50)
+                    invitee_pct = int(ref_result.get('invitee_percent', 1) or 1)
+                    inviter_pct = int(ref_result.get('inviter_percent', 1) or 1)
                     referral_notice = (
                         "✅ <b>Вы завербованы в отряд</b>\n\n"
-                        f"🎁 Стартовый бонус: <b>+{bonus} очков</b>\n"
-                        "Теперь проходите главы — ваш пригласивший получает бонус за каждый прогресс."
+                        f"🎯 Ваш бонус: <b>+{invitee_pct}%</b> от вашего заработка\n"
+                        f"🕵️ Бонус пригласившего: <b>+{inviter_pct}%</b> от вашего заработка\n"
+                        "Начисления происходят автоматически по мере прогресса."
                     )
                 elif status == 'already_linked_same':
                     referral_notice = "ℹ️ Реферальная ссылка уже была активирована для вашего аккаунта."
@@ -3115,7 +3117,10 @@ async def menu_game(query, context):
 
     # Читаем данные игрока и расписание глав
     my_rank_info = (None, 0)
-    ref_summary = {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+    ref_summary = {
+        'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0,
+        'inviter_percent': 0, 'invitee_percent': 1, 'invitee_bonus_points': 0, 'referrer_id': 0,
+    }
     try:
         tasks = [
             asyncio.to_thread(db.get_game_result, user.id),
@@ -3135,7 +3140,10 @@ async def menu_game(query, context):
         logger.warning(f"menu_game: DB error reading game result: {e}")
         my_result, chapter_schedule = None, []
         my_rank_info = (None, 0)
-        ref_summary = {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+        ref_summary = {
+            'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0,
+            'inviter_percent': 0, 'invitee_percent': 1, 'invitee_bonus_points': 0, 'referrer_id': 0,
+        }
 
     # ── Открытые главы по роли ──────────────────────────────────
     if current_role in ('admin', 'tester'):
@@ -3279,7 +3287,13 @@ async def menu_game(query, context):
         if current_role == 'player':
             invited_count = int(ref_summary.get('invited_count', 0) or 0)
             ref_bonus = int(ref_summary.get('bonus_points', 0) or 0)
-            my_info += f"\n🕵️ Мои агенты: <b>{invited_count}</b> · 🎁 Рефбонус: <b>+{ref_bonus} оч</b>"
+            inviter_pct = int(ref_summary.get('inviter_percent', 0) or 0)
+            invitee_bonus = int(ref_summary.get('invitee_bonus_points', 0) or 0)
+            invitee_pct = int(ref_summary.get('invitee_percent', 1) or 1)
+            my_info += (
+                f"\n🕵️ Мои агенты: <b>{invited_count}</b> · 🎁 Рефбонус: <b>+{ref_bonus} оч</b> · {inviter_pct}%"
+                f"\n🛰️ Мой бонус приглашённого: <b>+{invitee_bonus} оч</b> · {invitee_pct}%"
+            )
     else:
         my_info = "\n\n<i>Вы ещё не играли — станьте первым!</i>"
 
@@ -3365,11 +3379,18 @@ async def game_ref_invite(query, context):
     invited_count = int(summary.get('invited_count', 0) or 0)
     bonus_points = int(summary.get('bonus_points', 0) or 0)
     active_count = int(summary.get('active_count', 0) or 0)
+    inviter_pct = int(summary.get('inviter_percent', 0) or 0)
+    invitee_pct = int(summary.get('invitee_percent', 1) or 1)
+    inviter_rate_label = (
+        f"<b>+{inviter_pct}%</b> от заработанных очков каждого агента"
+        if inviter_pct > 0
+        else "<b>0%</b> сейчас (станет 1% после первого агента)"
+    )
 
     ref_link = f"https://t.me/{username}?start=ref_{uid}"
     share_text = (
         "Присоединяйся к игре «Шифровальщик». "
-        "По моей ссылке ты получишь +50 стартовых очков."
+        f"По моей ссылке ты получишь +{invitee_pct}% от своего заработка."
     )
     share_url = (
         "https://t.me/share/url"
@@ -3382,8 +3403,9 @@ async def game_ref_invite(query, context):
         "Пригласи друга по своей ссылке:\n"
         f"<code>{ref_link}</code>\n\n"
         "🎁 Бонусы:\n"
-        "• новому игроку: <b>+50 очков</b>\n"
-        "• вам: <b>+30 очков</b> за каждую завершённую им главу\n\n"
+        f"• новому игроку: <b>+{invitee_pct}%</b> от его заработанных очков\n"
+        f"• вам: {inviter_rate_label}\n"
+        "• формула: 1 агент = 1%, 2 агента = 2%, 3 агента = 3% ...\n\n"
         f"👥 Приглашено: <b>{invited_count}</b>\n"
         f"✅ Активных агентов: <b>{active_count}</b>\n"
         f"⭐ Начислено бонусом: <b>+{bonus_points} оч</b>"
@@ -3407,13 +3429,19 @@ async def game_ref_stats(query, context):
     bonus_points = int(summary.get('bonus_points', 0) or 0)
     rewarded_chapters = int(summary.get('rewarded_chapters', 0) or 0)
     active_count = int(summary.get('active_count', 0) or 0)
+    inviter_pct = int(summary.get('inviter_percent', 0) or 0)
+    invitee_pct = int(summary.get('invitee_percent', 1) or 1)
+    invitee_bonus_points = int(summary.get('invitee_bonus_points', 0) or 0)
 
     lines = []
     for i, a in enumerate(agents, 1):
         name = str(a.get('name') or 'Игрок').replace('<', '').replace('>', '')
         completed = int(a.get('completed', 0) or 0)
         ref_bonus = int(a.get('bonus_points', 0) or 0)
-        lines.append(f"{i}. {name} — {completed}/6 глав · +{ref_bonus} оч")
+        agent_bonus = int(a.get('invitee_bonus_points', 0) or 0)
+        lines.append(
+            f"{i}. {name} — {completed}/6 глав · вам +{ref_bonus} оч · агенту +{agent_bonus} оч"
+        )
 
     details = "\n".join(lines) if lines else "Пока никого не пригласили."
     msg = (
@@ -3421,7 +3449,9 @@ async def game_ref_stats(query, context):
         f"👥 Приглашено: <b>{invited_count}</b>\n"
         f"✅ Активных: <b>{active_count}</b>\n"
         f"📚 Оплаченных глав: <b>{rewarded_chapters}</b>\n"
-        f"⭐ Реферальный бонус: <b>+{bonus_points} оч</b>\n\n"
+        f"⭐ Реферальный бонус: <b>+{bonus_points} оч</b> · {inviter_pct}%\n"
+        f"🛰️ Ваш бонус приглашённого: <b>+{invitee_bonus_points} оч</b> · {invitee_pct}%\n"
+        "📐 Формула: 1 агент = 1%, 2 агента = 2%, 3 агента = 3% ...\n\n"
         "Список:\n"
         f"{details}"
     )
@@ -6401,11 +6431,14 @@ async def handle_game_state(request):
             except Exception:
                 pass
 
-        ref_summary = {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+        ref_summary = {
+            'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0,
+            'inviter_percent': 0, 'invitee_percent': 1, 'invitee_bonus_points': 0, 'referrer_id': 0,
+        }
         ref_agents = []
         secret_state = {
             'mode': 'none',
-            'summary': {'completed': 0, 'total': 10, 'bonus_points': 0},
+            'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
             'missions': [],
         }
 
@@ -6439,12 +6472,15 @@ async def handle_game_state(request):
                     'name': str(agent.get('name') or 'Игрок')[:64],
                     'completed': int(agent.get('completed', 0) or 0),
                     'bonus_points': int(agent.get('bonus_points', 0) or 0),
+                    'invitee_bonus_points': int(agent.get('invitee_bonus_points', 0) or 0),
+                    'invitee_percent': int(agent.get('invitee_percent', 1) or 1),
+                    'inviter_percent': int(agent.get('inviter_percent', 0) or 0),
                 })
             ref_agents = safe_agents
             if not isinstance(secret_state, dict):
                 secret_state = {
                     'mode': 'none',
-                    'summary': {'completed': 0, 'total': 10, 'bonus_points': 0},
+                    'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
                     'missions': [],
                 }
             # Если у игрока нет доступных глав — автоматически открываем главу 1
@@ -6491,7 +6527,7 @@ async def handle_game_state(request):
             'ref_summary': ref_summary,
             'ref_agents': ref_agents,
             'secret_mode': secret_state.get('mode', 'none') if isinstance(secret_state, dict) else 'none',
-            'secret_summary': secret_state.get('summary') if isinstance(secret_state, dict) else {'completed': 0, 'total': 10, 'bonus_points': 0},
+            'secret_summary': secret_state.get('summary') if isinstance(secret_state, dict) else {'completed': 0, 'total': 15, 'bonus_points': 0},
             'secret_missions': secret_state.get('missions', []) if isinstance(secret_state, dict) else [],
         }
         if restart_mode:
@@ -6714,9 +6750,20 @@ async def handle_game_sync(request):
         db_reset_token = _game_reset_token(result)
         retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count_saved
         ref_award_points = 0
+        ref_award_points_inviter = 0
+        ref_award_points_invitee = 0
+        ref_award_points_upstream = 0
         ref_award_chapters = 0
+        ref_inviter_percent = 0
+        ref_invitee_percent = 1
+        ref_invited_count = 0
+        ref_summary = {
+            'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0,
+            'inviter_percent': 0, 'invitee_percent': 1, 'invitee_bonus_points': 0, 'referrer_id': 0,
+        }
+        ref_agents = []
         secret_mode_saved = 'none'
-        secret_summary = {'completed': 0, 'total': 10, 'bonus_points': 0}
+        secret_summary = {'completed': 0, 'total': 15, 'bonus_points': 0}
         secret_missions = []
         secret_awards = []
         secret_awarded_points = 0
@@ -6726,11 +6773,26 @@ async def handle_game_sync(request):
                     db.apply_referral_bonus_for_completed,
                     user_id,
                     db_completed,
+                    db_score,
                 )
-                ref_award_points = _clamp_int(ref_award.get('awarded_points', 0), 0, 999999)
+                ref_award_points_upstream = _clamp_int(
+                    ref_award.get('awarded_points_to_referrer', ref_award.get('awarded_points_inviter', 0)),
+                    0,
+                    999999,
+                )
+                ref_award_points_invitee = _clamp_int(ref_award.get('awarded_points_invitee', 0), 0, 999999)
                 ref_award_chapters = _clamp_int(ref_award.get('awarded_chapters', 0), 0, 6)
+                ref_invitee_percent = _clamp_int(ref_award.get('invitee_percent', 1), 1, 100, 1)
             except Exception as ref_err:
                 logger.warning(f"game_sync referral bonus failed: user={user_id}, err={ref_err}")
+            try:
+                ref_refresh = await asyncio.to_thread(db.refresh_referrer_bonus, user_id)
+                ref_award_points_inviter = _clamp_int(ref_refresh.get('awarded_points', 0), 0, 999999)
+                ref_inviter_percent = _clamp_int(ref_refresh.get('inviter_percent', 0), 0, 100)
+                ref_invited_count = _clamp_int(ref_refresh.get('invited_count', 0), 0, 1000000)
+            except Exception as ref_refresh_err:
+                logger.warning(f"game_sync referrer refresh failed: user={user_id}, err={ref_refresh_err}")
+            ref_award_points = ref_award_points_inviter + ref_award_points_invitee
             try:
                 secret_sync = await asyncio.to_thread(
                     db.apply_secret_missions_sync,
@@ -6769,11 +6831,38 @@ async def handle_game_sync(request):
                         retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
             except Exception as secret_err:
                 logger.warning(f"game_sync secret missions failed: user={user_id}, err={secret_err}")
+            if ref_award_points_inviter > 0 or ref_award_points_invitee > 0 or secret_awarded_points > 0:
+                result = await asyncio.to_thread(db.get_game_result, user_id)
+                db_score = result[2] if result else db_score
+                db_completed = result[3] if result else db_completed
+                db_reset_token = _game_reset_token(result)
+                retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
+            try:
+                ref_summary, ref_agents = await asyncio.gather(
+                    asyncio.to_thread(db.get_referral_summary, user_id),
+                    asyncio.to_thread(db.get_referral_agents, user_id, 12),
+                )
+                safe_agents = []
+                for agent in ref_agents or []:
+                    if not isinstance(agent, dict):
+                        continue
+                    safe_agents.append({
+                        'user_id': int(agent.get('user_id', 0) or 0),
+                        'name': str(agent.get('name') or 'Игрок')[:64],
+                        'completed': int(agent.get('completed', 0) or 0),
+                        'bonus_points': int(agent.get('bonus_points', 0) or 0),
+                        'invitee_bonus_points': int(agent.get('invitee_bonus_points', 0) or 0),
+                        'invitee_percent': int(agent.get('invitee_percent', 1) or 1),
+                        'inviter_percent': int(agent.get('inviter_percent', 0) or 0),
+                    })
+                ref_agents = safe_agents
+            except Exception as ref_state_err:
+                logger.warning(f"game_sync referral state load failed: user={user_id}, err={ref_state_err}")
         logger.info(
-            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s ref_bonus=%s ref_chapters=%s secret_bonus=%s secret_mode=%s",
+            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s ref_bonus_inviter=%s ref_bonus_invitee=%s ref_bonus_upstream=%s ref_chapters=%s secret_bonus=%s secret_mode=%s",
             user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx,
             chapter_in_progress, event_type, server_penalty_applied, retreat_count, banned,
-            ref_award_points, ref_award_chapters, secret_awarded_points, secret_mode_saved
+            ref_award_points_inviter, ref_award_points_invitee, ref_award_points_upstream, ref_award_chapters, secret_awarded_points, secret_mode_saved
         )
         return aiohttp_web.json_response(
             {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
@@ -6782,7 +6871,15 @@ async def handle_game_sync(request):
               'server_penalty_applied': server_penalty_applied,
               'retreat_count': retreat_count,
               'ref_bonus_awarded': ref_award_points,
+              'ref_bonus_awarded_inviter': ref_award_points_inviter,
+              'ref_bonus_awarded_invitee': ref_award_points_invitee,
+              'ref_bonus_awarded_upstream': ref_award_points_upstream,
               'ref_bonus_chapters': ref_award_chapters,
+              'ref_inviter_percent': ref_inviter_percent,
+              'ref_invitee_percent': ref_invitee_percent,
+              'ref_invited_count': ref_invited_count,
+              'ref_summary': ref_summary,
+              'ref_agents': ref_agents,
               'secret_mode': secret_mode_saved,
               'secret_summary': secret_summary,
               'secret_missions': secret_missions,

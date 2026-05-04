@@ -12,24 +12,24 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
-    raise ValueError("❌ DATABASE_URL не установлен!")
+    raise ValueError("вќЊ DATABASE_URL РЅРµ СѓСЃС‚Р°РЅРѕРІР»РµРЅ!")
 
 db_pool = None
 _TEMP_CONNECTION_IDS: set[int] = set()
 _POLLING_LOCK_CONN = None
 _POLLING_LOCK_KEY = 82445031
 
-# Параметры retry при потере связи с БД
-_DB_RETRY_ATTEMPTS = 5        # попыток переподключения
-_DB_RETRY_DELAYS   = [1, 2, 4, 8, 15]  # секунды между попытками
+# РџР°СЂР°РјРµС‚СЂС‹ retry РїСЂРё РїРѕС‚РµСЂРµ СЃРІСЏР·Рё СЃ Р‘Р”
+_DB_RETRY_ATTEMPTS = 5        # РїРѕРїС‹С‚РѕРє РїРµСЂРµРїРѕРґРєР»СЋС‡РµРЅРёСЏ
+_DB_RETRY_DELAYS   = [1, 2, 4, 8, 15]  # СЃРµРєСѓРЅРґС‹ РјРµР¶РґСѓ РїРѕРїС‹С‚РєР°РјРё
 
 _SECRET_MODES = {
-    'none':    {'title': 'Обычный режим', 'bonus_pct': 0},
-    'silent':  {'title': 'Тихий шифр', 'bonus_pct': 20},
-    'speed':   {'title': 'Скоростной радист', 'bonus_pct': 12},
-    'iron':    {'title': 'Железная воля', 'bonus_pct': 16},
-    'recruit': {'title': 'Вербовщик', 'bonus_pct': 10},
-    'night':   {'title': 'Ночной дозор', 'bonus_pct': 14},
+    'none':    {'title': 'РћР±С‹С‡РЅС‹Р№ СЂРµР¶РёРј', 'bonus_pct': 0},
+    'silent':  {'title': 'РўРёС…РёР№ С€РёС„СЂ', 'bonus_pct': 20},
+    'speed':   {'title': 'РЎРєРѕСЂРѕСЃС‚РЅРѕР№ СЂР°РґРёСЃС‚', 'bonus_pct': 12},
+    'iron':    {'title': 'Р–РµР»РµР·РЅР°СЏ РІРѕР»СЏ', 'bonus_pct': 16},
+    'recruit': {'title': 'Р’РµСЂР±РѕРІС‰РёРє', 'bonus_pct': 10},
+    'night':   {'title': 'РќРѕС‡РЅРѕР№ РґРѕР·РѕСЂ', 'bonus_pct': 14},
 }
 
 _SECRET_MISSIONS = [
@@ -38,9 +38,9 @@ _SECRET_MISSIONS = [
         'order': 1,
         'tier': 'starter',
         'mode': 'silent',
-        'icon': '🤫',
-        'name': 'Тихий шифр',
-        'desc': 'Пройти 1 задание без подсказки.',
+        'icon': 'рџ¤«',
+        'name': 'РўРёС…РёР№ С€РёС„СЂ',
+        'desc': 'РџСЂРѕР№С‚Рё 1 Р·Р°РґР°РЅРёРµ Р±РµР· РїРѕРґСЃРєР°Р·РєРё.',
         'target': 1,
         'bonus_pct': 20,
         'min_bonus': 35,
@@ -50,9 +50,9 @@ _SECRET_MISSIONS = [
         'order': 2,
         'tier': 'starter',
         'mode': 'speed',
-        'icon': '📡',
-        'name': 'Скоростной радист',
-        'desc': '3 быстрых правильных ответа подряд (<= 14 сек).',
+        'icon': 'рџ“Ў',
+        'name': 'РЎРєРѕСЂРѕСЃС‚РЅРѕР№ СЂР°РґРёСЃС‚',
+        'desc': '3 Р±С‹СЃС‚СЂС‹С… РїСЂР°РІРёР»СЊРЅС‹С… РѕС‚РІРµС‚Р° РїРѕРґСЂСЏРґ (<= 14 СЃРµРє).',
         'target': 3,
         'bonus_pct': 12,
         'min_bonus': 28,
@@ -62,9 +62,9 @@ _SECRET_MISSIONS = [
         'order': 3,
         'tier': 'starter',
         'mode': 'iron',
-        'icon': '❤️‍🔥',
-        'name': 'Железная воля',
-        'desc': 'Решить задание, когда осталась 1 жизнь.',
+        'icon': 'вќ¤пёЏвЂЌрџ”Ґ',
+        'name': 'Р–РµР»РµР·РЅР°СЏ РІРѕР»СЏ',
+        'desc': 'Р РµС€РёС‚СЊ Р·Р°РґР°РЅРёРµ, РєРѕРіРґР° РѕСЃС‚Р°Р»Р°СЃСЊ 1 Р¶РёР·РЅСЊ.',
         'target': 1,
         'bonus_pct': 16,
         'min_bonus': 34,
@@ -74,9 +74,9 @@ _SECRET_MISSIONS = [
         'order': 4,
         'tier': 'starter',
         'mode': 'recruit',
-        'icon': '🕵️',
-        'name': 'Вербовщик',
-        'desc': 'Пригласить 1 агента.',
+        'icon': 'рџ•µпёЏ',
+        'name': 'Р’РµСЂР±РѕРІС‰РёРє',
+        'desc': 'РџСЂРёРіР»Р°СЃРёС‚СЊ 1 Р°РіРµРЅС‚Р°.',
         'target': 1,
         'bonus_pct': 10,
         'min_bonus': 25,
@@ -86,9 +86,9 @@ _SECRET_MISSIONS = [
         'order': 5,
         'tier': 'starter',
         'mode': 'night',
-        'icon': '🌙',
-        'name': 'Ночной дозор',
-        'desc': 'Дать правильный ответ в редкое время (23:00-05:59).',
+        'icon': 'рџЊ™',
+        'name': 'РќРѕС‡РЅРѕР№ РґРѕР·РѕСЂ',
+        'desc': 'Р”Р°С‚СЊ РїСЂР°РІРёР»СЊРЅС‹Р№ РѕС‚РІРµС‚ РІ СЂРµРґРєРѕРµ РІСЂРµРјСЏ (23:00-05:59).',
         'target': 1,
         'bonus_pct': 14,
         'min_bonus': 30,
@@ -98,9 +98,9 @@ _SECRET_MISSIONS = [
         'order': 6,
         'tier': 'advanced',
         'mode': None,
-        'icon': '🎯',
-        'name': 'Операция без следов',
-        'desc': 'Завершить главу без ошибок и без подсказок.',
+        'icon': 'рџЋЇ',
+        'name': 'РћРїРµСЂР°С†РёСЏ Р±РµР· СЃР»РµРґРѕРІ',
+        'desc': 'Р—Р°РІРµСЂС€РёС‚СЊ РіР»Р°РІСѓ Р±РµР· РѕС€РёР±РѕРє Рё Р±РµР· РїРѕРґСЃРєР°Р·РѕРє.',
         'target': 1,
         'bonus_pct': 18,
         'min_bonus': 48,
@@ -110,9 +110,9 @@ _SECRET_MISSIONS = [
         'order': 7,
         'tier': 'advanced',
         'mode': None,
-        'icon': '📻',
-        'name': 'Радиоэфир',
-        'desc': 'Решить 5 заданий Морзе быстрее 14 секунд.',
+        'icon': 'рџ“»',
+        'name': 'Р Р°РґРёРѕСЌС„РёСЂ',
+        'desc': 'Р РµС€РёС‚СЊ 5 Р·Р°РґР°РЅРёР№ РњРѕСЂР·Рµ Р±С‹СЃС‚СЂРµРµ 14 СЃРµРєСѓРЅРґ.',
         'target': 5,
         'bonus_pct': 17,
         'min_bonus': 45,
@@ -122,9 +122,9 @@ _SECRET_MISSIONS = [
         'order': 8,
         'tier': 'advanced',
         'mode': None,
-        'icon': '📅',
-        'name': 'Дисциплина штаба',
-        'desc': 'Играть в 4 разные даты.',
+        'icon': 'рџ“…',
+        'name': 'Р”РёСЃС†РёРїР»РёРЅР° С€С‚Р°Р±Р°',
+        'desc': 'РРіСЂР°С‚СЊ РІ 4 СЂР°Р·РЅС‹Рµ РґР°С‚С‹.',
         'target': 4,
         'bonus_pct': 13,
         'min_bonus': 40,
@@ -134,9 +134,9 @@ _SECRET_MISSIONS = [
         'order': 9,
         'tier': 'advanced',
         'mode': None,
-        'icon': '🧩',
-        'name': 'Сеть информаторов',
-        'desc': 'Иметь 3 активных агента.',
+        'icon': 'рџ§©',
+        'name': 'РЎРµС‚СЊ РёРЅС„РѕСЂРјР°С‚РѕСЂРѕРІ',
+        'desc': 'РРјРµС‚СЊ 3 Р°РєС‚РёРІРЅС‹С… Р°РіРµРЅС‚Р°.',
         'target': 3,
         'bonus_pct': 15,
         'min_bonus': 42,
@@ -146,19 +146,79 @@ _SECRET_MISSIONS = [
         'order': 10,
         'tier': 'advanced',
         'mode': None,
-        'icon': '⚔️',
-        'name': 'Последний рубеж',
-        'desc': 'Завершить главу с 1 жизнью.',
+        'icon': 'вљ”пёЏ',
+        'name': 'РџРѕСЃР»РµРґРЅРёР№ СЂСѓР±РµР¶',
+        'desc': 'Р—Р°РІРµСЂС€РёС‚СЊ РіР»Р°РІСѓ СЃ 1 Р¶РёР·РЅСЊСЋ.',
         'target': 1,
         'bonus_pct': 22,
         'min_bonus': 55,
+    },
+    {
+        'id': 'sm_map_runner',
+        'order': 11,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': 'рџ§­',
+        'name': 'РњР°СЂС€СЂСѓС‚ РїСЂРѕРІРѕРґРЅРёРєР°',
+        'desc': 'Р’РµСЂРЅРѕ РІС‹РїРѕР»РЅРёС‚СЊ 3 Р·Р°РґР°РЅРёСЏ РїРѕ РєР°СЂС‚Рµ.',
+        'target': 3,
+        'bonus_pct': 14,
+        'min_bonus': 44,
+    },
+    {
+        'id': 'sm_type_mix',
+        'order': 12,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': 'рџ§Є',
+        'name': 'РљРѕРјР±РёРЅРёСЂРѕРІР°РЅРЅС‹Р№ РєР°РЅР°Р»',
+        'desc': 'Р РµС€РёС‚СЊ Р·Р°РґР°РЅРёСЏ 4 СЂР°Р·РЅС‹С… С‚РёРїРѕРІ.',
+        'target': 4,
+        'bonus_pct': 15,
+        'min_bonus': 46,
+    },
+    {
+        'id': 'sm_clean_two_chapters',
+        'order': 13,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': 'рџ“‹',
+        'name': 'РђРєРєСѓСЂР°С‚РЅС‹Р№ С€С‚Р°Р±',
+        'desc': 'Р—Р°РІРµСЂС€РёС‚СЊ 2 РіР»Р°РІС‹ СЃ РјР°РєСЃРёРјСѓРј 1 РѕС€РёР±РєРѕР№ Рё 1 РїРѕРґСЃРєР°Р·РєРѕР№.',
+        'target': 2,
+        'bonus_pct': 18,
+        'min_bonus': 52,
+    },
+    {
+        'id': 'sm_evening_watch',
+        'order': 14,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': 'рџЊ†',
+        'name': 'Р’РµС‡РµСЂРЅРёР№ РґРѕР·РѕСЂ',
+        'desc': 'Р”Р°С‚СЊ РїСЂР°РІРёР»СЊРЅС‹Р№ РѕС‚РІРµС‚ РІРµС‡РµСЂРѕРј (18:00-22:59) РІ 3 СЂР°Р·РЅС‹Рµ РґР°С‚С‹.',
+        'target': 3,
+        'bonus_pct': 13,
+        'min_bonus': 40,
+    },
+    {
+        'id': 'sm_chapter_score_700',
+        'order': 15,
+        'tier': 'advanced',
+        'mode': None,
+        'icon': 'вљЎ',
+        'name': 'РЁС‚СѓСЂРјРѕРІРѕР№ С‚РµРјРї',
+        'desc': 'Р—Р°РІРµСЂС€РёС‚СЊ РіР»Р°РІСѓ СЃ СЂРµР·СѓР»СЊС‚Р°С‚РѕРј 700+ РѕС‡РєРѕРІ.',
+        'target': 1,
+        'bonus_pct': 22,
+        'min_bonus': 65,
     },
 ]
 _SECRET_MISSIONS_BY_ID = {m['id']: m for m in _SECRET_MISSIONS}
 
 
 def init_pool():
-    """Инициализирует пул соединений с retry."""
+    """РРЅРёС†РёР°Р»РёР·РёСЂСѓРµС‚ РїСѓР» СЃРѕРµРґРёРЅРµРЅРёР№ СЃ retry."""
     global db_pool
     last_err = None
     for attempt, delay in enumerate(_DB_RETRY_DELAYS, 1):
@@ -173,21 +233,21 @@ def init_pool():
                 dsn=DATABASE_URL, sslmode='require',
                 connect_timeout=10,
             )
-            logger.info(f"✅ Пул PostgreSQL инициализирован (попытка {attempt})")
+            logger.info(f"вњ… РџСѓР» PostgreSQL РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅ (РїРѕРїС‹С‚РєР° {attempt})")
             return
         except Exception as e:
             last_err = e
             if attempt < _DB_RETRY_ATTEMPTS:
-                logger.warning(f"⚠️  БД недоступна (попытка {attempt}/{_DB_RETRY_ATTEMPTS}), жду {delay}с: {e}")
+                logger.warning(f"вљ пёЏ  Р‘Р” РЅРµРґРѕСЃС‚СѓРїРЅР° (РїРѕРїС‹С‚РєР° {attempt}/{_DB_RETRY_ATTEMPTS}), Р¶РґСѓ {delay}СЃ: {e}")
                 time.sleep(delay)
-    logger.error(f"❌ Не удалось подключиться к БД после {_DB_RETRY_ATTEMPTS} попыток: {last_err}")
+    logger.error(f"вќЊ РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ Рє Р‘Р” РїРѕСЃР»Рµ {_DB_RETRY_ATTEMPTS} РїРѕРїС‹С‚РѕРє: {last_err}")
     raise last_err
 
 
 def _try_new_connection():
-    """Создаёт новое прямое соединение с retry."""
+    """РЎРѕР·РґР°С‘С‚ РЅРѕРІРѕРµ РїСЂСЏРјРѕРµ СЃРѕРµРґРёРЅРµРЅРёРµ СЃ retry."""
     last_err = None
-    for attempt, delay in enumerate(_DB_RETRY_DELAYS[:3], 1):  # макс 3 попытки для одного запроса
+    for attempt, delay in enumerate(_DB_RETRY_DELAYS[:3], 1):  # РјР°РєСЃ 3 РїРѕРїС‹С‚РєРё РґР»СЏ РѕРґРЅРѕРіРѕ Р·Р°РїСЂРѕСЃР°
         try:
             conn = psycopg2.connect(
                 DATABASE_URL, sslmode='require', connect_timeout=10
@@ -196,18 +256,18 @@ def _try_new_connection():
         except Exception as e:
             last_err = e
             if attempt < 3:
-                logger.warning(f"⚠️  Переподключение к БД (попытка {attempt}/3), жду {delay}с")
+                logger.warning(f"вљ пёЏ  РџРµСЂРµРїРѕРґРєР»СЋС‡РµРЅРёРµ Рє Р‘Р” (РїРѕРїС‹С‚РєР° {attempt}/3), Р¶РґСѓ {delay}СЃ")
                 time.sleep(delay)
     raise last_err
 
 
 def _pool_is_dead():
-    """Проверяет, сломан ли пул (закрыт или None)."""
+    """РџСЂРѕРІРµСЂСЏРµС‚, СЃР»РѕРјР°РЅ Р»Рё РїСѓР» (Р·Р°РєСЂС‹С‚ РёР»Рё None)."""
     global db_pool
     if db_pool is None:
         return True
     try:
-        # SimpleConnectionPool не имеет .closed, проверяем через getconn/putconn
+        # SimpleConnectionPool РЅРµ РёРјРµРµС‚ .closed, РїСЂРѕРІРµСЂСЏРµРј С‡РµСЂРµР· getconn/putconn
         conn = db_pool.getconn()
         db_pool.putconn(conn)
         return False
@@ -216,33 +276,33 @@ def _pool_is_dead():
 
 
 def get_connection():
-    """Возвращает живое соединение из пула. При обрыве — пересоздаёт с retry."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ Р¶РёРІРѕРµ СЃРѕРµРґРёРЅРµРЅРёРµ РёР· РїСѓР»Р°. РџСЂРё РѕР±СЂС‹РІРµ вЂ” РїРµСЂРµСЃРѕР·РґР°С‘С‚ СЃ retry."""
     global db_pool
     if db_pool is None:
         init_pool()
     try:
         conn = db_pool.getconn()
     except pool.PoolError:
-        logger.warning("⚠️ Пул БД исчерпан, открываю временное подключение")
+        logger.warning("вљ пёЏ РџСѓР» Р‘Р” РёСЃС‡РµСЂРїР°РЅ, РѕС‚РєСЂС‹РІР°СЋ РІСЂРµРјРµРЅРЅРѕРµ РїРѕРґРєР»СЋС‡РµРЅРёРµ")
         conn = _try_new_connection()
         _TEMP_CONNECTION_IDS.add(id(conn))
     except Exception:
-        # Пул сломан — пересоздаём
-        logger.warning("⚠️  Пул соединений сломан, пересоздаём...")
-        db_pool = None  # сбрасываем чтобы init_pool не пытался закрыть сломанный пул
+        # РџСѓР» СЃР»РѕРјР°РЅ вЂ” РїРµСЂРµСЃРѕР·РґР°С‘Рј
+        logger.warning("вљ пёЏ  РџСѓР» СЃРѕРµРґРёРЅРµРЅРёР№ СЃР»РѕРјР°РЅ, РїРµСЂРµСЃРѕР·РґР°С‘Рј...")
+        db_pool = None  # СЃР±СЂР°СЃС‹РІР°РµРј С‡С‚РѕР±С‹ init_pool РЅРµ РїС‹С‚Р°Р»СЃСЏ Р·Р°РєСЂС‹С‚СЊ СЃР»РѕРјР°РЅРЅС‹Р№ РїСѓР»
         init_pool()
         conn = db_pool.getconn()
     try:
-        # Проверяем что соединение живое
+        # РџСЂРѕРІРµСЂСЏРµРј С‡С‚Рѕ СЃРѕРµРґРёРЅРµРЅРёРµ Р¶РёРІРѕРµ
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
         return conn
     except Exception:
-        # Соединение мёртвое — закрываем и создаём новое напрямую
+        # РЎРѕРµРґРёРЅРµРЅРёРµ РјС‘СЂС‚РІРѕРµ вЂ” Р·Р°РєСЂС‹РІР°РµРј Рё СЃРѕР·РґР°С‘Рј РЅРѕРІРѕРµ РЅР°РїСЂСЏРјСѓСЋ
         release_connection(conn)
         try:
             new_conn = _try_new_connection()
-            # Кладём новое соединение обратно в пул и берём его
+            # РљР»Р°РґС‘Рј РЅРѕРІРѕРµ СЃРѕРµРґРёРЅРµРЅРёРµ РѕР±СЂР°С‚РЅРѕ РІ РїСѓР» Рё Р±РµСЂС‘Рј РµРіРѕ
             try:
                 db_pool.putconn(new_conn)
             except Exception:
@@ -253,7 +313,7 @@ def get_connection():
                 raise
             return db_pool.getconn()
         except Exception as e:
-            logger.error(f"Не удалось переподключиться к БД: {e}")
+            logger.error(f"РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµРїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ Рє Р‘Р”: {e}")
             raise
 
 
@@ -275,7 +335,7 @@ def release_connection(conn):
             pass
         return
     try:
-        # Если соединение в плохом состоянии — закрываем его
+        # Р•СЃР»Рё СЃРѕРµРґРёРЅРµРЅРёРµ РІ РїР»РѕС…РѕРј СЃРѕСЃС‚РѕСЏРЅРёРё вЂ” Р·Р°РєСЂС‹РІР°РµРј РµРіРѕ
         if conn.closed:
             db_pool.putconn(conn, close=True)
         else:
@@ -285,7 +345,7 @@ def release_connection(conn):
 
 
 def _safe_rollback(conn):
-    """Безопасный rollback — не падает если соединение уже закрыто."""
+    """Р‘РµР·РѕРїР°СЃРЅС‹Р№ rollback вЂ” РЅРµ РїР°РґР°РµС‚ РµСЃР»Рё СЃРѕРµРґРёРЅРµРЅРёРµ СѓР¶Рµ Р·Р°РєСЂС‹С‚Рѕ."""
     if conn is None:
         return
     try:
@@ -345,7 +405,11 @@ def _secret_default_runtime() -> dict:
         'last_break_token': 0,
         'speed_streak': 0,
         'morse_fast_count': 0,
+        'map_answer_count': 0,
+        'clean_chapter_count': 0,
+        'unique_types': [],
         'active_days': [],
+        'evening_days': [],
     }
 
 
@@ -404,6 +468,17 @@ def _secret_normalize_runtime(raw) -> dict:
     data['last_break_token'] = max(0, _secret_to_int(src.get('last_break_token', 0), 0))
     data['speed_streak'] = max(0, _secret_to_int(src.get('speed_streak', 0), 0))
     data['morse_fast_count'] = max(0, _secret_to_int(src.get('morse_fast_count', 0), 0))
+    data['map_answer_count'] = max(0, _secret_to_int(src.get('map_answer_count', 0), 0))
+    data['clean_chapter_count'] = max(0, _secret_to_int(src.get('clean_chapter_count', 0), 0))
+    unique_types = src.get('unique_types', [])
+    if isinstance(unique_types, list):
+        clean_types = []
+        for item in unique_types:
+            v = str(item or '').strip().lower()
+            if not v or len(v) > 24 or v in clean_types:
+                continue
+            clean_types.append(v)
+        data['unique_types'] = clean_types[:16]
     active_days = src.get('active_days', [])
     if isinstance(active_days, list):
         clean_days = []
@@ -413,6 +488,15 @@ def _secret_normalize_runtime(raw) -> dict:
                 continue
             clean_days.append(d)
         data['active_days'] = clean_days[-14:]
+    evening_days = src.get('evening_days', [])
+    if isinstance(evening_days, list):
+        clean_evening = []
+        for day in evening_days:
+            d = str(day or '').strip()
+            if not d or d in clean_evening:
+                continue
+            clean_evening.append(d)
+        data['evening_days'] = clean_evening[-14:]
     return data
 
 
@@ -479,7 +563,7 @@ def _secret_export(mode: str, missions_map: dict) -> dict:
 
 
 def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
-    """Пытается взять глобальную advisory-блокировку для polling (один инстанс бота)."""
+    """РџС‹С‚Р°РµС‚СЃСЏ РІР·СЏС‚СЊ РіР»РѕР±Р°Р»СЊРЅСѓСЋ advisory-Р±Р»РѕРєРёСЂРѕРІРєСѓ РґР»СЏ polling (РѕРґРёРЅ РёРЅСЃС‚Р°РЅСЃ Р±РѕС‚Р°)."""
     global _POLLING_LOCK_CONN
     if _POLLING_LOCK_CONN is not None:
         try:
@@ -500,12 +584,12 @@ def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
         cur.close()
         if row and bool(row[0]):
             _POLLING_LOCK_CONN = conn
-            logger.info("✅ Polling lock acquired")
+            logger.info("вњ… Polling lock acquired")
             return True
         conn.close()
         return False
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось взять polling lock: {e}")
+        logger.warning(f"вљ пёЏ РќРµ СѓРґР°Р»РѕСЃСЊ РІР·СЏС‚СЊ polling lock: {e}")
         try:
             if conn:
                 conn.close()
@@ -515,7 +599,7 @@ def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
 
 
 def wait_for_polling_lock(max_wait_sec: int = 180, interval_sec: int = 5) -> bool:
-    """Ждёт освобождения polling lock до max_wait_sec."""
+    """Р–РґС‘С‚ РѕСЃРІРѕР±РѕР¶РґРµРЅРёСЏ polling lock РґРѕ max_wait_sec."""
     interval = max(1, int(interval_sec))
     attempts = max(1, int(max_wait_sec) // interval)
     for i in range(attempts):
@@ -523,15 +607,15 @@ def wait_for_polling_lock(max_wait_sec: int = 180, interval_sec: int = 5) -> boo
             return True
         if i < attempts - 1:
             logger.warning(
-                f"⏳ Polling lock занят другим инстансом, жду {interval}с "
-                f"(попытка {i + 1}/{attempts})"
+                f"вЏі Polling lock Р·Р°РЅСЏС‚ РґСЂСѓРіРёРј РёРЅСЃС‚Р°РЅСЃРѕРј, Р¶РґСѓ {interval}СЃ "
+                f"(РїРѕРїС‹С‚РєР° {i + 1}/{attempts})"
             )
             time.sleep(interval)
     return False
 
 
 def release_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> None:
-    """Освобождает advisory lock polling при остановке процесса."""
+    """РћСЃРІРѕР±РѕР¶РґР°РµС‚ advisory lock polling РїСЂРё РѕСЃС‚Р°РЅРѕРІРєРµ РїСЂРѕС†РµСЃСЃР°."""
     global _POLLING_LOCK_CONN
     conn = _POLLING_LOCK_CONN
     _POLLING_LOCK_CONN = None
@@ -554,15 +638,15 @@ def release_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> None:
 
 
 
-#  ИНИЦИАЛИЗАЦИЯ БД
-# ──────────────────────────────────────────────
+#  РРќРР¦РРђР›РР—РђР¦РРЇ Р‘Р”
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def init_db():
     conn = None
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cur = conn.cursor()
 
-        # Пользователи
+        # РџРѕР»СЊР·РѕРІР°С‚РµР»Рё
         cur.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id    BIGINT PRIMARY KEY,
@@ -579,7 +663,7 @@ def init_db():
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'")
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_news_check TIMESTAMPTZ DEFAULT NOW()")
 
-        # Учителя (авторегистрация)
+        # РЈС‡РёС‚РµР»СЏ (Р°РІС‚РѕСЂРµРіРёСЃС‚СЂР°С†РёСЏ)
         cur.execute('''
             CREATE TABLE IF NOT EXISTS teachers (
                 id          SERIAL PRIMARY KEY,
@@ -590,7 +674,7 @@ def init_db():
             )
         ''')
 
-        # Замены
+        # Р—Р°РјРµРЅС‹
         cur.execute('''
             CREATE TABLE IF NOT EXISTS substitutions (
                 id           SERIAL PRIMARY KEY,
@@ -606,7 +690,7 @@ def init_db():
             )
         ''')
 
-        # Активность пользователей
+        # РђРєС‚РёРІРЅРѕСЃС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№
         cur.execute('''
             CREATE TABLE IF NOT EXISTS user_activity (
                 id        SERIAL PRIMARY KEY,
@@ -618,7 +702,7 @@ def init_db():
             )
         ''')
 
-        # Техрежим
+        # РўРµС…СЂРµР¶РёРј
         cur.execute('''
             CREATE TABLE IF NOT EXISTS bot_status (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -629,7 +713,7 @@ def init_db():
         ''')
         cur.execute("INSERT INTO bot_status (id, maintenance_mode) VALUES (1, 0) ON CONFLICT DO NOTHING")
 
-        # Избранное
+        # РР·Р±СЂР°РЅРЅРѕРµ
         cur.execute('''
             CREATE TABLE IF NOT EXISTS user_favorites (
                 id         SERIAL PRIMARY KEY,
@@ -642,7 +726,7 @@ def init_db():
             )
         ''')
 
-        # Новости
+        # РќРѕРІРѕСЃС‚Рё
         cur.execute('''
             CREATE TABLE IF NOT EXISTS news (
                 id           SERIAL PRIMARY KEY,
@@ -660,7 +744,7 @@ def init_db():
         cur.execute("ALTER TABLE news ALTER COLUMN category SET DEFAULT 'bot'")
         cur.execute("ALTER TABLE news ALTER COLUMN category SET NOT NULL")
 
-        # Просмотры новостей
+        # РџСЂРѕСЃРјРѕС‚СЂС‹ РЅРѕРІРѕСЃС‚РµР№
         cur.execute('''
             CREATE TABLE IF NOT EXISTS news_views (
                 id        SERIAL PRIMARY KEY,
@@ -671,7 +755,7 @@ def init_db():
             )
         ''')
 
-        # Профили пользователей (роль + данные регистрации)
+        # РџСЂРѕС„РёР»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ (СЂРѕР»СЊ + РґР°РЅРЅС‹Рµ СЂРµРіРёСЃС‚СЂР°С†РёРё)
         cur.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id      BIGINT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
@@ -682,7 +766,7 @@ def init_db():
             )
         ''')
 
-        # Подписки на замены классов
+        # РџРѕРґРїРёСЃРєРё РЅР° Р·Р°РјРµРЅС‹ РєР»Р°СЃСЃРѕРІ
         cur.execute('''
             CREATE TABLE IF NOT EXISTS class_subscriptions (
                 id         SERIAL PRIMARY KEY,
@@ -694,7 +778,7 @@ def init_db():
         ''')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_class_sub_class ON class_subscriptions(class_name)')
 
-        # Результаты игры "Шивровальщик"
+        # Р РµР·СѓР»СЊС‚Р°С‚С‹ РёРіСЂС‹ "РЁРёРІСЂРѕРІР°Р»СЊС‰РёРє"
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_results (
                 id           SERIAL PRIMARY KEY,
@@ -724,7 +808,7 @@ def init_db():
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS sync_chapter INTEGER DEFAULT 0')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS sync_max_chapter_score INTEGER DEFAULT 0')
         cur.execute('ALTER TABLE game_results ADD COLUMN IF NOT EXISTS sync_max_cipher_idx INTEGER DEFAULT -1')
-        # Таблица управления главами игры
+        # РўР°Р±Р»РёС†Р° СѓРїСЂР°РІР»РµРЅРёСЏ РіР»Р°РІР°РјРё РёРіСЂС‹
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_chapters (
                 chapter_id   INTEGER PRIMARY KEY,
@@ -733,8 +817,8 @@ def init_db():
                 updated_at   TIMESTAMPTZ DEFAULT NOW()
             )
         ''')
-        # Глобальный режим доступа к игре:
-        # beta (только белый список), open (для всех), closed (закрыта)
+        # Р“Р»РѕР±Р°Р»СЊРЅС‹Р№ СЂРµР¶РёРј РґРѕСЃС‚СѓРїР° Рє РёРіСЂРµ:
+        # beta (С‚РѕР»СЊРєРѕ Р±РµР»С‹Р№ СЃРїРёСЃРѕРє), open (РґР»СЏ РІСЃРµС…), closed (Р·Р°РєСЂС‹С‚Р°)
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_access_settings (
                 id          INTEGER PRIMARY KEY CHECK (id = 1),
@@ -747,7 +831,7 @@ def init_db():
             VALUES (1, 'beta')
             ON CONFLICT (id) DO NOTHING
         ''')
-        # Инициализируем таблицу ролей
+        # РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј С‚Р°Р±Р»РёС†Сѓ СЂРѕР»РµР№
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_roles (
                 user_id    BIGINT PRIMARY KEY,
@@ -762,13 +846,21 @@ def init_db():
                 start_bonus_awarded  BOOLEAN DEFAULT FALSE,
                 rewarded_chapters    INTEGER DEFAULT 0,
                 total_referrer_bonus INTEGER DEFAULT 0,
+                pct_referrer_bonus_paid INTEGER DEFAULT 0,
+                total_referred_bonus INTEGER DEFAULT 0,
+                invitee_bonus_percent INTEGER DEFAULT 1,
+                max_referred_base_score INTEGER DEFAULT 0,
                 created_at           TIMESTAMPTZ DEFAULT NOW(),
                 updated_at           TIMESTAMPTZ DEFAULT NOW()
             )
         ''')
+        cur.execute('ALTER TABLE game_referrals ADD COLUMN IF NOT EXISTS pct_referrer_bonus_paid INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_referrals ADD COLUMN IF NOT EXISTS total_referred_bonus INTEGER DEFAULT 0')
+        cur.execute('ALTER TABLE game_referrals ADD COLUMN IF NOT EXISTS invitee_bonus_percent INTEGER DEFAULT 1')
+        cur.execute('ALTER TABLE game_referrals ADD COLUMN IF NOT EXISTS max_referred_base_score INTEGER DEFAULT 0')
         cur.execute('CREATE INDEX IF NOT EXISTS idx_game_referrals_referrer ON game_referrals(referrer_id)')
-        # Таблица доступа к главам для конкретных игроков
-        # (для обычных игроков главы открываются индивидуально через админа)
+        # РўР°Р±Р»РёС†Р° РґРѕСЃС‚СѓРїР° Рє РіР»Р°РІР°Рј РґР»СЏ РєРѕРЅРєСЂРµС‚РЅС‹С… РёРіСЂРѕРєРѕРІ
+        # (РґР»СЏ РѕР±С‹С‡РЅС‹С… РёРіСЂРѕРєРѕРІ РіР»Р°РІС‹ РѕС‚РєСЂС‹РІР°СЋС‚СЃСЏ РёРЅРґРёРІРёРґСѓР°Р»СЊРЅРѕ С‡РµСЂРµР· Р°РґРјРёРЅР°)
         cur.execute('''
             CREATE TABLE IF NOT EXISTS player_chapter_access (
                 user_id    BIGINT NOT NULL,
@@ -802,13 +894,13 @@ def init_db():
             ON CONFLICT (chapter_id) DO NOTHING
         ''')
 
-        # Миграция: если глава 1 ещё закрыта — открываем её (фикс для существующих деплоев)
+        # РњРёРіСЂР°С†РёСЏ: РµСЃР»Рё РіР»Р°РІР° 1 РµС‰С‘ Р·Р°РєСЂС‹С‚Р° вЂ” РѕС‚РєСЂС‹РІР°РµРј РµС‘ (С„РёРєСЃ РґР»СЏ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёС… РґРµРїР»РѕРµРІ)
         cur.execute('''
             UPDATE game_chapters SET is_open = TRUE
             WHERE chapter_id = 1 AND is_open = FALSE AND open_at IS NULL
         ''')
 
-        # Индексы
+        # РРЅРґРµРєСЃС‹
         for idx_sql in [
             'CREATE INDEX IF NOT EXISTS idx_sub_date ON substitutions(date)',
             'CREATE INDEX IF NOT EXISTS idx_sub_class_date ON substitutions(class_name, date)',
@@ -824,22 +916,22 @@ def init_db():
             cur.execute(idx_sql)
 
         conn.commit()
-        logger.info("✅ БД инициализирована")
+        logger.info("вњ… Р‘Р” РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅР°")
     except Exception as e:
         err_text = str(e)
         if 'Connection refused' in err_text or 'could not connect to server' in err_text:
-            logger.warning(f"⚠️ init_db: БД ещё не готова: {e}")
+            logger.warning(f"вљ пёЏ init_db: Р‘Р” РµС‰С‘ РЅРµ РіРѕС‚РѕРІР°: {e}")
         else:
-            logger.error(f"❌ Ошибка init_db: {e}")
+            logger.error(f"вќЊ РћС€РёР±РєР° init_db: {e}")
         raise
     finally:
         if conn:
             conn.close()
 
 
-# ──────────────────────────────────────────────
-#  ПОЛЬЗОВАТЕЛИ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РџРћР›Р¬Р—РћР’РђРўР•Р›Р
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def update_user_and_log(user_id, action, class_name=None,
                         username=None, first_name=None,
                         last_name=None, language_code=None):
@@ -875,8 +967,8 @@ def log_user_activity(user_id, action, class_name=None):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Гарантируем существование пользователя перед записью активности,
-        # чтобы не нарушать FK-ограничение user_activity_user_id_fkey
+        # Р“Р°СЂР°РЅС‚РёСЂСѓРµРј СЃСѓС‰РµСЃС‚РІРѕРІР°РЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїРµСЂРµРґ Р·Р°РїРёСЃСЊСЋ Р°РєС‚РёРІРЅРѕСЃС‚Рё,
+        # С‡С‚РѕР±С‹ РЅРµ РЅР°СЂСѓС€Р°С‚СЊ FK-РѕРіСЂР°РЅРёС‡РµРЅРёРµ user_activity_user_id_fkey
         cur.execute(
             'INSERT INTO users (user_id, last_active) VALUES (%s, NOW()) '
             'ON CONFLICT (user_id) DO UPDATE SET last_active = NOW()',
@@ -939,7 +1031,7 @@ def get_user_role(user_id):
 
 
 def get_user_info(user_id):
-    """Возвращает информацию о пользователе: dict или None."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РёРЅС„РѕСЂРјР°С†РёСЋ Рѕ РїРѕР»СЊР·РѕРІР°С‚РµР»Рµ: dict РёР»Рё None."""
     conn = None
     try:
         conn = get_connection()
@@ -960,11 +1052,11 @@ def get_user_info(user_id):
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  ПРОФИЛИ ПОЛЬЗОВАТЕЛЕЙ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РџР РћР¤РР›Р РџРћР›Р¬Р—РћР’РђРўР•Р›Р•Р™
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def get_user_profile(user_id):
-    """Возвращает профиль пользователя или None."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РїСЂРѕС„РёР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР»Рё None."""
     conn = None
     try:
         conn = get_connection()
@@ -986,7 +1078,7 @@ def get_user_profile(user_id):
 
 
 def save_user_profile(user_id, role, display_name=None, class_name=None):
-    """Сохраняет или обновляет профиль пользователя."""
+    """РЎРѕС…СЂР°РЅСЏРµС‚ РёР»Рё РѕР±РЅРѕРІР»СЏРµС‚ РїСЂРѕС„РёР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."""
     conn = None
     try:
         conn = get_connection()
@@ -1012,7 +1104,7 @@ def save_user_profile(user_id, role, display_name=None, class_name=None):
 
 
 def delete_user_profile(user_id):
-    """Удаляет профиль пользователя (сброс регистрации)."""
+    """РЈРґР°Р»СЏРµС‚ РїСЂРѕС„РёР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ (СЃР±СЂРѕСЃ СЂРµРіРёСЃС‚СЂР°С†РёРё)."""
     conn = None
     try:
         conn = get_connection()
@@ -1030,7 +1122,7 @@ def delete_user_profile(user_id):
 
 
 def get_profile_stats():
-    """Возвращает статистику по ролям для аналитики."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЃС‚Р°С‚РёСЃС‚РёРєСѓ РїРѕ СЂРѕР»СЏРј РґР»СЏ Р°РЅР°Р»РёС‚РёРєРё."""
     conn = None
     try:
         conn = get_connection()
@@ -1046,9 +1138,9 @@ def get_profile_stats():
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  ПОДПИСКИ НА ЗАМЕНЫ КЛАССА
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РџРћР”РџРРЎРљР РќРђ Р—РђРњР•РќР« РљР›РђРЎРЎРђ
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def subscribe_class(user_id, class_name):
     conn = None
     try:
@@ -1070,7 +1162,7 @@ def subscribe_class(user_id, class_name):
 
 
 def get_class_subscribers(class_name):
-    """Возвращает список user_id подписанных на замены класса."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЃРїРёСЃРѕРє user_id РїРѕРґРїРёСЃР°РЅРЅС‹С… РЅР° Р·Р°РјРµРЅС‹ РєР»Р°СЃСЃР°."""
     conn = None
     try:
         conn = get_connection()
@@ -1116,7 +1208,7 @@ def get_teacher_telegram_id(full_name):
 
 
 def register_teacher(full_name, telegram_id):
-    """Привязывает Telegram-ID к учителю по имени. Возвращает True при успехе."""
+    """РџСЂРёРІСЏР·С‹РІР°РµС‚ Telegram-ID Рє СѓС‡РёС‚РµР»СЋ РїРѕ РёРјРµРЅРё. Р’РѕР·РІСЂР°С‰Р°РµС‚ True РїСЂРё СѓСЃРїРµС…Рµ."""
     if isinstance(full_name, dict):
         full_name = full_name.get('full_name')
     if not full_name:
@@ -1142,7 +1234,7 @@ def register_teacher(full_name, telegram_id):
 
 
 def find_teacher_by_telegram_id(telegram_id):
-    """Возвращает {'full_name': ..., 'registered_at': ...} или None."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ {'full_name': ..., 'registered_at': ...} РёР»Рё None."""
     conn = None
     try:
         conn = get_connection()
@@ -1163,8 +1255,8 @@ def find_teacher_by_telegram_id(telegram_id):
 
 
 def unregister_teacher(full_name):
-    """Сбрасывает telegram_id и registered для учителя — освобождает имя."""
-    # Защита: если случайно передали dict — извлекаем строку
+    """РЎР±СЂР°СЃС‹РІР°РµС‚ telegram_id Рё registered РґР»СЏ СѓС‡РёС‚РµР»СЏ вЂ” РѕСЃРІРѕР±РѕР¶РґР°РµС‚ РёРјСЏ."""
+    # Р—Р°С‰РёС‚Р°: РµСЃР»Рё СЃР»СѓС‡Р°Р№РЅРѕ РїРµСЂРµРґР°Р»Рё dict вЂ” РёР·РІР»РµРєР°РµРј СЃС‚СЂРѕРєСѓ
     if isinstance(full_name, dict):
         full_name = full_name.get('full_name')
     if not full_name:
@@ -1189,7 +1281,7 @@ def unregister_teacher(full_name):
 
 
 def get_registered_teacher_names():
-    """Возвращает set имён учителей которые уже зарегистрировались в боте."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ set РёРјС‘РЅ СѓС‡РёС‚РµР»РµР№ РєРѕС‚РѕСЂС‹Рµ СѓР¶Рµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°Р»РёСЃСЊ РІ Р±РѕС‚Рµ."""
     conn = None
     try:
         conn = get_connection()
@@ -1204,21 +1296,21 @@ def get_registered_teacher_names():
 
 
 def seed_teachers(teacher_names: list):
-    """Заполняет таблицу teachers из списка имён (только если ещё нет записей)."""
+    """Р—Р°РїРѕР»РЅСЏРµС‚ С‚Р°Р±Р»РёС†Сѓ teachers РёР· СЃРїРёСЃРєР° РёРјС‘РЅ (С‚РѕР»СЊРєРѕ РµСЃР»Рё РµС‰С‘ РЅРµС‚ Р·Р°РїРёСЃРµР№)."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute('SELECT COUNT(*) FROM teachers')
         if cur.fetchone()[0] > 0:
-            return  # уже заполнена
+            return  # СѓР¶Рµ Р·Р°РїРѕР»РЅРµРЅР°
         for name in teacher_names:
             cur.execute(
                 'INSERT INTO teachers (full_name) VALUES (%s) ON CONFLICT DO NOTHING',
                 (name,)
             )
         conn.commit()
-        logger.info(f"✅ Таблица teachers заполнена ({len(teacher_names)} записей)")
+        logger.info(f"вњ… РўР°Р±Р»РёС†Р° teachers Р·Р°РїРѕР»РЅРµРЅР° ({len(teacher_names)} Р·Р°РїРёСЃРµР№)")
     except Exception as e:
         logger.error(f"seed_teachers: {e}")
         if conn:
@@ -1227,9 +1319,9 @@ def seed_teachers(teacher_names: list):
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  НОВОСТИ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РќРћР’РћРЎРўР
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 _NEWS_SCOPES = {'school', 'bot'}
 
 
@@ -1259,7 +1351,7 @@ def add_news(title, content, scope='bot'):
 
 
 def get_news(offset=0, limit=8, order='DESC', scope=None):
-    """Универсальная функция получения новостей. Заменяет get_news_page_asc,
+    """РЈРЅРёРІРµСЂСЃР°Р»СЊРЅР°СЏ С„СѓРЅРєС†РёСЏ РїРѕР»СѓС‡РµРЅРёСЏ РЅРѕРІРѕСЃС‚РµР№. Р—Р°РјРµРЅСЏРµС‚ get_news_page_asc,
     get_latest_news, get_archive_news_page, get_recent_news."""
     conn = None
     try:
@@ -1289,7 +1381,7 @@ def get_news(offset=0, limit=8, order='DESC', scope=None):
         release_connection(conn)
 
 
-# Алиасы для обратной совместимости
+# РђР»РёР°СЃС‹ РґР»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё
 def get_archive_news_page(offset=0, limit=8, scope=None):
     return get_news(offset=offset, limit=limit, order='DESC', scope=scope)
 
@@ -1351,7 +1443,7 @@ def get_news_detail(news_id, scope=None):
 
 
 def get_news_by_id(news_id):
-    """Возвращает кортеж (id, title, content, published_at, category) или None."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РєРѕСЂС‚РµР¶ (id, title, content, published_at, category) РёР»Рё None."""
     conn = None
     try:
         conn = get_connection()
@@ -1479,9 +1571,9 @@ def update_user_last_news_check(user_id):
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  ЗАМЕНЫ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  Р—РђРњР•РќР«
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def add_substitution(date, day, lesson_number, old_subject, new_subject,
                      old_teacher, new_teacher, class_name):
     conn = None
@@ -1495,7 +1587,7 @@ def add_substitution(date, day, lesson_number, old_subject, new_subject,
         ''', (date, day, lesson_number, old_subject, new_subject,
               old_teacher, new_teacher, class_name))
         conn.commit()
-        logger.info(f"✅ Замена: {date} {class_name} урок {lesson_number}")
+        logger.info(f"вњ… Р—Р°РјРµРЅР°: {date} {class_name} СѓСЂРѕРє {lesson_number}")
     except Exception as e:
         logger.error(f"add_substitution: {e}")
         raise
@@ -1601,9 +1693,9 @@ def clear_all_substitutions():
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  ТЕХРЕЖИМ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РўР•РҐР Р•Р–РРњ
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
     conn = None
     try:
@@ -1638,9 +1730,9 @@ def get_maintenance_status():
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  ИЗБРАННОЕ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РР—Р‘Р РђРќРќРћР•
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def add_favorite(user_id, fav_type, value):
     conn = None
     try:
@@ -1707,9 +1799,9 @@ def is_favorite(user_id, fav_type, value):
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  АНАЛИТИКА
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РђРќРђР›РРўРРљРђ
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 def get_active_users_24h():
     conn = None
     try:
@@ -1759,19 +1851,37 @@ def get_peak_hours():
             GROUP BY h ORDER BY cnt DESC LIMIT 3
         ''', (week_ago,))
         rows = cur.fetchall()
-        return ", ".join(f"{int(r[0]):02d}:00" for r in rows) if rows else "Нет данных"
+        return ", ".join(f"{int(r[0]):02d}:00" for r in rows) if rows else "РќРµС‚ РґР°РЅРЅС‹С…"
     except Exception as e:
         logger.error(f"get_peak_hours: {e}")
-        return "Ошибка"
+        return "РћС€РёР±РєР°"
     finally:
         release_connection(conn)
 
-# ──────────────────────────────────────────────
-#  ИГРА "ШИВРОВАЛЬЩИК"
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РР“Р Рђ "РЁРР’Р РћР’РђР›Р¬Р©РРљ"
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
-REFERRAL_START_BONUS = 50
-REFERRAL_CHAPTER_BONUS = 30
+REFERRAL_INVITER_PCT_PER_AGENT = 1
+REFERRAL_INVITER_PCT_MAX = 100
+REFERRAL_INVITEE_PCT = 1
+
+
+def _referral_inviter_percent(invited_count: int) -> int:
+    count = max(0, int(invited_count or 0))
+    if count <= 0:
+        return 0
+    pct = count * int(REFERRAL_INVITER_PCT_PER_AGENT)
+    return max(1, min(int(REFERRAL_INVITER_PCT_MAX), pct))
+
+
+def _referral_total_bonus_for_base(base_score: int, percent: int) -> int:
+    base = max(0, int(base_score or 0))
+    pct = max(0, int(percent or 0))
+    if base <= 0 or pct <= 0:
+        return 0
+    # Round up so rewards appear immediately once progress starts.
+    return max(1, (base * pct + 99) // 100)
 
 def save_game_result(user_id, user_name, chapter, score, total_score,
                      completed, game_over=False, failed=False):
@@ -1815,7 +1925,7 @@ def save_game_result(user_id, user_name, chapter, score, total_score,
 
 
 def register_game_player(user_id, user_name=None):
-    """Регистрирует игрока при первом открытии — НИКОГДА не трогает очки/прогресс."""
+    """Р РµРіРёСЃС‚СЂРёСЂСѓРµС‚ РёРіСЂРѕРєР° РїСЂРё РїРµСЂРІРѕРј РѕС‚РєСЂС‹С‚РёРё вЂ” РќРРљРћР“Р”Рђ РЅРµ С‚СЂРѕРіР°РµС‚ РѕС‡РєРё/РїСЂРѕРіСЂРµСЃСЃ."""
     conn = None
     try:
         conn = get_connection()
@@ -1836,7 +1946,7 @@ def register_game_player(user_id, user_name=None):
 
 
 def attach_game_referral(referrer_id: int, referred_id: int, referred_name: str | None = None) -> dict:
-    """Attach referrer to a new player and grant one-time start bonus."""
+    """Attach referrer to a new player and initialize referral % program."""
     conn = None
     try:
         referrer_id = int(referrer_id or 0)
@@ -1885,7 +1995,7 @@ def attach_game_referral(referrer_id: int, referred_id: int, referred_name: str 
             VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
             ON CONFLICT (user_id) DO NOTHING
             ''',
-            (referred_id, referred_name or 'Игрок'),
+            (referred_id, referred_name or 'РРіСЂРѕРє'),
         )
         cur.execute(
             '''
@@ -1915,26 +2025,31 @@ def attach_game_referral(referrer_id: int, referred_id: int, referred_name: str 
         cur.execute(
             '''
             INSERT INTO game_referrals
-                (referred_id, referrer_id, start_bonus_awarded, rewarded_chapters, total_referrer_bonus, created_at, updated_at)
-            VALUES (%s, %s, TRUE, 0, 0, NOW(), NOW())
+                (
+                    referred_id, referrer_id,
+                    start_bonus_awarded, rewarded_chapters,
+                    total_referrer_bonus, pct_referrer_bonus_paid, total_referred_bonus,
+                    invitee_bonus_percent, max_referred_base_score,
+                    created_at, updated_at
+                )
+            VALUES (%s, %s, FALSE, 0, 0, 0, 0, %s, 0, NOW(), NOW())
             ''',
-            (referred_id, referrer_id),
-        )
-        cur.execute(
-            '''
-            UPDATE game_results
-            SET total_score = COALESCE(total_score, 0) + %s,
-                updated_at = NOW()
-            WHERE user_id = %s
-            ''',
-            (REFERRAL_START_BONUS, referred_id),
+            (referred_id, referrer_id, REFERRAL_INVITEE_PCT),
         )
 
+        cur.execute(
+            "SELECT COUNT(*) FROM game_referrals WHERE referrer_id = %s",
+            (referrer_id,),
+        )
+        invited_count = int((cur.fetchone() or [0])[0] or 0)
+        inviter_percent = _referral_inviter_percent(invited_count)
         conn.commit()
         return {
             'ok': True,
             'status': 'attached',
-            'start_bonus': REFERRAL_START_BONUS,
+            'invitee_percent': int(REFERRAL_INVITEE_PCT),
+            'inviter_percent': int(inviter_percent),
+            'invited_count': int(invited_count),
             'referrer_id': referrer_id,
             'referred_id': referred_id,
         }
@@ -1946,12 +2061,17 @@ def attach_game_referral(referrer_id: int, referred_id: int, referred_name: str 
         release_connection(conn)
 
 
-def apply_referral_bonus_for_completed(referred_id: int, completed_after: int) -> dict:
-    """Grant referrer bonus for newly completed chapters by referred player."""
+def apply_referral_bonus_for_completed(
+    referred_id: int,
+    completed_after: int,
+    total_score_after: int = 0,
+) -> dict:
+    """Apply referral bonuses by % from invited player's earned score."""
     conn = None
     try:
         referred_id = int(referred_id or 0)
         completed_after = max(0, min(6, int(completed_after or 0)))
+        total_score_after = max(0, int(total_score_after or 0))
         if referred_id <= 0:
             return {'ok': False, 'status': 'invalid_user'}
 
@@ -1962,35 +2082,67 @@ def apply_referral_bonus_for_completed(referred_id: int, completed_after: int) -
             '''
             SELECT referrer_id,
                    COALESCE(rewarded_chapters, 0),
-                   COALESCE(total_referrer_bonus, 0)
+                   COALESCE(total_referrer_bonus, 0),
+                   COALESCE(pct_referrer_bonus_paid, 0),
+                   COALESCE(total_referred_bonus, 0),
+                   COALESCE(invitee_bonus_percent, %s),
+                   COALESCE(max_referred_base_score, 0)
             FROM game_referrals
             WHERE referred_id = %s
             FOR UPDATE
             ''',
-            (referred_id,),
+            (REFERRAL_INVITEE_PCT, referred_id),
         )
         row = cur.fetchone()
         if not row:
             conn.commit()
-            return {'ok': True, 'status': 'no_referral', 'awarded_points': 0}
+            return {
+                'ok': True,
+                'status': 'no_referral',
+                'awarded_points': 0,
+                'awarded_points_inviter': 0,
+                'awarded_points_invitee': 0,
+            }
 
         referrer_id = int(row[0] or 0)
         rewarded_chapters = max(0, int(row[1] or 0))
-        total_bonus_before = max(0, int(row[2] or 0))
+        total_referrer_bonus_before = max(0, int(row[2] or 0))
+        pct_referrer_bonus_paid_before = max(0, int(row[3] or 0))
+        total_referred_bonus_before = max(0, int(row[4] or 0))
+        invitee_pct = max(0, int(row[5] or REFERRAL_INVITEE_PCT))
+        max_base_score_before = max(0, int(row[6] or 0))
 
         cur.execute("SELECT role FROM game_roles WHERE user_id = %s", (referred_id,))
         role_row = cur.fetchone()
         referred_role = (role_row[0] if role_row and role_row[0] else 'player')
         if referred_role in ('admin', 'tester'):
             conn.commit()
-            return {'ok': True, 'status': 'role_not_allowed', 'awarded_points': 0}
+            return {
+                'ok': True,
+                'status': 'role_not_allowed',
+                'awarded_points': 0,
+                'awarded_points_inviter': 0,
+                'awarded_points_invitee': 0,
+            }
 
+        cur.execute(
+            "SELECT COUNT(*) FROM game_referrals WHERE referrer_id = %s",
+            (referrer_id,),
+        )
+        invited_count = int((cur.fetchone() or [0])[0] or 0)
+        inviter_pct = _referral_inviter_percent(invited_count)
+
+        # Anti-abuse: reward only for new personal best (base score),
+        # excluding previously paid invitee-referral bonuses.
+        current_base_score_raw = max(0, total_score_after - total_referred_bonus_before)
+        current_base_score = max(max_base_score_before, current_base_score_raw)
+
+        invitee_total_target = _referral_total_bonus_for_base(current_base_score, invitee_pct)
+        inviter_total_target = _referral_total_bonus_for_base(current_base_score, inviter_pct)
+
+        invitee_bonus_points = max(0, invitee_total_target - total_referred_bonus_before)
+        inviter_bonus_points = max(0, inviter_total_target - pct_referrer_bonus_paid_before)
         new_chapters = max(0, completed_after - rewarded_chapters)
-        if new_chapters <= 0:
-            conn.commit()
-            return {'ok': True, 'status': 'nothing_to_award', 'awarded_points': 0}
-
-        bonus_points = new_chapters * REFERRAL_CHAPTER_BONUS
 
         cur.execute(
             '''
@@ -2000,73 +2152,271 @@ def apply_referral_bonus_for_completed(referred_id: int, completed_after: int) -
             ''',
             (referrer_id, 'Игрок'),
         )
-        cur.execute(
-            '''
-            UPDATE game_results
-            SET total_score = COALESCE(total_score, 0) + %s,
-                updated_at = NOW()
-            WHERE user_id = %s
-            ''',
-            (bonus_points, referrer_id),
-        )
+        if inviter_bonus_points > 0:
+            cur.execute(
+                '''
+                UPDATE game_results
+                SET total_score = COALESCE(total_score, 0) + %s,
+                    updated_at = NOW()
+                WHERE user_id = %s
+                ''',
+                (inviter_bonus_points, referrer_id),
+            )
+        if invitee_bonus_points > 0:
+            cur.execute(
+                '''
+                UPDATE game_results
+                SET total_score = COALESCE(total_score, 0) + %s,
+                    updated_at = NOW()
+                WHERE user_id = %s
+                ''',
+                (invitee_bonus_points, referred_id),
+            )
         cur.execute(
             '''
             UPDATE game_referrals
             SET rewarded_chapters = %s,
                 total_referrer_bonus = %s,
+                pct_referrer_bonus_paid = %s,
+                total_referred_bonus = %s,
+                max_referred_base_score = %s,
                 updated_at = NOW()
             WHERE referred_id = %s
             ''',
-            (completed_after, total_bonus_before + bonus_points, referred_id),
+            (
+                max(rewarded_chapters, completed_after),
+                total_referrer_bonus_before + inviter_bonus_points,
+                pct_referrer_bonus_paid_before + inviter_bonus_points,
+                total_referred_bonus_before + invitee_bonus_points,
+                current_base_score,
+                referred_id,
+            ),
         )
 
         conn.commit()
         return {
             'ok': True,
-            'status': 'awarded',
+            'status': 'awarded' if (inviter_bonus_points > 0 or invitee_bonus_points > 0) else 'nothing_to_award',
             'referrer_id': referrer_id,
-            'awarded_points': int(bonus_points),
+            'awarded_points': int(inviter_bonus_points),
+            'awarded_points_to_referrer': int(inviter_bonus_points),
+            'awarded_points_inviter': int(inviter_bonus_points),
+            'awarded_points_invitee': int(invitee_bonus_points),
             'awarded_chapters': int(new_chapters),
+            'inviter_percent': int(inviter_pct),
+            'invitee_percent': int(invitee_pct),
+            'invited_count': int(invited_count),
+            'base_score': int(current_base_score),
         }
     except Exception as e:
         logger.error(f"apply_referral_bonus_for_completed error referred={referred_id}: {e}")
         _safe_rollback(conn)
-        return {'ok': False, 'status': 'error', 'awarded_points': 0}
+        return {
+            'ok': False,
+            'status': 'error',
+            'awarded_points': 0,
+            'awarded_points_inviter': 0,
+            'awarded_points_invitee': 0,
+        }
+    finally:
+        release_connection(conn)
+
+
+def refresh_referrer_bonus(referrer_id: int) -> dict:
+    """Recalculate inviter % bonuses across all agents for current inviter rate."""
+    conn = None
+    try:
+        referrer_id = int(referrer_id or 0)
+        if referrer_id <= 0:
+            return {'ok': False, 'status': 'invalid_user', 'awarded_points': 0, 'inviter_percent': 0, 'invited_count': 0}
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute(
+            '''
+            SELECT
+                rf.referred_id,
+                COALESCE(rf.total_referrer_bonus, 0),
+                COALESCE(rf.pct_referrer_bonus_paid, 0),
+                COALESCE(rf.total_referred_bonus, 0),
+                COALESCE(rf.max_referred_base_score, 0),
+                COALESCE(gr.total_score, 0)
+            FROM game_referrals rf
+            LEFT JOIN game_results gr ON gr.user_id = rf.referred_id
+            WHERE rf.referrer_id = %s
+            FOR UPDATE SKIP LOCKED
+            ''',
+            (referrer_id,),
+        )
+        rows = cur.fetchall() or []
+        invited_count = len(rows)
+        inviter_pct = _referral_inviter_percent(invited_count)
+        if invited_count <= 0 or inviter_pct <= 0:
+            conn.commit()
+            return {
+                'ok': True,
+                'status': 'no_agents',
+                'awarded_points': 0,
+                'inviter_percent': int(inviter_pct),
+                'invited_count': int(invited_count),
+            }
+
+        awarded_total = 0
+        for row in rows:
+            referred_id = int(row[0] or 0)
+            total_referrer_bonus_before = max(0, int(row[1] or 0))
+            pct_paid_before = max(0, int(row[2] or 0))
+            total_referred_bonus = max(0, int(row[3] or 0))
+            max_base_before = max(0, int(row[4] or 0))
+            referred_total_score = max(0, int(row[5] or 0))
+
+            current_base_raw = max(0, referred_total_score - total_referred_bonus)
+            current_base_score = max(max_base_before, current_base_raw)
+            target_pct_bonus = _referral_total_bonus_for_base(current_base_score, inviter_pct)
+            delta = max(0, target_pct_bonus - pct_paid_before)
+            if delta <= 0 and current_base_score == max_base_before:
+                continue
+
+            cur.execute(
+                '''
+                UPDATE game_referrals
+                SET total_referrer_bonus = %s,
+                    pct_referrer_bonus_paid = %s,
+                    max_referred_base_score = %s,
+                    updated_at = NOW()
+                WHERE referred_id = %s
+                ''',
+                (
+                    total_referrer_bonus_before + delta,
+                    pct_paid_before + delta,
+                    current_base_score,
+                    referred_id,
+                ),
+            )
+            awarded_total += delta
+
+        if awarded_total > 0:
+            cur.execute(
+                '''
+                INSERT INTO game_results (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
+                VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+                ''',
+                (referrer_id, 'РРіСЂРѕРє'),
+            )
+            cur.execute(
+                '''
+                UPDATE game_results
+                SET total_score = COALESCE(total_score, 0) + %s,
+                    updated_at = NOW()
+                WHERE user_id = %s
+                ''',
+                (awarded_total, referrer_id),
+            )
+
+        conn.commit()
+        return {
+            'ok': True,
+            'status': 'awarded' if awarded_total > 0 else 'nothing_to_award',
+            'awarded_points': int(awarded_total),
+            'inviter_percent': int(inviter_pct),
+            'invited_count': int(invited_count),
+        }
+    except Exception as e:
+        logger.error(f"refresh_referrer_bonus error referrer={referrer_id}: {e}")
+        _safe_rollback(conn)
+        return {
+            'ok': False,
+            'status': 'error',
+            'awarded_points': 0,
+            'inviter_percent': 0,
+            'invited_count': 0,
+        }
     finally:
         release_connection(conn)
 
 
 def get_referral_summary(referrer_id: int) -> dict:
-    """Aggregate referral stats for inviter."""
+    """Aggregate referral stats for inviter and invited-player bonuses."""
     conn = None
     try:
         referrer_id = int(referrer_id or 0)
+        empty = {
+            'invited_count': 0,
+            'active_count': 0,
+            'rewarded_chapters': 0,
+            'bonus_points': 0,
+            'inviter_percent': 0,
+            'invitee_percent': int(REFERRAL_INVITEE_PCT),
+            'invitee_bonus_points': 0,
+            'referrer_id': 0,
+        }
         if referrer_id <= 0:
-            return {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+            return empty
+
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
             '''
             SELECT
                 COUNT(*) AS invited_count,
-                COALESCE(SUM(CASE WHEN COALESCE(rewarded_chapters, 0) > 0 THEN 1 ELSE 0 END), 0) AS active_count,
-                COALESCE(SUM(COALESCE(rewarded_chapters, 0)), 0) AS rewarded_chapters,
-                COALESCE(SUM(COALESCE(total_referrer_bonus, 0)), 0) AS bonus_points
-            FROM game_referrals
-            WHERE referrer_id = %s
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN COALESCE(gr.total_score, 0) > 0 OR COALESCE(gr.completed, 0) > 0
+                            THEN 1 ELSE 0
+                        END
+                    ),
+                    0
+                ) AS active_count,
+                COALESCE(SUM(COALESCE(rf.rewarded_chapters, 0)), 0) AS rewarded_chapters,
+                COALESCE(SUM(COALESCE(rf.total_referrer_bonus, 0)), 0) AS bonus_points
+            FROM game_referrals rf
+            LEFT JOIN game_results gr ON gr.user_id = rf.referred_id
+            WHERE rf.referrer_id = %s
             ''',
             (referrer_id,),
         )
         row = cur.fetchone() or (0, 0, 0, 0)
+        invited_count = int(row[0] or 0)
+        inviter_percent = _referral_inviter_percent(invited_count)
+
+        cur.execute(
+            '''
+            SELECT
+                COALESCE(total_referred_bonus, 0),
+                COALESCE(invitee_bonus_percent, %s),
+                COALESCE(referrer_id, 0)
+            FROM game_referrals
+            WHERE referred_id = %s
+            ''',
+            (REFERRAL_INVITEE_PCT, referrer_id),
+        )
+        invitee_row = cur.fetchone() or (0, REFERRAL_INVITEE_PCT, 0)
+
         return {
-            'invited_count': int(row[0] or 0),
+            'invited_count': invited_count,
             'active_count': int(row[1] or 0),
             'rewarded_chapters': int(row[2] or 0),
             'bonus_points': int(row[3] or 0),
+            'inviter_percent': int(inviter_percent),
+            'invitee_percent': int(invitee_row[1] or REFERRAL_INVITEE_PCT),
+            'invitee_bonus_points': int(invitee_row[0] or 0),
+            'referrer_id': int(invitee_row[2] or 0),
         }
     except Exception as e:
         logger.error(f"get_referral_summary error {referrer_id}: {e}")
-        return {'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0}
+        return {
+            'invited_count': 0,
+            'active_count': 0,
+            'rewarded_chapters': 0,
+            'bonus_points': 0,
+            'inviter_percent': 0,
+            'invitee_percent': int(REFERRAL_INVITEE_PCT),
+            'invitee_bonus_points': 0,
+            'referrer_id': 0,
+        }
     finally:
         release_connection(conn)
 
@@ -2090,6 +2440,8 @@ def get_referral_agents(referrer_id: int, limit: int = 15) -> list:
                 COALESCE(gr.total_score, 0) AS total_score,
                 COALESCE(rf.rewarded_chapters, 0) AS rewarded_chapters,
                 COALESCE(rf.total_referrer_bonus, 0) AS total_referrer_bonus,
+                COALESCE(rf.total_referred_bonus, 0) AS total_referred_bonus,
+                COALESCE(rf.invitee_bonus_percent, %s) AS invitee_bonus_percent,
                 rf.created_at
             FROM game_referrals rf
             LEFT JOIN users u ON u.user_id = rf.referred_id
@@ -2098,9 +2450,12 @@ def get_referral_agents(referrer_id: int, limit: int = 15) -> list:
             ORDER BY rf.created_at DESC
             LIMIT %s
             ''',
-            (referrer_id, limit),
+            (REFERRAL_INVITEE_PCT, referrer_id, limit),
         )
         rows = cur.fetchall() or []
+        cur.execute("SELECT COUNT(*) FROM game_referrals WHERE referrer_id = %s", (referrer_id,))
+        invited_count_total = int((cur.fetchone() or [0])[0] or 0)
+        inviter_percent = _referral_inviter_percent(invited_count_total)
         result = []
         for r in rows:
             result.append({
@@ -2110,7 +2465,10 @@ def get_referral_agents(referrer_id: int, limit: int = 15) -> list:
                 'total_score': int(r[3] or 0),
                 'rewarded_chapters': int(r[4] or 0),
                 'bonus_points': int(r[5] or 0),
-                'created_at': r[6],
+                'invitee_bonus_points': int(r[6] or 0),
+                'invitee_percent': int(r[7] or REFERRAL_INVITEE_PCT),
+                'inviter_percent': int(inviter_percent),
+                'created_at': r[8],
             })
         return result
     except Exception as e:
@@ -2259,6 +2617,15 @@ def apply_secret_missions_sync(user_id: int, payload: dict | None = None) -> dic
                 runtime['speed_streak'] = 0
             if answer_type == 'morse' and answer_elapsed > 0 and answer_elapsed <= 14:
                 runtime['morse_fast_count'] = max(0, _secret_to_int(runtime.get('morse_fast_count', 0), 0)) + 1
+            if answer_type == 'map':
+                runtime['map_answer_count'] = max(0, _secret_to_int(runtime.get('map_answer_count', 0), 0)) + 1
+            if answer_type:
+                unique_types = runtime.get('unique_types', [])
+                if not isinstance(unique_types, list):
+                    unique_types = []
+                if answer_type not in unique_types:
+                    unique_types.append(answer_type)
+                runtime['unique_types'] = unique_types[:16]
             active_days = runtime.get('active_days', [])
             if not isinstance(active_days, list):
                 active_days = []
@@ -2266,6 +2633,13 @@ def apply_secret_missions_sync(user_id: int, payload: dict | None = None) -> dic
             if day_key not in active_days:
                 active_days.append(day_key)
             runtime['active_days'] = active_days[-14:]
+            if 18 <= now_hour <= 22:
+                evening_days = runtime.get('evening_days', [])
+                if not isinstance(evening_days, list):
+                    evening_days = []
+                if day_key not in evening_days:
+                    evening_days.append(day_key)
+                runtime['evening_days'] = evening_days[-14:]
 
         cur.execute(
             '''
@@ -2344,9 +2718,17 @@ def apply_secret_missions_sync(user_id: int, payload: dict | None = None) -> dic
         _apply_progress('sm_morse_five_fast', runtime.get('morse_fast_count', 0), chapter_score)
         _apply_progress('sm_week_discipline', len(runtime.get('active_days', [])), chapter_score)
         _apply_progress('sm_network_three', active_count, chapter_score)
+        _apply_progress('sm_map_runner', runtime.get('map_answer_count', 0), chapter_score)
+        _apply_progress('sm_type_mix', len(runtime.get('unique_types', [])), chapter_score)
+        _apply_progress('sm_evening_watch', len(runtime.get('evening_days', [])), chapter_score)
 
         if event_type == 'chapter_complete' and lives == 1:
             _apply_progress('sm_last_life_chapter', 1, chapter_score)
+        if event_type == 'chapter_complete' and chapter_errors <= 1 and chapter_hints <= 1:
+            runtime['clean_chapter_count'] = max(0, _secret_to_int(runtime.get('clean_chapter_count', 0), 0)) + 1
+            _apply_progress('sm_clean_two_chapters', runtime.get('clean_chapter_count', 0), chapter_score)
+        if event_type == 'chapter_complete' and chapter_score >= 700:
+            _apply_progress('sm_chapter_score_700', 1, chapter_score)
 
         if awarded_points > 0:
             cur.execute(
@@ -2414,7 +2796,7 @@ def apply_secret_missions_sync(user_id: int, payload: dict | None = None) -> dic
 
 
 def get_game_players_count():
-    """Возвращает количество участников рейтинга (только role=player)."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РєРѕР»РёС‡РµСЃС‚РІРѕ СѓС‡Р°СЃС‚РЅРёРєРѕРІ СЂРµР№С‚РёРЅРіР° (С‚РѕР»СЊРєРѕ role=player)."""
     conn = None
     try:
         conn = get_connection()
@@ -2446,9 +2828,9 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
                           completed, game_over=False, failed=False,
                           event_type='sync', chapter_idx=-1, cipher_idx=-1,
                           chapter_in_progress=False, restart_penalty_points=0):
-    """Сохраняет sync из игры с серверной фиксацией штрафа "отхода/перегруппировки".
+    """РЎРѕС…СЂР°РЅСЏРµС‚ sync РёР· РёРіСЂС‹ СЃ СЃРµСЂРІРµСЂРЅРѕР№ С„РёРєСЃР°С†РёРµР№ С€С‚СЂР°С„Р° "РѕС‚С…РѕРґР°/РїРµСЂРµРіСЂСѓРїРїРёСЂРѕРІРєРё".
 
-    Возвращает dict:
+    Р’РѕР·РІСЂР°С‰Р°РµС‚ dict:
       {
         ok: bool,
         db_score: int,
@@ -2494,7 +2876,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
                     (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
                 VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
                 ON CONFLICT (user_id) DO NOTHING
-            ''', (user_id, user_name or 'Игрок'))
+            ''', (user_id, user_name or 'РРіСЂРѕРє'))
             cur.execute('''
                 SELECT user_id, user_name, chapter, score, total_score, completed, game_over, failed,
                        COALESCE(retreat_count, 0),
@@ -2521,9 +2903,9 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
         sync_max_score = max(0, int(sync_max_score or 0))
         sync_max_cipher = int(sync_max_cipher if sync_max_cipher is not None else -1)
 
-        # Явный старт повтора завершённой главы:
-        # разрешаем понизить total_score/completed, чтобы обнуление главы
-        # корректно отражалось в игре и в рейтинге.
+        # РЇРІРЅС‹Р№ СЃС‚Р°СЂС‚ РїРѕРІС‚РѕСЂР° Р·Р°РІРµСЂС€С‘РЅРЅРѕР№ РіР»Р°РІС‹:
+        # СЂР°Р·СЂРµС€Р°РµРј РїРѕРЅРёР·РёС‚СЊ total_score/completed, С‡С‚РѕР±С‹ РѕР±РЅСѓР»РµРЅРёРµ РіР»Р°РІС‹
+        # РєРѕСЂСЂРµРєС‚РЅРѕ РѕС‚СЂР°Р¶Р°Р»РѕСЃСЊ РІ РёРіСЂРµ Рё РІ СЂРµР№С‚РёРЅРіРµ.
         explicit_replay_start = event_type == 'chapter_replay_start'
         if explicit_replay_start:
             if restart_penalty_points > 0:
@@ -2534,7 +2916,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
             sync_max_score = 0
             sync_max_cipher = -1
 
-            new_user_name = user_name or db_user_name or 'Игрок'
+            new_user_name = user_name or db_user_name or 'РРіСЂРѕРє'
             new_chapter = max(int(db_chapter or 0), chapter)
             new_score = 0
             new_total_score = max(0, int(total_score or 0))
@@ -2584,7 +2966,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
                 'retreat_count': int(retreat_count),
             }
 
-        # Явный ручной "отход" с клиента.
+        # РЇРІРЅС‹Р№ СЂСѓС‡РЅРѕР№ "РѕС‚С…РѕРґ" СЃ РєР»РёРµРЅС‚Р°.
         explicit_manual_retreat = event_type == 'manual_restart'
         if explicit_manual_retreat:
             if restart_penalty_points <= 0:
@@ -2596,7 +2978,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
             sync_max_score = max(0, score)
             sync_max_cipher = max(-1, cipher_idx)
 
-        # Резервное авто-детектирование перезапуска (если клиентский event не пришёл).
+        # Р РµР·РµСЂРІРЅРѕРµ Р°РІС‚Рѕ-РґРµС‚РµРєС‚РёСЂРѕРІР°РЅРёРµ РїРµСЂРµР·Р°РїСѓСЃРєР° (РµСЃР»Рё РєР»РёРµРЅС‚СЃРєРёР№ event РЅРµ РїСЂРёС€С‘Р»).
         auto_retreat_detected = False
         if (
             not explicit_manual_retreat and
@@ -2617,7 +2999,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
                 sync_max_score = max(0, score)
                 sync_max_cipher = max(-1, cipher_idx)
 
-        # Поддерживаем максимум прогресса внутри текущей главы.
+        # РџРѕРґРґРµСЂР¶РёРІР°РµРј РјР°РєСЃРёРјСѓРј РїСЂРѕРіСЂРµСЃСЃР° РІРЅСѓС‚СЂРё С‚РµРєСѓС‰РµР№ РіР»Р°РІС‹.
         if chapter_in_progress and chapter > 0 and not explicit_manual_retreat and not auto_retreat_detected:
             if sync_chapter != chapter:
                 sync_chapter = chapter
@@ -2628,7 +3010,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
                 if cipher_idx >= 0:
                     sync_max_cipher = max(sync_max_cipher, cipher_idx)
 
-        # Серверное применение штрафа при завершении главы.
+        # РЎРµСЂРІРµСЂРЅРѕРµ РїСЂРёРјРµРЅРµРЅРёРµ С€С‚СЂР°С„Р° РїСЂРё Р·Р°РІРµСЂС€РµРЅРёРё РіР»Р°РІС‹.
         server_penalty_applied = 0
         if event_type == 'chapter_complete' and pending_penalty > 0 and pending_chapter == chapter:
             client_penalty_applied = max(0, int(restart_penalty_points or 0))
@@ -2642,7 +3024,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
             sync_max_cipher = -1
             sync_chapter = 0
         elif event_type == 'chapter_complete':
-            # Глава завершена без ожидающего штрафа — закрываем runtime-трекер.
+            # Р“Р»Р°РІР° Р·Р°РІРµСЂС€РµРЅР° Р±РµР· РѕР¶РёРґР°СЋС‰РµРіРѕ С€С‚СЂР°С„Р° вЂ” Р·Р°РєСЂС‹РІР°РµРј runtime-С‚СЂРµРєРµСЂ.
             sync_max_score = 0
             sync_max_cipher = -1
             sync_chapter = 0
@@ -2655,7 +3037,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
         new_total_score = max(int(db_total or 0), total_score)
         new_completed = max(int(db_completed or 0), completed)
         new_game_over = bool(db_game_over) or bool(game_over)
-        new_user_name = user_name or db_user_name or 'Игрок'
+        new_user_name = user_name or db_user_name or 'РРіСЂРѕРє'
 
         cur.execute('''
             UPDATE game_results
@@ -2714,7 +3096,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
 
 
 def get_game_player_rank(user_id):
-    """Возвращает позицию игрока в публичном рейтинге (role=player), либо (None, total_players)."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РїРѕР·РёС†РёСЋ РёРіСЂРѕРєР° РІ РїСѓР±Р»РёС‡РЅРѕРј СЂРµР№С‚РёРЅРіРµ (role=player), Р»РёР±Рѕ (None, total_players)."""
     conn = None
     try:
         conn = get_connection()
@@ -2756,8 +3138,8 @@ def get_game_player_rank(user_id):
         release_connection(conn)
 
 def get_game_leaderboard(limit=20):
-    """Возвращает публичный топ игроков.
-    Админы, тестировщики и игроки с 0 очков НЕ включаются."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РїСѓР±Р»РёС‡РЅС‹Р№ С‚РѕРї РёРіСЂРѕРєРѕРІ.
+    РђРґРјРёРЅС‹, С‚РµСЃС‚РёСЂРѕРІС‰РёРєРё Рё РёРіСЂРѕРєРё СЃ 0 РѕС‡РєРѕРІ РќР• РІРєР»СЋС‡Р°СЋС‚СЃСЏ."""
     conn = None
     try:
         conn = get_connection()
@@ -2786,7 +3168,7 @@ def get_game_leaderboard(limit=20):
 
 
 def get_game_result(user_id):
-    """Возвращает результат конкретного игрока или None."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЂРµР·СѓР»СЊС‚Р°С‚ РєРѕРЅРєСЂРµС‚РЅРѕРіРѕ РёРіСЂРѕРєР° РёР»Рё None."""
     conn = None
     try:
         conn = get_connection()
@@ -2814,7 +3196,7 @@ def get_game_result(user_id):
 
 
 def reset_game_result(user_id):
-    """Сбрасывает прогресс конкретного игрока (обнуляет, не удаляет), включая достижения."""
+    """РЎР±СЂР°СЃС‹РІР°РµС‚ РїСЂРѕРіСЂРµСЃСЃ РєРѕРЅРєСЂРµС‚РЅРѕРіРѕ РёРіСЂРѕРєР° (РѕР±РЅСѓР»СЏРµС‚, РЅРµ СѓРґР°Р»СЏРµС‚), РІРєР»СЋС‡Р°СЏ РґРѕСЃС‚РёР¶РµРЅРёСЏ."""
     conn = None
     try:
         conn = get_connection()
@@ -2844,7 +3226,7 @@ def reset_game_result(user_id):
 
 
 def update_achievement_stats(user_id, achievement_count, achievement_pts):
-    """Обновляет статистику достижений игрока. Всегда записывает переданное значение."""
+    """РћР±РЅРѕРІР»СЏРµС‚ СЃС‚Р°С‚РёСЃС‚РёРєСѓ РґРѕСЃС‚РёР¶РµРЅРёР№ РёРіСЂРѕРєР°. Р’СЃРµРіРґР° Р·Р°РїРёСЃС‹РІР°РµС‚ РїРµСЂРµРґР°РЅРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ."""
     conn = None
     try:
         conn = get_connection()
@@ -2865,15 +3247,15 @@ def update_achievement_stats(user_id, achievement_count, achievement_pts):
 
 
 def reset_game_result_soft(user_id, mode='penalty'):
-    """Мягкий сброс — сохраняет очки, только снимает game_over.
-    mode='penalty': game_over=FALSE, restart_mode='penalty' (+10с к заданиям)
-    mode='nopts':   game_over=FALSE, restart_mode='nopts'   (без очков)
+    """РњСЏРіРєРёР№ СЃР±СЂРѕСЃ вЂ” СЃРѕС…СЂР°РЅСЏРµС‚ РѕС‡РєРё, С‚РѕР»СЊРєРѕ СЃРЅРёРјР°РµС‚ game_over.
+    mode='penalty': game_over=FALSE, restart_mode='penalty' (+10СЃ Рє Р·Р°РґР°РЅРёСЏРј)
+    mode='nopts':   game_over=FALSE, restart_mode='nopts'   (Р±РµР· РѕС‡РєРѕРІ)
     """
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Добавляем колонку если нет
+        # Р”РѕР±Р°РІР»СЏРµРј РєРѕР»РѕРЅРєСѓ РµСЃР»Рё РЅРµС‚
         cur.execute("""
             ALTER TABLE game_results
             ADD COLUMN IF NOT EXISTS restart_mode VARCHAR(20) DEFAULT NULL
@@ -2899,7 +3281,7 @@ def reset_game_result_soft(user_id, mode='penalty'):
 
 
 def get_restart_mode(user_id):
-    """Возвращает режим перезапуска для игрока или None."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЂРµР¶РёРј РїРµСЂРµР·Р°РїСѓСЃРєР° РґР»СЏ РёРіСЂРѕРєР° РёР»Рё None."""
     conn = None
     try:
         conn = get_connection()
@@ -2917,7 +3299,7 @@ def get_restart_mode(user_id):
 
 
 def clear_restart_mode(user_id):
-    """Сбрасывает restart_mode после того как игрок начал заново."""
+    """РЎР±СЂР°СЃС‹РІР°РµС‚ restart_mode РїРѕСЃР»Рµ С‚РѕРіРѕ РєР°Рє РёРіСЂРѕРє РЅР°С‡Р°Р» Р·Р°РЅРѕРІРѕ."""
     conn = None
     try:
         conn = get_connection()
@@ -2934,7 +3316,7 @@ def clear_restart_mode(user_id):
 
 
 def reset_all_game_results(drop_referrals: bool = False):
-    """Сбрасывает прогресс всех игроков включая достижения и доступ к главам."""
+    """РЎР±СЂР°СЃС‹РІР°РµС‚ РїСЂРѕРіСЂРµСЃСЃ РІСЃРµС… РёРіСЂРѕРєРѕРІ РІРєР»СЋС‡Р°СЏ РґРѕСЃС‚РёР¶РµРЅРёСЏ Рё РґРѕСЃС‚СѓРї Рє РіР»Р°РІР°Рј."""
     conn = None
     try:
         conn = get_connection()
@@ -2966,12 +3348,12 @@ def reset_all_game_results(drop_referrals: bool = False):
 
 
 def ban_game_user(user_id):
-    """Банит игрока — обнуляет очки и ставит флаг banned."""
+    """Р‘Р°РЅРёС‚ РёРіСЂРѕРєР° вЂ” РѕР±РЅСѓР»СЏРµС‚ РѕС‡РєРё Рё СЃС‚Р°РІРёС‚ С„Р»Р°Рі banned."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Добавим колонку banned если ещё нет
+        # Р”РѕР±Р°РІРёРј РєРѕР»РѕРЅРєСѓ banned РµСЃР»Рё РµС‰С‘ РЅРµС‚
         cur.execute('''
             ALTER TABLE game_results
             ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT FALSE
@@ -2996,7 +3378,7 @@ def ban_game_user(user_id):
 
 
 def unban_game_user(user_id):
-    """Снимает бан игрока."""
+    """РЎРЅРёРјР°РµС‚ Р±Р°РЅ РёРіСЂРѕРєР°."""
     conn = None
     try:
         conn = get_connection()
@@ -3016,7 +3398,7 @@ def unban_game_user(user_id):
 
 
 def get_game_leaderboard_admin(limit=50):
-    """Полный список для админа: user_id, user_name, total_score, completed, game_over, failed, banned, updated_at, retreat_count."""
+    """РџРѕР»РЅС‹Р№ СЃРїРёСЃРѕРє РґР»СЏ Р°РґРјРёРЅР°: user_id, user_name, total_score, completed, game_over, failed, banned, updated_at, retreat_count."""
     conn = None
     try:
         conn = get_connection()
@@ -3040,7 +3422,7 @@ def get_game_leaderboard_admin(limit=50):
 
 
 def get_game_result_detail(user_id):
-    """Детальный результат игрока для админа."""
+    """Р”РµС‚Р°Р»СЊРЅС‹Р№ СЂРµР·СѓР»СЊС‚Р°С‚ РёРіСЂРѕРєР° РґР»СЏ Р°РґРјРёРЅР°."""
     conn = None
     try:
         conn = get_connection()
@@ -3064,12 +3446,12 @@ def get_game_result_detail(user_id):
 
 
 
-# ──────────────────────────────────────────────
-#  УПРАВЛЕНИЕ ГЛАВАМИ ИГРЫ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  РЈРџР РђР’Р›Р•РќРР• Р“Р›РђР’РђРњР РР“Р Р«
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 def get_chapters_status():
-    """Возвращает статус всех глав: [(chapter_id, is_open, open_at), ...]"""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЃС‚Р°С‚СѓСЃ РІСЃРµС… РіР»Р°РІ: [(chapter_id, is_open, open_at), ...]"""
     conn = None
     try:
         conn = get_connection()
@@ -3087,7 +3469,7 @@ def get_chapters_status():
 
 
 def get_open_chapters():
-    """Возвращает set открытых chapter_id (с учётом open_at)."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ set РѕС‚РєСЂС‹С‚С‹С… chapter_id (СЃ СѓС‡С‘С‚РѕРј open_at)."""
     conn = None
     try:
         conn = get_connection()
@@ -3106,7 +3488,7 @@ def get_open_chapters():
 
 
 def open_chapter(chapter_id):
-    """Немедленно открывает главу."""
+    """РќРµРјРµРґР»РµРЅРЅРѕ РѕС‚РєСЂС‹РІР°РµС‚ РіР»Р°РІСѓ."""
     conn = None
     try:
         conn = get_connection()
@@ -3127,7 +3509,7 @@ def open_chapter(chapter_id):
 
 
 def close_chapter(chapter_id):
-    """Закрывает главу."""
+    """Р—Р°РєСЂС‹РІР°РµС‚ РіР»Р°РІСѓ."""
     conn = None
     try:
         conn = get_connection()
@@ -3148,7 +3530,7 @@ def close_chapter(chapter_id):
 
 
 def schedule_chapter(chapter_id, open_at_dt):
-    """Устанавливает дату/время автоматического открытия главы."""
+    """РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РґР°С‚Сѓ/РІСЂРµРјСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРѕРіРѕ РѕС‚РєСЂС‹С‚РёСЏ РіР»Р°РІС‹."""
     conn = None
     try:
         conn = get_connection()
@@ -3169,7 +3551,7 @@ def schedule_chapter(chapter_id, open_at_dt):
 
 
 def open_all_chapters():
-    """Открывает все главы сразу."""
+    """РћС‚РєСЂС‹РІР°РµС‚ РІСЃРµ РіР»Р°РІС‹ СЃСЂР°Р·Сѓ."""
     conn = None
     try:
         conn = get_connection()
@@ -3186,12 +3568,12 @@ def open_all_chapters():
 
 
 
-# ──────────────────────────────────────────────
-#  РОЛИ ИГРОКОВ (admin / tester / player)
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  Р РћР›Р РР“Р РћРљРћР’ (admin / tester / player)
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 def init_game_roles_table():
-    """Создаёт таблицу game_roles если не существует."""
+    """РЎРѕР·РґР°С‘С‚ С‚Р°Р±Р»РёС†Сѓ game_roles РµСЃР»Рё РЅРµ СЃСѓС‰РµСЃС‚РІСѓРµС‚."""
     conn = None
     try:
         conn = get_connection()
@@ -3212,7 +3594,7 @@ def init_game_roles_table():
 
 
 def set_game_role(user_id, role):
-    """Устанавливает роль игрока: admin / tester / player."""
+    """РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ СЂРѕР»СЊ РёРіСЂРѕРєР°: admin / tester / player."""
     conn = None
     try:
         conn = get_connection()
@@ -3233,7 +3615,7 @@ def set_game_role(user_id, role):
 
 
 def get_game_role(user_id):
-    """Возвращает роль игрока или 'player' по умолчанию."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЂРѕР»СЊ РёРіСЂРѕРєР° РёР»Рё 'player' РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ."""
     conn = None
     try:
         conn = get_connection()
@@ -3249,7 +3631,7 @@ def get_game_role(user_id):
 
 
 def get_game_leaderboard_with_roles(limit=20):
-    """Таблица лидеров с ролями — сортировка: admin → tester → player, внутри по очкам."""
+    """РўР°Р±Р»РёС†Р° Р»РёРґРµСЂРѕРІ СЃ СЂРѕР»СЏРјРё вЂ” СЃРѕСЂС‚РёСЂРѕРІРєР°: admin в†’ tester в†’ player, РІРЅСѓС‚СЂРё РїРѕ РѕС‡РєР°Рј."""
     conn = None
     try:
         conn = get_connection()
@@ -3287,12 +3669,12 @@ def get_game_leaderboard_with_roles(limit=20):
         release_connection(conn)
 
 
-# ──────────────────────────────────────────────
-#  БЕТА-ТЕСТ: БЕЛЫЙ СПИСОК ИГРЫ
-# ──────────────────────────────────────────────
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+#  Р‘Р•РўРђ-РўР•РЎРў: Р‘Р•Р›Р«Р™ РЎРџРРЎРћРљ РР“Р Р«
+# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 def init_beta_table():
-    """Создаёт таблицу game_beta если не существует."""
+    """РЎРѕР·РґР°С‘С‚ С‚Р°Р±Р»РёС†Сѓ game_beta РµСЃР»Рё РЅРµ СЃСѓС‰РµСЃС‚РІСѓРµС‚."""
     conn = None
     try:
         conn = get_connection()
@@ -3314,7 +3696,7 @@ def init_beta_table():
 
 
 def get_game_access_mode() -> str:
-    """Возвращает глобальный режим доступа: beta/open/closed."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РіР»РѕР±Р°Р»СЊРЅС‹Р№ СЂРµР¶РёРј РґРѕСЃС‚СѓРїР°: beta/open/closed."""
     conn = None
     try:
         conn = get_connection()
@@ -3344,7 +3726,7 @@ def get_game_access_mode() -> str:
 
 
 def set_game_access_mode(mode: str) -> bool:
-    """Устанавливает глобальный режим доступа: beta/open/closed."""
+    """РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РіР»РѕР±Р°Р»СЊРЅС‹Р№ СЂРµР¶РёРј РґРѕСЃС‚СѓРїР°: beta/open/closed."""
     mode = (mode or '').strip().lower()
     if mode not in ('beta', 'open', 'closed'):
         return False
@@ -3377,12 +3759,12 @@ def set_game_access_mode(mode: str) -> bool:
 
 
 def is_beta_enabled():
-    """Проверяет включён ли режим бета (есть ли хоть один тестер в списке)."""
+    """РџСЂРѕРІРµСЂСЏРµС‚ РІРєР»СЋС‡С‘РЅ Р»Рё СЂРµР¶РёРј Р±РµС‚Р° (РµСЃС‚СЊ Р»Рё С…РѕС‚СЊ РѕРґРёРЅ С‚РµСЃС‚РµСЂ РІ СЃРїРёСЃРєРµ)."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Сначала создаём таблицу если нет
+        # РЎРЅР°С‡Р°Р»Р° СЃРѕР·РґР°С‘Рј С‚Р°Р±Р»РёС†Сѓ РµСЃР»Рё РЅРµС‚
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_beta (
                 user_id   BIGINT PRIMARY KEY,
@@ -3403,7 +3785,7 @@ def is_beta_enabled():
 
 
 def is_beta_allowed(user_id):
-    """True если пользователь в белом списке бета-теста."""
+    """True РµСЃР»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РІ Р±РµР»РѕРј СЃРїРёСЃРєРµ Р±РµС‚Р°-С‚РµСЃС‚Р°."""
     conn = None
     try:
         conn = get_connection()
@@ -3418,7 +3800,7 @@ def is_beta_allowed(user_id):
 
 
 def add_beta_user(user_id, user_name=None, note=None):
-    """Добавляет пользователя в белый список."""
+    """Р”РѕР±Р°РІР»СЏРµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ Р±РµР»С‹Р№ СЃРїРёСЃРѕРє."""
     conn = None
     try:
         conn = get_connection()
@@ -3441,7 +3823,7 @@ def add_beta_user(user_id, user_name=None, note=None):
 
 
 def remove_beta_user(user_id):
-    """Убирает пользователя из белого списка."""
+    """РЈР±РёСЂР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР· Р±РµР»РѕРіРѕ СЃРїРёСЃРєР°."""
     conn = None
     try:
         conn = get_connection()
@@ -3459,7 +3841,7 @@ def remove_beta_user(user_id):
 
 
 def get_beta_users():
-    """Возвращает всех тестеров: [(user_id, user_name, added_at, note), ...]."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РІСЃРµС… С‚РµСЃС‚РµСЂРѕРІ: [(user_id, user_name, added_at, note), ...]."""
     conn = None
     try:
         conn = get_connection()
@@ -3478,7 +3860,7 @@ def get_beta_users():
 
 
 def clear_beta_list():
-    """Полностью очищает белый список (открывает игру всем)."""
+    """РџРѕР»РЅРѕСЃС‚СЊСЋ РѕС‡РёС‰Р°РµС‚ Р±РµР»С‹Р№ СЃРїРёСЃРѕРє (РѕС‚РєСЂС‹РІР°РµС‚ РёРіСЂСѓ РІСЃРµРј)."""
     conn = None
     try:
         conn = get_connection()
@@ -3496,7 +3878,7 @@ def clear_beta_list():
 
 
 def count_admins() -> int:
-    """Возвращает количество пользователей с ролью admin в game_roles."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РєРѕР»РёС‡РµСЃС‚РІРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ СЃ СЂРѕР»СЊСЋ admin РІ game_roles."""
     conn = None
     try:
         conn = get_connection()
@@ -3511,13 +3893,13 @@ def count_admins() -> int:
         release_connection(conn)
 
 
-# ══════════════════════════════════════════════════════════
-#  БОТ-АДМИНИСТРАТОРЫ (отдельно от игровой роли)
-#  Таблица bot_admins — кто видит "Админку" в боте
-# ══════════════════════════════════════════════════════════
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
+#  Р‘РћРў-РђР”РњРРќРРЎРўР РђРўРћР Р« (РѕС‚РґРµР»СЊРЅРѕ РѕС‚ РёРіСЂРѕРІРѕР№ СЂРѕР»Рё)
+#  РўР°Р±Р»РёС†Р° bot_admins вЂ” РєС‚Рѕ РІРёРґРёС‚ "РђРґРјРёРЅРєСѓ" РІ Р±РѕС‚Рµ
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 def migrate_bot_admins_table():
-    """Создаёт таблицу bot_admins и player_chapter_access если не существуют."""
+    """РЎРѕР·РґР°С‘С‚ С‚Р°Р±Р»РёС†Сѓ bot_admins Рё player_chapter_access РµСЃР»Рё РЅРµ СЃСѓС‰РµСЃС‚РІСѓСЋС‚."""
     conn = None
     try:
         conn = get_connection()
@@ -3529,7 +3911,7 @@ def migrate_bot_admins_table():
                 granted_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
-        # Таблица индивидуального доступа к главам для игроков
+        # РўР°Р±Р»РёС†Р° РёРЅРґРёРІРёРґСѓР°Р»СЊРЅРѕРіРѕ РґРѕСЃС‚СѓРїР° Рє РіР»Р°РІР°Рј РґР»СЏ РёРіСЂРѕРєРѕРІ
         cur.execute("""
             CREATE TABLE IF NOT EXISTS player_chapter_access (
                 user_id    BIGINT NOT NULL,
@@ -3540,7 +3922,7 @@ def migrate_bot_admins_table():
             )
         """)
         conn.commit()
-        logger.info("✅ Таблицы bot_admins и player_chapter_access созданы/проверены")
+        logger.info("вњ… РўР°Р±Р»РёС†С‹ bot_admins Рё player_chapter_access СЃРѕР·РґР°РЅС‹/РїСЂРѕРІРµСЂРµРЅС‹")
         return True
     except Exception as e:
         logger.error(f"migrate_bot_admins_table error: {e}")
@@ -3551,7 +3933,7 @@ def migrate_bot_admins_table():
 
 
 def is_bot_admin_db(user_id: int) -> bool:
-    """Проверяет есть ли пользователь в таблице bot_admins."""
+    """РџСЂРѕРІРµСЂСЏРµС‚ РµСЃС‚СЊ Р»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РІ С‚Р°Р±Р»РёС†Рµ bot_admins."""
     conn = None
     try:
         conn = get_connection()
@@ -3566,7 +3948,7 @@ def is_bot_admin_db(user_id: int) -> bool:
 
 
 def add_bot_admin(user_id: int, granted_by: int = None) -> bool:
-    """Добавляет пользователя в таблицу bot_admins."""
+    """Р”РѕР±Р°РІР»СЏРµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ С‚Р°Р±Р»РёС†Сѓ bot_admins."""
     conn = None
     try:
         conn = get_connection()
@@ -3587,12 +3969,12 @@ def add_bot_admin(user_id: int, granted_by: int = None) -> bool:
 
 
 def claim_first_bot_admin(user_id: int) -> bool:
-    """Атомарно назначает первого админа бота. Возвращает True только если прав не было."""
+    """РђС‚РѕРјР°СЂРЅРѕ РЅР°Р·РЅР°С‡Р°РµС‚ РїРµСЂРІРѕРіРѕ Р°РґРјРёРЅР° Р±РѕС‚Р°. Р’РѕР·РІСЂР°С‰Р°РµС‚ True С‚РѕР»СЊРєРѕ РµСЃР»Рё РїСЂР°РІ РЅРµ Р±С‹Р»Рѕ."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Глобальная транзакционная блокировка для bootstrap-сценария.
+        # Р“Р»РѕР±Р°Р»СЊРЅР°СЏ С‚СЂР°РЅР·Р°РєС†РёРѕРЅРЅР°СЏ Р±Р»РѕРєРёСЂРѕРІРєР° РґР»СЏ bootstrap-СЃС†РµРЅР°СЂРёСЏ.
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (99177351,))
         cur.execute("""
             WITH has_admin AS (
@@ -3616,7 +3998,7 @@ def claim_first_bot_admin(user_id: int) -> bool:
 
 
 def remove_bot_admin(user_id: int) -> bool:
-    """Убирает пользователя из bot_admins."""
+    """РЈР±РёСЂР°РµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР· bot_admins."""
     conn = None
     try:
         conn = get_connection()
@@ -3633,7 +4015,7 @@ def remove_bot_admin(user_id: int) -> bool:
 
 
 def count_bot_admins() -> int:
-    """Возвращает количество бот-администраторов."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ РєРѕР»РёС‡РµСЃС‚РІРѕ Р±РѕС‚-Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРІ."""
     conn = None
     try:
         conn = get_connection()
@@ -3649,7 +4031,7 @@ def count_bot_admins() -> int:
 
 
 def get_all_bot_admins() -> list:
-    """Возвращает список всех бот-администраторов: [(user_id, granted_at), ...]."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЃРїРёСЃРѕРє РІСЃРµС… Р±РѕС‚-Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРІ: [(user_id, granted_at), ...]."""
     conn = None
     try:
         conn = get_connection()
@@ -3662,23 +4044,23 @@ def get_all_bot_admins() -> list:
     finally:
         release_connection(conn)
 
-# ══════════════════════════════════════════════════════════
-#  ИНДИВИДУАЛЬНЫЙ ДОСТУП К ГЛАВАМ ДЛЯ ИГРОКОВ
-# ══════════════════════════════════════════════════════════
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
+#  РРќР”РР’РР”РЈРђР›Р¬РќР«Р™ Р”РћРЎРўРЈРџ Рљ Р“Р›РђР’РђРњ Р”Р›РЇ РР“Р РћРљРћР’
+# в•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђв•ђ
 
 def get_player_accessible_chapters(user_id: int) -> set:
-    """Возвращает set chapter_id, доступных конкретному игроку.
-    Для admin/tester не нужно — у них всегда все главы.
-    Для player — индивидуально открытые + глобально открытые.
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ set chapter_id, РґРѕСЃС‚СѓРїРЅС‹С… РєРѕРЅРєСЂРµС‚РЅРѕРјСѓ РёРіСЂРѕРєСѓ.
+    Р”Р»СЏ admin/tester РЅРµ РЅСѓР¶РЅРѕ вЂ” Сѓ РЅРёС… РІСЃРµРіРґР° РІСЃРµ РіР»Р°РІС‹.
+    Р”Р»СЏ player вЂ” РёРЅРґРёРІРёРґСѓР°Р»СЊРЅРѕ РѕС‚РєСЂС‹С‚С‹Рµ + РіР»РѕР±Р°Р»СЊРЅРѕ РѕС‚РєСЂС‹С‚С‹Рµ.
     """
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Индивидуально открытые для этого игрока
+        # РРЅРґРёРІРёРґСѓР°Р»СЊРЅРѕ РѕС‚РєСЂС‹С‚С‹Рµ РґР»СЏ СЌС‚РѕРіРѕ РёРіСЂРѕРєР°
         cur.execute('SELECT chapter_id FROM player_chapter_access WHERE user_id = %s', (user_id,))
         individual = {r[0] for r in cur.fetchall()}
-        # Глобально открытые (is_open=TRUE или open_at уже прошло)
+        # Р“Р»РѕР±Р°Р»СЊРЅРѕ РѕС‚РєСЂС‹С‚С‹Рµ (is_open=TRUE РёР»Рё open_at СѓР¶Рµ РїСЂРѕС€Р»Рѕ)
         cur.execute('''
             SELECT chapter_id FROM game_chapters
             WHERE is_open = TRUE OR (open_at IS NOT NULL AND open_at <= NOW())
@@ -3693,7 +4075,7 @@ def get_player_accessible_chapters(user_id: int) -> set:
 
 
 def grant_chapter_to_player(user_id: int, chapter_id: int, granted_by: int = None) -> bool:
-    """Открывает конкретную главу конкретному игроку."""
+    """РћС‚РєСЂС‹РІР°РµС‚ РєРѕРЅРєСЂРµС‚РЅСѓСЋ РіР»Р°РІСѓ РєРѕРЅРєСЂРµС‚РЅРѕРјСѓ РёРіСЂРѕРєСѓ."""
     conn = None
     try:
         conn = get_connection()
@@ -3714,7 +4096,7 @@ def grant_chapter_to_player(user_id: int, chapter_id: int, granted_by: int = Non
 
 
 def revoke_chapter_from_player(user_id: int, chapter_id: int) -> bool:
-    """Закрывает конкретную главу для конкретного игрока."""
+    """Р—Р°РєСЂС‹РІР°РµС‚ РєРѕРЅРєСЂРµС‚РЅСѓСЋ РіР»Р°РІСѓ РґР»СЏ РєРѕРЅРєСЂРµС‚РЅРѕРіРѕ РёРіСЂРѕРєР°."""
     conn = None
     try:
         conn = get_connection()
@@ -3734,7 +4116,7 @@ def revoke_chapter_from_player(user_id: int, chapter_id: int) -> bool:
 
 
 def grant_all_chapters_to_player(user_id: int, granted_by: int = None) -> bool:
-    """Открывает все 6 глав конкретному игроку."""
+    """РћС‚РєСЂС‹РІР°РµС‚ РІСЃРµ 6 РіР»Р°РІ РєРѕРЅРєСЂРµС‚РЅРѕРјСѓ РёРіСЂРѕРєСѓ."""
     conn = None
     try:
         conn = get_connection()
@@ -3756,7 +4138,7 @@ def grant_all_chapters_to_player(user_id: int, granted_by: int = None) -> bool:
 
 
 def revoke_all_chapters_from_player(user_id: int) -> bool:
-    """Закрывает все главы для игрока (используется при сбросе прогресса)."""
+    """Р—Р°РєСЂС‹РІР°РµС‚ РІСЃРµ РіР»Р°РІС‹ РґР»СЏ РёРіСЂРѕРєР° (РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РїСЂРё СЃР±СЂРѕСЃРµ РїСЂРѕРіСЂРµСЃСЃР°)."""
     conn = None
     try:
         conn = get_connection()
@@ -3773,7 +4155,7 @@ def revoke_all_chapters_from_player(user_id: int) -> bool:
 
 
 def get_player_chapter_access_map(user_id: int) -> set:
-    """Возвращает set chapter_id открытых индивидуально для игрока."""
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ set chapter_id РѕС‚РєСЂС‹С‚С‹С… РёРЅРґРёРІРёРґСѓР°Р»СЊРЅРѕ РґР»СЏ РёРіСЂРѕРєР°."""
     conn = None
     try:
         conn = get_connection()
@@ -3800,7 +4182,7 @@ def _delete_game_referrals_for_user(cur, user_id: int) -> int:
 
 
 def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
-    """Полный сброс игрока: обнуляет прогресс, достижения И закрывает все индивидуальные главы."""
+    """РџРѕР»РЅС‹Р№ СЃР±СЂРѕСЃ РёРіСЂРѕРєР°: РѕР±РЅСѓР»СЏРµС‚ РїСЂРѕРіСЂРµСЃСЃ, РґРѕСЃС‚РёР¶РµРЅРёСЏ Р Р·Р°РєСЂС‹РІР°РµС‚ РІСЃРµ РёРЅРґРёРІРёРґСѓР°Р»СЊРЅС‹Рµ РіР»Р°РІС‹."""
     conn = None
     try:
         conn = get_connection()
@@ -3820,13 +4202,13 @@ def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
         """, (token_now, user_id))
         updated = cur.rowcount
         if updated == 0:
-            # Страховка: создаём запись, если её не было, затем повторяем сброс.
+            # РЎС‚СЂР°С…РѕРІРєР°: СЃРѕР·РґР°С‘Рј Р·Р°РїРёСЃСЊ, РµСЃР»Рё РµС‘ РЅРµ Р±С‹Р»Рѕ, Р·Р°С‚РµРј РїРѕРІС‚РѕСЂСЏРµРј СЃР±СЂРѕСЃ.
             cur.execute("""
                 INSERT INTO game_results
                     (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
                 VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
                 ON CONFLICT (user_id) DO NOTHING
-            """, (user_id, 'Игрок'))
+            """, (user_id, 'РРіСЂРѕРє'))
             cur.execute("""
                 UPDATE game_results
                 SET chapter=0, score=0, total_score=0, completed=0,
@@ -3854,7 +4236,7 @@ def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
 
 
 def get_all_game_players_with_roles(limit: int = 100) -> list:
-    """Все игроки с ролями: [(user_id, user_name, role, total_score, completed), ...]"""
+    """Р’СЃРµ РёРіСЂРѕРєРё СЃ СЂРѕР»СЏРјРё: [(user_id, user_name, role, total_score, completed), ...]"""
     conn = None
     try:
         conn = get_connection()
@@ -3878,8 +4260,8 @@ def get_all_game_players_with_roles(limit: int = 100) -> list:
 
 
 def get_players_only(limit: int = 200) -> list:
-    """Только обычные игроки (role='player') для выдачи доступа к главам.
-    Включает всех пользователей бота с ролью player.
+    """РўРѕР»СЊРєРѕ РѕР±С‹С‡РЅС‹Рµ РёРіСЂРѕРєРё (role='player') РґР»СЏ РІС‹РґР°С‡Рё РґРѕСЃС‚СѓРїР° Рє РіР»Р°РІР°Рј.
+    Р’РєР»СЋС‡Р°РµС‚ РІСЃРµС… РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ Р±РѕС‚Р° СЃ СЂРѕР»СЊСЋ player.
     [(user_id, first_name, username, total_score, completed), ...]
     """
     conn = None
@@ -3908,7 +4290,7 @@ def get_players_only(limit: int = 200) -> list:
 
 
 def get_chapter_schedule_for_game() -> list:
-    """Возвращает расписание глав для передачи в игру (таймеры).
+    """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЂР°СЃРїРёСЃР°РЅРёРµ РіР»Р°РІ РґР»СЏ РїРµСЂРµРґР°С‡Рё РІ РёРіСЂСѓ (С‚Р°Р№РјРµСЂС‹).
     [(chapter_id, is_open, open_at_iso_string_or_null), ...]
     """
     conn = None
@@ -3927,7 +4309,7 @@ def get_chapter_schedule_for_game() -> list:
         for ch_id, is_open, open_at in rows:
             oa = None
             if open_at and not is_open:
-                # Передаём как ISO строку в UTC
+                # РџРµСЂРµРґР°С‘Рј РєР°Рє ISO СЃС‚СЂРѕРєСѓ РІ UTC
                 oa = open_at.astimezone(pytz.utc).isoformat()
             result.append({
                 'id': ch_id,
@@ -3940,6 +4322,7 @@ def get_chapter_schedule_for_game() -> list:
         return []
     finally:
         release_connection(conn)
+
 
 
 
