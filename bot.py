@@ -6456,12 +6456,28 @@ async def handle_game_state(request):
             admin_mode    = True
             tester_mode   = False
             in_rating     = False
+            try:
+                secret_state = await asyncio.to_thread(db.get_secret_missions_state, user_id)
+            except Exception:
+                secret_state = {
+                    'mode': 'none',
+                    'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+                    'missions': [],
+                }
         elif role == 'tester':
             # Все главы открыты, 5 жизней (не admin_mode!), не в рейтинге
             open_chapters = list(range(1, 7))
             admin_mode    = False
             tester_mode   = True
             in_rating     = False
+            try:
+                secret_state = await asyncio.to_thread(db.get_secret_missions_state, user_id)
+            except Exception:
+                secret_state = {
+                    'mode': 'none',
+                    'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+                    'missions': [],
+                }
         else:  # player
             # Только открытые индивидуально + глобально + реферальная статистика
             accessible, ref_summary, ref_agents, secret_state = await asyncio.gather(
@@ -6501,6 +6517,13 @@ async def handle_game_state(request):
             admin_mode  = False
             tester_mode = False
             in_rating   = True
+
+        if not isinstance(secret_state, dict):
+            secret_state = {
+                'mode': 'none',
+                'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+                'missions': [],
+            }
 
         chapters_payload = []
         for row in chapter_schedule or []:
@@ -6800,6 +6823,35 @@ async def handle_game_sync(request):
             except Exception as ref_refresh_err:
                 logger.warning(f"game_sync referrer refresh failed: user={user_id}, err={ref_refresh_err}")
             ref_award_points = ref_award_points_inviter + ref_award_points_invitee
+            if ref_award_points_inviter > 0 or ref_award_points_invitee > 0:
+                result = await asyncio.to_thread(db.get_game_result, user_id)
+                db_score = result[2] if result else db_score
+                db_completed = result[3] if result else db_completed
+                db_reset_token = _game_reset_token(result)
+                retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
+            try:
+                ref_summary, ref_agents = await asyncio.gather(
+                    asyncio.to_thread(db.get_referral_summary, user_id),
+                    asyncio.to_thread(db.get_referral_agents, user_id, 12),
+                )
+                safe_agents = []
+                for agent in ref_agents or []:
+                    if not isinstance(agent, dict):
+                        continue
+                    safe_agents.append({
+                        'user_id': int(agent.get('user_id', 0) or 0),
+                        'name': str(agent.get('name') or 'Игрок')[:64],
+                        'completed': int(agent.get('completed', 0) or 0),
+                        'bonus_points': int(agent.get('bonus_points', 0) or 0),
+                        'invitee_bonus_points': int(agent.get('invitee_bonus_points', 0) or 0),
+                        'invitee_percent': int(agent.get('invitee_percent', 1) or 1),
+                        'inviter_percent': int(agent.get('inviter_percent', 0) or 0),
+                    })
+                ref_agents = safe_agents
+            except Exception as ref_state_err:
+                logger.warning(f"game_sync referral state load failed: user={user_id}, err={ref_state_err}")
+
+        if current_role in ('player', 'tester', 'admin'):
             try:
                 secret_sync = await asyncio.to_thread(
                     db.apply_secret_missions_sync,
@@ -6830,41 +6882,15 @@ async def handle_game_sync(request):
                     if isinstance(secret_sync.get('awards'), list):
                         secret_awards = secret_sync.get('awards')
                     secret_awarded_points = _clamp_int(secret_sync.get('awarded_points', 0), 0, 999999)
-                    if secret_awarded_points > 0:
-                        result = await asyncio.to_thread(db.get_game_result, user_id)
-                        db_score = result[2] if result else db_score
-                        db_completed = result[3] if result else db_completed
-                        db_reset_token = _game_reset_token(result)
-                        retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
             except Exception as secret_err:
                 logger.warning(f"game_sync secret missions failed: user={user_id}, err={secret_err}")
-            if ref_award_points_inviter > 0 or ref_award_points_invitee > 0 or secret_awarded_points > 0:
-                result = await asyncio.to_thread(db.get_game_result, user_id)
-                db_score = result[2] if result else db_score
-                db_completed = result[3] if result else db_completed
-                db_reset_token = _game_reset_token(result)
-                retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
-            try:
-                ref_summary, ref_agents = await asyncio.gather(
-                    asyncio.to_thread(db.get_referral_summary, user_id),
-                    asyncio.to_thread(db.get_referral_agents, user_id, 12),
-                )
-                safe_agents = []
-                for agent in ref_agents or []:
-                    if not isinstance(agent, dict):
-                        continue
-                    safe_agents.append({
-                        'user_id': int(agent.get('user_id', 0) or 0),
-                        'name': str(agent.get('name') or 'Игрок')[:64],
-                        'completed': int(agent.get('completed', 0) or 0),
-                        'bonus_points': int(agent.get('bonus_points', 0) or 0),
-                        'invitee_bonus_points': int(agent.get('invitee_bonus_points', 0) or 0),
-                        'invitee_percent': int(agent.get('invitee_percent', 1) or 1),
-                        'inviter_percent': int(agent.get('inviter_percent', 0) or 0),
-                    })
-                ref_agents = safe_agents
-            except Exception as ref_state_err:
-                logger.warning(f"game_sync referral state load failed: user={user_id}, err={ref_state_err}")
+
+        if secret_awarded_points > 0:
+            result = await asyncio.to_thread(db.get_game_result, user_id)
+            db_score = result[2] if result else db_score
+            db_completed = result[3] if result else db_completed
+            db_reset_token = _game_reset_token(result)
+            retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
         logger.info(
             "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s ref_bonus_inviter=%s ref_bonus_invitee=%s ref_bonus_upstream=%s ref_chapters=%s secret_bonus=%s secret_mode=%s",
             user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx,
