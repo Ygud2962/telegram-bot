@@ -59,6 +59,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+GAME_AUDIO_TRACKS = {
+    'epic_boss_battle': 'https://opengameart.org/sites/default/files/Juhani%20Junkala%20-%20Epic%20Boss%20Battle%20%5BSeamlessly%20Looping%5D.wav',
+    'determination': 'https://opengameart.org/sites/default/files/determination.mp3',
+    'prepare_your_swords': 'https://opengameart.org/sites/default/files/prepare_your_swords.mp3',
+    'adventuring_song': 'https://opengameart.org/sites/default/files/adventuring_song.mp3',
+    'town_theme': 'https://opengameart.org/sites/default/files/TownTheme.mp3',
+}
+
 
 class _PollingConflictNoiseFilter(logging.Filter):
     """Filters expected 409 polling conflicts during redeploy overlap."""
@@ -6926,6 +6934,62 @@ async def handle_game_sync(request):
             {'ok': False, 'error': str(e)}, status=500, headers=headers)
 
 
+async def handle_game_media(request):
+    """GET /game_media/{track_id} — проксирует CC0-треки для стабильного воспроизведения в WebApp."""
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
+    track_id = str(request.match_info.get('track_id', '') or '').strip().lower()
+    src_url = GAME_AUDIO_TRACKS.get(track_id)
+    if not src_url:
+        return aiohttp_web.Response(text='Track not found', status=404, headers=headers)
+
+    req_headers = {}
+    range_header = request.headers.get('Range')
+    if range_header:
+        req_headers['Range'] = range_header
+
+    try:
+        timeout = httpx.Timeout(20.0, connect=7.0)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            upstream = await client.get(src_url, headers=req_headers)
+    except Exception as e:
+        logger.warning(f"game_media upstream fetch failed: track={track_id}, err={e}")
+        return aiohttp_web.Response(text='Audio source unavailable', status=502, headers=headers)
+
+    if upstream.status_code not in (200, 206):
+        logger.warning(f"game_media upstream bad status: track={track_id}, status={upstream.status_code}")
+        return aiohttp_web.Response(text='Audio source error', status=502, headers=headers)
+
+    out_headers = dict(headers)
+    content_type = upstream.headers.get('content-type')
+    if content_type:
+        out_headers['Content-Type'] = content_type
+    content_length = upstream.headers.get('content-length')
+    if content_length:
+        out_headers['Content-Length'] = content_length
+    content_range = upstream.headers.get('content-range')
+    if content_range:
+        out_headers['Content-Range'] = content_range
+    accept_ranges = upstream.headers.get('accept-ranges')
+    if accept_ranges:
+        out_headers['Accept-Ranges'] = accept_ranges
+    etag = upstream.headers.get('etag')
+    if etag:
+        out_headers['ETag'] = etag
+    last_modified = upstream.headers.get('last-modified')
+    if last_modified:
+        out_headers['Last-Modified'] = last_modified
+    out_headers['Cache-Control'] = 'public, max-age=86400'
+
+    return aiohttp_web.Response(
+        body=upstream.content,
+        status=upstream.status_code,
+        headers=out_headers
+    )
+
+
 def start_http_server_thread():
     """Запускает aiohttp в отдельном потоке чтобы не конфликтовать с event loop бота."""
     import threading
@@ -6980,6 +7044,8 @@ def start_http_server_thread():
         app_http.router.add_options('/game_leaderboard', handle_game_leaderboard)
         app_http.router.add_post('/game_sync', handle_game_sync)
         app_http.router.add_options('/game_sync', handle_game_sync)
+        app_http.router.add_get('/game_media/{track_id}', handle_game_media)
+        app_http.router.add_options('/game_media/{track_id}', handle_game_media)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)

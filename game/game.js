@@ -5576,6 +5576,9 @@ async function checkMapAnswer(clicked, target) {
 // ═══════════════════════════════════════════════════════
 let _audioCtx = null;
 let _bgMusic = null;
+let _bgMusicGainNode = null;
+let _bgMusicSourceNode = null;
+let _bgMusicGainReady = false;
 let _audioUnlocked = false;
 const AUDIO_PREF_KEY = 'cipher_audio_prefs_v2';
 const LEGACY_MUSIC_PREF_KEY = 'cipher_music_enabled_v1';
@@ -5587,32 +5590,37 @@ let musicTrackIndex = 0;
 const _brokenMusicTrackIds = new Set();
 let _musicFailoverInProgress = false;
 let _musicValidationStarted = false;
+const _isIOSDevice = (() => {
+  const ua = String(navigator.userAgent || '');
+  const touchMac = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return /iPad|iPhone|iPod/i.test(ua) || touchMac;
+})();
 
 const GAME_MUSIC_TRACKS = [
   {
     id: 'epic_boss_battle',
     title: 'Epic Boss Battle (CC0)',
-    url: 'https://opengameart.org/sites/default/files/Juhani%20Junkala%20-%20Epic%20Boss%20Battle%20%5BSeamlessly%20Looping%5D.wav'
+    url: '/game_media/epic_boss_battle'
   },
   {
     id: 'determination',
     title: 'Determination (CC0)',
-    url: 'https://opengameart.org/sites/default/files/determination.mp3'
+    url: '/game_media/determination'
   },
   {
     id: 'prepare_your_swords',
     title: 'Prepare Your Swords (CC0)',
-    url: 'https://opengameart.org/sites/default/files/prepare_your_swords.mp3'
+    url: '/game_media/prepare_your_swords'
   },
   {
     id: 'adventuring_song',
     title: 'Adventuring Song (CC0)',
-    url: 'https://opengameart.org/sites/default/files/adventuring_song.mp3'
+    url: '/game_media/adventuring_song'
   },
   {
     id: 'town_theme',
     title: 'Town Theme (CC0)',
-    url: 'https://opengameart.org/sites/default/files/TownTheme.mp3'
+    url: '/game_media/town_theme'
   }
 ];
 
@@ -5753,6 +5761,9 @@ function ensureBackgroundMusic() {
     _bgMusic = new Audio();
     _bgMusic.loop = true;
     _bgMusic.preload = 'auto';
+    _bgMusic.playsInline = true;
+    _bgMusic.setAttribute('playsinline', 'playsinline');
+    _bgMusic.crossOrigin = 'anonymous';
     _bgMusic.addEventListener('error', () => {
       const failedId = _bgMusic && _bgMusic.dataset ? _bgMusic.dataset.trackId : '';
       console.warn('background music load error', failedId, _bgMusic && _bgMusic.error);
@@ -5762,6 +5773,34 @@ function ensureBackgroundMusic() {
     _bgMusic = null;
   }
   return _bgMusic;
+}
+
+function ensureIOSMusicGainNode() {
+  if (!_isIOSDevice) return null;
+  const audio = ensureBackgroundMusic();
+  const ctx = getAudio();
+  if (!audio || !ctx || typeof ctx.createGain !== 'function' || typeof ctx.createMediaElementSource !== 'function') {
+    return null;
+  }
+  if (_bgMusicGainReady && _bgMusicGainNode) return _bgMusicGainNode;
+  try {
+    if (!_bgMusicSourceNode) {
+      _bgMusicSourceNode = ctx.createMediaElementSource(audio);
+    }
+    if (!_bgMusicGainNode) {
+      _bgMusicGainNode = ctx.createGain();
+    }
+    _bgMusicSourceNode.connect(_bgMusicGainNode);
+    _bgMusicGainNode.connect(ctx.destination);
+    _bgMusicGainReady = true;
+    return _bgMusicGainNode;
+  } catch (e) {
+    console.warn('ensureIOSMusicGainNode failed', e);
+    _bgMusicGainNode = null;
+    _bgMusicSourceNode = null;
+    _bgMusicGainReady = false;
+    return null;
+  }
 }
 
 function applyBackgroundMusic(forceTrackReload = false) {
@@ -5788,7 +5827,16 @@ function applyBackgroundMusic(forceTrackReload = false) {
   }
 
   const riskBoost = 1 + (_riskIntensity * 0.18);
-  audio.volume = _clamp(musicVolume * riskBoost, 0, 1);
+  const targetVolume = _clamp(musicVolume * riskBoost, 0, 1);
+  const iosGain = ensureIOSMusicGainNode();
+  if (iosGain) {
+    audio.volume = 1;
+    try {
+      iosGain.gain.value = targetVolume;
+    } catch (e) {}
+  } else {
+    audio.volume = targetVolume;
+  }
   if (!musicEnabled || !_audioUnlocked || document.hidden) {
     audio.pause();
     return;
@@ -6848,7 +6896,12 @@ window.copyChapterReportCard = copyChapterReportCard;
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
-if (document.readyState === "loading") { showSplash(); } else { showSplash(); }
+(() => {
+  const introEl = document.getElementById('s-intro');
+  const introActive = !!(introEl && introEl.classList.contains('active'));
+  // На первом старте уже есть экран-интро, второй сплэш только тормозит и выглядит как двойная загрузка.
+  if (!introActive) showSplash();
+})();
 loadState();
 if (tg && typeof tg.onEvent === 'function') {
   try {

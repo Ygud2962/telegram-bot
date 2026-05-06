@@ -1050,9 +1050,9 @@
 
             var version = encodeURIComponent(getBootVersion());
             // Hard cache-bust for Telegram WebView/CDN caches on hotfix releases.
-            var buildRev = "r20260429_reset_token_fix";
+            var buildRev = "r20260506_ios_audio_boot_fix";
             var versionQuery = "v=" + version + "&rev=" + encodeURIComponent(buildRev);
-            var scriptLoadTimeoutMs = 45000;
+            var scriptLoadTimeoutMs = 12000;
             var baseOrigin = window.location.origin || "";
 
             function buildScriptUrls(fileName) {
@@ -1096,16 +1096,21 @@
                     .then(function () { return appendScript(gameUrls, scriptLoadTimeoutMs); })
                     .then(function () {
                         return new Promise(function (resolve, reject) {
-                            setTimeout(function () {
+                            var deadline = Date.now() + 1800;
+                            (function waitGameReady() {
                                 if (window.__GAME_JS_LOADED && gameReady()) {
                                     bootState.loaded = true;
                                     clearBootError();
                                     setIntroButtonState(false, "▶ НАЧАТЬ МИССИЮ");
                                     resolve(true);
-                                } else {
-                                    reject(new Error("game.js did not initialize"));
+                                    return;
                                 }
-                            }, 2500);
+                                if (Date.now() >= deadline) {
+                                    reject(new Error("game.js did not initialize"));
+                                    return;
+                                }
+                                setTimeout(waitGameReady, 90);
+                            })();
                         });
                     })
                     .catch(function (err) {
