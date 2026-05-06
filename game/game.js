@@ -1016,22 +1016,33 @@ function _secretMissionStats() {
   let completedTotal = 0;
   let completedStarter = 0;
   let completedAdvanced = 0;
+  let bonusFromMissions = 0;
   for (const mission of missions) {
     byId[mission.id] = mission;
     if (!mission.completed) continue;
     completedTotal += 1;
     if (mission.tier === 'starter') completedStarter += 1;
     else completedAdvanced += 1;
+    bonusFromMissions += Math.max(0, Math.floor(Number(mission.reward_points || 0)));
   }
+  const missionsTotal = missions.length > 0 ? missions.length : summary.total;
+  const displayTotal = Math.max(1, Number.isFinite(Number(missionsTotal)) ? Number(missionsTotal) : summary.total);
+  const displayCompleted = Math.max(
+    0,
+    Math.min(displayTotal, missions.length > 0 ? completedTotal : summary.completed)
+  );
+  const displayBonus = missions.length > 0
+    ? Math.max(summary.bonus_points, bonusFromMissions)
+    : summary.bonus_points;
   return {
     missions,
     byId,
     completedTotal,
     completedStarter,
     completedAdvanced,
-    bonusPoints: summary.bonus_points,
-    total: summary.total,
-    completed: summary.completed,
+    bonusPoints: displayBonus,
+    total: displayTotal,
+    completed: displayCompleted,
   };
 }
 
@@ -7090,4 +7101,3 @@ fetchAndApplyLeaderboard();
 flushPendingResults();
 try {
 } catch(e) {}
-
