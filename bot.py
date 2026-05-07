@@ -1197,21 +1197,42 @@ async def format_day_schedule(class_name: str, day: str,
                 'old_teacher': s[6], 'new_teacher': s[7]
             }
 
+    now = datetime.now(TZ_MINSK)
+    cur_day = DAYS_OF_WEEK[now.weekday()] if now.weekday() < 5 else None
+    cur_info = get_current_lesson_info()
+    cur_lesson_num = cur_info.get('number') if cur_info.get('status') == 'lesson' else None
+    target_is_today = False
+    if target_date:
+        try:
+            target_is_today = (datetime.strptime(target_date, "%Y-%m-%d").date() == now.date())
+        except Exception:
+            target_is_today = False
+    else:
+        target_is_today = (day == cur_day)
+
     lines = [f"📅 <b>{day.upper()} — {class_name.upper()}</b>", "─" * 20]
     for num, subj, teacher in lessons:
         e = lesson_emoji(num)
         t = lesson_time_str(num)
-        lines.append(f"{e} <b>{t}</b>  {subj}")
+        is_now = bool(target_is_today and cur_lesson_num == num)
+        prefix = "🟢 " if is_now else ""
+        lines.append(f"{prefix}{e} <b>{t}</b>  {subj}")
         lines.append(f"   👨‍🏫 {teacher}")
         if num in subs:
             s = subs[num]
             lines.append(f"   🔄 <b>ЗАМЕНА:</b> {s['new_subject']} — {s['new_teacher']}")
+    lines.append("<i>ℹ️ 🟢 — текущий урок</i>")
     return "\n".join(lines)
 
 
 def format_week_schedule(class_name: str) -> str:
     if class_name not in SCHEDULE_STRUCTURED:
         return f"❌ Расписание для {class_name} не найдено."
+    now = datetime.now(TZ_MINSK)
+    cur_day = DAYS_OF_WEEK[now.weekday()] if now.weekday() < 5 else None
+    cur_info = get_current_lesson_info()
+    cur_lesson_num = cur_info.get('number') if cur_info.get('status') == 'lesson' else None
+
     lines = [f"📅 <b>НЕДЕЛЯ — {class_name.upper()}</b>", "═" * 25]
     for day in DAYS_OF_WEEK:
         lessons = SCHEDULE_STRUCTURED[class_name].get(day, [])
@@ -1222,8 +1243,11 @@ def format_week_schedule(class_name: str) -> str:
         for num, subj, teacher in sorted(lessons, key=lambda x: x[0]):
             e = lesson_emoji(num)
             t = lesson_time_str(num)
-            lines.append(f"{e} <b>{t}</b>  {subj}")
+            is_now = bool(day == cur_day and cur_lesson_num == num)
+            prefix = "🟢 " if is_now else ""
+            lines.append(f"{prefix}{e} <b>{t}</b>  {subj}")
             lines.append(f"   👨‍🏫 {teacher}")
+    lines.append("<i>ℹ️ 🟢 — текущий урок</i>")
     return "\n".join(lines)
 
 
