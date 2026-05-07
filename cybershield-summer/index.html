@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Киберщит • Летний сезон 2026</title>
+  <meta name="description" content="Летняя игра по кибербезопасности: поиск улик, симулятор переписки, сортировка входящих и инцидент 30 секунд.">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="bg-glow bg-glow-a" aria-hidden="true"></div>
+  <div class="bg-glow bg-glow-b" aria-hidden="true"></div>
+
+  <main class="app">
+    <header class="hero panel">
+      <div class="hero-top">
+        <h1>🛡 Киберщит</h1>
+        <span class="badge">Лето 2026</span>
+      </div>
+      <p class="subtitle">Отдельный проект: без изменений Шифровальщика и основного бота</p>
+      <div class="meta">
+        <span id="today-date"></span>
+        <span id="mission-counter"></span>
+        <span id="solved-today"></span>
+      </div>
+    </header>
+
+    <section class="panel mission-head">
+      <h2 id="mission-title">Миссия дня</h2>
+      <p id="mission-description"></p>
+      <div class="chips">
+        <span id="mission-type" class="chip"></span>
+        <span id="mission-week" class="chip"></span>
+        <span id="mission-reward" class="chip chip-accent"></span>
+      </div>
+    </section>
+
+    <section class="mode-switch">
+      <button id="btn-clue" class="mode active">🔍 Поиск улик</button>
+      <button id="btn-chat" class="mode">💬 Переписка</button>
+      <button id="btn-sort" class="mode">📥 Сортировка</button>
+      <button id="btn-incident" class="mode">⚡ Инцидент 30с</button>
+    </section>
+
+    <section id="clue-mode" class="panel mode-panel">
+      <h3>Найди улики на экране</h3>
+      <p class="hint">Отметь все подозрительные элементы в макете входящего письма.</p>
+      <div id="clue-board" class="clue-board"></div>
+      <div class="row">
+        <span id="clue-progress" class="small"></span>
+        <button id="btn-clue-check" class="btn">Проверить</button>
+      </div>
+      <p id="clue-result" class="result"></p>
+    </section>
+
+    <section id="chat-mode" class="panel mode-panel hidden">
+      <h3>Симулятор переписки</h3>
+      <p class="hint">Ответь своими словами, как ты будешь действовать безопасно.</p>
+      <div id="chat-log" class="chat-log"></div>
+      <textarea id="chat-answer" rows="4" placeholder="Опиши шаги: что не делать и что сделать правильно."></textarea>
+      <div class="row">
+        <button id="btn-chat-check" class="btn">Проверить ответ</button>
+      </div>
+      <p id="chat-result" class="result"></p>
+    </section>
+
+    <section id="sort-mode" class="panel mode-panel hidden">
+      <h3>Сортировка входящих</h3>
+      <p class="hint">Разложи сообщения по 3 зонам: Безопасно / Подозрительно / Опасно.</p>
+      <div class="sort-legend">
+        <span class="pill safe">Безопасно</span>
+        <span class="pill suspicious">Подозрительно</span>
+        <span class="pill danger">Опасно</span>
+      </div>
+      <div id="sort-list" class="sort-list"></div>
+      <div class="row">
+        <button id="btn-sort-check" class="btn">Проверить сортировку</button>
+      </div>
+      <p id="sort-result" class="result"></p>
+    </section>
+
+    <section id="incident-mode" class="panel mode-panel hidden">
+      <h3>Инцидент за 30 секунд</h3>
+      <p class="hint">Нажми шаги в правильной последовательности, пока не вышло время.</p>
+      <div class="incident-head">
+        <span id="incident-timer" class="timer">30с</span>
+        <button id="btn-incident-start" class="btn btn-accent">Старт</button>
+      </div>
+      <div id="incident-target" class="incident-target"></div>
+      <div id="incident-actions" class="incident-actions"></div>
+      <p id="incident-seq" class="small"></p>
+      <p id="incident-result" class="result"></p>
+    </section>
+
+    <section class="panel">
+      <h3>Прогресс лета</h3>
+      <div class="progress-wrap">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+      <p id="progress-text" class="small"></p>
+      <div class="row">
+        <button id="btn-reset" class="btn btn-muted">Сбросить прогресс</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Календарь миссий</h3>
+      <p class="small">Первые 21 день сезона:</p>
+      <ul id="calendar-preview" class="calendar"></ul>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
