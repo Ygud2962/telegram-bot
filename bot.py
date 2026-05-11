@@ -5059,19 +5059,41 @@ async def show_analytics(query, context):
     await safe_edit(query, text, kb)
 
 
-async def show_users_stats(query, context):
+async def show_users_stats(query, context, page: int = 0):
     total = await asyncio.to_thread(db.get_user_count)
     users = await asyncio.to_thread(db.get_all_users)
 
-    lines = [f"👥 <b>ПОЛЬЗОВАТЕЛИ</b>  Всего: <b>{total}</b>\n"]
-    for uid, username, fname, lname in users[:20]:
+    page_size = 20
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(int(page or 0), total_pages - 1))
+    start = page * page_size
+    end = start + page_size
+    chunk = users[start:end]
+
+    lines = [
+        f"👥 <b>ПОЛЬЗОВАТЕЛИ</b>  Всего: <b>{total}</b>",
+        f"<i>Страница {page + 1}/{total_pages}</i>",
+        ""
+    ]
+    for uid, username, fname, lname in chunk:
         name = f"{fname or ''} {lname or ''}".strip() or "—"
         uname = f" (@{username})" if username else ""
         lines.append(f"• <code>{uid}</code> — {name}{uname}")
-    if total > 20:
-        lines.append(f"\n<i>Показаны первые 20 из {total}</i>")
 
-    kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
+    if not chunk:
+        lines.append("<i>Пользователи не найдены.</i>")
+
+    kb = []
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(btn("◀️", f'admin_users_page_{page - 1}'))
+        nav.append(btn(f"{page + 1}/{total_pages}", 'noop'))
+        if page < total_pages - 1:
+            nav.append(btn("▶️", f'admin_users_page_{page + 1}'))
+        kb.append(nav)
+    kb.append([btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')])
+
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -5606,6 +5628,14 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
     if d == 'cancel_broadcast':
         _clear_flow(context)
         await show_admin_panel(query)
+        return
+
+    if d.startswith('admin_users_page_') and user_is_admin:
+        try:
+            page = int(d.replace('admin_users_page_', ''))
+        except Exception:
+            page = 0
+        await show_users_stats(query, context, page=page)
         return
 
     # ── Основные роуты ──
