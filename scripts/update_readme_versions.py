@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Sync README version badges/table from bot.py defaults."""
 
 from __future__ import annotations
@@ -46,17 +46,14 @@ def sync_readme(readme_text: str, bot_version: str, game_version: str) -> str:
     auto_block = build_autoversion_block(bot_version, game_version)
     updated = re.sub(block_pattern, auto_block, readme_text, count=1, flags=re.S)
 
-    updated = re.sub(
-        r"(?m)^(\| `BOT_VERSION` \| .*по умолчанию `)([^`]+)(` \|)$",
-        rf"\g<1>{bot_version}\g<3>",
-        updated,
-    )
-    updated = re.sub(
-        r"(?m)^(\| `GAME_VERSION` \| .*по умолчанию `)([^`]+)(` \|)$",
-        rf"\g<1>{game_version}\g<3>",
-        updated,
-    )
-    return updated
+    lines = updated.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("| `BOT_VERSION` |"):
+            lines[i] = f"| `BOT_VERSION` | `{bot_version}` | версия бота (по умолчанию `{bot_version}`) |"
+        elif line.startswith("| `GAME_VERSION` |"):
+            lines[i] = f"| `GAME_VERSION` | `{game_version}` | версия игры (по умолчанию `{game_version}`) |"
+
+    return "\n".join(lines) + ("\n" if updated.endswith("\n") else "")
 
 
 def main() -> int:
