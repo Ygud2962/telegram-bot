@@ -260,6 +260,25 @@ async def get_maintenance_status_cached(force: bool = False) -> dict:
     return _maintenance_cache
 
 
+async def get_season_mode_cached(force: bool = False) -> str:
+    """Возвращает режим сезона (auto/summer/school) с TTL-кэшем."""
+    global _season_mode_cache
+    now = datetime.now()
+    if force or (now - _season_mode_cache['last_check']).total_seconds() > SEASON_MODE_TTL:
+        try:
+            mode = await asyncio.to_thread(db.get_season_mode)
+        except Exception:
+            mode = _season_mode_cache.get('mode', 'auto')
+        mode = str(mode or 'auto').strip().lower()
+        if mode not in ('auto', 'summer', 'school'):
+            mode = 'auto'
+        _season_mode_cache = {
+            'mode': mode,
+            'last_check': now,
+        }
+    return str(_season_mode_cache.get('mode') or 'auto')
+
+
 async def is_game_privileged_async(user_id: int, *, bot_admin: bool | None = None,
                                    game_role: str | None = None) -> bool:
     """True, если пользователь может входить в игру в техрежиме."""
@@ -332,6 +351,12 @@ _maintenance_cache: dict = {
     'last_check': datetime.min
 }
 MAINTENANCE_TTL = 60  # сек
+
+_season_mode_cache: dict = {
+    'mode': 'auto',
+    'last_check': datetime.min,
+}
+SEASON_MODE_TTL = 60  # сек
 
 _teacher_schedule_cache: dict = {}
 
@@ -2122,6 +2147,21 @@ def _is_summer_holidays(now: datetime | None = None) -> bool:
     return start <= base <= end
 
 
+def _normalize_season_mode(mode: str | None) -> str:
+    raw = (mode or 'auto').strip().lower()
+    return raw if raw in ('auto', 'summer', 'school') else 'auto'
+
+
+def _is_summer_mode_active(now: datetime | None = None, season_mode: str = 'auto') -> bool:
+    """Определяет активен ли летний режим с учётом ручного режима админа."""
+    mode = _normalize_season_mode(season_mode)
+    if mode == 'summer':
+        return True
+    if mode == 'school':
+        return False
+    return _is_summer_holidays(now)
+
+
 def _next_school_start_after_summer(now: datetime | None = None) -> datetime:
     """Ближайший старт учебного режима после лета: 1 сентября 08:00 (Минск)."""
     base = now or datetime.now(TZ_MINSK)
@@ -2129,11 +2169,14 @@ def _next_school_start_after_summer(now: datetime | None = None) -> datetime:
     return base.replace(year=year, month=9, day=1, hour=8, minute=0, second=0, microsecond=0)
 
 
-def _main_menu_status_line(now: datetime, info: dict) -> str:
+def _main_menu_status_line(now: datetime, info: dict, season_mode: str = 'auto') -> str:
     """Статус для шапки главного меню с красивым сценарием выходных."""
-    if _is_summer_holidays(now):
+    mode = _normalize_season_mode(season_mode)
+    if _is_summer_mode_active(now, mode):
         start = _next_school_start_after_summer(now)
         mins = max(0, int((start - now).total_seconds() // 60))
+        if mode == 'summer' and not _is_summer_holidays(now):
+            return "☀️ Летний режим включён администратором вручную."
         return f"☀️ Летние каникулы. До учебного режима: {_fmt_minutes(mins)} (старт {start.strftime('%d.%m')} 08:00)"
     if now.weekday() >= 5:
         nxt = _next_school_monday_start(now)
@@ -2152,7 +2195,8 @@ async def show_main_menu_msg(update: Update, context: CallbackContext):
     user = update.effective_user
     now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
-    status_line = _main_menu_status_line(now, info)
+    season_mode = await get_season_mode_cached()
+    status_line = _main_menu_status_line(now, info, season_mode)
 
     profile, t_data = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, user.id),
@@ -2189,7 +2233,8 @@ async def show_main_menu_edit(query, context=None):
     uid  = query.from_user.id
     now  = datetime.now(TZ_MINSK)
     info = get_current_lesson_info()
-    status_line = _main_menu_status_line(now, info)
+    season_mode = await get_season_mode_cached()
+    status_line = _main_menu_status_line(now, info, season_mode)
     # Кэш профиля — не лезем в БД при каждом нажатии "Назад"
     if context and context.user_data.get('profile_cache_id') == uid:
         profile      = context.user_data.get('profile_cache')
@@ -2435,13 +2480,18 @@ async def cmd_version(update: Update, context: CallbackContext):
 async def _season_block_if_summer(query, section_name: str) -> bool:
     """Блокирует неактуальные учебные разделы в летний период."""
     now = datetime.now(TZ_MINSK)
-    if not _is_summer_holidays(now):
+    season_mode = await get_season_mode_cached()
+    if not _is_summer_mode_active(now, season_mode):
         return False
     start = _next_school_start_after_summer(now)
+    mode_note = ""
+    if _normalize_season_mode(season_mode) == 'summer' and not _is_summer_holidays(now):
+        mode_note = "\n\n<i>Режим включён администратором вручную.</i>"
     text = (
         "☀️ <b>ЛЕТНИЙ РЕЖИМ</b>\n\n"
         f"Раздел «{section_name}» временно скрыт на каникулах.\n"
         f"Учебные разделы вернутся <b>{start.strftime('%d.%m.%Y')} в 08:00</b>."
+        f"{mode_note}"
     )
     kb = [
         [btn("☀️ Летний режим", 'menu_summer')],
@@ -2455,20 +2505,33 @@ async def _season_block_if_summer(query, section_name: str) -> bool:
 async def menu_summer(query, context):
     """Летний экран: коротко и без учебной перегрузки."""
     now = datetime.now(TZ_MINSK)
-    if _is_summer_holidays(now):
+    season_mode = await get_season_mode_cached()
+    mode_norm = _normalize_season_mode(season_mode)
+    mode_labels = {
+        'auto': "🗓 Автоматически по дате",
+        'summer': "☀️ Летний режим (вручную)",
+        'school': "🎓 Школьный режим (вручную)",
+    }
+    if _is_summer_mode_active(now, mode_norm):
         start = _next_school_start_after_summer(now)
         mins = max(0, int((start - now).total_seconds() // 60))
+        extra = ""
+        if mode_norm == 'summer' and not _is_summer_holidays(now):
+            extra = "\n• Источник: <b>включено админом вручную</b>"
         text = (
             "☀️ <b>ЛЕТНИЙ РЕЖИМ</b>\n\n"
             f"• Каникулы: <b>01.06 — 31.08</b>\n"
             f"• До учебного режима: <b>{_fmt_minutes(mins)}</b>\n"
-            f"• Старт учебных разделов: <b>{start.strftime('%d.%m.%Y')} в 08:00</b>"
+            f"• Старт учебных разделов: <b>{start.strftime('%d.%m.%Y')} в 08:00</b>\n"
+            f"• Режим: <b>{mode_labels.get(mode_norm, mode_norm)}</b>"
+            f"{extra}"
         )
     else:
         text = (
             "✅ <b>УЧЕБНЫЙ РЕЖИМ АКТИВЕН</b>\n\n"
             "Летний режим автоматически включается с <b>01.06</b> "
-            "и действует до <b>31.08</b>."
+            "и действует до <b>31.08</b>.\n"
+            f"• Режим: <b>{mode_labels.get(mode_norm, mode_norm)}</b>"
         )
     kb = [
         [btn("📣 Новости", 'menu_news'), btn("🎮 Игры", 'menu_games')],
@@ -3080,7 +3143,7 @@ async def do_publish_news(query, context, send_to_all: bool):
 
     kb = [
         [btn("📰 К новостям", f'news_scope_{news_scope}')],
-        [btn("↩️ В админку", 'admin_panel')],
+        [btn("↩️ Контент", 'admin_content_panel')],
     ]
     await safe_edit(query, result_text, kb)
 
@@ -3864,7 +3927,7 @@ async def admin_enable_maintenance(query, context):
         [btn("🕐 1 час", 'maint_1h'), btn("🕐 3 часа", 'maint_3h')],
         [btn("🕐 5 часов", 'maint_5h'), btn("🌙 До завтра 08:00", 'maint_tomorrow')],
         [btn("♾️ Бессрочно", 'maint_forever')],
-        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')],
+        [btn("↩️ Система", 'admin_system_panel'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, "🔧 <b>ВКЛЮЧЕНИЕ ТЕХРЕЖИМА</b>\nВыберите длительность:", kb)
 
@@ -3888,7 +3951,7 @@ async def set_maintenance(query, context, duration: str):
 
     msg = "✅ <b>ТЕХРЕЖИМ ВКЛЮЧЁН</b>\n"
     msg += f"До: {until}\n" if until else "♾️ Бессрочно\n"
-    kb = [[btn("↩️ Админка", 'admin_panel')]]
+    kb = [[btn("↩️ Система", 'admin_system_panel')]]
     await safe_edit(query, msg, kb)
 
 
@@ -3899,7 +3962,65 @@ async def admin_disable_maintenance(query, context):
                           'last_check': datetime.min}
     await safe_edit(query,
         "✅ <b>Техрежим отключён.</b>\nБот доступен всем пользователям.",
-        [[btn("↩️ Админка", 'admin_panel')]])
+        [[btn("↩️ Система", 'admin_system_panel')]])
+
+
+async def admin_season_mode_panel(query, context):
+    """Панель управления летним/школьным режимом бота."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+
+    now = datetime.now(TZ_MINSK)
+    mode = await get_season_mode_cached(force=True)
+    mode_norm = _normalize_season_mode(mode)
+    active = _is_summer_mode_active(now, mode_norm)
+    by_date = _is_summer_holidays(now)
+    start = _next_school_start_after_summer(now)
+
+    mode_titles = {
+        'auto': "🗓 Авто (по дате)",
+        'summer': "☀️ Лето (вручную)",
+        'school': "🎓 Школа (вручную)",
+    }
+    state_text = "☀️ активен" if active else "🎓 учебный"
+    source_text = "по дате" if mode_norm == 'auto' else "вручную"
+    date_window_text = "сейчас летние даты (01.06–31.08)" if by_date else "сейчас вне летних дат"
+    mins = max(0, int((start - now).total_seconds() // 60))
+
+    text = (
+        "☀️ <b>РЕЖИМ СЕЗОНА</b>\n\n"
+        f"Текущий режим: <b>{mode_titles.get(mode_norm, mode_norm)}</b>\n"
+        f"Состояние: <b>{state_text}</b> ({source_text})\n"
+        f"Проверка даты: <i>{date_window_text}</i>\n"
+        f"До 01.09 08:00: <b>{_fmt_minutes(mins)}</b>"
+    )
+
+    kb = [
+        [btn(("✅ " if mode_norm == 'auto' else "") + "Авто", 'season_mode_auto')],
+        [btn(("✅ " if mode_norm == 'summer' else "") + "Лето (вручную)", 'season_mode_summer')],
+        [btn(("✅ " if mode_norm == 'school' else "") + "Школа (вручную)", 'season_mode_school')],
+        [btn("↩️ Система", 'admin_system_panel'), btn("🏠 Меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_set_season_mode(query, context, mode: str):
+    """Сохраняет режим сезона и обновляет кэш."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+
+    mode_norm = _normalize_season_mode(mode)
+    ok = await asyncio.to_thread(db.set_season_mode, mode_norm)
+    global _season_mode_cache
+    _season_mode_cache = {
+        'mode': mode_norm if ok else 'auto',
+        'last_check': datetime.min,
+    }
+    try:
+        await query.answer("✅ Режим обновлён" if ok else "❌ Не удалось изменить режим", show_alert=False)
+    except Exception:
+        pass
+    await admin_season_mode_panel(query, context)
 
 
 # ══════════════════════════════════════════════════════════
@@ -3913,7 +4034,7 @@ async def admin_add_sub_start(query, context):
         if d.weekday() < 5:
             name = DAYS_OF_WEEK[d.weekday()]
             kb.append([btn(f"{name} ({d.strftime('%d.%m')})", f'sub_date_{d.isoformat()}')])
-    kb.append([btn("❌ Отмена", 'admin_panel')])
+    kb.append([btn("❌ Отмена", 'admin_content_panel')])
     context.user_data.update({'adding_sub': True, 'sub_step': 'date'})
     await safe_edit(query,
         "<b>➕ ДОБАВЛЕНИЕ ЗАМЕНЫ — ШАГ 1/4</b>\n📅 Выберите дату:", kb)
@@ -3923,9 +4044,9 @@ async def handle_sub_flow(query, context):
     step = context.user_data.get('sub_step')
     data = query.data
 
-    if data == 'cancel_adding' or data == 'admin_panel':
+    if data in ('cancel_adding', 'admin_panel', 'admin_content_panel'):
         _clear_flow(context)
-        await show_admin_panel(query)
+        await admin_content_panel(query, context)
         return
 
     if step == 'date' and data.startswith('sub_date_'):
@@ -4021,7 +4142,7 @@ async def handle_sub_flow(query, context):
 
         kb = [
             [btn("➕ Добавить ещё", 'admin_add_sub')],
-            [btn("↩️ Админка", 'admin_panel')],
+            [btn("↩️ Контент", 'admin_content_panel')],
         ]
         d_obj = datetime.strptime(date_str, '%Y-%m-%d')
         await safe_edit(query,
@@ -4882,7 +5003,7 @@ async def admin_manage_bot_admins(query, context):
     kb = [
         [btn("➕ Добавить администратора", 'admin_add_bot_admin_input')],
         [btn("➖ Убрать администратора",   'admin_remove_bot_admin_input')],
-        [btn("↩️ Админка", 'admin_panel')],
+        [btn("↩️ Система", 'admin_system_panel')],
     ]
     await safe_edit(query, "\n".join(lines) or "Нет администраторов.", kb)
 
@@ -4958,7 +5079,7 @@ async def admin_my_game_role(query, context):
         [btn("👑 Войти как Админ",  'admin_set_my_role_admin')],
         [btn("🧪 Войти как Тестер", 'admin_set_my_role_tester')],
         [btn("🎮 Войти как Игрок",  'admin_set_my_role_player')],
-        [btn("↩️ Назад", 'admin_panel')],
+        [btn("↩️ Игра", 'admin_game_panel')],
     ]
     await safe_edit(query,
         f"👤 <b>МОЙ ИГРОВОЙ РЕЖИМ</b>\n\n"
@@ -5012,7 +5133,29 @@ async def cmd_claim_admin(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ADMIN PANEL
 # ══════════════════════════════════════════════════════════
-async def show_admin_panel(query):
+async def admin_content_panel(query, context):
+    """Подпапка контента: новости, замены, рассылка."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+    kb = [
+        [btn("📣 Опубликовать новость", 'admin_publish_news'), btn("📰 Новости", 'admin_manage_news')],
+        [btn("➕ Замена вручную", 'admin_add_sub'), btn("📸 Замены из фото", 'admin_photo_subs')],
+        [btn("📋 Все замены", 'admin_view_subs'), btn("📢 Рассылка", 'admin_broadcast')],
+        [btn("🗑 Удалить замену (ID)", 'admin_del_sub'), btn("🧹 Очистить замены", 'admin_clear_subs')],
+        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "🗂 <b>КОНТЕНТ</b>\n\n"
+        "Новости, замены и рассылки.\n"
+        "<i>Опасные действия вынесены в отдельную строку.</i>",
+        kb,
+    )
+
+
+async def admin_system_panel(query, context):
+    """Подпапка системных настроек бота."""
     if not await is_bot_admin_async(query.from_user.id):
         await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
         return
@@ -5026,19 +5169,52 @@ async def show_admin_panel(query):
     else:
         maint_btn = btn("🔧 Включить техрежим", 'admin_enable_maintenance')
 
+    season_mode = await get_season_mode_cached(force=True)
+    season_mode = _normalize_season_mode(season_mode)
+    season_labels = {
+        'auto': "🗓 Авто",
+        'summer': "☀️ Лето",
+        'school': "🎓 Школа",
+    }
+
     kb = [
         [maint_btn],
-        [btn("📣 Новость",        'admin_publish_news'),   btn("🗑 Новости",     'admin_manage_news')],
-        [btn("➕ Замена вручную", 'admin_add_sub'),         btn("📸 Замена фото", 'admin_photo_subs')],
-        [btn("📋 Все замены",     'admin_view_subs'),       btn("🧹 Очистить",    'admin_clear_subs')],
-        [btn("🗑 Удалить замену (ID)", 'admin_del_sub')],
-        [btn("📊 Аналитика",     'admin_analytics'),        btn("👥 Пользователи",'admin_users')],
-        [btn("📢 Рассылка",      'admin_broadcast'),        btn("🎮 Игра",         'admin_game_panel')],
-        [btn("👤 Мой игровой режим", 'admin_my_game_role')],
+        [btn(f"☀️ Режим сезона: {season_labels.get(season_mode, season_mode)}", 'admin_season_mode_panel')],
+        [btn("📊 Аналитика", 'admin_analytics'), btn("👥 Пользователи", 'admin_users')],
         [btn("👑 Управление администраторами", 'admin_manage_bot_admins')],
+        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "⚙️ <b>СИСТЕМА</b>\n\n"
+        "Системные режимы, пользователи и доступ админов.",
+        kb,
+    )
+
+
+async def show_admin_panel(query):
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    maint = await asyncio.to_thread(db.get_maintenance_status)
+    season_mode = _normalize_season_mode(await get_season_mode_cached())
+    season_badge = {'auto': '🗓 авто', 'summer': '☀️ лето', 'school': '🎓 школа'}.get(season_mode, season_mode)
+    maint_badge = f"🔧 техрежим: {'вкл' if maint.get('enabled') else 'выкл'}"
+
+    kb = [
+        [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Игра", 'admin_game_panel')],
+        [btn("⚙️ Система", 'admin_system_panel')],
+        [btn("👤 Мой игровой режим", 'admin_my_game_role')],
         [btn("🏠 Главное меню",  'back_to_main')],
     ]
-    await safe_edit(query, "👑 <b>АДМИН-ПАНЕЛЬ</b>\nВыберите действие:", kb)
+    await safe_edit(
+        query,
+        "👑 <b>АДМИН-ПАНЕЛЬ</b>\n"
+        f"<i>{maint_badge} · {season_badge}</i>\n\n"
+        "Выберите раздел:",
+        kb
+    )
 
 
 async def admin_view_subs(query, context):
@@ -5052,7 +5228,7 @@ async def admin_view_subs(query, context):
             lines.append(f"   {s[6]} → {s[7]}  ({s[4]}→{s[5]})\n")
         text = "\n".join(lines)
     kb = [
-        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')],
+        [btn("↩️ Контент", 'admin_content_panel'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -5060,7 +5236,7 @@ async def admin_view_subs(query, context):
 async def admin_manage_news(query, context):
     news_list = await asyncio.to_thread(db.get_recent_news, 15)
     if not news_list:
-        kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
+        kb = [[btn("↩️ Контент", 'admin_content_panel'), btn("🏠 Меню", 'back_to_main')]]
         await safe_edit(query, "📭 Новостей нет.", kb)
         return
 
@@ -5076,7 +5252,7 @@ async def admin_manage_news(query, context):
             btn(f"✏️ #{nid}", f'edit_news_{nid}'),
             btn(f"🗑 #{nid}", f'del_news_{nid}'),
         ])
-    kb.append([btn("↩️ Админка", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')])
+    kb.append([btn("↩️ Контент", 'admin_content_panel'), btn("🏠 Главное меню", 'back_to_main')])
     await safe_edit(query, text, kb)
 
 
@@ -5106,7 +5282,7 @@ async def admin_confirm_clear_subs(query, context):
     subs = await asyncio.to_thread(db.get_all_substitutions)
     kb = [
         [btn("✅ Да, удалить все", 'admin_clear_confirm'),
-         btn("❌ Отмена", 'admin_panel')],
+         btn("❌ Отмена", 'admin_content_panel')],
     ]
     await safe_edit(query,
         f"⚠️ <b>ОЧИСТКА ЗАМЕН</b>\n\n"
@@ -5118,7 +5294,7 @@ async def admin_do_clear_subs(query, context):
     subs = await asyncio.to_thread(db.get_all_substitutions)
     cnt = len(subs)
     await asyncio.to_thread(db.clear_all_substitutions)
-    kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
+    kb = [[btn("↩️ Контент", 'admin_content_panel'), btn("🏠 Меню", 'back_to_main')]]
     await safe_edit(query, f"✅ Удалено замен: {cnt}", kb)
 
 
@@ -5142,7 +5318,7 @@ async def show_analytics(query, context):
     kb = [
         [btn("🔄 Обновить", 'admin_analytics')],
         [btn("👥 Список пользователей", 'admin_users')],
-        [btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')],
+        [btn("↩️ Система", 'admin_system_panel'), btn("🏠 Меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -5180,7 +5356,7 @@ async def show_users_stats(query, context, page: int = 0):
         if page < total_pages - 1:
             nav.append(btn("▶️", f'admin_users_page_{page + 1}'))
         kb.append(nav)
-    kb.append([btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')])
+    kb.append([btn("↩️ Система", 'admin_system_panel'), btn("🏠 Меню", 'back_to_main')])
 
     await safe_edit(query, "\n".join(lines), kb)
 
@@ -5246,7 +5422,7 @@ async def do_broadcast(query, context):
                 pass
 
     _clear_flow(context)
-    kb = [[btn("↩️ Админка", 'admin_panel')]]
+    kb = [[btn("↩️ Контент", 'admin_content_panel')]]
     await status_msg.edit_text(
         f"✅ <b>Рассылка завершена</b>\n\n✅ Отправлено: {sent}\n❌ Ошибок: {failed}",
         parse_mode='HTML',
@@ -5593,7 +5769,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         return
     if d == 'cancel_edit_news':
         _clear_flow(context)
-        await show_admin_panel(query)
+        await admin_content_panel(query, context)
         return
     if d == 'pub_news_all' and user_is_admin:
         await do_publish_news(query, context, send_to_all=True)
@@ -5618,7 +5794,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             return
     if d == 'cancel_pub_news':
         _clear_flow(context)
-        await show_admin_panel(query)
+        await admin_content_panel(query, context)
         return
 
     # ── Техрежим ──
@@ -5686,8 +5862,12 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
     if d == 'admin_del_sub' and user_is_admin:
         await safe_edit(query,
             "🗑️ Введите ID замены для удаления\n(смотри в «Все замены»):",
-            [[btn("❌ Отмена", 'admin_panel')]])
+            [[btn("❌ Отмена", 'cancel_del_sub')]])
         context.user_data['deleting_sub'] = True
+        return
+    if d == 'cancel_del_sub' and user_is_admin:
+        context.user_data.pop('deleting_sub', None)
+        await admin_content_panel(query, context)
         return
     if d == 'admin_clear_subs' and user_is_admin:
         await admin_confirm_clear_subs(query, context)
@@ -5702,7 +5882,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         return
     if d == 'cancel_photo_subs':
         context.user_data.pop('pending_subs', None)
-        kb = [[btn("↩️ Админка", 'admin_panel')]]
+        kb = [[btn("↩️ Контент", 'admin_content_panel')]]
         await safe_edit(query, "❌ Сохранение отменено. Замены не добавлены.", kb)
         return
 
@@ -5715,7 +5895,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         return
     if d == 'cancel_broadcast':
         _clear_flow(context)
-        await show_admin_panel(query)
+        await admin_content_panel(query, context)
         return
 
     if d.startswith('admin_users_page_') and user_is_admin:
@@ -5753,6 +5933,12 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'menu_game':              menu_game,
         'menu_help':              menu_help,
         'admin_panel':                show_admin_panel,
+        'admin_content_panel':        admin_content_panel,
+        'admin_system_panel':         admin_system_panel,
+        'admin_season_mode_panel':    admin_season_mode_panel,
+        'season_mode_auto':           lambda q, c: admin_set_season_mode(q, c, 'auto'),
+        'season_mode_summer':         lambda q, c: admin_set_season_mode(q, c, 'summer'),
+        'season_mode_school':         lambda q, c: admin_set_season_mode(q, c, 'school'),
         'admin_my_game_role':         admin_my_game_role,
         'admin_manage_bot_admins':    admin_manage_bot_admins,
         'admin_add_bot_admin_input':  admin_add_bot_admin_input,
@@ -5772,7 +5958,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             "• Весь лист должен быть в кадре\n\n"
             "<i>После отправки фото ИИ автоматически распознает замены "
             "и покажет предпросмотр для подтверждения.</i>",
-            [[btn("❌ Отмена", 'admin_panel')]]),
+            [[btn("❌ Отмена", 'admin_content_panel')]]),
         'admin_analytics':        show_analytics,
         'admin_game_panel':       admin_game_panel,
         'game_mode_beta':         lambda q, c: admin_set_game_mode(q, c, 'beta'),
@@ -5882,7 +6068,7 @@ async def handle_message(update: Update, context: CallbackContext):
         try:
             sub_id = int(text)
             await asyncio.to_thread(db.delete_substitution, sub_id)
-            kb = [[btn("↩️ Админка", 'admin_panel'), btn("🏠 Меню", 'back_to_main')]]
+            kb = [[btn("↩️ Контент", 'admin_content_panel'), btn("🏠 Меню", 'back_to_main')]]
             await update.message.reply_text(
                 f"✅ Замена ID {sub_id} удалена.",
                 reply_markup=InlineKeyboardMarkup(kb)

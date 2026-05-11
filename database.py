@@ -712,6 +712,9 @@ def init_db():
             )
         ''')
         cur.execute("INSERT INTO bot_status (id, maintenance_mode) VALUES (1, 0) ON CONFLICT DO NOTHING")
+        cur.execute("ALTER TABLE bot_status ADD COLUMN IF NOT EXISTS season_mode TEXT DEFAULT 'auto'")
+        cur.execute("UPDATE bot_status SET season_mode = LOWER(COALESCE(season_mode, 'auto'))")
+        cur.execute("UPDATE bot_status SET season_mode = 'auto' WHERE season_mode NOT IN ('auto', 'summer', 'school')")
 
         # Избранное
         cur.execute('''
@@ -1696,6 +1699,54 @@ def clear_all_substitutions():
 # ──────────────────────────────────────────────
 #  ТЕХРЕЖИМ
 # ──────────────────────────────────────────────
+def _normalize_season_mode(mode: str | None) -> str:
+    value = (mode or 'auto').strip().lower()
+    return value if value in ('auto', 'summer', 'school') else 'auto'
+
+
+def get_season_mode() -> str:
+    """Возвращает режим сезона: auto / summer / school."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE bot_status ADD COLUMN IF NOT EXISTS season_mode TEXT DEFAULT 'auto'")
+        cur.execute("INSERT INTO bot_status (id, maintenance_mode) VALUES (1, 0) ON CONFLICT DO NOTHING")
+        cur.execute("SELECT season_mode FROM bot_status WHERE id=1")
+        row = cur.fetchone()
+        conn.commit()
+        return _normalize_season_mode(row[0] if row else 'auto')
+    except Exception as e:
+        logger.error(f"get_season_mode: {e}")
+        _safe_rollback(conn)
+        return 'auto'
+    finally:
+        release_connection(conn)
+
+
+def set_season_mode(mode: str) -> bool:
+    """Устанавливает режим сезона: auto / summer / school."""
+    mode_norm = _normalize_season_mode(mode)
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE bot_status ADD COLUMN IF NOT EXISTS season_mode TEXT DEFAULT 'auto'")
+        cur.execute(
+            "INSERT INTO bot_status (id, maintenance_mode, season_mode) VALUES (1, 0, %s) ON CONFLICT (id) DO NOTHING",
+            (mode_norm,)
+        )
+        cur.execute("UPDATE bot_status SET season_mode=%s WHERE id=1", (mode_norm,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_season_mode: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
 def set_maintenance_mode(enabled: bool, until: str = None, message: str = None):
     conn = None
     try:
@@ -4322,8 +4373,6 @@ def get_chapter_schedule_for_game() -> list:
         return []
     finally:
         release_connection(conn)
-
-
 
 
 
