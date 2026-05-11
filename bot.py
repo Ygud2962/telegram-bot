@@ -7326,43 +7326,22 @@ async def menu_games(query, context):
 
 def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
                      teacher_name: str | None = None) -> list:
-    """Главное меню: компактное и сезонное."""
+    """Главное меню по классическому макету."""
     if teacher_name:
         profile_label = teacher_name.strip()
     elif profile and profile.get('display_name'):
         profile_label = str(profile.get('display_name')).strip()
     else:
         profile_label = 'Гость'
-
-    now = datetime.now(TZ_MINSK)
-    is_summer = _is_summer_holidays(now)
-    class_name = ''
-    if profile and profile.get('class_name'):
-        class_name = str(profile.get('class_name')).strip().lower()
-
-    if is_summer:
-        kb = [
-            [btn("☀️ Летний режим", 'menu_summer')],
-            [btn("📣 Новости", 'menu_news'), btn("🎮 Игры", 'menu_games')],
-            [btn("⭐ Моё", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
-            [btn("🆘 Помощь", 'menu_help')],
-        ]
-    else:
-        if teacher_name and teacher_name in ALL_TEACHERS:
-            tidx = ALL_TEACHERS.index(teacher_name)
-            first_row = [btn("👨‍🏫 Моё расписание", f'tch_{tidx}'), btn("📚 Классы", 'menu_schedule')]
-        elif class_name in ALL_CLASSES:
-            first_row = [btn(f"📚 Мой класс {class_name.upper()}", f'week_{class_name}'),
-                         btn("🔄 Замены", 'menu_substitutions')]
-        else:
-            first_row = [btn("📚 Расписание", 'menu_schedule'), btn("🔄 Замены", 'menu_substitutions')]
-
-        kb = [
-            first_row,
-            [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("📣 Новости", 'menu_news')],
-            [btn("🎮 Игры", 'menu_games'), btn("⭐ Моё", 'menu_my')],
-            [btn(f"👤 {profile_label}", 'menu_profile'), btn("🆘 Помощь", 'menu_help')],
-        ]
+    kb = [
+        [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
+        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
+        [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
+        [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ-помощник", 'menu_ai')],
+        [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
+        [btn("🎮 Игры", 'menu_games')],
+        [btn("🆘 Помощь", 'menu_help')],
+    ]
 
     if is_admin:
         kb.append([btn("🛠 Админка", 'admin_panel')])
