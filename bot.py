@@ -2114,8 +2114,27 @@ def _next_school_monday_start(now: datetime | None = None) -> datetime:
     )
 
 
+def _is_summer_holidays(now: datetime | None = None) -> bool:
+    """Летние каникулы (Беларусь): с 1 июня по 31 августа включительно."""
+    base = now or datetime.now(TZ_MINSK)
+    start = base.replace(month=6, day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = base.replace(month=8, day=31, hour=23, minute=59, second=59, microsecond=999999)
+    return start <= base <= end
+
+
+def _next_school_start_after_summer(now: datetime | None = None) -> datetime:
+    """Ближайший старт учебного режима после лета: 1 сентября 08:00 (Минск)."""
+    base = now or datetime.now(TZ_MINSK)
+    year = base.year if base.month <= 8 else base.year + 1
+    return base.replace(year=year, month=9, day=1, hour=8, minute=0, second=0, microsecond=0)
+
+
 def _main_menu_status_line(now: datetime, info: dict) -> str:
     """Статус для шапки главного меню с красивым сценарием выходных."""
+    if _is_summer_holidays(now):
+        start = _next_school_start_after_summer(now)
+        mins = max(0, int((start - now).total_seconds() // 60))
+        return f"☀️ Летние каникулы. До учебного режима: {_fmt_minutes(mins)} (старт {start.strftime('%d.%m')} 08:00)"
     if now.weekday() >= 5:
         nxt = _next_school_monday_start(now)
         return f"🏖️ Выходные: отдыхаем. 1 урок — в понедельник, {nxt.strftime('%d.%m')} в 08:00"
@@ -2413,13 +2432,63 @@ async def cmd_version(update: Update, context: CallbackContext):
     await update.message.reply_text(msg, parse_mode='HTML')
 
 
+async def _season_block_if_summer(query, section_name: str) -> bool:
+    """Блокирует неактуальные учебные разделы в летний период."""
+    now = datetime.now(TZ_MINSK)
+    if not _is_summer_holidays(now):
+        return False
+    start = _next_school_start_after_summer(now)
+    text = (
+        "☀️ <b>ЛЕТНИЙ РЕЖИМ</b>\n\n"
+        f"Раздел «{section_name}» временно скрыт на каникулах.\n"
+        f"Учебные разделы вернутся <b>{start.strftime('%d.%m.%Y')} в 08:00</b>."
+    )
+    kb = [
+        [btn("☀️ Летний режим", 'menu_summer')],
+        [btn("📣 Новости", 'menu_news'), btn("🎮 Игры", 'menu_games')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+    return True
+
+
+async def menu_summer(query, context):
+    """Летний экран: коротко и без учебной перегрузки."""
+    now = datetime.now(TZ_MINSK)
+    if _is_summer_holidays(now):
+        start = _next_school_start_after_summer(now)
+        mins = max(0, int((start - now).total_seconds() // 60))
+        text = (
+            "☀️ <b>ЛЕТНИЙ РЕЖИМ</b>\n\n"
+            f"• Каникулы: <b>01.06 — 31.08</b>\n"
+            f"• До учебного режима: <b>{_fmt_minutes(mins)}</b>\n"
+            f"• Старт учебных разделов: <b>{start.strftime('%d.%m.%Y')} в 08:00</b>"
+        )
+    else:
+        text = (
+            "✅ <b>УЧЕБНЫЙ РЕЖИМ АКТИВЕН</b>\n\n"
+            "Летний режим автоматически включается с <b>01.06</b> "
+            "и действует до <b>31.08</b>."
+        )
+    kb = [
+        [btn("📣 Новости", 'menu_news'), btn("🎮 Игры", 'menu_games')],
+        [btn("👤 Профиль", 'menu_profile'), btn("🆘 Помощь", 'menu_help')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+
+
 async def menu_bells(query, context):
     """Расписание звонков."""
+    if await _season_block_if_summer(query, "Звонки"):
+        return
     kb = [[btn("🏠 Главное меню", 'back_to_main')]]
     await safe_edit(query, BELLS_TEXT, kb)
 
 
 async def menu_now(query, context):
+    if await _season_block_if_summer(query, "Текущий урок"):
+        return
     kb = []
     for i in range(0, len(ALL_CLASSES), 3):
         row = [btn(c.upper(), f'now_{c}') for c in ALL_CLASSES[i:i+3]]
@@ -2431,6 +2500,8 @@ async def menu_now(query, context):
 
 
 async def show_current_lesson(query, context):
+    if await _season_block_if_summer(query, "Текущий урок"):
+        return
     class_name = query.data.replace('now_', '')
     context.user_data['now_class'] = class_name
 
@@ -2507,6 +2578,8 @@ async def show_current_lesson(query, context):
 #  МЕНЮ: КЛАССЫ
 # ══════════════════════════════════════════════════════════
 async def menu_schedule(query, context):
+    if await _season_block_if_summer(query, "Расписание"):
+        return
     kb = []
     for i in range(0, len(ALL_CLASSES), 3):
         row = [btn(c.upper(), f'cls_{c}') for c in ALL_CLASSES[i:i+3]]
@@ -2516,6 +2589,8 @@ async def menu_schedule(query, context):
 
 
 async def menu_class_days(query, context):
+    if await _season_block_if_summer(query, "Расписание"):
+        return
     cls = query.data.replace('cls_', '')
     context.user_data['sel_class'] = cls
     kb = [[btn(day, f'day_{day.lower()}')] for day in DAYS_OF_WEEK]
@@ -2526,6 +2601,8 @@ async def menu_class_days(query, context):
 
 
 async def menu_day_schedule(query, context):
+    if await _season_block_if_summer(query, "Расписание"):
+        return
     raw_day = query.data.replace('day_', '')
     day = raw_day.capitalize()
     cls = context.user_data.get('sel_class', '')
@@ -2552,6 +2629,8 @@ async def menu_day_schedule(query, context):
 
 
 async def menu_week_schedule(query, context):
+    if await _season_block_if_summer(query, "Расписание"):
+        return
     cls = query.data.replace('week_', '')
     context.user_data['sel_class'] = cls
     text = format_week_schedule(cls)
@@ -2573,6 +2652,8 @@ TEACHERS_PER_PAGE = 16
 
 
 async def menu_teacher(query, context, page=0):
+    if await _season_block_if_summer(query, "Учителя"):
+        return
     start = page * TEACHERS_PER_PAGE
     chunk = ALL_TEACHERS[start:start + TEACHERS_PER_PAGE]
     kb = []
@@ -2599,6 +2680,8 @@ async def menu_teacher(query, context, page=0):
 
 
 async def show_teacher(query, context, teacher_name: str):
+    if await _season_block_if_summer(query, "Учителя"):
+        return
     schedule = get_teacher_schedule(teacher_name)
     text = await format_teacher_schedule_text(teacher_name, schedule)
 
@@ -2658,6 +2741,8 @@ async def menu_my(query, context):
 #  МЕНЮ: ЗАМЕНЫ
 # ══════════════════════════════════════════════════════════
 async def menu_substitutions(query, context):
+    if await _season_block_if_summer(query, "Замены"):
+        return
     kb = [
         [btn("📋 Вчера", 'subs_yesterday'),
          btn("📋 Сегодня", 'subs_today'),
@@ -2669,6 +2754,8 @@ async def menu_substitutions(query, context):
 
 
 async def show_subs_for_date(query, context):
+    if await _season_block_if_summer(query, "Замены"):
+        return
     today = datetime.now().date()
     offsets = {'subs_yesterday': -1, 'subs_today': 0, 'subs_tomorrow': 1}
     target = today + timedelta(days=offsets.get(query.data, 0))
@@ -2694,6 +2781,8 @@ async def show_subs_for_date(query, context):
 
 
 async def show_all_subs(query, context):
+    if await _season_block_if_summer(query, "Замены"):
+        return
     subs = await asyncio.to_thread(db.get_all_substitutions, 100)
     if not subs:
         text = "Замен нет."
@@ -3740,15 +3829,12 @@ async def menu_ai(query, context):
 async def menu_help(query, context):
     text = (
         "🆘 <b>ПОМОЩЬ</b>\n\n"
-        "<b>Команды:</b>\n"
-        "• /start — главное меню\n"
-        "• /version — версии бота и игры\n"
-        "• /teacher — зарегистрироваться как учитель\n\n"
-        "<b>Вопросы и ошибки:</b>\n"
-        "👨‍💼 Администратор: @Yury_hud\n"
-        "📧 uragud.2020@gmail.com\n\n"
-        "<b>Часы ответа:</b> Пн–Пт 9:00–18:00\n\n"
-        "<i>Укажите имя, класс и время ошибки.</i>"
+        "Если что-то не работает:\n"
+        "1) укажите <b>класс</b>\n"
+        "2) укажите <b>время</b>\n"
+        "3) пришлите <b>скрин</b>\n\n"
+        "👨‍💼 Админ: @Yury_hud\n"
+        "📧 uragud.2020@gmail.com"
     )
     await safe_edit(query, text, [
         [btn("🏠 Главное меню", 'back_to_main')],
@@ -3759,6 +3845,8 @@ async def menu_help(query, context):
 #  МЕНЮ: ПОИСК УЧИТЕЛЯ
 # ══════════════════════════════════════════════════════════
 async def menu_search_teacher(query, context):
+    if await _season_block_if_summer(query, "Поиск учителя"):
+        return
     kb = [[btn("🏠 Главное меню", 'back_to_main')]]
     await safe_edit(query,
         "🔍 <b>ПОИСК УЧИТЕЛЯ</b>\n\n"
@@ -5652,6 +5740,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'reg_delete_do':          reg_delete_do,
         'back_to_main':           show_main_menu_edit,
         'menu_now':               menu_now,
+        'menu_summer':            menu_summer,
         'menu_schedule':          menu_schedule,
         'menu_teacher':           lambda q, c: menu_teacher(q, c, 0),
         'menu_search_teacher':    menu_search_teacher,
@@ -7237,7 +7326,7 @@ async def menu_games(query, context):
 
 def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
                      teacher_name: str | None = None) -> list:
-    """Главное меню по текущему макету."""
+    """Главное меню: компактное и сезонное."""
     if teacher_name:
         profile_label = teacher_name.strip()
     elif profile and profile.get('display_name'):
@@ -7245,15 +7334,36 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
     else:
         profile_label = 'Гость'
 
-    kb = [
-        [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
-        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
-        [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
-        [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ-помощник", 'menu_ai')],
-        [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
-        [btn("🎮 Игры", 'menu_games')],
-        [btn("🆘 Помощь", 'menu_help')],
-    ]
+    now = datetime.now(TZ_MINSK)
+    is_summer = _is_summer_holidays(now)
+    class_name = ''
+    if profile and profile.get('class_name'):
+        class_name = str(profile.get('class_name')).strip().lower()
+
+    if is_summer:
+        kb = [
+            [btn("☀️ Летний режим", 'menu_summer')],
+            [btn("📣 Новости", 'menu_news'), btn("🎮 Игры", 'menu_games')],
+            [btn("⭐ Моё", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
+            [btn("🆘 Помощь", 'menu_help')],
+        ]
+    else:
+        if teacher_name and teacher_name in ALL_TEACHERS:
+            tidx = ALL_TEACHERS.index(teacher_name)
+            first_row = [btn("👨‍🏫 Моё расписание", f'tch_{tidx}'), btn("📚 Классы", 'menu_schedule')]
+        elif class_name in ALL_CLASSES:
+            first_row = [btn(f"📚 Мой класс {class_name.upper()}", f'week_{class_name}'),
+                         btn("🔄 Замены", 'menu_substitutions')]
+        else:
+            first_row = [btn("📚 Расписание", 'menu_schedule'), btn("🔄 Замены", 'menu_substitutions')]
+
+        kb = [
+            first_row,
+            [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("📣 Новости", 'menu_news')],
+            [btn("🎮 Игры", 'menu_games'), btn("⭐ Моё", 'menu_my')],
+            [btn(f"👤 {profile_label}", 'menu_profile'), btn("🆘 Помощь", 'menu_help')],
+        ]
+
     if is_admin:
         kb.append([btn("🛠 Админка", 'admin_panel')])
     return kb
