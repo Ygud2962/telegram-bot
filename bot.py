@@ -190,7 +190,7 @@ if not (1 <= PORT <= 65535):
     PORT = 8080
 # Версии релизов (показываются в /version и используются для cache-bust игры)
 # Принята "честная" схема по количеству деплоев: X.Y.Z ~= сотни/десятки/единицы.
-BOT_VERSION = os.environ.get('BOT_VERSION', '9.7.78').strip() or '9.7.78'
+BOT_VERSION = os.environ.get('BOT_VERSION', '9.8.0').strip() or '9.8.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.7.78').strip() or '1.7.78'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
