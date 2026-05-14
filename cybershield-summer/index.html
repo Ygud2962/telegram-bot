@@ -61,92 +61,103 @@
     </nav>
 
     <section class="tab-panel active" id="tab-operations">
-      <article class="panel">
-        <h3>План на лето: 3 месяца</h3>
-        <p class="muted">Каждый день доступна мини-операция. За успешное прохождение ты получаешь XP и поднимаешь ранг.</p>
-        <div class="ops-grid" id="opsGrid"></div>
+      <article class="panel ops-hub">
+        <div class="ops-hub-head">
+          <h3>Центр миссий</h3>
+          <span class="muted">без длинного скролла</span>
+        </div>
 
-        <div class="ops-drill">
-          <h4>Штабная тренировка: правильный порядок действий</h4>
-          <p class="muted">Нажми шаги в верной последовательности при подозрении на взлом аккаунта.</p>
-          <div class="ops-actions" id="opsActionButtons"></div>
-          <p class="muted" id="opsSequenceState">Последовательность: пока пусто</p>
+        <div class="ops-pane-tabs" role="tablist" aria-label="Разделы миссий">
+          <button class="ops-pane-btn active" data-ops-pane="mission" role="tab" aria-selected="true">🎯 Миссия</button>
+          <button class="ops-pane-btn" data-ops-pane="progress" role="tab" aria-selected="false">📊 Прогресс</button>
+          <button class="ops-pane-btn" data-ops-pane="leaderboard" role="tab" aria-selected="false">🏆 Рейтинг</button>
+        </div>
+
+        <section class="ops-pane active" id="ops-pane-mission" role="tabpanel">
+          <h4>План на лето: 3 месяца</h4>
+          <p class="muted">Каждый день доступна мини-операция. За успешное прохождение ты получаешь XP и поднимаешь ранг.</p>
+          <div class="ops-grid" id="opsGrid"></div>
+
+          <div class="ops-drill">
+            <h4>Штабная тренировка: правильный порядок действий</h4>
+            <p class="muted">Нажми шаги в верной последовательности при подозрении на взлом аккаунта.</p>
+            <div class="ops-actions" id="opsActionButtons"></div>
+            <p class="muted" id="opsSequenceState">Последовательность: пока пусто</p>
+            <div class="ops-controls">
+              <button class="btn btn-primary" id="opsCheckBtn">Проверить порядок</button>
+              <button class="btn btn-ghost" id="opsResetBtn">Сбросить выбор</button>
+              <button class="btn btn-primary" id="opsCompleteBtn" disabled>Зачесть операцию</button>
+            </div>
+            <p class="result" id="opsResult">Собери последовательность, затем нажми «Проверить порядок».</p>
+          </div>
+        </section>
+
+        <section class="ops-pane" id="ops-pane-progress" role="tabpanel">
+          <div class="progress-head">
+            <h4>Летний прогресс</h4>
+            <span id="progressText">0/0</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <p class="muted" id="progressHint">Пройди первую операцию, чтобы запустить серию.</p>
+
+          <div class="progress-head" style="margin-top:12px;">
+            <h4>Таблица прогресса</h4>
+            <span id="serverRoleTag" class="tag">player</span>
+          </div>
+          <div class="server-progress-grid" id="serverProgressGrid">
+            <div class="server-progress-item">
+              <span>Статус</span>
+              <strong id="serverStatusValue">offline</strong>
+            </div>
+            <div class="server-progress-item">
+              <span>В рейтинге</span>
+              <strong id="serverRatingValue">да</strong>
+            </div>
+            <div class="server-progress-item">
+              <span>Операций</span>
+              <strong id="serverSolvedValue">0</strong>
+            </div>
+            <div class="server-progress-item">
+              <span>Серия</span>
+              <strong id="serverStreakValue">0</strong>
+            </div>
+          </div>
           <div class="ops-controls">
-            <button class="btn btn-primary" id="opsCheckBtn">Проверить порядок</button>
-            <button class="btn btn-ghost" id="opsResetBtn">Сбросить выбор</button>
-            <button class="btn btn-primary" id="opsCompleteBtn" disabled>Зачесть операцию</button>
+            <button class="btn btn-ghost" id="serverRefreshBtn">Обновить с сервера</button>
+            <button class="btn btn-ghost" id="serverResetBtn">Сбросить прогресс (admin)</button>
           </div>
-          <p class="result" id="opsResult">Собери последовательность, затем нажми «Проверить порядок».</p>
-        </div>
-      </article>
+          <p class="result" id="serverResult">Серверный прогресс подключится автоматически при запуске из бота.</p>
+        </section>
 
-      <article class="panel">
-        <div class="progress-head">
-          <h3>Летний прогресс</h3>
-          <span id="progressText">0/0</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" id="progressFill"></div>
-        </div>
-        <p class="muted" id="progressHint">Пройди первую операцию, чтобы запустить серию.</p>
-      </article>
-
-      <article class="panel">
-        <div class="progress-head">
-          <h3>Таблица прогресса</h3>
-          <span id="serverRoleTag" class="tag">player</span>
-        </div>
-        <div class="server-progress-grid" id="serverProgressGrid">
-          <div class="server-progress-item">
-            <span>Статус</span>
-            <strong id="serverStatusValue">offline</strong>
+        <section class="ops-pane" id="ops-pane-leaderboard" role="tabpanel">
+          <div class="progress-head">
+            <h4>Таблица рейтинга</h4>
+            <span class="muted" id="leaderboardMeta">0 участников</span>
           </div>
-          <div class="server-progress-item">
-            <span>В рейтинге</span>
-            <strong id="serverRatingValue">да</strong>
+          <div class="leaderboard-wrap">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Игрок</th>
+                  <th>XP</th>
+                  <th>Опер.</th>
+                  <th>Серия</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboardBody">
+                <tr>
+                  <td colspan="5" class="muted">Рейтинг загружается…</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div class="server-progress-item">
-            <span>Операций</span>
-            <strong id="serverSolvedValue">0</strong>
+          <div class="ops-controls">
+            <button class="btn btn-ghost" id="leaderboardRefreshBtn">Обновить рейтинг</button>
           </div>
-          <div class="server-progress-item">
-            <span>Серия</span>
-            <strong id="serverStreakValue">0</strong>
-          </div>
-        </div>
-        <div class="ops-controls">
-          <button class="btn btn-ghost" id="serverRefreshBtn">Обновить с сервера</button>
-          <button class="btn btn-ghost" id="serverResetBtn">Сбросить прогресс (admin)</button>
-        </div>
-        <p class="result" id="serverResult">Серверный прогресс подключится автоматически при запуске из бота.</p>
-      </article>
-
-      <article class="panel">
-        <div class="progress-head">
-          <h3>Таблица рейтинга</h3>
-          <span class="muted" id="leaderboardMeta">0 участников</span>
-        </div>
-        <div class="leaderboard-wrap">
-          <table class="leaderboard-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Игрок</th>
-                <th>XP</th>
-                <th>Опер.</th>
-                <th>Серия</th>
-              </tr>
-            </thead>
-            <tbody id="leaderboardBody">
-              <tr>
-                <td colspan="5" class="muted">Рейтинг загружается…</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="ops-controls">
-          <button class="btn btn-ghost" id="leaderboardRefreshBtn">Обновить рейтинг</button>
-        </div>
+        </section>
       </article>
     </section>
 

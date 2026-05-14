@@ -110,6 +110,12 @@
       chat: document.getElementById("tab-chat"),
       clues: document.getElementById("tab-clues")
     },
+    opsPaneButtons: Array.from(document.querySelectorAll(".ops-pane-btn")),
+    opsPanes: {
+      mission: document.getElementById("ops-pane-mission"),
+      progress: document.getElementById("ops-pane-progress"),
+      leaderboard: document.getElementById("ops-pane-leaderboard")
+    },
 
     opsGrid: document.getElementById("opsGrid"),
     progressText: document.getElementById("progressText"),
@@ -152,6 +158,7 @@
   const state = {
     mission: null,
     tab: "operations",
+    opsPane: "mission",
     progress: loadProgress(),
     ops: { picked: [], passed: false, order: [] },
     chat: { step: 0, risk: 0, completed: false },
@@ -707,6 +714,20 @@
     }
   }
 
+  function setOpsPane(pane) {
+    const nextPane = Object.prototype.hasOwnProperty.call(el.opsPanes, pane) ? pane : "mission";
+    state.opsPane = nextPane;
+    for (const [name, panel] of Object.entries(el.opsPanes)) {
+      if (!panel) continue;
+      panel.classList.toggle("active", name === nextPane);
+    }
+    el.opsPaneButtons.forEach((btn) => {
+      const active = btn.dataset.opsPane === nextPane;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+
   function buildGetUrl(baseUrl) {
     const url = new URL(baseUrl, window.location.origin);
     if (runtime.userId > 0) url.searchParams.set("user_id", String(runtime.userId));
@@ -901,8 +922,21 @@
       btn.addEventListener("click", () => setTab(btn.dataset.tab));
     });
 
+    el.opsPaneButtons.forEach((btn) => {
+      btn.addEventListener("click", () => setOpsPane(btn.dataset.opsPane));
+    });
+
     el.startMissionBtn.addEventListener("click", () => {
-      setTab(state.mission.mode === "chat" ? "chat" : state.mission.mode === "clues" ? "clues" : "operations");
+      if (state.mission.mode === "chat") {
+        setTab("chat");
+        return;
+      }
+      if (state.mission.mode === "clues") {
+        setTab("clues");
+        return;
+      }
+      setTab("operations");
+      setOpsPane("mission");
     });
 
     el.shareBtn.addEventListener("click", async () => {
@@ -947,6 +981,7 @@
       el.opsResult.className = result.ok ? "result good" : "result warn";
       if (result.ok) {
         el.opsCompleteBtn.disabled = true;
+        setOpsPane("progress");
       }
     });
 
@@ -985,6 +1020,7 @@
     placeHotspots();
     updateClueCounter();
     hookEvents();
+    setOpsPane("mission");
 
     window.addEventListener("resize", () => {
       placeHotspots();
