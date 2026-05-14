@@ -1,618 +1,998 @@
-(function () {
+(() => {
   "use strict";
 
-  const STORAGE_KEY = "cs_progress_v2";
-  const START_DATE = "2026-06-01";
-  const END_DATE = "2026-08-31";
+  const STORAGE_KEY = "cybershield_demo_v1";
+  const SUMMER_START = new Date(2026, 5, 1);
+  const SUMMER_END = new Date(2026, 7, 31);
 
-  const MODE_META = {
-    clue: { label: "Поиск улик", icon: "🔍" },
-    chat: { label: "Симулятор переписки", icon: "💬" },
-    sort: { label: "Сортировка входящих", icon: "📥" },
-    incident: { label: "Инцидент 30с", icon: "⚡" }
+  const MODE_INFO = {
+    chat: { label: "Симулятор переписки", emoji: "💬", reward: 14 },
+    clues: { label: "Поиск улик", emoji: "🔎", reward: 12 },
+    operations: { label: "Операция штаба", emoji: "🎯", reward: 10 }
   };
 
-  const WEEK_THEMES = [
-    "Фишинг и подмена личности",
-    "Пароли и двухфакторная защита",
-    "Безопасные ссылки и домены",
-    "Соцсети и приватность",
-    "Мошенничество в мессенджерах",
-    "Кибербуллинг и цифровая этика",
-    "Фейк-новости и проверка фактов",
-    "Игры, донаты и скам",
-    "Публичный Wi-Fi и устройства",
-    "Цифровой след",
-    "Резервные копии и восстановление",
-    "Безопасность семьи",
-    "Итоговая тренировка",
-    "Финальная операция"
+  const RANKS = [
+    { min: 0, name: "Курсант" },
+    { min: 120, name: "Оператор" },
+    { min: 280, name: "Аналитик" },
+    { min: 520, name: "Инструктор" },
+    { min: 900, name: "Кибер-страж" }
   ];
 
-  // Пн clue, Вт chat, Ср sort, Чт incident, Пт clue, Сб chat, Вс sort.
-  const DAY_PATTERNS = {
-    1: { type: "clue", reward: 10, title: "Разбор интерфейса" },
-    2: { type: "chat", reward: 12, title: "Сложный диалог" },
-    3: { type: "sort", reward: 11, title: "Фильтр входящих" },
-    4: { type: "incident", reward: 14, title: "Срочный инцидент" },
-    5: { type: "clue", reward: 13, title: "Точечная проверка" },
-    6: { type: "chat", reward: 12, title: "Субботний стресс-тест" },
-    0: { type: "sort", reward: 12, title: "Контрольный фильтр" }
+  const CHAT_STEPS = [
+    {
+      incoming: "Привет. Я модератор платформы. Срочно пришли код из SMS, иначе аккаунт удалим.",
+      options: [
+        { text: "Хорошо, сейчас отправлю код.", ok: false, feedback: "Нельзя передавать коды подтверждения." },
+        { text: "Не передаю код. Проверю информацию через официальный канал поддержки.", ok: true, feedback: "Верно: сначала верификация канала." },
+        { text: "Игнорирую всё и молча выхожу.", ok: false, feedback: "Лучше зафиксировать и пожаловаться." }
+      ]
+    },
+    {
+      incoming: "Тогда перейди по ссылке http://safe-help-login.ru и подтверди вход.",
+      options: [
+        { text: "Открою ссылку, если страница похожа на настоящую.", ok: false, feedback: "Внешний вид не гарантирует безопасность." },
+        { text: "Проверю домен и не открою ссылку из чата, зайду через официальный сайт вручную.", ok: true, feedback: "Отлично: ручной вход через официальный домен." },
+        { text: "Попрошу друга проверить ссылку вместо меня.", ok: false, feedback: "Риск передаётся другому, это не решение." }
+      ]
+    },
+    {
+      incoming: "Мы можем ускорить проверку, пришли фото карты и CVV.",
+      options: [
+        { text: "Это мошенничество: никакие карты и CVV не отправляю.", ok: true, feedback: "Верно: финансовые данные нельзя передавать." },
+        { text: "Закрою глаза и отправлю только номер карты.", ok: false, feedback: "Любые данные карты опасны." },
+        { text: "Отправлю часть данных, без CVV.", ok: false, feedback: "Частичная передача тоже опасна." }
+      ]
+    },
+    {
+      incoming: "Последний шанс: у тебя 60 секунд, иначе бан.",
+      options: [
+        { text: "Сообщаю о переписке в поддержку и ставлю двухфакторную защиту.", ok: true, feedback: "Отличный финал: фиксация инцидента и защита." },
+        { text: "В панике отправлю всё, что просят.", ok: false, feedback: "Паника — главный союзник мошенника." },
+        { text: "Промолчу и ничего не буду делать.", ok: false, feedback: "Нужно ещё и сообщить о мошенничестве." }
+      ]
+    }
+  ];
+
+  const CLUES = [
+    { id: "from", anchorId: "clue-anchor-from", tip: "Подмена домена отправителя" },
+    { id: "http", anchorId: "clue-anchor-http", tip: "Небезопасная ссылка (http)" },
+    { id: "urgent", anchorId: "clue-anchor-urgent", tip: "Давление срочностью" },
+    { id: "sms", anchorId: "clue-anchor-sms", tip: "Запрос кода из SMS" },
+    { id: "delete", anchorId: "clue-anchor-delete", tip: "Угроза удаления аккаунта" }
+  ];
+
+  const OPS_CARDS = [
+    { title: "Инцидент дня", text: "Короткая миссия на реальную ситуацию из сети." },
+    { title: "Тренировка реакции", text: "Быстрые решения под давлением времени и фейковых угроз." },
+    { title: "Командный зачёт", text: "В будущем: рейтинг класса и общая защита школы." }
+  ];
+
+  const OPS_SEQUENCE = [
+    "Отключить сессию и не вводить данные повторно",
+    "Проверить активные входы и сменить пароль",
+    "Включить 2FA и сообщить в поддержку"
+  ];
+
+  const runtime = {
+    tg: null,
+    userId: 0,
+    initData: "",
+    syncUrl: "",
+    stateUrl: "",
+    leaderboardUrl: "",
+    resetUrl: "",
+    role: "player",
+    adminMode: false,
+    testerMode: false,
+    inRating: true,
+    allowed: true,
+    serverToken: 0,
+    connected: false
   };
 
-  function parseISO(dateStr) {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    return new Date(y, m - 1, d);
+  const el = {
+    todayChip: document.getElementById("todayChip"),
+    missionTitle: document.getElementById("missionTitle"),
+    missionDescription: document.getElementById("missionDescription"),
+    missionModeTag: document.getElementById("missionModeTag"),
+    missionRewardTag: document.getElementById("missionRewardTag"),
+    missionWeekTag: document.getElementById("missionWeekTag"),
+    rankValue: document.getElementById("rankValue"),
+    xpValue: document.getElementById("xpValue"),
+    streakValue: document.getElementById("streakValue"),
+    startMissionBtn: document.getElementById("startMissionBtn"),
+    shareBtn: document.getElementById("shareBtn"),
+
+    tabs: Array.from(document.querySelectorAll(".tab")),
+    panels: {
+      operations: document.getElementById("tab-operations"),
+      chat: document.getElementById("tab-chat"),
+      clues: document.getElementById("tab-clues")
+    },
+
+    opsGrid: document.getElementById("opsGrid"),
+    progressText: document.getElementById("progressText"),
+    progressFill: document.getElementById("progressFill"),
+    progressHint: document.getElementById("progressHint"),
+    opsActionButtons: document.getElementById("opsActionButtons"),
+    opsSequenceState: document.getElementById("opsSequenceState"),
+    opsCheckBtn: document.getElementById("opsCheckBtn"),
+    opsResetBtn: document.getElementById("opsResetBtn"),
+    opsCompleteBtn: document.getElementById("opsCompleteBtn"),
+    opsResult: document.getElementById("opsResult"),
+
+    chatLog: document.getElementById("chatLog"),
+    chatChoices: document.getElementById("chatChoices"),
+    riskValue: document.getElementById("riskValue"),
+    chatResult: document.getElementById("chatResult"),
+    chatResetBtn: document.getElementById("chatResetBtn"),
+    chatCompleteBtn: document.getElementById("chatCompleteBtn"),
+
+    clueBoard: document.getElementById("clueBoard"),
+    clueCounter: document.getElementById("clueCounter"),
+    clueCheckBtn: document.getElementById("clueCheckBtn"),
+    clueResetBtn: document.getElementById("clueResetBtn"),
+    clueResult: document.getElementById("clueResult"),
+
+    serverRoleTag: document.getElementById("serverRoleTag"),
+    serverStatusValue: document.getElementById("serverStatusValue"),
+    serverRatingValue: document.getElementById("serverRatingValue"),
+    serverSolvedValue: document.getElementById("serverSolvedValue"),
+    serverStreakValue: document.getElementById("serverStreakValue"),
+    serverRefreshBtn: document.getElementById("serverRefreshBtn"),
+    serverResetBtn: document.getElementById("serverResetBtn"),
+    serverResult: document.getElementById("serverResult"),
+
+    leaderboardMeta: document.getElementById("leaderboardMeta"),
+    leaderboardBody: document.getElementById("leaderboardBody"),
+    leaderboardRefreshBtn: document.getElementById("leaderboardRefreshBtn")
+  };
+
+  const state = {
+    mission: null,
+    tab: "operations",
+    progress: loadProgress(),
+    ops: { picked: [], passed: false, order: [] },
+    chat: { step: 0, risk: 0, completed: false },
+    clues: { found: new Set(), completed: false },
+    leaderboard: []
+  };
+
+  let syncTimer = null;
+  let syncInFlight = false;
+
+  function clamp(num, min, max) {
+    return Math.max(min, Math.min(max, num));
   }
 
-  function formatISO(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-
-  function formatRu(date) {
+  function fmtDate(date) {
     const d = String(date.getDate()).padStart(2, "0");
     const m = String(date.getMonth() + 1).padStart(2, "0");
     return `${d}.${m}.${date.getFullYear()}`;
   }
 
-  function weekdayRu(day) {
-    return ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"][day];
-  }
-
-  function daysDiff(a, b) {
-    return Math.floor((b - a) / (24 * 60 * 60 * 1000));
-  }
-
-  function generateCalendar(startISO, endISO) {
-    const start = parseISO(startISO);
-    const end = parseISO(endISO);
-    const list = [];
-    let idx = 1;
-
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const cur = new Date(d);
-      const dateISO = formatISO(cur);
-      const weekIndex = Math.floor(daysDiff(start, cur) / 7);
-      const weekTheme = WEEK_THEMES[Math.min(weekIndex, WEEK_THEMES.length - 1)];
-      const pattern = DAY_PATTERNS[cur.getDay()];
-      const isFinal = dateISO === END_DATE;
-      const mode = isFinal ? "incident" : pattern.type;
-
-      list.push({
-        id: `CS-${String(idx).padStart(3, "0")}`,
-        date: dateISO,
-        dateRu: formatRu(cur),
-        dayName: weekdayRu(cur.getDay()),
-        week: weekIndex + 1,
-        theme: isFinal ? "Финальная операция" : weekTheme,
-        type: mode,
-        reward: isFinal ? 20 : pattern.reward,
-        title: isFinal ? "Финальная операция «Киберщит»" : `${pattern.title}: ${weekTheme}`
-      });
-      idx += 1;
+  function safeDecode(value) {
+    if (!value || typeof value !== "string") return "";
+    try {
+      return decodeURIComponent(value);
+    } catch (_err) {
+      return value;
     }
-    return list;
+  }
+
+  function parseStartPayload() {
+    let raw = "";
+    try {
+      if (runtime.tg && runtime.tg.initDataUnsafe && runtime.tg.initDataUnsafe.start_param) {
+        raw = String(runtime.tg.initDataUnsafe.start_param || "");
+      }
+    } catch (_err) {
+      raw = "";
+    }
+    if (!raw) {
+      const qs = new URLSearchParams(window.location.search);
+      raw = qs.get("tgWebAppStartParam") || qs.get("startapp") || qs.get("startApp") || "";
+    }
+    if (!raw) return {};
+    const candidates = [raw, safeDecode(raw)];
+    for (const item of candidates) {
+      if (!item) continue;
+      try {
+        const parsed = JSON.parse(item);
+        if (parsed && typeof parsed === "object") return parsed;
+      } catch (_err) {
+        /* noop */
+      }
+    }
+    return {};
+  }
+
+  function initRuntime() {
+    runtime.tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+    if (runtime.tg) {
+      try { runtime.tg.ready(); } catch (_err) { /* noop */ }
+      try { runtime.tg.expand(); } catch (_err) { /* noop */ }
+      runtime.initData = runtime.tg.initData || "";
+      runtime.userId = Number(runtime.tg.initDataUnsafe?.user?.id || 0);
+    }
+    const payload = parseStartPayload();
+    applyStartPayload(payload);
+    if (!runtime.userId && payload && payload.me && payload.me.uid) {
+      runtime.userId = Number(payload.me.uid || 0);
+    }
+  }
+
+  function applyStartPayload(payload) {
+    if (!payload || typeof payload !== "object") return;
+
+    runtime.syncUrl = String(payload.sync_url || runtime.syncUrl || "");
+    runtime.stateUrl = String(payload.state_url || runtime.stateUrl || "");
+    runtime.leaderboardUrl = String(payload.leaderboard_url || runtime.leaderboardUrl || "");
+    runtime.resetUrl = String(payload.reset_url || runtime.resetUrl || "");
+
+    if (!runtime.stateUrl && runtime.syncUrl.includes("/cyber_sync")) {
+      runtime.stateUrl = runtime.syncUrl.replace("/cyber_sync", "/cyber_state");
+    }
+    if (!runtime.leaderboardUrl && runtime.syncUrl.includes("/cyber_sync")) {
+      runtime.leaderboardUrl = runtime.syncUrl.replace("/cyber_sync", "/cyber_leaderboard");
+    }
+    if (!runtime.resetUrl && runtime.syncUrl.includes("/cyber_sync")) {
+      runtime.resetUrl = runtime.syncUrl.replace("/cyber_sync", "/cyber_reset");
+    }
+
+    if (payload.role) runtime.role = String(payload.role);
+    runtime.adminMode = payload.admin_mode === true || runtime.role === "admin";
+    runtime.testerMode = payload.tester_mode === true || runtime.role === "tester";
+    runtime.inRating = payload.in_rating !== false && runtime.role === "player";
+    runtime.allowed = payload.allowed !== false;
+
+    if (payload.me && typeof payload.me === "object") {
+      applyServerMe(payload.me, true);
+      if (Number(payload.me.reset_token || 0) > 0) {
+        runtime.serverToken = Number(payload.me.reset_token || 0);
+      }
+      if (payload.me.role) runtime.role = String(payload.me.role);
+    } else if (Number(payload.reset_token || 0) > 0) {
+      runtime.serverToken = Number(payload.reset_token || 0);
+    }
+
+    if (Array.isArray(payload.lb)) {
+      state.leaderboard = payload.lb.map((row) => ({
+        uid: String(row.uid || row.user_id || ""),
+        name: String(row.name || "Игрок"),
+        xp: Number(row.xp || row.total_xp || 0),
+        solved: Number(row.solved || row.solved_count || 0),
+        streak: Number(row.streak || 0),
+        role: String(row.role || "player")
+      }));
+    }
+  }
+
+  function getSummerDayIndex(date) {
+    const start = new Date(SUMMER_START.getFullYear(), SUMMER_START.getMonth(), SUMMER_START.getDate());
+    const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diff = Math.floor((target - start) / 86400000);
+    return clamp(diff + 1, 1, 92);
+  }
+
+  function buildMission(date = new Date()) {
+    const dayIndex = getSummerDayIndex(date);
+    const week = Math.floor((dayIndex - 1) / 7) + 1;
+    const cycle = dayIndex % 3;
+    const mode = cycle === 1 ? "chat" : cycle === 2 ? "clues" : "operations";
+    const reward = MODE_INFO[mode].reward + Math.floor(week / 2);
+
+    return {
+      id: `CS-${String(dayIndex).padStart(3, "0")}`,
+      dayIndex,
+      week,
+      mode,
+      reward,
+      title: `Операция #${dayIndex}: ${MODE_INFO[mode].label}`,
+      description: `Летний кибертренинг, неделя ${week}. Режим: ${MODE_INFO[mode].label}.`
+    };
   }
 
   function loadProgress() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return { solved: {}, points: 0 };
+      if (!raw) return { xp: 0, streak: 0, solved: {} };
       const parsed = JSON.parse(raw);
       return {
-        solved: parsed.solved || {},
-        points: Number(parsed.points || 0)
+        xp: Number(parsed.xp || 0),
+        streak: Number(parsed.streak || 0),
+        solved: parsed.solved && typeof parsed.solved === "object" ? parsed.solved : {}
       };
-    } catch (_e) {
-      return { solved: {}, points: 0 };
+    } catch (_err) {
+      return { xp: 0, streak: 0, solved: {} };
     }
   }
 
-  function saveProgress(progress) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  function saveProgress() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
   }
 
-  function missionIsSolved(progress, mission) {
-    return !!progress.solved[mission.id];
+  function solvedCount() {
+    return Object.keys(state.progress.solved || {}).length;
   }
 
-  function scenarioSeed(mission) {
-    return Number((mission.id || "CS-000").replace(/[^\d]/g, "")) || 1;
-  }
-
-  function clueScenario(mission) {
-    const seed = scenarioSeed(mission) % 4;
-    const mailBodies = [
-      "Подтверди аккаунт и пришли код из SMS в ответном сообщении.",
-      "Вы выиграли приз. Заполните форму с паролем для мгновенной выплаты.",
-      "Ваш профиль заблокирован. Войдите по ссылке для разблокировки.",
-      "Модератор просит срочно перевести «проверочный платёж»."
-    ];
-
-    return {
-      items: [
-        { x: 5, y: 8, w: 64, h: 16, text: "От: support-security@ma1l-help.com" },
-        { x: 5, y: 29, w: 86, h: 19, text: mailBodies[seed] },
-        { x: 5, y: 53, w: 58, h: 14, text: "Ссылка: http://verify-account-fast.ru" },
-        { x: 5, y: 71, w: 78, h: 14, text: "Срок ответа: 3 минуты, иначе удаление аккаунта!" }
-      ],
-      hotspots: [
-        { x: 70, y: 14, why: "Подменный домен отправителя" },
-        { x: 67, y: 59, why: "Небезопасный протокол http" },
-        { x: 84, y: 76, why: "Давление срочностью" }
-      ]
-    };
-  }
-
-  function chatScenario(_mission) {
-    return {
-      log: [
-        { role: "them", text: "Привет. Я из службы безопасности платформы." },
-        { role: "them", text: "Нужен код из SMS и фото карты. Иначе удалим профиль." },
-        { role: "them", text: "Отвечай срочно, времени почти нет." }
-      ],
-      requiredGroups: [
-        ["не", "код"],
-        ["провер", "официаль"],
-        ["поддерж", "жалоб"],
-        ["смен", "парол"]
-      ],
-      tip: "Нужны действия: не давать код, проверить официальный канал, обратиться в поддержку, сменить пароль."
-    };
-  }
-
-  function sortScenario(mission) {
-    const seed = scenarioSeed(mission) % 3;
-    const packs = [
-      [
-        { text: "Официальное письмо школы с домена school.by", expected: "safe" },
-        { text: "Ссылка на скидку с ошибкой в домене g00gle-check.ru", expected: "danger" },
-        { text: "Новый контакт просит срочно дать код из SMS", expected: "danger" },
-        { text: "Друг прислал архив game_patch.zip без объяснений", expected: "suspicious" }
-      ],
-      [
-        { text: "Уведомление банка: войдите по короткой ссылке bit.ly/...", expected: "danger" },
-        { text: "Письмо учителя с домашним заданием в дневнике", expected: "safe" },
-        { text: "Сообщение «вы в розыгрыше», нужен номер карты", expected: "danger" },
-        { text: "Незнакомец зовет в приватный чат и просит номер телефона", expected: "suspicious" }
-      ],
-      [
-        { text: "Запрос на вход с нового устройства, кнопка «Проверить активность»", expected: "suspicious" },
-        { text: "Одноклассник просит логин/пароль «только на 5 минут»", expected: "danger" },
-        { text: "Новость из официального школьного канала", expected: "safe" },
-        { text: "Промокод в игре от неизвестного бота", expected: "suspicious" }
-      ]
-    ];
-    return { items: packs[seed] };
-  }
-
-  function incidentScenario(mission) {
-    const seed = scenarioSeed(mission) % 3;
-    const packs = [
-      {
-        target: "Тебе пришла ссылка для «срочного подтверждения аккаунта». Что делать?",
-        sequence: ["Не переходить по ссылке", "Проверить домен и отправителя", "Сообщить в поддержку", "Сменить пароль и включить 2FA"]
-      },
-      {
-        target: "Друг попросил код из SMS для «входа в турнир». Что делать?",
-        sequence: ["Не передавать код", "Проверить, не взломан ли его аккаунт", "Связаться с другом другим способом", "Пожаловаться на подозрительный чат"]
-      },
-      {
-        target: "Ты скачал подозрительный файл и открыл его. Что делать сразу?",
-        sequence: ["Отключить интернет", "Запустить проверку антивирусом", "Сменить пароли с чистого устройства", "Сообщить взрослым/учителю"]
-      }
-    ];
-    return packs[seed];
-  }
-
-  const calendar = generateCalendar(START_DATE, END_DATE);
-  const todayISO = formatISO(new Date());
-  const todayMission = calendar.find(m => m.date === todayISO) || calendar[0];
-
-  const state = {
-    progress: loadProgress(),
-    mission: todayMission,
-    activeMode: todayMission.type,
-    foundHotspots: new Set(),
-    sortChoices: {},
-    incident: {
-      running: false,
-      leftSec: 30,
-      picked: [],
-      timerId: null
+  function getRank(xp) {
+    let rank = RANKS[0].name;
+    for (const r of RANKS) {
+      if (xp >= r.min) rank = r.name;
     }
-  };
+    return rank;
+  }
 
-  const el = {
-    todayDate: document.getElementById("today-date"),
-    missionCounter: document.getElementById("mission-counter"),
-    solvedToday: document.getElementById("solved-today"),
-    missionTitle: document.getElementById("mission-title"),
-    missionDescription: document.getElementById("mission-description"),
-    missionType: document.getElementById("mission-type"),
-    missionWeek: document.getElementById("mission-week"),
-    missionReward: document.getElementById("mission-reward"),
-    calendarPreview: document.getElementById("calendar-preview"),
-    progressBar: document.getElementById("progress-bar"),
-    progressText: document.getElementById("progress-text"),
-    btnReset: document.getElementById("btn-reset"),
+  function isMissionSolved() {
+    return Boolean(state.progress.solved[state.mission.id]);
+  }
 
-    btnClue: document.getElementById("btn-clue"),
-    btnChat: document.getElementById("btn-chat"),
-    btnSort: document.getElementById("btn-sort"),
-    btnIncident: document.getElementById("btn-incident"),
-    clueMode: document.getElementById("clue-mode"),
-    chatMode: document.getElementById("chat-mode"),
-    sortMode: document.getElementById("sort-mode"),
-    incidentMode: document.getElementById("incident-mode"),
+  function applyServerMe(me, force = false) {
+    if (!me || typeof me !== "object") return;
 
-    clueBoard: document.getElementById("clue-board"),
-    clueProgress: document.getElementById("clue-progress"),
-    clueResult: document.getElementById("clue-result"),
-    btnClueCheck: document.getElementById("btn-clue-check"),
+    const serverXp = Math.max(0, Number(me.xp || me.total_xp || 0));
+    const serverStreak = Math.max(0, Number(me.streak || 0));
+    const progressJson = me.progress_json && typeof me.progress_json === "object" ? me.progress_json : {};
+    const solvedMap = progressJson.solved && typeof progressJson.solved === "object" ? progressJson.solved : {};
+    const serverSolvedCount = Math.max(0, Number(me.solved_count || me.solved || 0));
 
-    chatLog: document.getElementById("chat-log"),
-    chatAnswer: document.getElementById("chat-answer"),
-    chatResult: document.getElementById("chat-result"),
-    btnChatCheck: document.getElementById("btn-chat-check"),
-
-    sortList: document.getElementById("sort-list"),
-    sortResult: document.getElementById("sort-result"),
-    btnSortCheck: document.getElementById("btn-sort-check"),
-
-    incidentTimer: document.getElementById("incident-timer"),
-    btnIncidentStart: document.getElementById("btn-incident-start"),
-    incidentTarget: document.getElementById("incident-target"),
-    incidentActions: document.getElementById("incident-actions"),
-    incidentSeq: document.getElementById("incident-seq"),
-    incidentResult: document.getElementById("incident-result")
-  };
-
-  function clearIncidentTimer() {
-    if (state.incident.timerId) {
-      clearInterval(state.incident.timerId);
-      state.incident.timerId = null;
+    if (force || serverXp >= state.progress.xp) {
+      state.progress.xp = serverXp;
     }
-  }
-
-  function pointsForMission(mission) {
-    return Number(mission.reward || 0);
-  }
-
-  function markMissionCompleted(mode) {
-    const key = state.mission.id;
-    if (state.progress.solved[key]) {
-      return { awarded: false, message: "Миссия уже засчитана ранее." };
+    if (force || serverStreak >= state.progress.streak) {
+      state.progress.streak = serverStreak;
     }
-    state.progress.solved[key] = {
-      mode,
-      completed_at: new Date().toISOString()
-    };
-    const pts = pointsForMission(state.mission);
-    state.progress.points += pts;
-    saveProgress(state.progress);
-    renderHeader();
-    renderProgress();
-    return { awarded: true, message: `Миссия зачтена: +${pts} очков.` };
+    if (force && serverSolvedCount === 0) {
+      state.progress.solved = {};
+    }
+    if (Object.keys(solvedMap).length > 0 && (force || serverSolvedCount >= solvedCount())) {
+      state.progress.solved = solvedMap;
+    }
+
+    if (me.role) runtime.role = String(me.role);
+    runtime.adminMode = me.admin_mode === true || runtime.role === "admin";
+    runtime.testerMode = me.tester_mode === true || runtime.role === "tester";
+    runtime.inRating = me.in_rating !== false && runtime.role === "player";
+    if (Number(me.reset_token || 0) > 0) {
+      runtime.serverToken = Number(me.reset_token || 0);
+    }
+    saveProgress();
   }
 
-  function modeForTodayLabel() {
-    const m = MODE_META[state.mission.type];
-    return `${m.icon} ${m.label}`;
+  function markServerResult(text, tone = "") {
+    if (!el.serverResult) return;
+    el.serverResult.textContent = text;
+    el.serverResult.className = "result" + (tone ? ` ${tone}` : "");
   }
 
-  function renderHeader() {
-    const idx = calendar.findIndex(m => m.id === state.mission.id) + 1;
-    el.todayDate.textContent = `Сегодня: ${state.mission.dateRu} (${state.mission.dayName})`;
-    el.missionCounter.textContent = `Миссия ${idx}/${calendar.length}`;
+  function renderHero() {
+    const today = new Date();
+    const inSummer = today >= SUMMER_START && today <= SUMMER_END;
+    el.todayChip.textContent = inSummer
+      ? `Сегодня: ${fmtDate(today)} · Летний режим`
+      : `Демо-день: ${fmtDate(today)}`;
+
     el.missionTitle.textContent = state.mission.title;
-    el.missionDescription.textContent = `Тема недели: ${state.mission.theme}`;
-    el.missionType.textContent = `Режим дня: ${modeForTodayLabel()}`;
-    el.missionWeek.textContent = `Неделя ${state.mission.week}`;
-    el.missionReward.textContent = `Награда: +${state.mission.reward} очков`;
-    el.solvedToday.textContent = missionIsSolved(state.progress, state.mission) ? "Статус: выполнено" : "Статус: не выполнено";
+    el.missionDescription.textContent = state.mission.description;
+    el.missionModeTag.textContent = `${MODE_INFO[state.mission.mode].emoji} ${MODE_INFO[state.mission.mode].label}`;
+    el.missionRewardTag.textContent = `Награда: +${state.mission.reward} XP`;
+    el.missionWeekTag.textContent = `Неделя ${state.mission.week}`;
+
+    el.rankValue.textContent = getRank(state.progress.xp);
+    el.xpValue.textContent = String(state.progress.xp);
+    el.streakValue.textContent = String(state.progress.streak);
+
+    el.startMissionBtn.textContent = isMissionSolved() ? "Операция уже выполнена" : "Начать операцию";
+    el.startMissionBtn.disabled = !runtime.allowed || isMissionSolved();
   }
 
   function renderProgress() {
-    const solved = Object.keys(state.progress.solved).length;
-    const total = calendar.length;
-    const pct = Math.round((solved / total) * 100);
-    el.progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-    el.progressText.textContent = `Выполнено: ${solved}/${total} • Очки: ${state.progress.points} • Прогресс: ${pct}%`;
-  }
+    const solved = solvedCount();
+    const total = 92;
+    const pct = clamp(Math.round((solved / total) * 100), 0, 100);
 
-  function renderCalendarPreview() {
-    el.calendarPreview.innerHTML = "";
-    calendar.slice(0, 21).forEach((m) => {
-      const li = document.createElement("li");
-      li.textContent = `${m.dateRu} (${m.dayName}) — ${MODE_META[m.type].label} • +${m.reward}`;
-      el.calendarPreview.appendChild(li);
-    });
-  }
+    el.progressText.textContent = `${solved}/${total} операций · ${pct}%`;
+    el.progressFill.style.width = `${pct}%`;
 
-  function setMode(mode) {
-    state.activeMode = mode;
-    el.btnClue.classList.toggle("active", mode === "clue");
-    el.btnChat.classList.toggle("active", mode === "chat");
-    el.btnSort.classList.toggle("active", mode === "sort");
-    el.btnIncident.classList.toggle("active", mode === "incident");
-    el.clueMode.classList.toggle("hidden", mode !== "clue");
-    el.chatMode.classList.toggle("hidden", mode !== "chat");
-    el.sortMode.classList.toggle("hidden", mode !== "sort");
-    el.incidentMode.classList.toggle("hidden", mode !== "incident");
-  }
-
-  function awardOrTraining(mode) {
-    if (mode !== state.mission.type) {
-      return {
-        good: true,
-        text: `Тренировка пройдена. Для зачёта дня нужен режим: ${MODE_META[state.mission.type].label}.`
-      };
+    if (solved === 0) {
+      el.progressHint.textContent = "Пройди первую операцию и получи стартовый ранг.";
+    } else {
+      el.progressHint.textContent = `Текущая серия: ${state.progress.streak}. До следующего ранга осталось ${Math.max(0, 120 - (state.progress.xp % 120))} XP.`;
     }
-    const result = markMissionCompleted(mode);
-    return { good: true, text: result.message };
   }
 
-  function setResult(node, good, text) {
-    node.textContent = text;
-    node.className = `result ${good ? "good" : "bad"}`;
+  function renderServerProgress() {
+    const roleText = runtime.role === "admin" ? "👑 admin" : runtime.role === "tester" ? "🧪 tester" : "🎮 player";
+    el.serverRoleTag.textContent = roleText;
+    el.serverStatusValue.textContent = runtime.allowed ? (runtime.connected ? "online" : "local") : "закрыто";
+    el.serverRatingValue.textContent = runtime.inRating ? "да" : "нет";
+    el.serverSolvedValue.textContent = String(solvedCount());
+    el.serverStreakValue.textContent = String(state.progress.streak);
+    el.serverResetBtn.style.display = runtime.role === "admin" ? "inline-flex" : "none";
   }
 
-  function renderClueMode() {
-    state.foundHotspots.clear();
-    el.clueBoard.innerHTML = "";
-    setResult(el.clueResult, true, "");
-    el.clueResult.className = "result";
-    const scenario = clueScenario(state.mission);
-
-    scenario.items.forEach((it) => {
-      const box = document.createElement("div");
-      box.className = "clue-card";
-      box.style.left = `${it.x}%`;
-      box.style.top = `${it.y}%`;
-      box.style.width = `${it.w}%`;
-      box.style.height = `${it.h}%`;
-      box.textContent = it.text;
-      el.clueBoard.appendChild(box);
-    });
-
-    scenario.hotspots.forEach((spot, idx) => {
-      const hs = document.createElement("button");
-      hs.type = "button";
-      hs.className = "hotspot";
-      hs.style.left = `${spot.x}%`;
-      hs.style.top = `${spot.y}%`;
-      hs.title = "Подозрительный элемент";
-      hs.addEventListener("click", () => {
-        if (state.foundHotspots.has(idx)) return;
-        state.foundHotspots.add(idx);
-        hs.classList.add("found");
-        el.clueProgress.textContent = `Улики: ${state.foundHotspots.size}/${scenario.hotspots.length}`;
-      });
-      el.clueBoard.appendChild(hs);
-    });
-
-    el.clueBoard.dataset.count = String(scenario.hotspots.length);
-    el.clueProgress.textContent = `Улики: 0/${scenario.hotspots.length}`;
-  }
-
-  function checkClueMode() {
-    const total = Number(el.clueBoard.dataset.count || "0");
-    if (state.foundHotspots.size < total) {
-      setResult(el.clueResult, false, "Не все улики найдены. Проверь отправителя, ссылку и язык давления.");
+  function renderLeaderboard() {
+    const rows = Array.isArray(state.leaderboard) ? state.leaderboard : [];
+    el.leaderboardMeta.textContent = `${rows.length} участников`;
+    if (!rows.length) {
+      el.leaderboardBody.innerHTML = `<tr><td colspan="5" class="muted">Пока нет игроков с очками.</td></tr>`;
       return;
     }
-    const out = awardOrTraining("clue");
-    setResult(el.clueResult, out.good, out.text);
+    const myUid = runtime.userId > 0 ? String(runtime.userId) : "";
+    el.leaderboardBody.innerHTML = rows.map((row, idx) => {
+      const isMe = myUid && String(row.uid) === myUid;
+      const roleMark = row.role === "admin" ? "👑" : row.role === "tester" ? "🧪" : "";
+      return `
+        <tr class="${isMe ? "leaderboard-me" : ""}">
+          <td>${idx + 1}</td>
+          <td>${row.name}${isMe ? " 👈" : ""} ${roleMark ? `<span class="leaderboard-role">${roleMark}</span>` : ""}</td>
+          <td>${row.xp}</td>
+          <td>${row.solved}</td>
+          <td>${row.streak}</td>
+        </tr>
+      `;
+    }).join("");
   }
 
-  function renderChatMode() {
+  function renderOperations() {
+    el.opsGrid.innerHTML = OPS_CARDS.map((card) => (
+      `<article class="op-card"><h4>${card.title}</h4><p>${card.text}</p></article>`
+    )).join("");
+    renderOpsDrill();
+  }
+
+  function shuffle(arr) {
+    const copy = arr.slice();
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  function updateOpsSequenceText() {
+    if (!state.ops.picked.length) {
+      el.opsSequenceState.textContent = "Последовательность: пока пусто";
+      return;
+    }
+    el.opsSequenceState.textContent = `Последовательность: ${state.ops.picked.join(" → ")}`;
+  }
+
+  function renderOpsDrill() {
+    state.ops.order = shuffle(OPS_SEQUENCE);
+    state.ops.picked = [];
+    state.ops.passed = false;
+    el.opsCompleteBtn.disabled = true;
+    el.opsResult.textContent = "Собери последовательность, затем нажми «Проверить порядок».";
+    el.opsResult.className = "result";
+    el.opsActionButtons.innerHTML = "";
+    updateOpsSequenceText();
+
+    state.ops.order.forEach((step) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ops-action";
+      btn.textContent = step;
+      btn.addEventListener("click", () => {
+        if (state.ops.picked.includes(step)) return;
+        state.ops.picked.push(step);
+        btn.disabled = true;
+        updateOpsSequenceText();
+      });
+      el.opsActionButtons.appendChild(btn);
+    });
+  }
+
+  function resetOpsDrill() {
+    renderOpsDrill();
+  }
+
+  function checkOpsDrill() {
+    if (state.ops.picked.length !== OPS_SEQUENCE.length) {
+      el.opsResult.textContent = "Нужно выбрать все шаги, чтобы проверить порядок.";
+      el.opsResult.className = "result warn";
+      return;
+    }
+
+    const ok = OPS_SEQUENCE.every((step, idx) => step === state.ops.picked[idx]);
+    if (ok) {
+      state.ops.passed = true;
+      el.opsCompleteBtn.disabled = false;
+      el.opsResult.textContent = "Верно! Порядок действий правильный. Можно зачесть операцию.";
+      el.opsResult.className = "result good";
+      return;
+    }
+
+    state.ops.passed = false;
+    el.opsCompleteBtn.disabled = true;
+    el.opsResult.textContent = "Есть ошибка в порядке. Сбрось выбор и попробуй ещё раз.";
+    el.opsResult.className = "result bad";
+  }
+
+  function pushMsg(text, role = "them", extraClass = "") {
+    const bubble = document.createElement("div");
+    bubble.className = `msg ${role}${extraClass ? ` ${extraClass}` : ""}`;
+    bubble.textContent = text;
+    el.chatLog.appendChild(bubble);
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  }
+
+  function pushTurnSeparator(turn) {
+    const sep = document.createElement("div");
+    sep.className = "chat-turn-sep";
+    sep.textContent = `Шаг ${turn} из ${CHAT_STEPS.length}`;
+    el.chatLog.appendChild(sep);
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  }
+
+  function resetChat() {
+    state.chat.step = 0;
+    state.chat.risk = 0;
+    state.chat.completed = false;
     el.chatLog.innerHTML = "";
-    el.chatAnswer.value = "";
-    el.chatResult.textContent = "";
+    el.chatChoices.innerHTML = "";
+    el.chatResult.textContent = "Пройди диалог до конца, чтобы получить оценку.";
     el.chatResult.className = "result";
-    const scenario = chatScenario(state.mission);
-    scenario.log.forEach((row) => {
-      const node = document.createElement("div");
-      node.className = `msg ${row.role}`;
-      node.textContent = row.text;
-      el.chatLog.appendChild(node);
-    });
+    el.chatCompleteBtn.disabled = true;
+    updateRisk();
+    pushMsg("Тренировка началась. Смотри на признаки мошенничества и выбирай безопасные действия.", "coach");
+    renderChatStep();
   }
 
-  function checkChatMode() {
-    const answer = (el.chatAnswer.value || "").toLowerCase().trim();
-    const scenario = chatScenario(state.mission);
-    if (answer.length < 20) {
-      setResult(el.chatResult, false, "Слишком коротко. Нужен конкретный план действий.");
+  function updateRisk() {
+    el.riskValue.textContent = `${state.chat.risk}%`;
+  }
+
+  function renderChatStep() {
+    const step = CHAT_STEPS[state.chat.step];
+    if (!step) {
+      state.chat.completed = true;
+      const quality = state.chat.risk <= 20 ? 1.4 : state.chat.risk <= 50 ? 1.1 : 0.85;
+      const msg = state.chat.risk <= 20
+        ? "Отлично: риск минимален, решения профессиональные."
+        : state.chat.risk <= 50
+        ? "Хорошо: инцидент сдержан, но есть зоны риска."
+        : "Инцидент закрыт с потерями. Перепройди для лучшего результата.";
+      el.chatResult.textContent = `${msg} Нажми «Зачесть операцию».`;
+      el.chatResult.className = state.chat.risk <= 20 ? "result good" : state.chat.risk <= 50 ? "result warn" : "result bad";
+      el.chatChoices.innerHTML = "";
+      el.chatCompleteBtn.disabled = false;
+      el.chatCompleteBtn.dataset.quality = String(quality);
       return;
     }
 
-    let groupsMatched = 0;
-    scenario.requiredGroups.forEach((group) => {
-      if (group.some((token) => answer.includes(token))) groupsMatched += 1;
-    });
+    pushTurnSeparator(state.chat.step + 1);
+    pushMsg(step.incoming, "them");
+    el.chatChoices.innerHTML = "";
 
-    if (groupsMatched < 3) {
-      setResult(el.chatResult, false, `Пока слабо (${groupsMatched}/4). ${scenario.tip}`);
-      return;
-    }
-
-    const out = awardOrTraining("chat");
-    setResult(el.chatResult, out.good, out.text);
-  }
-
-  function renderSortMode() {
-    state.sortChoices = {};
-    el.sortList.innerHTML = "";
-    el.sortResult.textContent = "";
-    el.sortResult.className = "result";
-    const scenario = sortScenario(state.mission);
-
-    scenario.items.forEach((item, idx) => {
-      const row = document.createElement("div");
-      row.className = "sort-item";
-      const label = document.createElement("div");
-      label.textContent = item.text;
-      const pick = document.createElement("select");
-      pick.innerHTML = [
-        '<option value="">Выбери категорию</option>',
-        '<option value="safe">Безопасно</option>',
-        '<option value="suspicious">Подозрительно</option>',
-        '<option value="danger">Опасно</option>'
-      ].join("");
-      pick.addEventListener("change", () => {
-        state.sortChoices[idx] = pick.value;
+    step.options.forEach((opt) => {
+      const btn = document.createElement("button");
+      btn.className = "choice-btn";
+      btn.textContent = opt.text;
+      btn.addEventListener("click", () => {
+        Array.from(el.chatChoices.querySelectorAll("button")).forEach((b) => { b.disabled = true; });
+        pushMsg(opt.text, "you");
+        if (!opt.ok) {
+          state.chat.risk = clamp(state.chat.risk + 26, 0, 100);
+        } else {
+          state.chat.risk = clamp(state.chat.risk - 5, 0, 100);
+        }
+        updateRisk();
+        pushMsg(
+          opt.ok ? `✅ ${opt.feedback}` : `⚠️ ${opt.feedback}`,
+          "coach",
+          opt.ok ? "ok" : "bad"
+        );
+        state.chat.step += 1;
+        setTimeout(() => {
+          renderChatStep();
+        }, 260);
       });
-
-      row.appendChild(label);
-      row.appendChild(pick);
-      el.sortList.appendChild(row);
+      el.chatChoices.appendChild(btn);
     });
   }
 
-  function checkSortMode() {
-    const scenario = sortScenario(state.mission);
-    let correct = 0;
-    for (let i = 0; i < scenario.items.length; i += 1) {
-      if (!state.sortChoices[i]) {
-        setResult(el.sortResult, false, "Распредели все карточки по категориям.");
+  function placeHotspots() {
+    el.clueBoard.querySelectorAll(".hotspot").forEach((n) => n.remove());
+    const boardRect = el.clueBoard.getBoundingClientRect();
+
+    CLUES.forEach((clue) => {
+      const anchor = document.getElementById(clue.anchorId);
+      if (!anchor) return;
+
+      const anchorRect = anchor.getBoundingClientRect();
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "hotspot";
+      dot.title = `Отметить улику: ${clue.tip}`;
+      dot.dataset.id = clue.id;
+
+      const dotSize = 20;
+      let left = (anchorRect.right - boardRect.left) + 6;
+      let top = (anchorRect.top - boardRect.top) + (anchorRect.height / 2) - (dotSize / 2);
+
+      if (left > boardRect.width - dotSize - 6) {
+        left = (anchorRect.left - boardRect.left) - dotSize - 6;
+      }
+      left = clamp(left, 4, boardRect.width - dotSize - 4);
+      top = clamp(top, 4, boardRect.height - dotSize - 4);
+
+      dot.style.left = `${left}px`;
+      dot.style.top = `${top}px`;
+      dot.addEventListener("click", () => {
+        if (state.clues.found.has(clue.id)) {
+          state.clues.found.delete(clue.id);
+          dot.classList.remove("marked");
+        } else {
+          state.clues.found.add(clue.id);
+          dot.classList.add("marked");
+        }
+        updateClueCounter();
+      });
+      el.clueBoard.appendChild(dot);
+    });
+  }
+
+  function syncHotspotMarks() {
+    el.clueBoard.querySelectorAll(".hotspot").forEach((dot) => {
+      dot.classList.toggle("marked", state.clues.found.has(dot.dataset.id));
+    });
+  }
+
+  function updateClueCounter() {
+    el.clueCounter.textContent = `Найдено: ${state.clues.found.size}/${CLUES.length}`;
+  }
+
+  function resetClues() {
+    state.clues.found.clear();
+    state.clues.completed = false;
+    el.clueBoard.querySelectorAll(".hotspot").forEach((d) => d.classList.remove("marked"));
+    updateClueCounter();
+    el.clueResult.textContent = "Отметь улики, затем нажми «Проверить улики».";
+    el.clueResult.className = "result";
+  }
+
+  function checkClues() {
+    const found = state.clues.found.size;
+    const all = CLUES.length;
+
+    if (found === all) {
+      state.clues.completed = true;
+      el.clueResult.textContent = "Точно! Все улики обнаружены. Можно зачесть операцию.";
+      el.clueResult.className = "result good";
+    } else if (found >= 3) {
+      el.clueResult.textContent = `Почти: найдено ${found}/${all}. Проверь домен, ссылку и признаки давления.`;
+      el.clueResult.className = "result warn";
+    } else {
+      el.clueResult.textContent = "Слишком мало улик. Ищи подмену домена, небезопасную ссылку и запрос SMS-кода.";
+      el.clueResult.className = "result bad";
+    }
+  }
+
+  function addMissionReward(source, quality = 1) {
+    if (!runtime.allowed) {
+      return { ok: false, msg: "Доступ к игре сейчас закрыт по режиму администратора." };
+    }
+    if (isMissionSolved()) {
+      return { ok: false, msg: "Эта операция уже зачтена сегодня." };
+    }
+
+    const base = state.mission.reward;
+    const bonus = Math.round(base * quality);
+    state.progress.solved[state.mission.id] = { source, date: new Date().toISOString(), xp: bonus };
+    state.progress.xp += bonus;
+    state.progress.streak += 1;
+    saveProgress();
+    renderHero();
+    renderProgress();
+    renderServerProgress();
+    queueSync(`reward:${source}`);
+    return { ok: true, msg: `Операция зачтена: +${bonus} XP.` };
+  }
+
+  function setTab(tab) {
+    state.tab = tab;
+    for (const [name, panel] of Object.entries(el.panels)) {
+      panel.classList.toggle("active", name === tab);
+    }
+    el.tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
+
+    if (tab === "clues") {
+      requestAnimationFrame(() => {
+        placeHotspots();
+        syncHotspotMarks();
+      });
+    }
+  }
+
+  function buildGetUrl(baseUrl) {
+    const url = new URL(baseUrl, window.location.origin);
+    if (runtime.userId > 0) url.searchParams.set("user_id", String(runtime.userId));
+    if (runtime.initData) url.searchParams.set("init_data", runtime.initData);
+    return url.toString();
+  }
+
+  async function refreshServerState(force = false) {
+    if (!runtime.stateUrl || runtime.userId <= 0) {
+      runtime.connected = false;
+      renderServerProgress();
+      return;
+    }
+    try {
+      const resp = await fetch(buildGetUrl(runtime.stateUrl), { method: "GET", cache: "no-store" });
+      if (!resp.ok) {
+        markServerResult(`Не удалось получить состояние (${resp.status}).`, "warn");
+        runtime.connected = false;
+        renderServerProgress();
         return;
       }
-      if (state.sortChoices[i] === scenario.items[i].expected) correct += 1;
-    }
-
-    if (correct < scenario.items.length) {
-      setResult(el.sortResult, false, `Есть ошибки: ${correct}/${scenario.items.length} верно. Попробуй ещё раз.`);
-      return;
-    }
-
-    const out = awardOrTraining("sort");
-    setResult(el.sortResult, out.good, out.text);
-  }
-
-  function renderIncidentMode() {
-    clearIncidentTimer();
-    state.incident.running = false;
-    state.incident.leftSec = 30;
-    state.incident.picked = [];
-    el.incidentTimer.textContent = "30с";
-    el.incidentSeq.textContent = "Последовательность: —";
-    el.incidentResult.textContent = "";
-    el.incidentResult.className = "result";
-
-    const scenario = incidentScenario(state.mission);
-    el.incidentTarget.textContent = scenario.target;
-    el.incidentActions.innerHTML = "";
-
-    const shuffled = scenario.sequence
-      .map((action, i) => ({ action, i, sort: Math.random() }))
-      .sort((a, b) => a.sort - b.sort);
-
-    shuffled.forEach((item) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "incident-action";
-      b.textContent = item.action;
-      b.dataset.idx = String(item.i);
-      b.disabled = true;
-      b.addEventListener("click", () => handleIncidentClick(item.i, item.action));
-      el.incidentActions.appendChild(b);
-    });
-  }
-
-  function setIncidentButtonsEnabled(enabled) {
-    Array.from(el.incidentActions.querySelectorAll("button")).forEach((b) => {
-      b.disabled = !enabled;
-    });
-  }
-
-  function startIncident() {
-    renderIncidentMode();
-    state.incident.running = true;
-    state.incident.leftSec = 30;
-    setIncidentButtonsEnabled(true);
-    el.incidentTimer.textContent = "30с";
-    el.incidentSeq.textContent = "Последовательность: старт";
-    el.incidentResult.textContent = "";
-    el.incidentResult.className = "result";
-
-    state.incident.timerId = setInterval(() => {
-      state.incident.leftSec -= 1;
-      el.incidentTimer.textContent = `${state.incident.leftSec}с`;
-      if (state.incident.leftSec <= 0) {
-        clearIncidentTimer();
-        state.incident.running = false;
-        setIncidentButtonsEnabled(false);
-        setResult(el.incidentResult, false, "Время вышло. Запусти раунд ещё раз.");
+      const data = await resp.json();
+      if (!data || data.ok !== true) {
+        markServerResult("Сервер вернул некорректный ответ состояния.", "warn");
+        runtime.connected = false;
+        renderServerProgress();
+        return;
       }
-    }, 1000);
+      runtime.connected = true;
+      runtime.allowed = data.allowed !== false;
+      runtime.role = String(data.role || runtime.role || "player");
+      runtime.adminMode = data.admin_mode === true || runtime.role === "admin";
+      runtime.testerMode = data.tester_mode === true || runtime.role === "tester";
+      runtime.inRating = data.in_rating !== false && runtime.role === "player";
+      runtime.serverToken = Number(data.reset_token || runtime.serverToken || 0);
+      if (data.me && typeof data.me === "object") {
+        applyServerMe(data.me, force);
+      }
+      if (Array.isArray(data.leaderboard)) {
+        state.leaderboard = data.leaderboard.map((row) => ({
+          uid: String(row.uid || row.user_id || ""),
+          name: String(row.name || "Игрок"),
+          xp: Number(row.xp || row.total_xp || 0),
+          solved: Number(row.solved || row.solved_count || 0),
+          streak: Number(row.streak || 0),
+          role: String(row.role || "player")
+        }));
+      }
+      renderHero();
+      renderProgress();
+      renderServerProgress();
+      renderLeaderboard();
+      markServerResult(
+        runtime.allowed
+          ? "Серверный прогресс синхронизирован."
+          : "Игра закрыта администратором. Просмотр доступен, зачёт операций временно отключён.",
+        runtime.allowed ? "good" : "warn"
+      );
+    } catch (_err) {
+      runtime.connected = false;
+      renderServerProgress();
+      markServerResult("Сервер недоступен. Используется локальный режим.", "warn");
+    }
   }
 
-  function handleIncidentClick(orderIndex, actionText) {
-    if (!state.incident.running) return;
-    const scenario = incidentScenario(state.mission);
-    const currentStep = state.incident.picked.length;
-    const expectedAction = scenario.sequence[currentStep];
-
-    if (scenario.sequence[orderIndex] !== expectedAction) {
-      clearIncidentTimer();
-      state.incident.running = false;
-      setIncidentButtonsEnabled(false);
-      setResult(el.incidentResult, false, `Неверный шаг: "${actionText}". Попробуй снова.`);
+  async function refreshLeaderboard() {
+    if (!runtime.leaderboardUrl || runtime.userId <= 0) {
+      renderLeaderboard();
       return;
     }
-
-    state.incident.picked.push(actionText);
-    el.incidentSeq.textContent = `Последовательность: ${state.incident.picked.join(" → ")}`;
-
-    if (state.incident.picked.length === scenario.sequence.length) {
-      clearIncidentTimer();
-      state.incident.running = false;
-      setIncidentButtonsEnabled(false);
-      const out = awardOrTraining("incident");
-      setResult(el.incidentResult, out.good, out.text);
+    try {
+      const resp = await fetch(buildGetUrl(runtime.leaderboardUrl), { method: "GET", cache: "no-store" });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data || data.ok !== true || !Array.isArray(data.leaderboard)) return;
+      state.leaderboard = data.leaderboard.map((row) => ({
+        uid: String(row.uid || row.user_id || ""),
+        name: String(row.name || "Игрок"),
+        xp: Number(row.xp || row.total_xp || 0),
+        solved: Number(row.solved || row.solved_count || 0),
+        streak: Number(row.streak || 0),
+        role: String(row.role || "player")
+      }));
+      runtime.connected = true;
+      renderServerProgress();
+      renderLeaderboard();
+    } catch (_err) {
+      /* noop */
     }
   }
 
-  function bindEvents() {
-    el.btnClue.addEventListener("click", () => setMode("clue"));
-    el.btnChat.addEventListener("click", () => setMode("chat"));
-    el.btnSort.addEventListener("click", () => setMode("sort"));
-    el.btnIncident.addEventListener("click", () => setMode("incident"));
-
-    el.btnClueCheck.addEventListener("click", checkClueMode);
-    el.btnChatCheck.addEventListener("click", checkChatMode);
-    el.btnSortCheck.addEventListener("click", checkSortMode);
-    el.btnIncidentStart.addEventListener("click", startIncident);
-
-    el.btnReset.addEventListener("click", () => {
-      const ok = window.confirm("Сбросить прогресс Киберщита? Это не затронет другие проекты.");
-      if (!ok) return;
-      localStorage.removeItem(STORAGE_KEY);
-      state.progress = loadProgress();
-      renderHeader();
+  async function syncToServer(reason = "sync") {
+    if (!runtime.syncUrl || runtime.userId <= 0) return;
+    if (syncInFlight) return;
+    syncInFlight = true;
+    try {
+      const payload = {
+        type: "sync",
+        reason,
+        user_id: String(runtime.userId),
+        user_name: runtime.tg?.initDataUnsafe?.user?.first_name || "Игрок",
+        init_data: runtime.initData || "",
+        total_xp: Math.max(0, Number(state.progress.xp || 0)),
+        solved_count: solvedCount(),
+        streak: Math.max(0, Number(state.progress.streak || 0)),
+        progress_json: { solved: state.progress.solved || {} },
+        reset_token: Number(runtime.serverToken || 0)
+      };
+      const resp = await fetch(runtime.syncUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data || data.ok !== true) {
+        if (data && (data.stale === true || data.reset_required === true)) {
+          if (Number(data.db_reset_token || 0) > 0) runtime.serverToken = Number(data.db_reset_token || 0);
+          await refreshServerState(true);
+          markServerResult("Сервер запросил обновление состояния (после сброса).", "warn");
+          return;
+        }
+        markServerResult("Синхронизация не принята сервером.", "warn");
+        return;
+      }
+      runtime.connected = true;
+      if (Number(data.db_reset_token || 0) > 0) runtime.serverToken = Number(data.db_reset_token || 0);
+      if (data.saved) {
+        state.progress.xp = Math.max(state.progress.xp, Number(data.saved.xp || 0));
+        state.progress.streak = Math.max(state.progress.streak, Number(data.saved.streak || 0));
+        saveProgress();
+      }
+      renderHero();
       renderProgress();
-      renderClueMode();
-      renderChatMode();
-      renderSortMode();
-      renderIncidentMode();
+      renderServerProgress();
+      markServerResult("Прогресс сохранён на сервере.", "good");
+    } catch (_err) {
+      markServerResult("Ошибка синхронизации. Прогресс остаётся локально.", "warn");
+    } finally {
+      syncInFlight = false;
+    }
+  }
+
+  function queueSync(reason = "sync") {
+    if (syncTimer) {
+      clearTimeout(syncTimer);
+    }
+    syncTimer = setTimeout(() => {
+      syncToServer(reason);
+    }, 300);
+  }
+
+  async function resetProgressOnServer() {
+    if (!runtime.resetUrl || runtime.userId <= 0) {
+      markServerResult("Серверный сброс недоступен в этом режиме.", "warn");
+      return;
+    }
+    if (runtime.role !== "admin") {
+      markServerResult("Сброс разрешён только роли admin Киберщита.", "warn");
+      return;
+    }
+    if (!window.confirm("Сбросить прогресс Киберщита? Это действие необратимо.")) return;
+    try {
+      const resp = await fetch(runtime.resetUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: String(runtime.userId),
+          init_data: runtime.initData || "",
+          reset_token: Number(runtime.serverToken || 0)
+        })
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || !data || data.ok !== true) {
+        markServerResult("Сервер отклонил сброс прогресса.", "warn");
+        return;
+      }
+      state.progress = { xp: 0, streak: 0, solved: {} };
+      saveProgress();
+      await refreshServerState(true);
+      renderHero();
+      renderProgress();
+      renderServerProgress();
+      renderLeaderboard();
+      markServerResult("Прогресс сброшен и синхронизирован.", "good");
+    } catch (_err) {
+      markServerResult("Не удалось выполнить сброс прогресса.", "warn");
+    }
+  }
+
+  function hookEvents() {
+    el.tabs.forEach((btn) => {
+      btn.addEventListener("click", () => setTab(btn.dataset.tab));
     });
+
+    el.startMissionBtn.addEventListener("click", () => {
+      setTab(state.mission.mode === "chat" ? "chat" : state.mission.mode === "clues" ? "clues" : "operations");
+    });
+
+    el.shareBtn.addEventListener("click", async () => {
+      const text = `Киберщит: ${state.mission.title} | XP: ${state.progress.xp} | Ранг: ${getRank(state.progress.xp)}`;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          alert("Карточка результата скопирована в буфер обмена.");
+        } else {
+          alert(text);
+        }
+      } catch (_err) {
+        alert(text);
+      }
+    });
+
+    el.chatResetBtn.addEventListener("click", resetChat);
+    el.chatCompleteBtn.addEventListener("click", () => {
+      if (!state.chat.completed) return;
+      const quality = Number(el.chatCompleteBtn.dataset.quality || 1);
+      const result = addMissionReward("chat", quality);
+      el.chatResult.textContent = result.msg;
+      el.chatResult.className = result.ok ? "result good" : "result warn";
+      if (result.ok) {
+        el.chatCompleteBtn.disabled = true;
+      }
+    });
+
+    el.clueCheckBtn.addEventListener("click", checkClues);
+    el.clueResetBtn.addEventListener("click", resetClues);
+
+    el.opsCheckBtn.addEventListener("click", checkOpsDrill);
+    el.opsResetBtn.addEventListener("click", resetOpsDrill);
+    el.opsCompleteBtn.addEventListener("click", () => {
+      if (!state.ops.passed) {
+        el.opsResult.textContent = "Сначала пройди проверку порядка действий.";
+        el.opsResult.className = "result warn";
+        return;
+      }
+      const result = addMissionReward("operations", 1.15);
+      el.opsResult.textContent = result.msg;
+      el.opsResult.className = result.ok ? "result good" : "result warn";
+      if (result.ok) {
+        el.opsCompleteBtn.disabled = true;
+      }
+    });
+
+    el.clueCheckBtn.insertAdjacentElement("afterend", (() => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-primary";
+      btn.textContent = "Зачесть операцию";
+      btn.addEventListener("click", () => {
+        if (!state.clues.completed) {
+          el.clueResult.textContent = "Сначала найди все улики и проверь результат.";
+          el.clueResult.className = "result warn";
+          return;
+        }
+        const result = addMissionReward("clues", 1.2);
+        el.clueResult.textContent = result.msg;
+        el.clueResult.className = result.ok ? "result good" : "result warn";
+      });
+      return btn;
+    })());
+
+    el.serverRefreshBtn.addEventListener("click", () => refreshServerState(true));
+    el.serverResetBtn.addEventListener("click", resetProgressOnServer);
+    el.leaderboardRefreshBtn.addEventListener("click", refreshLeaderboard);
   }
 
   function init() {
-    renderHeader();
+    initRuntime();
+    state.mission = buildMission(new Date());
+    renderHero();
+    renderOperations();
     renderProgress();
-    renderCalendarPreview();
-    renderClueMode();
-    renderChatMode();
-    renderSortMode();
-    renderIncidentMode();
-    setMode(state.activeMode);
-    bindEvents();
+    renderServerProgress();
+    renderLeaderboard();
+    resetChat();
+    placeHotspots();
+    updateClueCounter();
+    hookEvents();
+
+    window.addEventListener("resize", () => {
+      placeHotspots();
+      syncHotspotMarks();
+    });
+
+    refreshServerState(true);
+    refreshLeaderboard();
   }
 
   init();

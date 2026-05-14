@@ -891,6 +891,61 @@ def init_db():
         cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS bonus_points INTEGER DEFAULT 0")
         cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()")
 
+        # Летняя игра "Киберщит" (отдельный контур, не влияет на "Шифровальщик")
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_results (
+                id            SERIAL PRIMARY KEY,
+                user_id       BIGINT NOT NULL UNIQUE,
+                user_name     TEXT,
+                total_xp      INTEGER DEFAULT 0,
+                solved_count  INTEGER DEFAULT 0,
+                streak        INTEGER DEFAULT 0,
+                progress_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                banned        BOOLEAN DEFAULT FALSE,
+                reset_token   BIGINT DEFAULT 0,
+                updated_at    TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_cyber_score ON cyber_results(total_xp DESC)')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_cyber_user  ON cyber_results(user_id)')
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS progress_json JSONB NOT NULL DEFAULT '{}'::jsonb")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT FALSE")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS reset_token BIGINT DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS streak INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS solved_count INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS total_xp INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()")
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_roles (
+                user_id    BIGINT PRIMARY KEY,
+                role       TEXT DEFAULT 'player',
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_access_settings (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                access_mode TEXT NOT NULL DEFAULT 'open',
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('''
+            INSERT INTO cyber_access_settings (id, access_mode)
+            VALUES (1, 'open')
+            ON CONFLICT (id) DO NOTHING
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_beta (
+                user_id    BIGINT PRIMARY KEY,
+                user_name  TEXT,
+                note       TEXT,
+                added_at   TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+
         cur.execute('''
             INSERT INTO game_chapters (chapter_id, is_open)
             VALUES (1,TRUE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
@@ -4375,6 +4430,577 @@ def get_chapter_schedule_for_game() -> list:
         release_connection(conn)
 
 
+# ══════════════════════════════════════════════════════════
+#  КИБЕРЩИТ (ЛЕТНИЙ КОНТУР): РЕЗУЛЬТАТЫ / РОЛИ / ДОСТУП
+# ══════════════════════════════════════════════════════════
 
+def register_cyber_player(user_id: int, user_name: str | None = None) -> bool:
+    """Гарантирует наличие записи игрока Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_results (user_id, user_name, total_xp, solved_count, streak, progress_json, updated_at)
+            VALUES (%s, %s, 0, 0, 0, '{}'::jsonb, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                user_name = COALESCE(EXCLUDED.user_name, cyber_results.user_name),
+                updated_at = NOW()
+            ''',
+            (int(user_id), user_name),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"register_cyber_player error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def set_cyber_role(user_id: int, role: str) -> bool:
+    """Устанавливает роль в Киберщите: admin / tester / player."""
+    role_val = str(role or "player").strip().lower()
+    if role_val not in ("admin", "tester", "player"):
+        role_val = "player"
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_roles (user_id, role, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                role = EXCLUDED.role,
+                updated_at = NOW()
+            ''',
+            (int(user_id), role_val),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_cyber_role error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_role(user_id: int) -> str:
+    """Возвращает роль игрока в Киберщите."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT role FROM cyber_roles WHERE user_id = %s', (int(user_id),))
+        row = cur.fetchone()
+        role_val = (row[0] if row and row[0] else "player")
+        role_val = str(role_val).strip().lower()
+        if role_val not in ("admin", "tester", "player"):
+            return "player"
+        return role_val
+    except Exception as e:
+        logger.error(f"get_cyber_role error {user_id}: {e}")
+        return "player"
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_access_mode() -> str:
+    """Режим доступа к Киберщиту: beta/open/closed."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS cyber_access_settings (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                access_mode TEXT NOT NULL DEFAULT 'open',
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+            '''
+        )
+        cur.execute(
+            '''
+            INSERT INTO cyber_access_settings (id, access_mode)
+            VALUES (1, 'open')
+            ON CONFLICT (id) DO NOTHING
+            '''
+        )
+        cur.execute('SELECT access_mode FROM cyber_access_settings WHERE id = 1')
+        row = cur.fetchone()
+        conn.commit()
+        mode = str((row[0] if row and row[0] else "open")).strip().lower()
+        return mode if mode in ("beta", "open", "closed") else "open"
+    except Exception as e:
+        logger.error(f"get_cyber_access_mode error: {e}")
+        return "open"
+    finally:
+        release_connection(conn)
+
+
+def set_cyber_access_mode(mode: str) -> bool:
+    """Устанавливает режим доступа к Киберщиту: beta/open/closed."""
+    mode_val = str(mode or "").strip().lower()
+    if mode_val not in ("beta", "open", "closed"):
+        return False
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_access_settings (id, access_mode, updated_at)
+            VALUES (1, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                access_mode = EXCLUDED.access_mode,
+                updated_at = NOW()
+            ''',
+            (mode_val,),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_cyber_access_mode error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def add_cyber_beta_user(user_id: int, user_name: str | None = None, note: str | None = None) -> bool:
+    """Добавляет пользователя в бета-список Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_beta (user_id, user_name, note, added_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                user_name = COALESCE(EXCLUDED.user_name, cyber_beta.user_name),
+                note = COALESCE(EXCLUDED.note, cyber_beta.note)
+            ''',
+            (int(user_id), user_name, note),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"add_cyber_beta_user error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def remove_cyber_beta_user(user_id: int) -> bool:
+    """Удаляет пользователя из бета-списка Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM cyber_beta WHERE user_id = %s', (int(user_id),))
+        removed = cur.rowcount > 0
+        conn.commit()
+        return removed
+    except Exception as e:
+        logger.error(f"remove_cyber_beta_user error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_beta_users() -> list:
+    """Список бета-пользователей Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT user_id, user_name, added_at, note
+            FROM cyber_beta
+            ORDER BY added_at DESC
+            '''
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_beta_users error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def clear_cyber_beta_list() -> int:
+    """Очищает бета-список Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM cyber_beta')
+        deleted = int(cur.rowcount or 0)
+        conn.commit()
+        return deleted
+    except Exception as e:
+        logger.error(f"clear_cyber_beta_list error: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_result(user_id: int):
+    """Возвращает прогресс игрока Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                user_id,
+                user_name,
+                COALESCE(total_xp, 0) AS total_xp,
+                COALESCE(solved_count, 0) AS solved_count,
+                COALESCE(streak, 0) AS streak,
+                updated_at,
+                COALESCE(banned, FALSE) AS banned,
+                COALESCE(reset_token, 0) AS reset_token,
+                COALESCE(progress_json, '{}'::jsonb) AS progress_json
+            FROM cyber_results
+            WHERE user_id = %s
+            ''',
+            (int(user_id),),
+        )
+        return cur.fetchone()
+    except Exception as e:
+        logger.error(f"get_cyber_result error {user_id}: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+
+def save_cyber_sync_result(
+    user_id: int,
+    user_name: str | None,
+    total_xp: int,
+    solved_count: int,
+    streak: int,
+    progress_json=None,
+):
+    """Сохраняет прогресс Киберщита (монотонный рост, кроме админ-сброса)."""
+    conn = None
+    try:
+        xp = max(0, min(2000000, int(total_xp or 0)))
+        solved = max(0, min(10000, int(solved_count or 0)))
+        streak_val = max(0, min(10000, int(streak or 0)))
+        progress_payload = progress_json if isinstance(progress_json, (dict, list)) else {}
+        progress_text = json.dumps(progress_payload, ensure_ascii=False)
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_results
+                (user_id, user_name, total_xp, solved_count, streak, progress_json, updated_at)
+            VALUES
+                (%s, %s, %s, %s, %s, %s::jsonb, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                user_name = COALESCE(EXCLUDED.user_name, cyber_results.user_name),
+                total_xp = GREATEST(COALESCE(cyber_results.total_xp, 0), COALESCE(EXCLUDED.total_xp, 0)),
+                solved_count = GREATEST(COALESCE(cyber_results.solved_count, 0), COALESCE(EXCLUDED.solved_count, 0)),
+                streak = GREATEST(COALESCE(cyber_results.streak, 0), COALESCE(EXCLUDED.streak, 0)),
+                progress_json = CASE
+                    WHEN jsonb_typeof(EXCLUDED.progress_json) IN ('object', 'array')
+                        THEN EXCLUDED.progress_json
+                    ELSE cyber_results.progress_json
+                END,
+                updated_at = NOW()
+            RETURNING
+                user_id,
+                user_name,
+                total_xp,
+                solved_count,
+                streak,
+                updated_at,
+                banned,
+                reset_token,
+                progress_json
+            ''',
+            (int(user_id), user_name, xp, solved, streak_val, progress_text),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return row
+    except Exception as e:
+        logger.error(f"save_cyber_sync_result error {user_id}: {e}")
+        _safe_rollback(conn)
+        return None
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_leaderboard(limit: int = 20) -> list:
+    """Публичный рейтинг Киберщита (только обычные игроки)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                cr.user_id,
+                cr.user_name,
+                COALESCE(cr.total_xp, 0) AS total_xp,
+                COALESCE(cr.solved_count, 0) AS solved_count,
+                COALESCE(cr.streak, 0) AS streak,
+                COALESCE(rol.role, 'player') AS role
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            WHERE NOT COALESCE(cr.banned, FALSE)
+              AND COALESCE(rol.role, 'player') NOT IN ('admin', 'tester')
+              AND COALESCE(cr.total_xp, 0) > 0
+            ORDER BY cr.total_xp DESC, cr.updated_at ASC
+            LIMIT %s
+            ''',
+            (int(limit),),
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_leaderboard error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_leaderboard_admin(limit: int = 100) -> list:
+    """Полный список игроков Киберщита для админки."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                cr.user_id,
+                cr.user_name,
+                COALESCE(cr.total_xp, 0) AS total_xp,
+                COALESCE(cr.solved_count, 0) AS solved_count,
+                COALESCE(cr.streak, 0) AS streak,
+                COALESCE(cr.banned, FALSE) AS banned,
+                cr.updated_at,
+                COALESCE(rol.role, 'player') AS role
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            ORDER BY cr.total_xp DESC, cr.updated_at ASC
+            LIMIT %s
+            ''',
+            (int(limit),),
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_leaderboard_admin error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_player_rank(user_id: int) -> tuple[None | int, int]:
+    """Позиция игрока в публичном рейтинге Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            WITH ranked AS (
+                SELECT
+                    cr.user_id,
+                    ROW_NUMBER() OVER (ORDER BY cr.total_xp DESC, cr.updated_at ASC) AS pos,
+                    COUNT(*) OVER () AS total_players
+                FROM cyber_results cr
+                LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+                WHERE NOT COALESCE(cr.banned, FALSE)
+                  AND COALESCE(rol.role, 'player') = 'player'
+                  AND COALESCE(cr.total_xp, 0) > 0
+            )
+            SELECT pos, total_players
+            FROM ranked
+            WHERE user_id = %s
+            ''',
+            (int(user_id),),
+        )
+        row = cur.fetchone()
+        if row:
+            return int(row[0]), int(row[1])
+        cur.execute(
+            '''
+            SELECT COUNT(*)
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            WHERE NOT COALESCE(cr.banned, FALSE)
+              AND COALESCE(rol.role, 'player') = 'player'
+              AND COALESCE(cr.total_xp, 0) > 0
+            '''
+        )
+        total = int((cur.fetchone() or [0])[0] or 0)
+        return None, total
+    except Exception as e:
+        logger.error(f"get_cyber_player_rank error {user_id}: {e}")
+        return None, 0
+    finally:
+        release_connection(conn)
+
+
+def reset_cyber_result(user_id: int) -> bool:
+    """Полный сброс прогресса одного игрока Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        token_now = int(datetime.utcnow().timestamp())
+        cur.execute(
+            '''
+            UPDATE cyber_results
+            SET total_xp = 0,
+                solved_count = 0,
+                streak = 0,
+                progress_json = '{}'::jsonb,
+                banned = FALSE,
+                reset_token = %s,
+                updated_at = NOW()
+            WHERE user_id = %s
+            ''',
+            (token_now, int(user_id)),
+        )
+        updated = cur.rowcount
+        if updated == 0:
+            cur.execute(
+                '''
+                INSERT INTO cyber_results
+                    (user_id, user_name, total_xp, solved_count, streak, progress_json, banned, reset_token, updated_at)
+                VALUES
+                    (%s, %s, 0, 0, 0, '{}'::jsonb, FALSE, %s, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+                ''',
+                (int(user_id), 'Игрок', token_now),
+            )
+            cur.execute(
+                '''
+                UPDATE cyber_results
+                SET total_xp = 0,
+                    solved_count = 0,
+                    streak = 0,
+                    progress_json = '{}'::jsonb,
+                    banned = FALSE,
+                    reset_token = %s,
+                    updated_at = NOW()
+                WHERE user_id = %s
+                ''',
+                (token_now, int(user_id)),
+            )
+            updated = cur.rowcount
+        conn.commit()
+        return updated > 0
+    except Exception as e:
+        logger.error(f"reset_cyber_result error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def reset_all_cyber_results() -> int:
+    """Полный сброс прогресса всех игроков Киберщита."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            UPDATE cyber_results
+            SET total_xp = 0,
+                solved_count = 0,
+                streak = 0,
+                progress_json = '{}'::jsonb,
+                banned = FALSE,
+                reset_token = (EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
+                updated_at = NOW()
+            '''
+        )
+        updated = int(cur.rowcount or 0)
+        conn.commit()
+        return updated
+    except Exception as e:
+        logger.error(f"reset_all_cyber_results error: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_players_with_roles(limit: int = 200) -> list:
+    """Игроки Киберщита с ролями для управления в админке."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                cr.user_id,
+                cr.user_name,
+                COALESCE(rol.role, 'player') AS role,
+                COALESCE(cr.total_xp, 0) AS total_xp,
+                COALESCE(cr.solved_count, 0) AS solved_count
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            ORDER BY cr.updated_at DESC
+            LIMIT %s
+            ''',
+            (int(limit),),
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_players_with_roles error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_result_detail(user_id: int):
+    """Детальная карточка игрока Киберщита для админки."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                user_id,
+                user_name,
+                COALESCE(total_xp, 0) AS total_xp,
+                COALESCE(solved_count, 0) AS solved_count,
+                COALESCE(streak, 0) AS streak,
+                COALESCE(banned, FALSE) AS banned,
+                COALESCE(reset_token, 0) AS reset_token,
+                updated_at
+            FROM cyber_results
+            WHERE user_id = %s
+            ''',
+            (int(user_id),),
+        )
+        return cur.fetchone()
+    except Exception as e:
+        logger.error(f"get_cyber_result_detail error {user_id}: {e}")
+        return None
+    finally:
+        release_connection(conn)
 
 

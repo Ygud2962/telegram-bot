@@ -1,114 +1,209 @@
-<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Киберщит • Летний сезон 2026</title>
-  <meta name="description" content="Летняя игра по кибербезопасности: поиск улик, симулятор переписки, сортировка входящих и инцидент 30 секунд.">
-  <link rel="stylesheet" href="./styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Киберщит • Летняя демо-версия</title>
+  <meta name="description" content="Киберщит: летний интерактив по кибербезопасности для школьников. Демо с режимами Операции, Переписка и Поиск улик." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <div class="bg-grid" aria-hidden="true"></div>
-  <div class="bg-glow bg-glow-a" aria-hidden="true"></div>
-  <div class="bg-glow bg-glow-b" aria-hidden="true"></div>
+  <div class="bg-noise" aria-hidden="true"></div>
 
-  <main class="app">
-    <header class="hero panel">
-      <div class="hero-top">
+  <main class="app-shell">
+    <header class="topbar panel">
+      <div>
+        <p class="eyebrow">Summer Cyber Ops</p>
         <h1>🛡 Киберщит</h1>
-        <span class="badge">Лето 2026</span>
+        <p class="subhead">Отдельный проект. Роли, рейтинг и прогресс синхронизируются с ботом.</p>
       </div>
-      <p class="subtitle">Отдельный проект: без изменений Шифровальщика и основного бота</p>
-      <div class="meta">
-        <span id="today-date"></span>
-        <span id="mission-counter"></span>
-        <span id="solved-today"></span>
-      </div>
+      <div class="status-chip" id="todayChip">Загрузка…</div>
     </header>
 
-    <section class="panel mission-head">
-      <h2 id="mission-title">Миссия дня</h2>
-      <p id="mission-description"></p>
-      <div class="chips">
-        <span id="mission-type" class="chip"></span>
-        <span id="mission-week" class="chip"></span>
-        <span id="mission-reward" class="chip chip-accent"></span>
+    <section class="panel hero" id="heroBlock">
+      <div class="hero-main">
+        <h2 id="missionTitle">Операция дня</h2>
+        <p id="missionDescription">Подготовка данных…</p>
+        <div class="hero-tags">
+          <span class="tag" id="missionModeTag">режим</span>
+          <span class="tag" id="missionRewardTag">+0 XP</span>
+          <span class="tag" id="missionWeekTag">неделя</span>
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="startMissionBtn">Начать операцию</button>
+          <button class="btn btn-ghost" id="shareBtn">Поделиться результатом</button>
+        </div>
+      </div>
+      <div class="hero-side">
+        <div class="metric">
+          <span class="metric-label">Ранг</span>
+          <span class="metric-value" id="rankValue">Курсант</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">XP</span>
+          <span class="metric-value" id="xpValue">0</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Серия</span>
+          <span class="metric-value" id="streakValue">0</span>
+        </div>
       </div>
     </section>
 
-    <section class="mode-switch">
-      <button id="btn-clue" class="mode active">🔍 Поиск улик</button>
-      <button id="btn-chat" class="mode">💬 Переписка</button>
-      <button id="btn-sort" class="mode">📥 Сортировка</button>
-      <button id="btn-incident" class="mode">⚡ Инцидент 30с</button>
+    <nav class="tabs" aria-label="Режимы">
+      <button class="tab active" data-tab="operations">🎯 Операции</button>
+      <button class="tab" data-tab="chat">💬 Переписка</button>
+      <button class="tab" data-tab="clues">🔎 Поиск улик</button>
+    </nav>
+
+    <section class="tab-panel active" id="tab-operations">
+      <article class="panel">
+        <h3>План на лето: 3 месяца</h3>
+        <p class="muted">Каждый день доступна мини-операция. За успешное прохождение ты получаешь XP и поднимаешь ранг.</p>
+        <div class="ops-grid" id="opsGrid"></div>
+
+        <div class="ops-drill">
+          <h4>Штабная тренировка: правильный порядок действий</h4>
+          <p class="muted">Нажми шаги в верной последовательности при подозрении на взлом аккаунта.</p>
+          <div class="ops-actions" id="opsActionButtons"></div>
+          <p class="muted" id="opsSequenceState">Последовательность: пока пусто</p>
+          <div class="ops-controls">
+            <button class="btn btn-primary" id="opsCheckBtn">Проверить порядок</button>
+            <button class="btn btn-ghost" id="opsResetBtn">Сбросить выбор</button>
+            <button class="btn btn-primary" id="opsCompleteBtn" disabled>Зачесть операцию</button>
+          </div>
+          <p class="result" id="opsResult">Собери последовательность, затем нажми «Проверить порядок».</p>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="progress-head">
+          <h3>Летний прогресс</h3>
+          <span id="progressText">0/0</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <p class="muted" id="progressHint">Пройди первую операцию, чтобы запустить серию.</p>
+      </article>
+
+      <article class="panel">
+        <div class="progress-head">
+          <h3>Таблица прогресса</h3>
+          <span id="serverRoleTag" class="tag">player</span>
+        </div>
+        <div class="server-progress-grid" id="serverProgressGrid">
+          <div class="server-progress-item">
+            <span>Статус</span>
+            <strong id="serverStatusValue">offline</strong>
+          </div>
+          <div class="server-progress-item">
+            <span>В рейтинге</span>
+            <strong id="serverRatingValue">да</strong>
+          </div>
+          <div class="server-progress-item">
+            <span>Операций</span>
+            <strong id="serverSolvedValue">0</strong>
+          </div>
+          <div class="server-progress-item">
+            <span>Серия</span>
+            <strong id="serverStreakValue">0</strong>
+          </div>
+        </div>
+        <div class="ops-controls">
+          <button class="btn btn-ghost" id="serverRefreshBtn">Обновить с сервера</button>
+          <button class="btn btn-ghost" id="serverResetBtn">Сбросить прогресс (admin)</button>
+        </div>
+        <p class="result" id="serverResult">Серверный прогресс подключится автоматически при запуске из бота.</p>
+      </article>
+
+      <article class="panel">
+        <div class="progress-head">
+          <h3>Таблица рейтинга</h3>
+          <span class="muted" id="leaderboardMeta">0 участников</span>
+        </div>
+        <div class="leaderboard-wrap">
+          <table class="leaderboard-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Игрок</th>
+                <th>XP</th>
+                <th>Опер.</th>
+                <th>Серия</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody">
+              <tr>
+                <td colspan="5" class="muted">Рейтинг загружается…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="ops-controls">
+          <button class="btn btn-ghost" id="leaderboardRefreshBtn">Обновить рейтинг</button>
+        </div>
+      </article>
     </section>
 
-    <section id="clue-mode" class="panel mode-panel">
-      <h3>Найди улики на экране</h3>
-      <p class="hint">Отметь все подозрительные элементы в макете входящего письма.</p>
-      <div id="clue-board" class="clue-board"></div>
-      <div class="row">
-        <span id="clue-progress" class="small"></span>
-        <button id="btn-clue-check" class="btn">Проверить</button>
-      </div>
-      <p id="clue-result" class="result"></p>
+    <section class="tab-panel" id="tab-chat">
+      <article class="panel">
+        <div class="chat-head">
+          <h3>Симулятор переписки</h3>
+          <div class="risk-meter">
+            <span>Риск</span>
+            <strong id="riskValue">0%</strong>
+          </div>
+        </div>
+        <p class="muted">Выбирай ответ так, как действовал бы в реальной жизни. Ошибки повышают риск инцидента.</p>
+
+        <div class="chat-log" id="chatLog"></div>
+
+        <div class="choices" id="chatChoices"></div>
+
+        <div class="chat-actions">
+          <button class="btn btn-ghost" id="chatResetBtn">Сценарий заново</button>
+          <button class="btn btn-primary" id="chatCompleteBtn" disabled>Зачесть операцию</button>
+        </div>
+
+        <p class="result" id="chatResult">Пройди диалог до конца, чтобы получить оценку.</p>
+      </article>
     </section>
 
-    <section id="chat-mode" class="panel mode-panel hidden">
-      <h3>Симулятор переписки</h3>
-      <p class="hint">Ответь своими словами, как ты будешь действовать безопасно.</p>
-      <div id="chat-log" class="chat-log"></div>
-      <textarea id="chat-answer" rows="4" placeholder="Опиши шаги: что не делать и что сделать правильно."></textarea>
-      <div class="row">
-        <button id="btn-chat-check" class="btn">Проверить ответ</button>
-      </div>
-      <p id="chat-result" class="result"></p>
+    <section class="tab-panel" id="tab-clues">
+      <article class="panel">
+        <div class="clue-head">
+          <h3>Поиск улик на экране</h3>
+          <span class="muted" id="clueCounter">Найдено: 0/5</span>
+        </div>
+        <p class="muted">Нажми на подозрительные места в макете письма: подмена домена, давление срочностью, опасная ссылка и т.д.</p>
+
+        <div class="clue-board" id="clueBoard">
+          <div class="mail-header">
+            <div><strong>От:</strong> support-school@<span class="clue-anchor" id="clue-anchor-from">safe-mail.org</span></div>
+            <div><strong>Тема:</strong> Срочное подтверждение аккаунта</div>
+          </div>
+          <div class="mail-body">
+            <p>Здравствуйте! Для восстановления доступа к электронному дневнику срочно подтвердите данные.</p>
+            <p>Перейдите по ссылке: <span class="mail-link clue-anchor" id="clue-anchor-http">http://school-safe-verify.ru/login</span></p>
+            <p>Если вы не подтвердите вход <span class="clue-anchor" id="clue-anchor-urgent">в течение 3 минут</span>, <span class="clue-anchor" id="clue-anchor-delete">аккаунт будет удалён</span>.</p>
+            <p>Также отправьте <span class="clue-anchor" id="clue-anchor-sms">код из SMS</span> в ответном письме для ускоренной проверки.</p>
+          </div>
+        </div>
+
+        <div class="clue-actions">
+          <button class="btn btn-primary" id="clueCheckBtn">Проверить улики</button>
+          <button class="btn btn-ghost" id="clueResetBtn">Сбросить отметки</button>
+        </div>
+        <p class="result" id="clueResult">Отметь улики, затем нажми «Проверить улики».</p>
+      </article>
     </section>
 
-    <section id="sort-mode" class="panel mode-panel hidden">
-      <h3>Сортировка входящих</h3>
-      <p class="hint">Разложи сообщения по 3 зонам: Безопасно / Подозрительно / Опасно.</p>
-      <div class="sort-legend">
-        <span class="pill safe">Безопасно</span>
-        <span class="pill suspicious">Подозрительно</span>
-        <span class="pill danger">Опасно</span>
-      </div>
-      <div id="sort-list" class="sort-list"></div>
-      <div class="row">
-        <button id="btn-sort-check" class="btn">Проверить сортировку</button>
-      </div>
-      <p id="sort-result" class="result"></p>
-    </section>
-
-    <section id="incident-mode" class="panel mode-panel hidden">
-      <h3>Инцидент за 30 секунд</h3>
-      <p class="hint">Нажми шаги в правильной последовательности, пока не вышло время.</p>
-      <div class="incident-head">
-        <span id="incident-timer" class="timer">30с</span>
-        <button id="btn-incident-start" class="btn btn-accent">Старт</button>
-      </div>
-      <div id="incident-target" class="incident-target"></div>
-      <div id="incident-actions" class="incident-actions"></div>
-      <p id="incident-seq" class="small"></p>
-      <p id="incident-result" class="result"></p>
-    </section>
-
-    <section class="panel">
-      <h3>Прогресс лета</h3>
-      <div class="progress-wrap">
-        <div id="progress-bar" class="progress-bar"></div>
-      </div>
-      <p id="progress-text" class="small"></p>
-      <div class="row">
-        <button id="btn-reset" class="btn btn-muted">Сбросить прогресс</button>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h3>Календарь миссий</h3>
-      <p class="small">Первые 21 день сезона:</p>
-      <ul id="calendar-preview" class="calendar"></ul>
-    </section>
+    <footer class="footnote">Демо «Киберщит» • отдельный летний контур • Telegram Mini App-ready</footer>
   </main>
 
   <script src="./app.js"></script>
