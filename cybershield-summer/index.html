@@ -19,7 +19,7 @@
       <div>
         <p class="eyebrow">Summer Cyber Ops</p>
         <h1>🛡 Киберщит</h1>
-        <p class="subhead">Отдельный проект. Роли, рейтинг и прогресс синхронизируются с ботом.</p>
+        <p class="subhead">Летний квест по кибербезопасности</p>
       </div>
       <div class="status-chip" id="todayChip">Загрузка…</div>
     </header>
@@ -27,15 +27,15 @@
     <section class="panel hero" id="heroBlock">
       <div class="hero-main">
         <h2 id="missionTitle">Операция дня</h2>
-        <p id="missionDescription">Подготовка данных…</p>
+        <p id="missionDescription">Подготовка…</p>
         <div class="hero-tags">
           <span class="tag" id="missionModeTag">режим</span>
           <span class="tag" id="missionRewardTag">+0 XP</span>
           <span class="tag" id="missionWeekTag">неделя</span>
         </div>
         <div class="hero-actions">
-          <button class="btn btn-primary" id="startMissionBtn">Начать операцию</button>
-          <button class="btn btn-ghost" id="shareBtn">Поделиться результатом</button>
+          <button class="btn btn-primary" id="startMissionBtn">Старт</button>
+          <button class="btn btn-ghost" id="shareBtn">Поделиться</button>
         </div>
       </div>
       <div class="hero-side">
@@ -63,8 +63,8 @@
     <section class="tab-panel active" id="tab-operations">
       <article class="panel ops-hub">
         <div class="ops-hub-head">
-          <h3>Центр миссий</h3>
-          <span class="muted">без длинного скролла</span>
+          <h3>Центр операций</h3>
+          <span class="muted">что делать сейчас</span>
         </div>
 
         <div class="ops-pane-tabs" role="tablist" aria-label="Разделы миссий">
@@ -74,21 +74,22 @@
         </div>
 
         <section class="ops-pane active" id="ops-pane-mission" role="tabpanel">
-          <h4>План на лето: 3 месяца</h4>
-          <p class="muted">Каждый день доступна мини-операция. За успешное прохождение ты получаешь XP и поднимаешь ранг.</p>
+          <div class="mission-focus">
+            <h4>Текущая задача</h4>
+            <p class="muted" id="modeHint">Открой задание дня и выполни его в нужном режиме.</p>
+          </div>
           <div class="ops-grid" id="opsGrid"></div>
 
-          <div class="ops-drill">
-            <h4>Штабная тренировка: правильный порядок действий</h4>
-            <p class="muted">Нажми шаги в верной последовательности при подозрении на взлом аккаунта.</p>
+          <div class="ops-drill" id="opsDrill">
+            <h4>Доп. тренировка штаба</h4>
             <div class="ops-actions" id="opsActionButtons"></div>
-            <p class="muted" id="opsSequenceState">Последовательность: пока пусто</p>
+            <p class="muted" id="opsSequenceState">Порядок: пусто</p>
             <div class="ops-controls">
-              <button class="btn btn-primary" id="opsCheckBtn">Проверить порядок</button>
-              <button class="btn btn-ghost" id="opsResetBtn">Сбросить выбор</button>
-              <button class="btn btn-primary" id="opsCompleteBtn" disabled>Зачесть операцию</button>
+              <button class="btn btn-primary" id="opsCheckBtn">Проверить</button>
+              <button class="btn btn-ghost" id="opsResetBtn">Сброс</button>
+              <button class="btn btn-primary" id="opsCompleteBtn" disabled>Зачесть</button>
             </div>
-            <p class="result" id="opsResult">Собери последовательность, затем нажми «Проверить порядок».</p>
+            <p class="result" id="opsResult">Собери шаги и нажми «Проверить».</p>
           </div>
         </section>
 
@@ -100,7 +101,7 @@
           <div class="progress-track">
             <div class="progress-fill" id="progressFill"></div>
           </div>
-          <p class="muted" id="progressHint">Пройди первую операцию, чтобы запустить серию.</p>
+          <p class="muted" id="progressHint">Пройди первую операцию для старта серии.</p>
 
           <div class="progress-head" style="margin-top:12px;">
             <h4>Таблица прогресса</h4>
@@ -125,10 +126,10 @@
             </div>
           </div>
           <div class="ops-controls">
-            <button class="btn btn-ghost" id="serverRefreshBtn">Обновить с сервера</button>
-            <button class="btn btn-ghost" id="serverResetBtn">Сбросить прогресс (admin)</button>
+            <button class="btn btn-ghost" id="serverRefreshBtn">Обновить</button>
+            <button class="btn btn-ghost" id="serverResetBtn">Сброс (admin)</button>
           </div>
-          <p class="result" id="serverResult">Серверный прогресс подключится автоматически при запуске из бота.</p>
+          <p class="result" id="serverResult">Синхронизация с сервером.</p>
         </section>
 
         <section class="ops-pane" id="ops-pane-leaderboard" role="tabpanel">
@@ -155,7 +156,7 @@
             </table>
           </div>
           <div class="ops-controls">
-            <button class="btn btn-ghost" id="leaderboardRefreshBtn">Обновить рейтинг</button>
+            <button class="btn btn-ghost" id="leaderboardRefreshBtn">Обновить</button>
           </div>
         </section>
       </article>
@@ -164,21 +165,19 @@
     <section class="tab-panel" id="tab-chat">
       <article class="panel">
         <div class="chat-head">
-          <h3>Симулятор переписки</h3>
+          <h3>Переписка</h3>
           <div class="risk-meter">
             <span>Риск</span>
             <strong id="riskValue">0%</strong>
           </div>
         </div>
-        <p class="muted">Выбирай ответ так, как действовал бы в реальной жизни. Ошибки повышают риск инцидента.</p>
-
         <div class="chat-log" id="chatLog"></div>
 
         <div class="choices" id="chatChoices"></div>
 
         <div class="chat-actions">
-          <button class="btn btn-ghost" id="chatResetBtn">Сценарий заново</button>
-          <button class="btn btn-primary" id="chatCompleteBtn" disabled>Зачесть операцию</button>
+          <button class="btn btn-ghost" id="chatResetBtn">Заново</button>
+          <button class="btn btn-primary" id="chatCompleteBtn" disabled>Зачесть</button>
         </div>
 
         <p class="result" id="chatResult">Пройди диалог до конца, чтобы получить оценку.</p>
@@ -188,10 +187,9 @@
     <section class="tab-panel" id="tab-clues">
       <article class="panel">
         <div class="clue-head">
-          <h3>Поиск улик на экране</h3>
+          <h3>Поиск улик</h3>
           <span class="muted" id="clueCounter">Найдено: 0/5</span>
         </div>
-        <p class="muted">Нажми на подозрительные места в макете письма: подмена домена, давление срочностью, опасная ссылка и т.д.</p>
 
         <div class="clue-board" id="clueBoard">
           <div class="mail-header">
@@ -206,11 +204,13 @@
           </div>
         </div>
 
+        <div class="clue-list" id="clueList"></div>
+
         <div class="clue-actions">
-          <button class="btn btn-primary" id="clueCheckBtn">Проверить улики</button>
-          <button class="btn btn-ghost" id="clueResetBtn">Сбросить отметки</button>
+          <button class="btn btn-primary" id="clueCheckBtn">Проверить</button>
+          <button class="btn btn-ghost" id="clueResetBtn">Сброс</button>
         </div>
-        <p class="result" id="clueResult">Отметь улики, затем нажми «Проверить улики».</p>
+        <p class="result" id="clueResult">Отметь 5 улик и нажми «Проверить».</p>
       </article>
     </section>
 

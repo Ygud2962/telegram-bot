@@ -63,9 +63,9 @@
   ];
 
   const OPS_CARDS = [
-    { title: "Инцидент дня", text: "Короткая миссия на реальную ситуацию из сети." },
-    { title: "Тренировка реакции", text: "Быстрые решения под давлением времени и фейковых угроз." },
-    { title: "Командный зачёт", text: "В будущем: рейтинг класса и общая защита школы." }
+    { title: "1 миссия в день", text: "Небольшое задание на 3–5 минут." },
+    { title: "3 режима", text: "Переписка, улики, штабная логика." },
+    { title: "XP и серия", text: "Чем стабильнее, тем выше ранг." }
   ];
 
   const OPS_SEQUENCE = [
@@ -118,6 +118,8 @@
     },
 
     opsGrid: document.getElementById("opsGrid"),
+    modeHint: document.getElementById("modeHint"),
+    opsDrill: document.getElementById("opsDrill"),
     progressText: document.getElementById("progressText"),
     progressFill: document.getElementById("progressFill"),
     progressHint: document.getElementById("progressHint"),
@@ -136,6 +138,7 @@
     chatCompleteBtn: document.getElementById("chatCompleteBtn"),
 
     clueBoard: document.getElementById("clueBoard"),
+    clueList: document.getElementById("clueList"),
     clueCounter: document.getElementById("clueCounter"),
     clueCheckBtn: document.getElementById("clueCheckBtn"),
     clueResetBtn: document.getElementById("clueResetBtn"),
@@ -297,7 +300,7 @@
       mode,
       reward,
       title: `Операция #${dayIndex}: ${MODE_INFO[mode].label}`,
-      description: `Летний кибертренинг, неделя ${week}. Режим: ${MODE_INFO[mode].label}.`
+      description: `Неделя ${week}. Сегодня активен режим: ${MODE_INFO[mode].label}.`
     };
   }
 
@@ -393,6 +396,20 @@
 
     el.startMissionBtn.textContent = isMissionSolved() ? "Операция уже выполнена" : "Начать операцию";
     el.startMissionBtn.disabled = !runtime.allowed || isMissionSolved();
+
+    if (el.modeHint) {
+      if (state.mission.mode === "chat") {
+        el.modeHint.textContent = "Сегодня режим «Переписка»: выбери безопасные ответы в диалоге.";
+      } else if (state.mission.mode === "clues") {
+        el.modeHint.textContent = "Сегодня режим «Поиск улик»: найди 5 признаков фишинга.";
+      } else {
+        el.modeHint.textContent = "Сегодня режим «Операция штаба»: собери правильный порядок действий.";
+      }
+    }
+
+    if (el.opsDrill) {
+      el.opsDrill.style.display = state.mission.mode === "operations" ? "block" : "none";
+    }
   }
 
   function renderProgress() {
@@ -472,7 +489,7 @@
     state.ops.picked = [];
     state.ops.passed = false;
     el.opsCompleteBtn.disabled = true;
-    el.opsResult.textContent = "Собери последовательность, затем нажми «Проверить порядок».";
+    el.opsResult.textContent = "Выбери шаги по порядку и нажми «Проверить».";
     el.opsResult.className = "result";
     el.opsActionButtons.innerHTML = "";
     updateOpsSequenceText();
@@ -498,7 +515,7 @@
 
   function checkOpsDrill() {
     if (state.ops.picked.length !== OPS_SEQUENCE.length) {
-      el.opsResult.textContent = "Нужно выбрать все шаги, чтобы проверить порядок.";
+      el.opsResult.textContent = "Выбери все шаги, потом проверяй.";
       el.opsResult.className = "result warn";
       return;
     }
@@ -507,14 +524,14 @@
     if (ok) {
       state.ops.passed = true;
       el.opsCompleteBtn.disabled = false;
-      el.opsResult.textContent = "Верно! Порядок действий правильный. Можно зачесть операцию.";
+      el.opsResult.textContent = "Верно! Порядок правильный, можно зачесть операцию.";
       el.opsResult.className = "result good";
       return;
     }
 
     state.ops.passed = false;
     el.opsCompleteBtn.disabled = true;
-    el.opsResult.textContent = "Есть ошибка в порядке. Сбрось выбор и попробуй ещё раз.";
+    el.opsResult.textContent = "Есть ошибка в порядке. Нажми «Сброс» и попробуй снова.";
     el.opsResult.className = "result bad";
   }
 
@@ -629,23 +646,48 @@
       dot.style.left = `${left}px`;
       dot.style.top = `${top}px`;
       dot.addEventListener("click", () => {
-        if (state.clues.found.has(clue.id)) {
-          state.clues.found.delete(clue.id);
-          dot.classList.remove("marked");
-        } else {
-          state.clues.found.add(clue.id);
-          dot.classList.add("marked");
-        }
-        updateClueCounter();
+        toggleClue(clue.id);
       });
       el.clueBoard.appendChild(dot);
     });
+  }
+
+  function renderClueList() {
+    if (!el.clueList) return;
+    el.clueList.innerHTML = "";
+    CLUES.forEach((clue, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "clue-item";
+      btn.dataset.id = clue.id;
+      btn.textContent = `${idx + 1}. ${clue.tip}`;
+      btn.addEventListener("click", () => {
+        toggleClue(clue.id);
+      });
+      el.clueList.appendChild(btn);
+    });
+    syncHotspotMarks();
+  }
+
+  function toggleClue(clueId) {
+    if (state.clues.found.has(clueId)) {
+      state.clues.found.delete(clueId);
+    } else {
+      state.clues.found.add(clueId);
+    }
+    syncHotspotMarks();
+    updateClueCounter();
   }
 
   function syncHotspotMarks() {
     el.clueBoard.querySelectorAll(".hotspot").forEach((dot) => {
       dot.classList.toggle("marked", state.clues.found.has(dot.dataset.id));
     });
+    if (el.clueList) {
+      el.clueList.querySelectorAll(".clue-item").forEach((btn) => {
+        btn.classList.toggle("active", state.clues.found.has(btn.dataset.id));
+      });
+    }
   }
 
   function updateClueCounter() {
@@ -655,9 +697,9 @@
   function resetClues() {
     state.clues.found.clear();
     state.clues.completed = false;
-    el.clueBoard.querySelectorAll(".hotspot").forEach((d) => d.classList.remove("marked"));
+    syncHotspotMarks();
     updateClueCounter();
-    el.clueResult.textContent = "Отметь улики, затем нажми «Проверить улики».";
+    el.clueResult.textContent = "Отметь 5 улик и нажми «Проверить».";
     el.clueResult.className = "result";
   }
 
@@ -667,13 +709,13 @@
 
     if (found === all) {
       state.clues.completed = true;
-      el.clueResult.textContent = "Точно! Все улики обнаружены. Можно зачесть операцию.";
+      el.clueResult.textContent = "Отлично! Все 5 улик найдены. Можно зачесть операцию.";
       el.clueResult.className = "result good";
     } else if (found >= 3) {
-      el.clueResult.textContent = `Почти: найдено ${found}/${all}. Проверь домен, ссылку и признаки давления.`;
+      el.clueResult.textContent = `Почти готово: ${found}/${all}. Проверь домен, ссылку и срочность.`;
       el.clueResult.className = "result warn";
     } else {
-      el.clueResult.textContent = "Слишком мало улик. Ищи подмену домена, небезопасную ссылку и запрос SMS-кода.";
+      el.clueResult.textContent = "Пока мало улик. Ищи подмену домена, небезопасную ссылку и запрос SMS-кода.";
       el.clueResult.className = "result bad";
     }
   }
@@ -1017,6 +1059,7 @@
     renderServerProgress();
     renderLeaderboard();
     resetChat();
+    renderClueList();
     placeHotspots();
     updateClueCounter();
     hookEvents();
