@@ -53,6 +53,54 @@ def _game_reset_token(result_row) -> int:
     return 0
 
 
+def _cyber_reset_token(result_row) -> int:
+    """Стабильный reset_token из cyber_results (меняется только при сбросе)."""
+    if not result_row:
+        return 0
+    try:
+        if len(result_row) > 7:
+            token = int(result_row[7] or 0)
+            return token if token > 0 else 0
+    except Exception:
+        return 0
+    return 0
+
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+GAME_AUDIO_TRACKS = {
+    'epic_boss_battle': 'https://opengameart.org/sites/default/files/Juhani%20Junkala%20-%20Epic%20Boss%20Battle%20%5BSeamlessly%20Looping%5D.wav',
+    'determination': 'https://opengameart.org/sites/default/files/determination.mp3',
+    'prepare_your_swords': 'https://opengameart.org/sites/default/files/prepare_your_swords.mp3',
+    'adventuring_song': 'https://opengameart.org/sites/default/files/adventuring_song.mp3',
+    'town_theme': 'https://opengameart.org/sites/default/files/TownTheme.mp3',
+}
+
+
+class _PollingConflictNoiseFilter(logging.Filter):
+    """Filters expected 409 polling conflicts during redeploy overlap."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "terminated by other getUpdates request" in msg:
+            return False
+        if '/getUpdates "HTTP/1.1 409 Conflict"' in msg:
+            return False
+        return True
+
+
+_polling_conflict_filter = _PollingConflictNoiseFilter()
+logging.getLogger("telegram.ext.Updater").addFilter(_polling_conflict_filter)
+logging.getLogger("telegram.ext._updater").addFilter(_polling_conflict_filter)
+logging.getLogger("httpx").addFilter(_polling_conflict_filter)
+
+_LAST_CONFLICT_WARN_TS = 0.0
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int((os.environ.get(name) or "").strip() or default)
@@ -109,6 +157,8 @@ GPT_AVAILABLE = bool(GROQ_API_KEY)
 GAME_URL      = (os.environ.get('GAME_URL', '') or '').strip()
 if GAME_URL and not GAME_URL.startswith('http'):
     GAME_URL = 'https://' + GAME_URL
+# URL Mini App игры "Киберщит" (по умолчанию отдаём из этого же бота: /cyber/)
+CYBER_URL = (os.environ.get('CYBER_URL', '') or '').strip()
 # Public URL бота на Railway (для приёма sync запросов из игры)
 # Приоритет: BOT_PUBLIC_URL (ручная) > RAILWAY_PUBLIC_DOMAIN (авто)
 BOT_PUBLIC_URL = (
@@ -118,6 +168,10 @@ BOT_PUBLIC_URL = (
 )
 if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
+if not CYBER_URL and BOT_PUBLIC_URL:
+    CYBER_URL = BOT_PUBLIC_URL.rstrip('/') + '/cyber/'
+if CYBER_URL and not CYBER_URL.startswith('http'):
+    CYBER_URL = 'https://' + CYBER_URL
 def _origin_from_url(raw_url: str) -> str:
     if not raw_url:
         return ''
@@ -132,6 +186,7 @@ def _origin_from_url(raw_url: str) -> str:
 
 _ALLOWED_GAME_ORIGINS: tuple[str, ...] = tuple(dict.fromkeys(filter(None, (
     _origin_from_url(GAME_URL),
+    _origin_from_url(CYBER_URL),
     _origin_from_url(BOT_PUBLIC_URL),
 ))))
 
@@ -157,6 +212,7 @@ if not (1 <= PORT <= 65535):
 # Принята "честная" схема по количеству деплоев: X.Y.Z ~= сотни/десятки/единицы.
 BOT_VERSION = os.environ.get('BOT_VERSION', '9.8.0').strip() or '9.8.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.7.78').strip() or '1.7.78'
+CYBER_VERSION = os.environ.get('CYBER_VERSION', '0.1.0').strip() or '0.1.0'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 GAME_AUTH_REQUIRED = os.environ.get('GAME_AUTH_REQUIRED', '1').strip() != '0'
@@ -167,6 +223,10 @@ _beta_cache_ts: float = 0
 # Кэш режима доступа к игре
 _game_mode_cache: str = 'beta'
 _game_mode_cache_ts: float = 0
+_cyber_beta_cache: set = set()
+_cyber_beta_cache_ts: float = 0
+_cyber_mode_cache: str = 'open'
+_cyber_mode_cache_ts: float = 0
 
 
 # ══════════════════════════════════════════════════════════
@@ -260,6 +320,22 @@ async def is_game_privileged_async(user_id: int, *, bot_admin: bool | None = Non
     return False
 
 
+async def is_cyber_privileged_async(user_id: int, *, bot_admin: bool | None = None,
+                                    cyber_role: str | None = None) -> bool:
+    """True, если пользователь может входить в Киберщит в техрежиме."""
+    if cyber_role is None:
+        try:
+            cyber_role = await asyncio.to_thread(db.get_cyber_role, user_id)
+        except Exception:
+            cyber_role = None
+    if cyber_role == 'admin':
+        return True
+    if cyber_role == 'tester':
+        mode = await _get_cached_cyber_mode()
+        return mode in ('beta', 'open')
+    return False
+
+
 async def is_game_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None = None,
                                          game_role: str | None = None) -> tuple[bool, dict]:
     """Проверяет блокируется ли вход в игру техрежимом для конкретного пользователя."""
@@ -273,6 +349,21 @@ async def is_game_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None
     )
     return (not allowed), status
 
+
+async def is_cyber_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None = None,
+                                          cyber_role: str | None = None) -> tuple[bool, dict]:
+    """Проверяет блокируется ли вход в Киберщит техрежимом для конкретного пользователя."""
+    status = await get_maintenance_status_cached()
+    if not status.get('enabled'):
+        return False, status
+    allowed = await is_cyber_privileged_async(
+        user_id,
+        bot_admin=bot_admin,
+        cyber_role=cyber_role,
+    )
+    return (not allowed), status
+REQUEST_TIMEOUT = 30.0
+TZ_MINSK        = pytz.timezone('Europe/Minsk')
 
 ALL_CLASSES  = ['5а','5б','5в','6а','6б','6в','7а','7б','7в',
                 '8а','8б','9а','9б','10а','10б','11']
@@ -1008,7 +1099,6 @@ SCHEDULE_STRUCTURED = {
 # ══════════════════════════════════════════════════════════
 #  СПИСОК УЧИТЕЛЕЙ ИЗ РАСПИСАНИЯ
 # ══════════════════════════════════════════════════════════
-
 def _extract_all_teachers() -> list:
     teachers = set()
     for days in SCHEDULE_STRUCTURED.values():
@@ -1447,12 +1537,13 @@ async def check_maintenance(update: Update, context: CallbackContext,
     if not status.get('enabled'):
         return False
 
-    if scope == 'game':
-        title = "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>"
-        check_btn_text = "🎮 Проверить доступ"
-        check_btn_cb = 'menu_game'
-        admin_line = "• администраторы игры"
-        tester_line = "• тестировщики игры (в режимах beta/open)"
+    if scope in ('game', 'cyber'):
+        is_cyber_scope = (scope == 'cyber')
+        title = "🛡 <b>КИБЕРЩИТ В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>" if is_cyber_scope else "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>"
+        check_btn_text = "🛡 Проверить доступ" if is_cyber_scope else "🎮 Проверить доступ"
+        check_btn_cb = 'menu_cyber' if is_cyber_scope else 'menu_game'
+        admin_line = "• администраторы Киберщита" if is_cyber_scope else "• администраторы игры"
+        tester_line = "• тестировщики Киберщита (в режимах beta/open)" if is_cyber_scope else "• тестировщики игры (в режимах beta/open)"
         msg = (
             f"{title}\n\n"
             "Вход в игру временно ограничен.\n"
@@ -1476,7 +1567,7 @@ async def check_maintenance(update: Update, context: CallbackContext,
     try:
         if update.callback_query:
             await update.callback_query.answer(
-                "⚠️ Игра в техрежиме" if scope == 'game' else "⚠️ Технические работы",
+                "⚠️ Технические работы" if scope not in ('game', 'cyber') else ("🛡 Киберщит в техрежиме" if scope == 'cyber' else "⚠️ Игра в техрежиме"),
                 show_alert=True
             )
             await safe_edit(update.callback_query, msg, kb)
@@ -1556,6 +1647,8 @@ async def notify_class_substitution(context, class_name: str, sub_data: dict):
             await asyncio.sleep(0.05)
         except Exception as e:
             logger.warning(f"notify_class_sub {uid}: {e}")
+
+
 
 
 async def notify_new_news(context, title: str, scope: str = 'bot'):
@@ -2084,6 +2177,10 @@ async def teacher_unlink_do(query, context):
         [[btn("👤 Зарегистрироваться", 'menu_register')], BACK_TO_MAIN[0]])
 
 
+
+
+
+
 def _fmt_minutes(m: int) -> str:
     """Форматирует минуты в человекочитаемый вид: '2ч 15мин' или '45 мин'."""
     if m >= 60:
@@ -2432,11 +2529,14 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 async def cmd_version(update: Update, context: CallbackContext):
     """Показывает текущие версии бота и игры."""
     game_url_state = "настроен" if GAME_URL else "не задан"
+    cyber_url_state = "настроен" if CYBER_URL else "не задан"
     msg = (
         "🧩 <b>Версии системы</b>\n\n"
         f"🤖 Бот: <b>{BOT_VERSION}</b>\n"
         f"🎮 Игра: <b>{GAME_VERSION}</b>\n"
+        f"🛡 Киберщит: <b>{CYBER_VERSION}</b>\n"
         f"🌐 GAME_URL: <b>{game_url_state}</b>\n"
+        f"🌐 CYBER_URL: <b>{cyber_url_state}</b>\n"
     )
     await update.message.reply_text(msg, parse_mode='HTML')
 
@@ -3005,6 +3105,8 @@ async def move_news_scope(query, context, news_id: int, target_scope: str):
     await show_news_full(query, context, news_id, target, page)
 
 
+
+
 # ══════════════════════════════════════════════════════════
 #  НОВОСТИ: ПУБЛИКАЦИЯ (АДМИН)
 # ══════════════════════════════════════════════════════════
@@ -3216,6 +3318,46 @@ async def is_game_allowed(user_id: int) -> bool:
         _beta_cache = {r[0] for r in rows}
         _beta_cache_ts = time.time()
     return user_id in _beta_cache
+
+
+async def _get_cached_cyber_mode() -> str:
+    import time
+    global _cyber_mode_cache, _cyber_mode_cache_ts
+    if time.time() - _cyber_mode_cache_ts > 30:
+        _cyber_mode_cache = await asyncio.to_thread(db.get_cyber_access_mode)
+        _cyber_mode_cache_ts = time.time()
+    if _cyber_mode_cache not in ('beta', 'open', 'closed'):
+        _cyber_mode_cache = 'open'
+    return _cyber_mode_cache
+
+
+async def is_cyber_allowed(user_id: int) -> bool:
+    """Строгий доступ к Киберщиту по режимам: closed / beta / open."""
+    import time
+    global _cyber_beta_cache, _cyber_beta_cache_ts
+
+    try:
+        cyber_role = await asyncio.to_thread(db.get_cyber_role, user_id)
+    except Exception:
+        cyber_role = 'player'
+
+    if cyber_role == 'admin':
+        return True
+
+    mode = await _get_cached_cyber_mode()
+    if mode == 'closed':
+        return False
+    if cyber_role == 'tester':
+        return mode in ('beta', 'open')
+    if mode == 'open':
+        return True
+
+    # beta mode
+    if time.time() - _cyber_beta_cache_ts > 60:
+        rows = await asyncio.to_thread(db.get_cyber_beta_users)
+        _cyber_beta_cache = {r[0] for r in rows}
+        _cyber_beta_cache_ts = time.time()
+    return user_id in _cyber_beta_cache
 
 
 async def menu_game(query, context):
@@ -3508,6 +3650,262 @@ async def menu_game(query, context):
         "🏆 <b>Таблица лидеров</b> всей школы"
         + my_info + role_hint,
         parse_mode='HTML', reply_markup=kb
+    )
+
+
+async def menu_cyber(query, context):
+    """Запуск игры Киберщит с ролями admin/tester/player."""
+    await query.answer()
+    user = query.from_user
+
+    if not await is_cyber_allowed(user.id):
+        mode = await _get_cached_cyber_mode()
+        if mode == 'closed':
+            denied_text = (
+                "🔧 <b>Киберщит в техническом режиме</b>\n\n"
+                "Сейчас вход в игру ограничен.\n"
+                "Доступ есть только у администраторов игры."
+            )
+        else:
+            denied_text = (
+                "🔒 <b>Нет доступа</b>\n\n"
+                "Вы пока не добавлены в активный режим Киберщита.\n"
+                "Попросите администратора выдать доступ."
+            )
+        await safe_edit(query, denied_text, [BACK_TO_MAIN[0]])
+        return
+
+    if not CYBER_URL:
+        await safe_edit(
+            query,
+            "🛡 <b>КИБЕРЩИТ</b>\n\n"
+            "⚠️ Игра временно недоступна.\n"
+            "<i>Администратор ещё не добавил CYBER_URL в Railway.</i>",
+            [BACK_TO_MAIN[0]],
+        )
+        return
+
+    from telegram import InlineKeyboardButton, WebAppInfo
+
+    # Регистрируем игрока и роль
+    try:
+        reg_task = asyncio.to_thread(db.register_cyber_player, user.id, user.first_name)
+        role_task = asyncio.to_thread(db.get_cyber_role, user.id)
+        _, role = await asyncio.gather(reg_task, role_task)
+    except Exception as e:
+        logger.warning(f"menu_cyber register/read error: {e}")
+        role = 'player'
+    if role not in ('admin', 'tester', 'player'):
+        role = 'player'
+        try:
+            await asyncio.to_thread(db.set_cyber_role, user.id, role)
+        except Exception:
+            pass
+
+    my_rank_info = (None, 0)
+    try:
+        tasks = [
+            asyncio.to_thread(db.get_cyber_result, user.id),
+            asyncio.to_thread(db.get_cyber_leaderboard, 20),
+        ]
+        if role == 'player':
+            tasks.append(asyncio.to_thread(db.get_cyber_player_rank, user.id))
+        gathered = await asyncio.gather(*tasks)
+        my_result = gathered[0]
+        lb_rows = gathered[1]
+        if role == 'player' and len(gathered) > 2 and isinstance(gathered[2], tuple):
+            my_rank_info = gathered[2]
+    except Exception as e:
+        logger.warning(f"menu_cyber data read error: {e}")
+        my_result, lb_rows = None, []
+
+    lb_data = [
+        {
+            'uid': str(r[0]),
+            'name': r[1] or 'Игрок',
+            'xp': int(r[2] or 0),
+            'solved': int(r[3] or 0),
+            'streak': int(r[4] or 0),
+            'role': (r[5] if len(r) > 5 else 'player') or 'player',
+        }
+        for r in lb_rows
+    ]
+
+    admin_mode = role == 'admin'
+    tester_mode = role == 'tester'
+    in_rating = role == 'player'
+    my_data = None
+    if my_result:
+        my_data = {
+            'uid': str(my_result[0]),
+            'name': my_result[1] or 'Игрок',
+            'xp': int(my_result[2] or 0),
+            'solved': int(my_result[3] or 0),
+            'streak': int(my_result[4] or 0),
+            'banned': bool(my_result[6]) if len(my_result) > 6 else False,
+            'reset_token': int(my_result[7] or 0) if len(my_result) > 7 else 0,
+            'role': role,
+            'admin_mode': admin_mode,
+            'tester_mode': tester_mode,
+            'in_rating': in_rating,
+        }
+
+    sync_url_val = f"{BOT_PUBLIC_URL}/cyber_sync" if BOT_PUBLIC_URL else ''
+    leaderboard_url = f"{BOT_PUBLIC_URL}/cyber_leaderboard" if BOT_PUBLIC_URL else ''
+    state_url = f"{BOT_PUBLIC_URL}/cyber_state" if BOT_PUBLIC_URL else ''
+    reset_url = f"{BOT_PUBLIC_URL}/cyber_reset" if BOT_PUBLIC_URL else ''
+
+    payload_obj = {
+        'sync_url': sync_url_val,
+        'leaderboard_url': leaderboard_url,
+        'state_url': state_url,
+        'reset_url': reset_url,
+        'role': role,
+        'admin_mode': admin_mode,
+        'tester_mode': tester_mode,
+        'in_rating': in_rating,
+        'version': CYBER_VERSION,
+        'lb': lb_data,
+        'me': my_data,
+    }
+    payload = urllib.parse.quote(json.dumps(payload_obj, ensure_ascii=False))
+    if len(payload) >= 2000:
+        slim_payload_obj = {
+            'sync_url': sync_url_val,
+            'leaderboard_url': leaderboard_url,
+            'state_url': state_url,
+            'reset_url': reset_url,
+            'role': role,
+            'admin_mode': admin_mode,
+            'tester_mode': tester_mode,
+            'in_rating': in_rating,
+            'version': CYBER_VERSION,
+            'me': my_data,
+        }
+        payload = urllib.parse.quote(json.dumps(slim_payload_obj, ensure_ascii=False))
+
+    cyber_url = build_game_launch_url(CYBER_URL, CYBER_VERSION, payload)
+
+    if my_result:
+        total_xp = int(my_result[2] or 0)
+        solved = int(my_result[3] or 0)
+        streak = int(my_result[4] or 0)
+        updated = my_result[5]
+        updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y') if updated else '—'
+        rank_pos, rank_total = my_rank_info if isinstance(my_rank_info, tuple) else (None, 0)
+        if role != 'player':
+            rank_line = "\n🏆 Рейтинг: <i>не учитывается для этой роли</i>"
+        elif rank_pos:
+            rank_line = f"\n🏆 Рейтинг: <b>#{rank_pos}</b> из {rank_total}"
+        elif total_xp > 0 and (rank_total or 0) > 0:
+            rank_line = f"\n🏆 Рейтинг: <b>вне топ-20</b> · участников: {rank_total}"
+        else:
+            rank_line = "\n🏆 Рейтинг: <i>пока без позиции</i>"
+        my_info = (
+            "\n\n📊 <b>Ваш прогресс</b>"
+            f"\n⭐ XP: <b>{total_xp}</b>"
+            f"\n✅ Операций закрыто: <b>{solved}</b>"
+            f"\n🔥 Серия: <b>{streak}</b>"
+            f"\n📅 Последняя игра: {updated_str}"
+            + rank_line
+        )
+    else:
+        my_info = "\n\n<i>Вы ещё не играли — начните первую летнюю операцию.</i>"
+
+    if role == 'admin':
+        role_hint = "\n👑 <i>Режим администратора: вход всегда, рейтинг не учитывается.</i>"
+    elif role == 'tester':
+        role_hint = "\n🧪 <i>Режим тестировщика: вход в beta/open, рейтинг не учитывается.</i>"
+    else:
+        role_hint = "\n🎮 <i>Игровой режим: участие в общем рейтинге школы.</i>"
+
+    btn_rows = [
+        [InlineKeyboardButton(
+            "🛡 ОТКРЫТЬ КИБЕРЩИТ"
+            if role == 'player'
+            else ("👑 ОТКРЫТЬ КИБЕРЩИТ (АДМИН)" if role == 'admin' else "🧪 ОТКРЫТЬ КИБЕРЩИТ (ТЕСТЕР)"),
+            web_app=WebAppInfo(url=cyber_url),
+        )],
+        [InlineKeyboardButton("🏆 Рейтинг Киберщита", callback_data='cyber_leaderboard')],
+    ]
+    if role == 'admin':
+        btn_rows.append([InlineKeyboardButton("🗑 Сбросить мой прогресс", callback_data='cyber_admin_self_reset')])
+    btn_rows.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
+
+    await query.message.edit_text(
+        "🛡 <b>КИБЕРЩИТ</b>\n"
+        "<i>Летняя школа цифровой безопасности</i>\n\n"
+        "Тренажёр безопасного поведения в интернете:\n"
+        "• 💬 Симулятор переписки\n"
+        "• 🔎 Поиск улик в фишинговых письмах\n"
+        "• 🎯 Операции по реагированию на инциденты\n\n"
+        "Режимы обновляются ежедневно на всё лето."
+        + my_info + role_hint,
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(btn_rows),
+    )
+
+
+async def cyber_leaderboard(query, context):
+    """Публичный рейтинг Киберщита."""
+    await query.answer()
+    rows = await asyncio.to_thread(db.get_cyber_leaderboard, 30)
+    total = len(rows)
+    if not rows:
+        await safe_edit(
+            query,
+            "🏆 <b>Рейтинг Киберщита</b>\n\nПока нет игроков с очками.",
+            [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
+        )
+        return
+    lines = [f"🏆 <b>РЕЙТИНГ КИБЕРЩИТА</b>  👥 {total}\n"]
+    for i, r in enumerate(rows, start=1):
+        uid = int(r[0] or 0)
+        name = (r[1] or "Игрок").strip()
+        xp = int(r[2] or 0)
+        solved = int(r[3] or 0)
+        streak = int(r[4] or 0)
+        me_mark = " 👈" if uid == query.from_user.id else ""
+        lines.append(f"{i}. <b>{name}</b>{me_mark}")
+        lines.append(f"   ⭐ {xp} XP · ✅ {solved} · 🔥 {streak}")
+    await safe_edit(
+        query,
+        "\n".join(lines),
+        [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
+    )
+
+
+async def cyber_admin_self_reset(query, context):
+    """Запрос подтверждения self-reset для admin роли Киберщита."""
+    await query.answer()
+    await safe_edit(
+        query,
+        "⚠️ <b>Сбросить свой прогресс Киберщита?</b>\n\n"
+        "XP, серия и выполненные операции будут очищены.",
+        [
+            [btn("✅ Да, сбросить", "cyber_admin_self_reset_confirm")],
+            [btn("❌ Отмена", "menu_cyber")],
+        ],
+    )
+
+
+async def cyber_admin_self_reset_confirm(query, context):
+    """Выполняет self-reset для admin роли Киберщита."""
+    await query.answer()
+    uid = query.from_user.id
+    role = await asyncio.to_thread(db.get_cyber_role, uid)
+    if role != 'admin':
+        await safe_edit(
+            query,
+            "⛔ Только игровой администратор Киберщита может выполнить этот сброс.",
+            [[btn("↩️ Назад", "menu_cyber")]],
+        )
+        return
+    ok = await asyncio.to_thread(db.reset_cyber_result, uid)
+    await safe_edit(
+        query,
+        "✅ Прогресс Киберщита сброшен." if ok else "❌ Не удалось сбросить прогресс.",
+        [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
     )
 
 
@@ -4116,6 +4514,10 @@ async def handle_sub_flow(query, context):
             f"<i>Уведомление отправлено учителю.</i>", kb)
 
 
+
+
+
+
 # ══════════════════════════════════════════════════════════
 #  АДМИН: УПРАВЛЕНИЕ РОЛЯМИ ИГРОКОВ
 # ══════════════════════════════════════════════════════════
@@ -4699,6 +5101,7 @@ async def admin_game_panel(query, context):
         [btn("🔓 Доступ игроков к главам", 'admin_player_chapters')],
         [btn("👤 Роли игроков", 'admin_roles_panel')],
         [btn("🗑 Сбросить игру всем", 'admin_game_reset_all')],
+        [btn("🛡 Киберщит", 'admin_cyber_panel')],
         [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
@@ -4717,6 +5120,344 @@ async def admin_set_game_mode(query, context, mode: str):
     mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
     txt = f"✅ Режим игры: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
     await safe_edit(query, txt, [[btn("◀️ Управление игрой", 'admin_game_panel')]])
+
+
+async def admin_cyber_panel(query, context):
+    """Панель управления Киберщитом."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+
+    rows, access_mode, beta_users = await asyncio.gather(
+        asyncio.to_thread(db.get_cyber_leaderboard_admin, 80),
+        asyncio.to_thread(db.get_cyber_access_mode),
+        asyncio.to_thread(db.get_cyber_beta_users),
+    )
+    total = len(rows)
+    active = sum(1 for r in rows if int(r[2] or 0) > 0)
+    admins = sum(1 for r in rows if (r[7] if len(r) > 7 else 'player') == 'admin')
+    testers = sum(1 for r in rows if (r[7] if len(r) > 7 else 'player') == 'tester')
+    beta_count = len(beta_users or [])
+    mode_labels = {
+        'beta': f"🧪 Бета ({beta_count})",
+        'open': "🟢 Открыта",
+        'closed': "🔒 Закрыта",
+    }
+    mode_title = mode_labels.get(access_mode, access_mode)
+    text = (
+        "🛡 <b>УПРАВЛЕНИЕ КИБЕРЩИТОМ</b>\n\n"
+        f"👥 Игроков: <b>{total}</b>\n"
+        f"📊 Активных: <b>{active}</b>\n"
+        f"👑 Админов игры: <b>{admins}</b>\n"
+        f"🧪 Тестеров игры: <b>{testers}</b>\n\n"
+        f"🚦 Режим доступа: <b>{mode_title}</b>\n\n"
+        f"🔖 Версия: <b>{CYBER_VERSION}</b>"
+    )
+    mode_btns = {
+        'beta': btn("🧪 Бета", 'cyber_mode_beta'),
+        'open': btn("🟢 Открыта", 'cyber_mode_open'),
+        'closed': btn("🔒 Закрыта", 'cyber_mode_closed'),
+    }
+    if access_mode in mode_btns:
+        current = mode_btns.pop(access_mode)
+        current_row = [btn(f"✅ {current.text}", 'noop')]
+    else:
+        current_row = [btn(f"✅ {mode_title}", 'noop')]
+    kb = [
+        [btn("📋 Список игроков", 'admin_cyber_leaderboard')],
+        [btn("👤 Роли игроков", 'admin_cyber_roles')],
+        current_row,
+        list(mode_btns.values()),
+        [btn("🧪 Бета-список", 'admin_cyber_beta_panel')],
+        [btn("🗑 Сбросить Киберщит всем", 'admin_cyber_reset_all')],
+        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_set_cyber_mode(query, context, mode: str):
+    """Переключает глобальный режим доступа к Киберщиту."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    ok = await asyncio.to_thread(db.set_cyber_access_mode, mode)
+    global _cyber_mode_cache, _cyber_mode_cache_ts, _cyber_beta_cache, _cyber_beta_cache_ts
+    if ok:
+        _cyber_mode_cache = mode
+    _cyber_mode_cache_ts = 0
+    _cyber_beta_cache = set()
+    _cyber_beta_cache_ts = 0
+    mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
+    text = f"✅ Режим Киберщита: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
+    await safe_edit(query, text, [[btn("◀️ Киберщит", 'admin_cyber_panel')]])
+
+
+async def admin_cyber_leaderboard(query, context):
+    """Список игроков Киберщита для администратора."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    rows = await asyncio.to_thread(db.get_cyber_leaderboard_admin, 60)
+    if not rows:
+        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ Киберщит", "admin_cyber_panel")]])
+        return
+    lines = [f"🛡 <b>ИГРОКИ КИБЕРЩИТА</b> ({len(rows)})\n"]
+    kb = []
+    for i, row in enumerate(rows, start=1):
+        uid = int(row[0] or 0)
+        name = row[1] or "Игрок"
+        xp = int(row[2] or 0)
+        solved = int(row[3] or 0)
+        streak = int(row[4] or 0)
+        banned = bool(row[5]) if len(row) > 5 else False
+        role = (row[7] if len(row) > 7 else 'player') or 'player'
+        role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}.get(role, '🎮')
+        lines.append(f"{i}. {role_icon} <b>{name}</b> <code>{uid}</code>")
+        lines.append(f"   ⭐ {xp} XP · ✅ {solved} · 🔥 {streak}" + (" · 🚫 бан" if banned else ""))
+        kb.append([btn(f"👤 {name[:16]} · {xp} XP", f'acyber_view_{uid}')])
+    kb.append([btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_cyber_view_player(query, context, uid: int):
+    """Карточка игрока Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    row = await asyncio.to_thread(db.get_cyber_result_detail, uid)
+    role = await asyncio.to_thread(db.get_cyber_role, uid)
+    if not row:
+        await safe_edit(query, "Игрок не найден в Киберщите.", [[btn("↩️ Назад", "admin_cyber_leaderboard")]])
+        return
+    name = row[1] or "Игрок"
+    xp = int(row[2] or 0)
+    solved = int(row[3] or 0)
+    streak = int(row[4] or 0)
+    updated = row[7]
+    updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M') if updated else '—'
+    text = (
+        "🛡 <b>КАРТОЧКА ИГРОКА</b>\n\n"
+        f"👤 <b>{name}</b>\n"
+        f"🆔 <code>{uid}</code>\n"
+        f"🎭 Роль: <b>{role}</b>\n"
+        f"⭐ XP: <b>{xp}</b>\n"
+        f"✅ Операций: <b>{solved}</b>\n"
+        f"🔥 Серия: <b>{streak}</b>\n"
+        f"🕒 Обновлён: {updated_str}"
+    )
+    kb = [
+        [btn("🧹 Сбросить прогресс", f'acyber_reset_{uid}')],
+        [btn("↩️ К списку", "admin_cyber_leaderboard"), btn("🏠 Меню", "back_to_main")],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_cyber_reset_player(query, context, uid: int):
+    """Сброс прогресса игрока Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    ok = await asyncio.to_thread(db.reset_cyber_result, uid)
+    await safe_edit(
+        query,
+        f"{'✅ Прогресс сброшен.' if ok else '❌ Не удалось сбросить прогресс.'}\nID: <code>{uid}</code>",
+        [[btn("↩️ К игроку", f'acyber_view_{uid}'), btn("🏠 Меню", "back_to_main")]],
+    )
+
+
+async def admin_cyber_reset_all(query, context):
+    """Подтверждение массового сброса Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    await safe_edit(
+        query,
+        "⚠️ <b>Сбросить прогресс Киберщита всем игрокам?</b>\n\n"
+        "XP/серия/операции будут очищены у всех.",
+        [
+            [btn("✅ Да, сбросить всем", "acyber_reset_all_confirm")],
+            [btn("❌ Отмена", "admin_cyber_panel")],
+        ],
+    )
+
+
+async def admin_cyber_reset_all_confirm(query, context):
+    """Выполняет массовый сброс Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    deleted = await asyncio.to_thread(db.reset_all_cyber_results)
+    await safe_edit(
+        query,
+        f"✅ Сброшено игроков: <b>{deleted}</b>",
+        [[btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")]],
+    )
+
+
+async def admin_cyber_roles(query, context):
+    """Управление ролями игроков Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    rows = await asyncio.to_thread(db.get_cyber_players_with_roles, 50)
+    if not rows:
+        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ Киберщит", "admin_cyber_panel")]])
+        return
+    lines = ["🎭 <b>РОЛИ КИБЕРЩИТА</b>\n"]
+    kb = []
+    for uid, name, role, xp, solved in rows:
+        icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}.get(role, '🎮')
+        lines.append(f"{icon} <b>{name or 'Игрок'}</b> <code>{uid}</code> · ⭐{xp} · ✅{solved}")
+        row_btns = []
+        if role != 'admin':
+            row_btns.append(btn("👑", f'crole_admin_{uid}'))
+        if role != 'tester':
+            row_btns.append(btn("🧪", f'crole_tester_{uid}'))
+        if role != 'player':
+            row_btns.append(btn("🎮", f'crole_player_{uid}'))
+        row_btns.append(btn(f"👤 {(name or str(uid))[:12]}", f'acyber_view_{uid}'))
+        kb.append(row_btns)
+    kb.append([btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def handle_cyber_role_action(query, context, data: str):
+    """Смена роли игрока Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    try:
+        parts = data.split('_')  # crole_admin_123
+        role = parts[1]
+        uid = int(parts[2])
+    except Exception:
+        await safe_edit(query, "❌ Некорректная команда роли.", [[btn("↩️ Назад", "admin_cyber_roles")]])
+        return
+    ok = await asyncio.to_thread(db.set_cyber_role, uid, role)
+    role_name = {'admin': 'Администратор 👑', 'tester': 'Тестировщик 🧪', 'player': 'Игрок 🎮'}.get(role, role)
+    await safe_edit(
+        query,
+        f"{'✅' if ok else '❌'} Роль Киберщита обновлена.\nID: <code>{uid}</code>\nНовая роль: <b>{role_name}</b>",
+        [[btn("↩️ Роли", "admin_cyber_roles"), btn("🏠 Меню", "back_to_main")]],
+    )
+
+
+async def admin_cyber_beta_panel(query, context):
+    """Панель управления бета-списком Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    users = await asyncio.to_thread(db.get_cyber_beta_users)
+    mode = await asyncio.to_thread(db.get_cyber_access_mode)
+    lines = [f"🧪 <b>БЕТА-СПИСОК КИБЕРЩИТА</b>\n\nРежим: <b>{mode}</b>"]
+    if users:
+        lines.append(f"\nВсего: <b>{len(users)}</b>")
+        for uid, name, _added, note in users[:20]:
+            lines.append(f"• <b>{name or 'Игрок'}</b> <code>{uid}</code>" + (f" — {note}" if note else ""))
+    else:
+        lines.append("\nСписок пуст.")
+    kb = [
+        [btn("➕ Добавить", "admin_cyber_beta_add"), btn("➖ Убрать", "admin_cyber_beta_remove")],
+        [btn("🧹 Очистить список", "admin_cyber_beta_clear_confirm")],
+        [btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")],
+    ]
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_cyber_beta_add(query, context):
+    """Запрос ID для добавления в beta Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    context.user_data['cyber_beta_action'] = 'add'
+    await safe_edit(
+        query,
+        "➕ <b>Добавить в beta Киберщита</b>\n\n"
+        "Отправьте один или несколько Telegram ID (через запятую).\n"
+        "Пример: <code>123456, 987654</code>",
+        [[btn("❌ Отмена", "admin_cyber_beta_panel")]],
+    )
+
+
+async def admin_cyber_beta_remove(query, context):
+    """Список для удаления из beta Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    users = await asyncio.to_thread(db.get_cyber_beta_users)
+    if not users:
+        await safe_edit(query, "ℹ️ Список beta пуст.", [[btn("↩️ Beta", "admin_cyber_beta_panel")]])
+        return
+    kb = [[btn(f"✖ {(u[1] or u[0])} ({u[0]})", f'acyber_beta_rm_{u[0]}')] for u in users[:40]]
+    kb.append([btn("↩️ Назад", "admin_cyber_beta_panel")])
+    await safe_edit(query, "➖ Выберите пользователя для удаления:", kb)
+
+
+async def admin_cyber_beta_clear_confirm(query, context):
+    """Подтверждение очистки beta Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    await safe_edit(
+        query,
+        "⚠️ Очистить beta-список Киберщита?",
+        [
+            [btn("✅ Да, очистить", "acyber_beta_clear_do")],
+            [btn("❌ Отмена", "admin_cyber_beta_panel")],
+        ],
+    )
+
+
+async def admin_cyber_beta_clear_do(query, context):
+    """Очищает beta-список Киберщита."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    global _cyber_beta_cache, _cyber_beta_cache_ts
+    _cyber_beta_cache = set()
+    _cyber_beta_cache_ts = 0
+    deleted = await asyncio.to_thread(db.clear_cyber_beta_list)
+    await safe_edit(
+        query,
+        f"✅ Beta-список очищен ({deleted}).",
+        [[btn("↩️ Beta", "admin_cyber_beta_panel"), btn("🏠 Меню", "back_to_main")]],
+    )
+
+
+async def handle_cyber_beta_add_input(update, context, text: str):
+    """Обрабатывает ввод ID для добавления в beta Киберщита."""
+    global _cyber_beta_cache, _cyber_beta_cache_ts
+    parts = [p.strip() for p in text.replace(',', ' ').split()]
+    added, failed = [], []
+    for part in parts:
+        try:
+            uid = int(part)
+            uinfo = await asyncio.to_thread(db.get_user_info, uid) if hasattr(db, 'get_user_info') else None
+            uname = None
+            if isinstance(uinfo, dict):
+                uname = uinfo.get('first_name') or uinfo.get('username')
+            ok = await asyncio.to_thread(db.add_cyber_beta_user, uid, uname)
+            if ok:
+                added.append(str(uid))
+            else:
+                failed.append(str(uid))
+        except Exception:
+            failed.append(part)
+    _cyber_beta_cache = set()
+    _cyber_beta_cache_ts = 0
+    context.user_data.pop('cyber_beta_action', None)
+    lines = []
+    if added:
+        lines.append(f"✅ Добавлено: {', '.join(added)}")
+    if failed:
+        lines.append(f"❌ Ошибка: {', '.join(failed)}")
+    if not lines:
+        lines.append("ℹ️ Ничего не изменилось.")
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup([[btn("↩️ Beta", "admin_cyber_beta_panel")]]),
+    )
 
 
 async def admin_game_leaderboard(query, context):
@@ -5164,6 +5905,7 @@ async def show_admin_panel(query):
 
     kb = [
         [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Шифровальщик", 'admin_game_panel')],
+        [btn("🛡 Киберщит", 'admin_cyber_panel'), btn("⚙️ Система", 'admin_system_panel')],
         [btn("👤 Мой игровой режим", 'admin_my_game_role')],
         [btn("🏠 Главное меню",  'back_to_main')],
     ]
@@ -5446,6 +6188,12 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             user.id,
             bot_admin=user_is_admin,
         )
+    elif d == 'menu_cyber':
+        maintenance_scope = 'cyber'
+        maintenance_bypass = await is_cyber_privileged_async(
+            user.id,
+            bot_admin=user_is_admin,
+        )
     if await check_maintenance(
         update,
         context,
@@ -5643,6 +6391,9 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         if d.startswith('grole_'):
             await handle_game_role_action(query, context, d)
             return
+        if d.startswith('crole_'):
+            await handle_cyber_role_action(query, context, d)
+            return
 
         if d.startswith('ach_open_') or d.startswith('ach_close_') or d.startswith('ach_sched_'):
             await handle_chapter_action(query, context, d)
@@ -5657,3 +6408,2230 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
                 f"{'✅ Тестер удалён из списка.' if ok else '❌ Не найден.'}",
                 [[btn("↩️ Бета-панель", 'admin_beta_panel')]])
             return
+        if d.startswith('acyber_beta_rm_'):
+            uid = int(d.replace('acyber_beta_rm_', ''))
+            global _cyber_beta_cache, _cyber_beta_cache_ts
+            _cyber_beta_cache = set(); _cyber_beta_cache_ts = 0
+            ok = await asyncio.to_thread(db.remove_cyber_beta_user, uid)
+            await safe_edit(
+                query,
+                f"{'✅ Пользователь удалён из beta.' if ok else '❌ Пользователь не найден.'}",
+                [[btn("↩️ Beta Киберщита", 'admin_cyber_beta_panel')]],
+            )
+            return
+        if d.startswith('acyber_view_'):
+            uid = int(d.replace('acyber_view_', ''))
+            await admin_cyber_view_player(query, context, uid)
+            return
+        if d.startswith('acyber_reset_') and d != 'acyber_reset_all_confirm':
+            uid = int(d.replace('acyber_reset_', ''))
+            await admin_cyber_reset_player(query, context, uid)
+            return
+        if d == 'acyber_reset_all_confirm':
+            await admin_cyber_reset_all_confirm(query, context)
+            return
+
+        # ── Доступ к главам для игроков (apc_) ──
+        if d.startswith('apc_player_'):
+            target_uid = int(d.replace('apc_player_', ''))
+            await admin_player_chapters_view(query, context, target_uid)
+            return
+        if (d.startswith('apc_grant_') or d.startswith('apc_revoke_')):
+            await handle_player_chapter_action(query, context, d)
+            return
+
+        if d.startswith('agame_view_'):
+            uid = int(d.replace('agame_view_', ''))
+            await admin_game_view_player(query, context, uid)
+            return
+        if d.startswith('agame_restart_penalty_'):
+            uid = int(d.replace('agame_restart_penalty_', ''))
+            await admin_game_restart_penalty(query, context, uid)
+            return
+        if d.startswith('agame_restart_nopts_'):
+            uid = int(d.replace('agame_restart_nopts_', ''))
+            await admin_game_restart_nopts(query, context, uid)
+            return
+        if d.startswith('agame_reset_points_'):
+            uid = int(d.replace('agame_reset_points_', ''))
+            await admin_game_reset_confirm(query, context, uid, False)
+            return
+        if d.startswith('agame_reset_agents_'):
+            uid = int(d.replace('agame_reset_agents_', ''))
+            await admin_game_reset_confirm(query, context, uid, True)
+            return
+        if d.startswith('agame_reset_confirm_'):
+            uid = int(d.replace('agame_reset_confirm_', ''))
+            await admin_game_reset_confirm(query, context, uid, False)
+            return
+        if d.startswith('agame_player_'):
+            uid = int(d.replace('agame_player_', ''))
+            await admin_game_view_player(query, context, uid)
+            return
+        if d.startswith('agame_reset_') and not d.startswith('agame_reset_all'):
+            uid = int(d.replace('agame_reset_', ''))
+            await admin_game_reset_player(query, context, uid)
+            return
+        if d.startswith('agame_ban_'):
+            uid = int(d.replace('agame_ban_', ''))
+            await admin_game_ban_player(query, context, uid)
+            return
+        if d.startswith('agame_unban_'):
+            uid = int(d.replace('agame_unban_', ''))
+            await admin_game_unban_player(query, context, uid)
+            return
+        if d == 'agame_reset_all_confirm' or d == 'agame_reset_all_points_confirm':
+            await admin_game_reset_all_confirm(query, context, False)
+            return
+        if d == 'agame_reset_all_agents_confirm':
+            await admin_game_reset_all_confirm(query, context, True)
+            return
+
+    if d.startswith('edit_news_') and user_is_admin:
+        news_id = int(d.split('_')[2])
+        await start_edit_news(query, context, news_id)
+        return
+    if d.startswith('del_news_') and user_is_admin:
+        news_id = int(d.split('_')[2])
+        await confirm_delete_news(query, context, news_id)
+        return
+    if d.startswith('confirm_del_news_') and user_is_admin:
+        news_id = int(d.split('_')[3])
+        await do_delete_news(query, context, news_id)
+        return
+    if d == 'cancel_edit_news':
+        _clear_flow(context)
+        await admin_content_panel(query, context)
+        return
+    if d == 'pub_news_all' and user_is_admin:
+        await do_publish_news(query, context, send_to_all=True)
+        return
+    if d == 'pub_news_only' and user_is_admin:
+        await do_publish_news(query, context, send_to_all=False)
+        return
+    if d.startswith('pub_news_scope_') and user_is_admin:
+        scope = d.replace('pub_news_scope_', '', 1)
+        await start_publish_news(query, context, scope)
+        return
+    if d.startswith('admin_publish_news_') and user_is_admin:
+        scope = d.replace('admin_publish_news_', '', 1)
+        await start_publish_news(query, context, scope)
+        return
+    if d.startswith('move_news_') and user_is_admin:
+        parts = d.split('_')
+        if len(parts) >= 4:
+            news_id = int(parts[2])
+            target_scope = parts[3]
+            await move_news_scope(query, context, news_id, target_scope)
+            return
+    if d == 'cancel_pub_news':
+        _clear_flow(context)
+        await admin_content_panel(query, context)
+        return
+
+    # ── Техрежим ──
+    if d.startswith('maint_'):
+        dur = d.replace('maint_', '')
+        await set_maintenance(query, context, dur)
+        return
+    if d == 'check_maintenance_status':
+        maint = await get_maintenance_status_cached(force=True)
+        if not maint['enabled']:
+            await safe_edit(query, "🟢 Бот работает штатно.", [[btn("🏠 Меню", 'back_to_main')]])
+        else:
+            await safe_edit(query,
+                f"⚠️ Технические работы\nДо: {maint['until'] or '∞'}",
+                [[btn("🔄 Обновить", 'check_maintenance_status')]])
+        return
+
+    # ── Учителя ──
+    if d.startswith('tch_page_'):
+        page = int(d.split('_')[2])
+        await menu_teacher(query, context, page)
+        return
+    if d.startswith('tch_'):
+        idx = int(d.replace('tch_', ''))
+        if idx < len(ALL_TEACHERS):
+            await show_teacher(query, context, ALL_TEACHERS[idx])
+        return
+
+    # ── Замены ──
+    if d in ('subs_yesterday', 'subs_today', 'subs_tomorrow'):
+        await show_subs_for_date(query, context)
+        return
+    if d == 'subs_all':
+        await show_all_subs(query, context)
+        return
+
+    # ── Классы ──
+    if d.startswith('cls_'):
+        await menu_class_days(query, context)
+        return
+    if d.startswith('day_'):
+        await menu_day_schedule(query, context)
+        return
+    if d.startswith('week_'):
+        await menu_week_schedule(query, context)
+        return
+
+    # ── Текущий урок ──
+    if d.startswith('now_'):
+        await show_current_lesson(query, context)
+        return
+
+    # ── Поиск (результат) ──
+    if d.startswith('search_tch_'):
+        idx = int(d.split('_')[2])
+        found = context.user_data.get('found_teachers', [])
+        if idx < len(found):
+            await show_teacher(query, context, found[idx])
+        return
+
+    # ── Админ: замены ──
+    if d == 'admin_view_subs' and user_is_admin:
+        await admin_view_subs(query, context)
+        return
+    if d == 'admin_del_sub' and user_is_admin:
+        await safe_edit(query,
+            "🗑️ Введите ID замены для удаления\n(смотри в «Все замены»):",
+            [[btn("❌ Отмена", 'cancel_del_sub')]])
+        context.user_data['deleting_sub'] = True
+        return
+    if d == 'cancel_del_sub' and user_is_admin:
+        context.user_data.pop('deleting_sub', None)
+        await admin_content_panel(query, context)
+        return
+    if d == 'admin_clear_subs' and user_is_admin:
+        await admin_confirm_clear_subs(query, context)
+        return
+    if d == 'admin_clear_confirm' and user_is_admin:
+        await admin_do_clear_subs(query, context)
+        return
+
+    # ── Фото замен: подтверждение/отмена ──
+    if d == 'confirm_photo_subs' and user_is_admin:
+        await save_photo_subs(query, context)
+        return
+    if d == 'cancel_photo_subs':
+        context.user_data.pop('pending_subs', None)
+        kb = [[btn("↩️ Контент", 'admin_content_panel')]]
+        await safe_edit(query, "❌ Сохранение отменено. Замены не добавлены.", kb)
+        return
+
+    # ── Рассылка ──
+    if d == 'admin_broadcast' and user_is_admin:
+        await admin_broadcast_start(query, context)
+        return
+    if d == 'confirm_broadcast' and user_is_admin:
+        await do_broadcast(query, context)
+        return
+    if d == 'cancel_broadcast':
+        _clear_flow(context)
+        await admin_content_panel(query, context)
+        return
+
+    if d.startswith('admin_users_page_') and user_is_admin:
+        try:
+            page = int(d.replace('admin_users_page_', ''))
+        except Exception:
+            page = 0
+        await show_users_stats(query, context, page=page)
+        return
+
+    # ── Основные роуты ──
+    routes = {
+        'teacher_change_name':    teacher_change_name,
+        'teacher_unlink_confirm': teacher_unlink_confirm,
+        'teacher_unlink_do':      teacher_unlink_do,
+        'menu_register':          menu_register,
+        'menu_profile':           show_profile,
+        'reg_role_teacher':       reg_role_teacher,
+        'reg_role_student':       reg_role_student,
+        'reg_role_parent':        reg_role_parent,
+        'reg_delete_confirm':     reg_delete_confirm,
+        'reg_delete_do':          reg_delete_do,
+        'back_to_main':           show_main_menu_edit,
+        'menu_now':               menu_now,
+        'menu_summer':            menu_summer,
+        'menu_schedule':          menu_schedule,
+        'menu_teacher':           lambda q, c: menu_teacher(q, c, 0),
+        'menu_search_teacher':    menu_search_teacher,
+        'menu_bells':             menu_bells,
+        'menu_substitutions':     menu_substitutions,
+        'menu_news':              menu_news,
+        'menu_my':                menu_my,
+        'menu_ai':                menu_ai,
+        'menu_games':             menu_games,
+        'menu_game':              menu_game,
+        'menu_cyber':             menu_cyber,
+        'cyber_leaderboard':      cyber_leaderboard,
+        'cyber_admin_self_reset': cyber_admin_self_reset,
+        'cyber_admin_self_reset_confirm': cyber_admin_self_reset_confirm,
+        'menu_help':              menu_help,
+        'admin_panel':                show_admin_panel,
+        'admin_content_panel':        admin_content_panel,
+        'admin_system_panel':         admin_system_panel,
+        'admin_season_mode_panel':    admin_season_mode_panel,
+        'season_mode_auto':           lambda q, c: admin_set_season_mode(q, c, 'auto'),
+        'season_mode_summer':         lambda q, c: admin_set_season_mode(q, c, 'summer'),
+        'season_mode_school':         lambda q, c: admin_set_season_mode(q, c, 'school'),
+        'admin_my_game_role':         admin_my_game_role,
+        'admin_manage_bot_admins':    admin_manage_bot_admins,
+        'admin_add_bot_admin_input':  admin_add_bot_admin_input,
+        'admin_remove_bot_admin_input': admin_remove_bot_admin_input,
+        'admin_enable_maintenance': admin_enable_maintenance,
+        'admin_disable_maintenance': admin_disable_maintenance,
+        'admin_publish_news':     start_publish_news,
+        'admin_manage_news':      admin_manage_news,
+        'admin_add_sub':          admin_add_sub_start,
+        'admin_photo_subs':       lambda q, c: safe_edit(q,
+            "📸 <b>ДОБАВЛЕНИЕ ЗАМЕН ИЗ ФОТО</b>\n\n"
+            "Отправьте фотографию листа с заменами в этот чат.\n\n"
+            "📌 <b>Советы для лучшего результата:</b>\n"
+            "• Фото при хорошем освещении\n"
+            "• Текст должен быть чётким и читаемым\n"
+            "• Держите камеру прямо над листом\n"
+            "• Весь лист должен быть в кадре\n\n"
+            "<i>После отправки фото ИИ автоматически распознает замены "
+            "и покажет предпросмотр для подтверждения.</i>",
+            [[btn("❌ Отмена", 'admin_content_panel')]]),
+        'admin_analytics':        show_analytics,
+        'admin_game_panel':       admin_game_panel,
+        'admin_cyber_panel':      admin_cyber_panel,
+        'cyber_mode_beta':        lambda q, c: admin_set_cyber_mode(q, c, 'beta'),
+        'cyber_mode_open':        lambda q, c: admin_set_cyber_mode(q, c, 'open'),
+        'cyber_mode_closed':      lambda q, c: admin_set_cyber_mode(q, c, 'closed'),
+        'admin_cyber_leaderboard': admin_cyber_leaderboard,
+        'admin_cyber_roles':      admin_cyber_roles,
+        'admin_cyber_reset_all':  admin_cyber_reset_all,
+        'admin_cyber_beta_panel': admin_cyber_beta_panel,
+        'admin_cyber_beta_add':   admin_cyber_beta_add,
+        'admin_cyber_beta_remove': admin_cyber_beta_remove,
+        'admin_cyber_beta_clear_confirm': admin_cyber_beta_clear_confirm,
+        'acyber_beta_clear_do':   admin_cyber_beta_clear_do,
+        'game_mode_beta':         lambda q, c: admin_set_game_mode(q, c, 'beta'),
+        'game_mode_open':         lambda q, c: admin_set_game_mode(q, c, 'open'),
+        'game_mode_closed':       lambda q, c: admin_set_game_mode(q, c, 'closed'),
+        'admin_game_roles':       admin_game_roles,
+        'admin_beta_panel':       admin_beta_panel,
+        'admin_chapters_panel':   admin_chapters_panel,
+        'admin_roles_panel':      admin_roles_panel,
+        'admin_chapters_open_all': admin_chapters_open_all,
+        'admin_beta_add':         admin_beta_add,
+        'admin_beta_remove':      admin_beta_remove,
+        'admin_beta_clear_confirm': admin_beta_clear_confirm,
+        'abeta_clear_do':         admin_beta_clear_do,
+        'admin_game_leaderboard': admin_game_leaderboard,
+        'admin_game_reset_all':   admin_game_reset_all,
+        'admin_player_chapters':  admin_player_chapters,
+        'game_leaderboard':       game_leaderboard,
+        'game_ref_invite':        game_ref_invite,
+        'game_ref_stats':         game_ref_stats,
+        'admin_users':            show_users_stats,
+        'game_admin_self_reset':         game_admin_self_reset,
+        'game_admin_self_reset_confirm': lambda q, c: game_admin_self_reset_confirm(q, c, False),
+        'game_admin_self_reset_confirm_points': lambda q, c: game_admin_self_reset_confirm(q, c, False),
+        'game_admin_self_reset_confirm_agents': lambda q, c: game_admin_self_reset_confirm(q, c, True),
+        'noop':                   lambda q, c: asyncio.sleep(0),
+    }
+
+    handler = routes.get(d)
+    if handler:
+        if d == 'admin_panel':
+            await handler(query)
+        else:
+            await handler(query, context)
+    else:
+        logger.warning(f"Неизвестный callback: {d}")
+
+
+# ══════════════════════════════════════════════════════════
+#  ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ
+# ══════════════════════════════════════════════════════════
+async def handle_message(update: Update, context: CallbackContext):
+    if not update.message or not update.message.text:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    asyncio.create_task(asyncio.to_thread(
+        db.update_user_and_log, user.id, 'message', None,
+        user.username, user.first_name, user.last_name, user.language_code
+    ))
+
+    if await check_maintenance(update, context):
+        return
+
+    if not isinstance(context.user_data, dict):
+        context.user_data = {}
+
+    text = update.message.text.strip()
+
+    # ── Регистрация: ввод имени ──
+    if context.user_data.get('awaiting_reg_name'):
+        context.user_data['reg_name'] = text
+        context.user_data.pop('awaiting_reg_name', None)
+        role = context.user_data.get('reg_role', 'student')
+        kb = []
+        for i in range(0, len(ALL_CLASSES), 4):
+            row = [btn(c.upper(), f'reg_class_{c}') for c in ALL_CLASSES[i:i+4]]
+            kb.append(row)
+        kb.append([btn("❌ Отмена", 'menu_register')])
+        role_label = "ученика" if role == 'student' else "ребёнка"
+        await update.message.reply_text(
+            f"✅ Имя: <b>{text}</b>\n\n"
+            f"Теперь выберите класс {role_label}:",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+        return
+
+    # ── Публикация новости ──
+    if context.user_data.get('pub_news') and await is_bot_admin_async(user.id):
+        await handle_publish_news_input(update, context)
+        return
+
+    # ── Редактирование новости ──
+    if context.user_data.get('edit_news_id') and await is_bot_admin_async(user.id):
+        await handle_edit_news_input(update, context)
+        return
+
+    # ── Добавление тестеров (бета) ──
+    if context.user_data.get('schedule_chapter') and await is_bot_admin_async(user.id):
+        await handle_schedule_input(update, context, text)
+        return
+
+    # ── Управление бот-администраторами ──
+    if (context.user_data.get('awaiting_add_bot_admin') or
+            context.user_data.get('awaiting_remove_bot_admin')) and await is_bot_admin_async(user.id):
+        await handle_bot_admin_input(update, context, text)
+        return
+
+    if context.user_data.get('beta_action') == 'add' and await is_bot_admin_async(user.id):
+        await handle_beta_add_input(update, context, text)
+        return
+    if context.user_data.get('cyber_beta_action') == 'add' and await is_bot_admin_async(user.id):
+        await handle_cyber_beta_add_input(update, context, text)
+        return
+
+    # ── Удаление замены по ID ──
+    if context.user_data.get('deleting_sub') and await is_bot_admin_async(user.id):
+        try:
+            sub_id = int(text)
+            await asyncio.to_thread(db.delete_substitution, sub_id)
+            kb = [[btn("↩️ Контент", 'admin_content_panel'), btn("🏠 Меню", 'back_to_main')]]
+            await update.message.reply_text(
+                f"✅ Замена ID {sub_id} удалена.",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Введите числовой ID замены.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка: {str(e)[:100]}")
+        context.user_data.pop('deleting_sub', None)
+        return
+
+    # ── Рассылка ──
+    if context.user_data.get('broadcasting') and await is_bot_admin_async(user.id):
+        await handle_broadcast_input(update, context)
+        return
+
+    # ── Поиск учителя ──
+    if context.user_data.get('searching_teacher'):
+        query_str = text
+        found = [t for t in ALL_TEACHERS if query_str.lower() in t.lower()]
+        context.user_data['searching_teacher'] = False
+        if found:
+            kb = []
+            for i, t in enumerate(found[:10]):
+                kb.append([btn(t, f'search_tch_{i}')])
+            context.user_data['found_teachers'] = found[:10]
+            kb.append([btn("🔍 Новый поиск", 'menu_search_teacher'), btn('🏠 Меню', 'back_to_main')])
+            await update.message.reply_text(
+                f"🔍 Найдено: <b>{len(found)}</b>\nВыберите учителя:",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        else:
+            kb = [
+                [btn("🔍 Попробовать снова", 'menu_search_teacher')],
+                BACK_TO_MAIN[0],
+            ]
+            await update.message.reply_text(
+                f"❌ По запросу «{query_str}» ничего не найдено.",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        return
+
+    # ── ИИ — проверяем последним, чтобы не перехватывать другие флоу ──
+    if context.user_data.get('awaiting_ai'):
+        thinking = await update.message.reply_text("🤔 Думаю...")
+        is_teacher = _tname(await asyncio.to_thread(db.find_teacher_by_telegram_id, user.id)) is not None
+        answer = await ask_ai(text, user.id, is_teacher)
+        try:
+            await thinking.edit_text(answer, parse_mode='HTML')
+        except Exception:
+            await update.message.reply_text(answer, parse_mode='HTML')
+        kb = [
+            [btn("❓ Ещё вопрос", 'menu_ai')],
+            [btn("🗑 Очистить историю", 'ai_clear_history')],
+            BACK_TO_MAIN[0],
+        ]
+        await update.message.reply_text(
+            "Что дальше?",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+        return
+
+    # ── Упоминание учителей ──
+    await handle_teacher_mentions(update, context)
+
+
+async def handle_teacher_mentions(update: Update, context: CallbackContext):
+    if not update.message or not update.message.text:
+        return
+    msg_text = update.message.text
+    user = update.message.from_user
+    found = []
+    teachers_db = await asyncio.to_thread(db.get_all_teachers_db)
+
+    for name, tid, registered in teachers_db:
+        if not registered or not tid:
+            continue
+        surname = name.split()[0]
+        if re.search(r'\b' + re.escape(surname) + r'\b', msg_text, re.IGNORECASE):
+            found.append((name, tid))
+
+    for teacher_name, teacher_id in found:
+        try:
+            note = (f"🔔 <b>Вас упомянули в боте!</b>\n"
+                    f"👤 От: {user.full_name}\n"
+                    f"📅 {datetime.now(TZ_MINSK).strftime('%H:%M %d.%m.%Y')}\n"
+                    f"💬 Сообщение:\n<i>{msg_text[:300]}</i>")
+            await context.bot.send_message(chat_id=teacher_id, text=note, parse_mode='HTML')
+            await update.message.reply_text(
+                f"✅ {teacher_name} получил(а) уведомление.",
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.warning(f"mention notify error: {e}")
+
+
+# ══════════════════════════════════════════════════════════
+#  ФОТО ЗАМЕН — GROQ VISION
+# ══════════════════════════════════════════════════════════
+
+PHOTO_SUB_PROMPT = """Ты — помощник для белорусской школы.
+На фото — расписание замен уроков.
+Извлеки все замены и верни ТОЛЬКО JSON-массив, без пояснений и markdown-блоков.
+
+Формат каждого элемента:
+{
+  "date": "YYYY-MM-DD или название дня (Понедельник/Вторник/...)",
+  "class": "название класса (например: 7а, 8б, 11)",
+  "lesson": номер урока (целое число),
+  "old_teacher": "фамилия И.О. заменяемого учителя или пустая строка",
+  "new_teacher": "фамилия И.О. нового учителя",
+  "subject": "название предмета"
+}
+
+Если дата не указана явно — используй ближайший будний день от сегодня.
+Если класс написан заглавными буквами (7А) — переводи в строчные (7а).
+Если данных нет или фото нечёткое — верни пустой массив [].
+Возвращай ТОЛЬКО валидный JSON без каких-либо пояснений."""
+
+
+async def parse_photo_substitutions(photo_bytes: bytes) -> list:
+    """Отправляет фото в Groq Vision и получает список замен."""
+    if not GROQ_API_KEY:
+        return []
+
+    import base64
+    b64 = base64.b64encode(photo_bytes).decode('utf-8')
+
+    payload = {
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",  # Groq vision модель
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": PHOTO_SUB_PROMPT
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 1500,
+        "temperature": 0.1,
+    }
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            r = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload, headers=headers
+            )
+            if r.status_code != 200:
+                logger.error(f"Groq Vision error {r.status_code}: {r.text[:200]}")
+                return []
+
+            raw = r.json()['choices'][0]['message']['content'].strip()
+            logger.info(f"Groq Vision ответ: {raw[:300]}")
+
+            # Убираем возможные markdown-блоки
+            raw = re.sub(r'```(?:json)?', '', raw).strip()
+            # Находим JSON-массив
+            match = re.search(r'\[.*\]', raw, re.DOTALL)
+            if not match:
+                logger.warning(f"JSON-массив не найден в ответе: {raw[:200]}")
+                return []
+
+            data = __import__('json').loads(match.group())
+            return data if isinstance(data, list) else []
+
+        except Exception as e:
+            logger.error(f"parse_photo_substitutions error: {e}")
+            return []
+
+
+def resolve_sub_date(date_str: str) -> tuple:
+    """
+    Преобразует строку даты из ответа ИИ в (date_iso, day_name).
+    Принимает: 'YYYY-MM-DD', 'Понедельник', 'пн', '15.01' и т.п.
+    """
+    today = datetime.now(TZ_MINSK).date()
+
+    # Уже ISO формат
+    try:
+        d = datetime.strptime(date_str, '%Y-%m-%d').date()
+        return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()] if d.weekday() < 5 else None
+    except ValueError:
+        pass
+
+    # ДД.ММ или ДД.ММ.ГГГГ
+    for fmt in ('%d.%m.%Y', '%d.%m'):
+        try:
+            d = datetime.strptime(date_str, fmt)
+            if fmt == '%d.%m':
+                d = d.replace(year=today.year)
+            return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()] if d.weekday() < 5 else None
+        except ValueError:
+            pass
+
+    # Название дня недели → ближайшая дата
+    day_aliases = {
+        'понедельник': 0, 'пн': 0,
+        'вторник': 1, 'вт': 1,
+        'среда': 2, 'ср': 2,
+        'четверг': 3, 'чт': 3,
+        'пятница': 4, 'пт': 4,
+    }
+    key = date_str.lower().strip()
+    if key in day_aliases:
+        target_wd = day_aliases[key]
+        diff = (target_wd - today.weekday()) % 7
+        if diff == 0 and datetime.now(TZ_MINSK).hour >= 14:
+            diff = 7   # уже прошло сегодня — следующая неделя
+        d = today + timedelta(days=diff)
+        return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()]
+
+    # Завтра по умолчанию
+    d = today + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()]
+
+
+def fuzzy_match_teacher(name: str) -> str:
+    """Находит ближайшее совпадение учителя из списка по фамилии."""
+    if not name:
+        return name
+    name_lower = name.lower()
+    # Точное совпадение
+    for t in ALL_TEACHERS:
+        if t.lower() == name_lower:
+            return t
+    # По первому слову (фамилии)
+    surname = name_lower.split()[0] if name_lower.split() else ''
+    for t in ALL_TEACHERS:
+        if t.lower().startswith(surname):
+            return t
+    return name  # вернуть как есть, если не нашли
+
+
+async def handle_photo_message(update: Update, context: CallbackContext):
+    """Обработчик фото — только для администраторов."""
+    user = update.effective_user
+    if not await is_bot_admin_async(user.id):
+        return
+
+    if await check_maintenance(update, context):
+        return
+
+    photo = update.message.photo[-1]  # берём максимальное качество
+    status_msg = await update.message.reply_text(
+        "📸 Фото получено. Анализирую замены...\n"
+        "<i>Это занимает 5–15 секунд</i>",
+        parse_mode='HTML'
+    )
+
+    try:
+        # Скачиваем фото
+        file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await file.download_as_bytearray()
+
+        await status_msg.edit_text("🔍 Groq Vision читает расписание...")
+
+        # Отправляем в Groq Vision
+        parsed = await parse_photo_substitutions(bytes(photo_bytes))
+
+        if not parsed:
+            await status_msg.edit_text(
+                "❌ <b>Не удалось распознать замены.</b>\n\n"
+                "Попробуйте:\n"
+                "• Сфотографировать чётче, при хорошем освещении\n"
+                "• Убедитесь, что текст читается на фото\n"
+                "• Добавьте замены вручную через 👑 Админку",
+                parse_mode='HTML'
+            )
+            return
+
+        await status_msg.edit_text(
+            f"✅ Найдено замен: <b>{len(parsed)}</b>\n"
+            f"Проверяю данные...",
+            parse_mode='HTML'
+        )
+
+        # Сохраняем в context для подтверждения
+        context.user_data['pending_subs'] = parsed
+        context.user_data['pending_subs_saved'] = []
+
+        # Формируем предпросмотр
+        await show_photo_subs_preview(update, context, status_msg)
+
+    except Exception as e:
+        logger.error(f"handle_photo_message error: {e}")
+        await status_msg.edit_text(
+            f"❌ Ошибка при обработке фото: {str(e)[:100]}",
+            parse_mode='HTML'
+        )
+
+
+async def show_photo_subs_preview(update, context, status_msg=None):
+    """Показывает предпросмотр распознанных замен для подтверждения."""
+    parsed = context.user_data.get('pending_subs', [])
+    if not parsed:
+        return
+
+    lines = ["📋 <b>РАСПОЗНАННЫЕ ЗАМЕНЫ — ПРЕДПРОСМОТР</b>\n"]
+    valid_count = 0
+
+    for i, sub in enumerate(parsed, 1):
+        date_str = sub.get('date', '')
+        cls      = str(sub.get('class', '')).lower().strip()
+        lesson   = sub.get('lesson', 0)
+        subject  = sub.get('subject', '—')
+        old_t    = sub.get('old_teacher', '—')
+        new_t    = sub.get('new_teacher', '—')
+
+        date_iso, day_name = resolve_sub_date(date_str)
+        new_t_matched = fuzzy_match_teacher(new_t)
+        old_t_matched = fuzzy_match_teacher(old_t) if old_t and old_t != '—' else old_t
+
+        # Проверка валидности
+        is_valid = bool(cls and lesson and new_t and day_name and cls in ALL_CLASSES)
+        mark = "✅" if is_valid else "⚠️"
+        if is_valid:
+            valid_count += 1
+
+        try:
+            d_obj = datetime.strptime(date_iso, '%Y-%m-%d')
+            date_display = d_obj.strftime('%d.%m') + f" ({day_name or '?'})"
+        except Exception:
+            date_display = date_iso
+
+        lines.append(
+            f"{mark} <b>{i}.</b> {date_display}  {cls.upper()}  Урок {lesson}\n"
+            f"   📚 {subject}\n"
+            f"   👨‍🏫 {old_t_matched} → <b>{new_t_matched}</b>"
+        )
+        if not is_valid:
+            issues = []
+            if cls not in ALL_CLASSES:
+                issues.append(f"класс «{cls}» не найден")
+            if not lesson:
+                issues.append("нет номера урока")
+            if not day_name:
+                issues.append("не будний день")
+            lines.append(f"   ❗ Проблема: {', '.join(issues)}")
+        lines.append("")
+
+    lines.append(f"─────────────────────")
+    lines.append(f"✅ Валидных: <b>{valid_count}</b> из {len(parsed)}")
+    if valid_count < len(parsed):
+        lines.append(f"⚠️ Записи с проблемами будут пропущены")
+
+    text = "\n".join(lines)
+    kb = []
+    if valid_count > 0:
+        kb.append([btn(f"✅ Сохранить {valid_count} замен(ы)", 'confirm_photo_subs')])
+    kb.append([btn("❌ Отменить всё", 'cancel_photo_subs')])
+    kb.append([btn("✏️ Добавить вручную", 'admin_add_sub')])
+
+    markup = InlineKeyboardMarkup(kb)
+
+    if status_msg:
+        try:
+            await status_msg.edit_text(text, reply_markup=markup, parse_mode='HTML')
+            return
+        except Exception:
+            pass
+
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(
+        chat_id=chat_id, text=text,
+        reply_markup=markup, parse_mode='HTML'
+    )
+
+
+async def save_photo_subs(query, context):
+    """Сохраняет подтверждённые замены из фото в БД."""
+    parsed = context.user_data.get('pending_subs', [])
+    if not parsed:
+        await safe_edit(query, "❌ Нет данных для сохранения.", BACK_TO_MAIN)
+        return
+
+    saved = 0
+    skipped = 0
+    errors = []
+    notified = []
+
+    for sub in parsed:
+        date_str = sub.get('date', '')
+        cls      = str(sub.get('class', '')).lower().strip()
+        lesson   = sub.get('lesson', 0)
+        subject  = sub.get('subject', 'Неизвестно')
+        old_t    = sub.get('old_teacher', '')
+        new_t    = sub.get('new_teacher', '')
+
+        date_iso, day_name = resolve_sub_date(date_str)
+        new_t = fuzzy_match_teacher(new_t)
+        old_t = fuzzy_match_teacher(old_t) if old_t else '—'
+
+        # Валидация
+        if not cls or not lesson or not new_t or not day_name:
+            skipped += 1
+            continue
+        if cls not in ALL_CLASSES:
+            skipped += 1
+            errors.append(f"Класс «{cls}» не найден")
+            continue
+
+        try:
+            await asyncio.to_thread(
+                db.add_substitution,
+                date_iso, day_name, int(lesson),
+                subject, subject, old_t, new_t, cls
+            )
+            saved += 1
+
+            # Уведомляем учителя
+            if new_t not in notified:
+                sub_data = {
+                    'date': date_iso, 'day': day_name,
+                    'class_name': cls, 'lesson': int(lesson),
+                    'old_subject': subject,
+                }
+                await notify_teacher_substitution(context, new_t, sub_data)
+                notified.append(new_t)
+
+        except Exception as e:
+            skipped += 1
+            errors.append(str(e)[:80])
+
+    context.user_data.pop('pending_subs', None)
+
+    lines = [f"✅ <b>ЗАМЕНЫ СОХРАНЕНЫ</b>\n"]
+    lines.append(f"📥 Сохранено: <b>{saved}</b>")
+    if skipped:
+        lines.append(f"⏭️ Пропущено: <b>{skipped}</b>")
+    if notified:
+        lines.append(f"🔔 Уведомлено учителей: <b>{len(notified)}</b> ({', '.join(notified[:3])}{'...' if len(notified) > 3 else ''})")
+    if errors:
+        lines.append(f"\n⚠️ Ошибки:\n" + "\n".join(f"• {e}" for e in errors[:3]))
+
+    kb = [
+        [btn("📋 Посмотреть замены", 'menu_substitutions')],
+        [btn("↩️ Админка", 'admin_panel')],
+    ]
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+# ══════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════
+#  HTTP ENDPOINT ДЛЯ СИНХРОНИЗАЦИИ ИЗ ИГРЫ
+# ══════════════════════════════════════════════════════════
+
+def _unauthorized_game_response(headers: dict, reason: str):
+    return aiohttp_web.json_response(
+        {'ok': False, 'error': 'unauthorized', 'reason': reason},
+        status=403,
+        headers=headers,
+    )
+
+
+def _authorize_game_request(user_id: int, init_data_raw: str) -> tuple[bool, str]:
+    if not GAME_AUTH_REQUIRED:
+        return True, 'auth_disabled'
+    ok, reason, _ = validate_webapp_init_data(
+        init_data_raw=init_data_raw or '',
+        bot_token=TOKEN,
+        expected_user_id=user_id,
+        max_age_sec=GAME_AUTH_TTL_SEC,
+    )
+    return ok, reason
+
+
+def _resolve_game_cors_origin(request) -> str:
+    req_origin = request.headers.get('Origin', '')
+    if req_origin and req_origin in _ALLOWED_GAME_ORIGINS:
+        return req_origin
+    if _ALLOWED_GAME_ORIGINS:
+        return _ALLOWED_GAME_ORIGINS[0]
+    if req_origin.startswith('http://localhost') or req_origin.startswith('http://127.0.0.1'):
+        return req_origin
+    return 'null'
+
+
+def _game_cors_headers(request, methods: str) -> dict[str, str]:
+    return {
+        'Access-Control-Allow-Origin': _resolve_game_cors_origin(request),
+        'Access-Control-Allow-Methods': methods,
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Vary': 'Origin',
+    }
+
+
+def _extract_user_name_from_init_data(init_data_raw: str) -> str | None:
+    try:
+        pairs = urllib.parse.parse_qsl(
+            init_data_raw or '', keep_blank_values=True, strict_parsing=False
+        )
+        data = dict(pairs)
+        user_raw = data.get('user')
+        if not user_raw:
+            return None
+        user_obj = json.loads(user_raw)
+        first_name = str(user_obj.get('first_name') or '').strip()
+        last_name = str(user_obj.get('last_name') or '').strip()
+        full_name = ' '.join(part for part in (first_name, last_name) if part).strip()
+        if full_name:
+            return full_name
+        username = str(user_obj.get('username') or '').strip()
+        if username:
+            return username
+    except Exception:
+        return None
+    return None
+
+
+def _to_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _clamp_int(value, min_value: int, max_value: int, default: int = 0) -> int:
+    num = _to_int(value, default)
+    if num < min_value:
+        return min_value
+    if num > max_value:
+        return max_value
+    return num
+
+
+def _to_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+    return False
+
+
+_GAME_RATE_STATE: dict[tuple[str, int], list[float]] = {}
+
+
+def _is_game_rate_limited(endpoint: str, user_id: int, limit: int, window_sec: int = 60) -> bool:
+    now_ts = time.time()
+    key = (endpoint, user_id)
+    events = _GAME_RATE_STATE.get(key, [])
+    events = [ts for ts in events if now_ts - ts < window_sec]
+    events.append(now_ts)
+    _GAME_RATE_STATE[key] = events
+    # Ленивая очистка старых ключей.
+    if len(_GAME_RATE_STATE) > 5000:
+        stale_keys = [k for k, vals in _GAME_RATE_STATE.items() if not vals or now_ts - vals[-1] > window_sec * 2]
+        for stale_key in stale_keys:
+            _GAME_RATE_STATE.pop(stale_key, None)
+    return len(events) > limit
+
+
+async def handle_game_reset(request):
+    """POST /game_reset — полный сброс прогресса игрока.
+    Разрешено только для роли 'admin' (сброс своего рейтинга).
+    Тестировщики и игроки не могут сбрасывать сами себя.
+    """
+    headers = _game_cors_headers(request, 'POST, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+    try:
+        data = await request.json()
+    except Exception:
+        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
+    user_id = data.get('user_id')
+    drop_referrals = _to_bool(data.get('drop_referrals') or data.get('reset_with_agents'))
+    init_data_raw = data.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_reset auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': False,
+                    'error': 'maintenance',
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance_until': maint.get('until'),
+                },
+                status=503,
+                headers=headers,
+            )
+
+        # Проверяем что только admin может сбросить свой рейтинг сам
+        role = await asyncio.to_thread(db.get_game_role, user_id)
+        if role != 'admin':
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'only admin can self-reset'},
+                status=403, headers=headers)
+        ok = await asyncio.to_thread(db.reset_game_result_full, user_id, drop_referrals)
+        logger.info(
+            "game_reset (admin self-reset): user=%s ok=%s drop_referrals=%s",
+            user_id, ok, drop_referrals
+        )
+        return aiohttp_web.json_response({'ok': ok, 'drop_referrals': bool(drop_referrals)}, headers=headers)
+    except Exception as e:
+        logger.error(f"handle_game_reset error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
+
+
+async def handle_game_state(request):
+    """GET /game_state?user_id=... — возвращает текущее состояние игрока из БД.
+    Учитывает роль: admin/tester/player — разные права доступа к главам.
+    """
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
+    user_id = request.rel_url.query.get('user_id')
+    init_data_raw = request.rel_url.query.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_state auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': True,
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance': True,
+                    'maintenance_until': maint.get('until'),
+                    'score': 0,
+                    'completed': 0,
+                    'game_over': False,
+                    'banned': False,
+                    'open_chapters': [],
+                    'chapter_schedule': [],
+                    'chapters': [],
+                },
+                headers=headers,
+            )
+        if _is_game_rate_limited('game_state', user_id, limit=60):
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'rate_limited'},
+                status=429,
+                headers=headers,
+            )
+
+        allowed = await is_game_allowed(user_id)
+        access_mode = await _get_cached_game_mode()
+        access_reason = access_mode if not allowed else None
+
+        # Получаем всё параллельно
+        result, role, chapter_schedule = await asyncio.gather(
+            asyncio.to_thread(db.get_game_result, user_id),
+            asyncio.to_thread(db.get_game_role, user_id),
+            asyncio.to_thread(db.get_chapter_schedule_for_game),
+        )
+
+        banned = bool(result[6]) if result and len(result) > 6 else False
+        if banned:
+            return aiohttp_web.json_response(
+                {'ok': True, 'banned': True, 'score': 0, 'completed': 0, 'game_over': False},
+                headers=headers)
+
+        score     = result[2] if result else 0
+        completed = result[3] if result else 0
+        game_over = bool(result[4]) if result else False
+        retreat_count = int(result[12]) if result and len(result) > 12 else 0
+        # reset_token — стабильный токен, меняется только при админ/игровом сбросе.
+        reset_token = _game_reset_token(result)
+        restart_mode = None
+        if result:
+            try:
+                rm = await asyncio.to_thread(db.get_restart_mode, user_id)
+                restart_mode = rm
+            except Exception:
+                pass
+
+        ref_summary = {
+            'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0,
+            'inviter_percent': 0, 'invitee_percent': 1, 'invitee_bonus_points': 0, 'referrer_id': 0,
+        }
+        ref_agents = []
+        secret_state = {
+            'mode': 'none',
+            'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+            'missions': [],
+        }
+
+        # ── Доступ к главам по роли ──────────────────────────────
+        if role == 'admin':
+            # Все главы открыты, бесконечные жизни
+            open_chapters = list(range(1, 7))
+            admin_mode    = True
+            tester_mode   = False
+            in_rating     = False
+            try:
+                secret_state = await asyncio.to_thread(db.get_secret_missions_state, user_id)
+            except Exception:
+                secret_state = {
+                    'mode': 'none',
+                    'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+                    'missions': [],
+                }
+        elif role == 'tester':
+            # Все главы открыты, 5 жизней (не admin_mode!), не в рейтинге
+            open_chapters = list(range(1, 7))
+            admin_mode    = False
+            tester_mode   = True
+            in_rating     = False
+            try:
+                secret_state = await asyncio.to_thread(db.get_secret_missions_state, user_id)
+            except Exception:
+                secret_state = {
+                    'mode': 'none',
+                    'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+                    'missions': [],
+                }
+        else:  # player
+            # Только открытые индивидуально + глобально + реферальная статистика
+            accessible, ref_summary, ref_agents, secret_state = await asyncio.gather(
+                asyncio.to_thread(db.get_player_accessible_chapters, user_id),
+                asyncio.to_thread(db.get_referral_summary, user_id),
+                asyncio.to_thread(db.get_referral_agents, user_id, 12),
+                asyncio.to_thread(db.get_secret_missions_state, user_id),
+            )
+            safe_agents = []
+            for agent in ref_agents or []:
+                if not isinstance(agent, dict):
+                    continue
+                safe_agents.append({
+                    'user_id': int(agent.get('user_id', 0) or 0),
+                    'name': str(agent.get('name') or 'Игрок')[:64],
+                    'completed': int(agent.get('completed', 0) or 0),
+                    'bonus_points': int(agent.get('bonus_points', 0) or 0),
+                    'invitee_bonus_points': int(agent.get('invitee_bonus_points', 0) or 0),
+                    'invitee_percent': int(agent.get('invitee_percent', 1) or 1),
+                    'inviter_percent': int(agent.get('inviter_percent', 0) or 0),
+                })
+            ref_agents = safe_agents
+            if not isinstance(secret_state, dict):
+                secret_state = {
+                    'mode': 'none',
+                    'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+                    'missions': [],
+                }
+            # Если у игрока нет доступных глав — автоматически открываем главу 1
+            if not accessible:
+                try:
+                    await asyncio.to_thread(db.open_chapter, 1)
+                    accessible = {1}
+                except Exception:
+                    accessible = {1}
+            open_chapters = sorted(list(accessible))
+            admin_mode  = False
+            tester_mode = False
+            in_rating   = True
+
+        if not isinstance(secret_state, dict):
+            secret_state = {
+                'mode': 'none',
+                'summary': {'completed': 0, 'total': 15, 'bonus_points': 0},
+                'missions': [],
+            }
+
+        chapters_payload = []
+        for row in chapter_schedule or []:
+            ch_id = int(row.get('id', 0))
+            ch_open = bool(row.get('open'))
+            ch_open_at = row.get('open_at')
+            chapters_payload.append({
+                'id': ch_id,
+                'open': ch_open,
+                'scheduled_open_at': ch_open_at,
+                'open_label': 'по расписанию' if ch_open_at else '',
+            })
+
+        resp = {
+            'ok':           True,
+            'allowed':      bool(allowed),
+            'access_reason': access_reason,
+            'score':        score or 0,
+            'completed':    completed or 0,
+            'game_over':    game_over,
+            'banned':       False,
+            'role':         role,
+            'admin_mode':   admin_mode,
+            'tester_mode':  tester_mode,
+            'in_rating':    in_rating,
+            'open_chapters': open_chapters,
+            'chapter_schedule': chapter_schedule,
+            'chapters': chapters_payload,
+            'reset_token':  reset_token,
+            'retreat_count': retreat_count,
+            'ref_summary': ref_summary,
+            'ref_agents': ref_agents,
+            'secret_mode': secret_state.get('mode', 'none') if isinstance(secret_state, dict) else 'none',
+            'secret_summary': secret_state.get('summary') if isinstance(secret_state, dict) else {'completed': 0, 'total': 15, 'bonus_points': 0},
+            'secret_missions': secret_state.get('missions', []) if isinstance(secret_state, dict) else [],
+        }
+        if restart_mode:
+            resp['restart_mode'] = restart_mode
+
+        return aiohttp_web.json_response(resp, headers=headers)
+    except Exception as e:
+        logger.error(f"handle_game_state error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
+
+
+async def handle_game_leaderboard(request):
+    """GET /game_leaderboard?user_id=... — актуальный рейтинг из БД."""
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
+    user_id = request.rel_url.query.get('user_id')
+    init_data_raw = request.rel_url.query.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_leaderboard auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': False,
+                    'error': 'maintenance',
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance_until': maint.get('until'),
+                },
+                status=503,
+                headers=headers,
+            )
+
+        rows, players_count = await asyncio.gather(
+            asyncio.to_thread(db.get_game_leaderboard, 50),
+            asyncio.to_thread(db.get_game_players_count),
+        )
+        leaderboard_payload = [
+            {
+                'uid': str(r[0]),
+                'name': r[1] or 'Игрок',
+                'score': int(r[2] or 0),
+                'completed': int(r[3] or 0),
+                'role': (r[5] if len(r) > 5 else 'player') or 'player',
+                'achievementCount': int(r[6] or 0) if len(r) > 6 else 0,
+                'achievementPts': int(r[7] or 0) if len(r) > 7 else 0,
+            }
+            for r in (rows or [])
+        ]
+        return aiohttp_web.json_response(
+            {'ok': True, 'leaderboard': leaderboard_payload, 'players_count': int(players_count or 0)},
+            headers=headers,
+        )
+    except Exception as e:
+        logger.error(f"handle_game_leaderboard error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:100]}, headers=headers)
+
+
+async def handle_game_sync(request):
+    """Принимает POST /game_sync от игры и сохраняет результат в БД."""
+    headers = _game_cors_headers(request, 'POST, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+    try:
+        data = await request.json()
+    except Exception:
+        return aiohttp_web.json_response(
+            {'ok': False, 'error': 'invalid json'}, status=400, headers=headers)
+
+    user_id = data.get('user_id')
+    init_data_raw = data.get('init_data', '')
+    total_score = _clamp_int(data.get('total_score', 0), 0, 999999)
+    completed = _clamp_int(data.get('completed', 0), 0, 6)
+    chapter = _clamp_int(data.get('chapter', 0), 0, 6)
+    score = _clamp_int(data.get('score', 0), 0, 50000)
+    game_over = _to_bool(data.get('game_over', False))
+    event_type = str(data.get('type', '') or '')
+    chapter_idx = _clamp_int(data.get('chapter_idx', -1), -1, 999)
+    cipher_idx = _clamp_int(data.get('cipher_idx', -1), -1, 9999)
+    chapter_in_progress = _to_bool(data.get('chapter_in_progress', False))
+    achievement_count = _clamp_int(data.get('achievement_count', 0), 0, 500)
+    achievement_pts = _clamp_int(data.get('achievement_pts', 0), 0, 50000)
+    restart_penalty_points = _clamp_int(data.get('restart_penalty_points', 0), 0, 50000)
+    client_reset_token = _clamp_int(data.get('reset_token', 0), 0, 2147483647)
+    secret_mode = str(data.get('secret_mode', 'none') or 'none').strip().lower()
+    mission_answer_token = _clamp_int(data.get('mission_answer_token', 0), 0, 2147483647)
+    mission_break_token = _clamp_int(data.get('mission_break_token', 0), 0, 2147483647)
+    mission_last_answer_elapsed = _clamp_int(data.get('mission_last_answer_elapsed', 0), 0, 9999)
+    mission_last_answer_no_hint = _to_bool(data.get('mission_last_answer_no_hint', False))
+    mission_last_answer_one_life = _to_bool(data.get('mission_last_answer_one_life', False))
+    mission_last_answer_type = str(data.get('mission_last_answer_type', '') or '').strip().lower()[:24]
+    mission_last_answer_streak = _clamp_int(data.get('mission_last_answer_streak', 0), 0, 200)
+    chapter_hints = _clamp_int(data.get('chapter_hints', 0), 0, 999)
+    chapter_errors = _clamp_int(data.get('chapter_errors', 0), 0, 999)
+    lives = _clamp_int(data.get('lives', 0), -1, 99)
+
+    if not user_id:
+        return aiohttp_web.json_response(
+            {'ok': False, 'error': 'no user_id'}, status=400, headers=headers)
+
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"game_sync auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_game_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': False,
+                    'error': 'maintenance',
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance_until': maint.get('until'),
+                },
+                status=503,
+                headers=headers,
+            )
+        if _is_game_rate_limited('game_sync', user_id, limit=30):
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'rate_limited'},
+                status=429,
+                headers=headers,
+            )
+
+        # Проверяем текущий серверный счёт ДО сохранения
+        current_result = await asyncio.to_thread(db.get_game_result, user_id)
+        db_score_before = current_result[2] if current_result else 0
+        db_completed_before = current_result[3] if current_result else 0
+        db_reset_token_before = _game_reset_token(current_result)
+        restart_mode_before = None
+        try:
+            restart_mode_before = await asyncio.to_thread(db.get_restart_mode, user_id)
+        except Exception:
+            restart_mode_before = None
+        trusted_user_name = (
+            _extract_user_name_from_init_data(init_data_raw)
+            or (current_result[1] if current_result and len(current_result) > 1 and current_result[1] else None)
+            or 'Игрок'
+        )
+
+        # Защита от перезаписи после админ-сброса:
+        # клиент обязан присылать актуальный reset_token из /game_state.
+        if is_stale_sync_token(client_reset_token, db_reset_token_before):
+            current_role = await asyncio.to_thread(db.get_game_role, user_id)
+            banned = bool(current_result[6]) if current_result and len(current_result) > 6 else False
+            logger.info(
+                "game_sync stale token: user=%s client_token=%s db_token=%s",
+                user_id, client_reset_token, db_reset_token_before
+            )
+            return aiohttp_web.json_response(
+                {'ok': True, 'stale': True,
+                 'saved': {'score': db_score_before, 'completed': db_completed_before},
+                 'banned': banned, 'db_score': db_score_before, 'db_completed': db_completed_before,
+                 'db_reset_token': db_reset_token_before, 'role': current_role},
+                headers=headers)
+
+        sync_saved = await asyncio.to_thread(
+            db.save_game_sync_result,
+            user_id, trusted_user_name, chapter, score, total_score,
+            completed, game_over, False,
+            event_type, chapter_idx, cipher_idx, chapter_in_progress, restart_penalty_points
+        )
+        if not sync_saved or not sync_saved.get('ok'):
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'save_failed'},
+                status=500,
+                headers=headers
+            )
+
+        server_penalty_applied = _clamp_int(sync_saved.get('server_penalty_applied', 0), 0, 50000)
+        retreat_count_saved = _clamp_int(sync_saved.get('retreat_count', 0), 0, 999999)
+        db_score_after_save = _clamp_int(sync_saved.get('db_score', db_score_before), 0, 999999)
+        db_completed_after_save = _clamp_int(sync_saved.get('db_completed', db_completed_before), 0, 6)
+        # reset_token уже защищает от устаревшего sync после админ-сброса.
+        # Поэтому достижения сохраняем при наличии реального прогресса
+        # (до или после текущего sync), чтобы не терять их на первом проходе.
+        has_progress = (db_score_before > 0) or (db_score_after_save > 0) or (completed > 0) or (db_completed_after_save > 0)
+        if (achievement_count > 0 or achievement_pts > 0) and has_progress:
+            await asyncio.to_thread(
+                db.update_achievement_stats, user_id, achievement_count, achievement_pts
+            )
+        # restart_mode должен быть одноразовым:
+        # после первого успешного sync очищаем флаг, чтобы клиент не сбрасывал прогресс повторно.
+        if restart_mode_before in ('penalty', 'nopts'):
+            try:
+                await asyncio.to_thread(db.clear_restart_mode, user_id)
+                logger.info(
+                    "game_sync cleared restart_mode: user=%s mode=%s type=%s chapter_idx=%s cipher_idx=%s in_progress=%s",
+                    user_id, restart_mode_before, event_type, chapter_idx, cipher_idx, chapter_in_progress
+                )
+            except Exception as clear_err:
+                logger.warning(f"game_sync clear_restart_mode failed: user={user_id}, err={clear_err}")
+        current_role = await asyncio.to_thread(db.get_game_role, user_id)
+        if not current_role or current_role == 'player':
+            # Назначаем роль только при первом входе
+            if not current_role:
+                role = 'player'
+                await asyncio.to_thread(db.set_game_role, user_id, role)
+                current_role = role
+        # Проверяем бан — игра должна знать об этом сразу
+        result = await asyncio.to_thread(db.get_game_result, user_id)
+        banned = bool(result[6]) if result and len(result) > 6 else False
+        db_score = result[2] if result else 0
+        db_completed = result[3] if result else 0
+        db_reset_token = _game_reset_token(result)
+        retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count_saved
+        ref_award_points = 0
+        ref_award_points_inviter = 0
+        ref_award_points_invitee = 0
+        ref_award_points_upstream = 0
+        ref_award_chapters = 0
+        ref_inviter_percent = 0
+        ref_invitee_percent = 1
+        ref_invited_count = 0
+        ref_summary = {
+            'invited_count': 0, 'active_count': 0, 'rewarded_chapters': 0, 'bonus_points': 0,
+            'inviter_percent': 0, 'invitee_percent': 1, 'invitee_bonus_points': 0, 'referrer_id': 0,
+        }
+        ref_agents = []
+        secret_mode_saved = 'none'
+        secret_summary = {'completed': 0, 'total': 15, 'bonus_points': 0}
+        secret_missions = []
+        secret_awards = []
+        secret_awarded_points = 0
+        if current_role == 'player':
+            try:
+                ref_award = await asyncio.to_thread(
+                    db.apply_referral_bonus_for_completed,
+                    user_id,
+                    db_completed,
+                    db_score,
+                )
+                ref_award_points_upstream = _clamp_int(
+                    ref_award.get('awarded_points_to_referrer', ref_award.get('awarded_points_inviter', 0)),
+                    0,
+                    999999,
+                )
+                ref_award_points_invitee = _clamp_int(ref_award.get('awarded_points_invitee', 0), 0, 999999)
+                ref_award_chapters = _clamp_int(ref_award.get('awarded_chapters', 0), 0, 6)
+                ref_invitee_percent = _clamp_int(ref_award.get('invitee_percent', 1), 1, 100, 1)
+            except Exception as ref_err:
+                logger.warning(f"game_sync referral bonus failed: user={user_id}, err={ref_err}")
+            try:
+                ref_refresh = await asyncio.to_thread(db.refresh_referrer_bonus, user_id)
+                ref_award_points_inviter = _clamp_int(ref_refresh.get('awarded_points', 0), 0, 999999)
+                ref_inviter_percent = _clamp_int(ref_refresh.get('inviter_percent', 0), 0, 100)
+                ref_invited_count = _clamp_int(ref_refresh.get('invited_count', 0), 0, 1000000)
+            except Exception as ref_refresh_err:
+                logger.warning(f"game_sync referrer refresh failed: user={user_id}, err={ref_refresh_err}")
+            ref_award_points = ref_award_points_inviter + ref_award_points_invitee
+            if ref_award_points_inviter > 0 or ref_award_points_invitee > 0:
+                result = await asyncio.to_thread(db.get_game_result, user_id)
+                db_score = result[2] if result else db_score
+                db_completed = result[3] if result else db_completed
+                db_reset_token = _game_reset_token(result)
+                retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
+            try:
+                ref_summary, ref_agents = await asyncio.gather(
+                    asyncio.to_thread(db.get_referral_summary, user_id),
+                    asyncio.to_thread(db.get_referral_agents, user_id, 12),
+                )
+                safe_agents = []
+                for agent in ref_agents or []:
+                    if not isinstance(agent, dict):
+                        continue
+                    safe_agents.append({
+                        'user_id': int(agent.get('user_id', 0) or 0),
+                        'name': str(agent.get('name') or 'Игрок')[:64],
+                        'completed': int(agent.get('completed', 0) or 0),
+                        'bonus_points': int(agent.get('bonus_points', 0) or 0),
+                        'invitee_bonus_points': int(agent.get('invitee_bonus_points', 0) or 0),
+                        'invitee_percent': int(agent.get('invitee_percent', 1) or 1),
+                        'inviter_percent': int(agent.get('inviter_percent', 0) or 0),
+                    })
+                ref_agents = safe_agents
+            except Exception as ref_state_err:
+                logger.warning(f"game_sync referral state load failed: user={user_id}, err={ref_state_err}")
+
+        if current_role in ('player', 'tester', 'admin'):
+            try:
+                secret_sync = await asyncio.to_thread(
+                    db.apply_secret_missions_sync,
+                    user_id,
+                    {
+                        'type': event_type,
+                        'event_type': event_type,
+                        'secret_mode': secret_mode,
+                        'chapter_score': score,
+                        'chapter_errors': chapter_errors,
+                        'chapter_hints': chapter_hints,
+                        'lives': lives,
+                        'mission_answer_token': mission_answer_token,
+                        'mission_break_token': mission_break_token,
+                        'mission_last_answer_elapsed': mission_last_answer_elapsed,
+                        'mission_last_answer_no_hint': mission_last_answer_no_hint,
+                        'mission_last_answer_one_life': mission_last_answer_one_life,
+                        'mission_last_answer_type': mission_last_answer_type,
+                        'mission_last_answer_streak': mission_last_answer_streak,
+                    },
+                )
+                if isinstance(secret_sync, dict):
+                    secret_mode_saved = str(secret_sync.get('mode', 'none') or 'none')
+                    if isinstance(secret_sync.get('summary'), dict):
+                        secret_summary = secret_sync.get('summary')
+                    if isinstance(secret_sync.get('missions'), list):
+                        secret_missions = secret_sync.get('missions')
+                    if isinstance(secret_sync.get('awards'), list):
+                        secret_awards = secret_sync.get('awards')
+                    secret_awarded_points = _clamp_int(secret_sync.get('awarded_points', 0), 0, 999999)
+            except Exception as secret_err:
+                logger.warning(f"game_sync secret missions failed: user={user_id}, err={secret_err}")
+
+        if secret_awarded_points > 0:
+            result = await asyncio.to_thread(db.get_game_result, user_id)
+            db_score = result[2] if result else db_score
+            db_completed = result[3] if result else db_completed
+            db_reset_token = _game_reset_token(result)
+            retreat_count = int(result[12]) if result and len(result) > 12 else retreat_count
+        logger.info(
+            "game_sync OK: user=%s role=%s total_score=%s completed=%s chapter=%s score=%s chapter_idx=%s cipher_idx=%s in_progress=%s type=%s penalty=%s retreats=%s banned=%s ref_bonus_inviter=%s ref_bonus_invitee=%s ref_bonus_upstream=%s ref_chapters=%s secret_bonus=%s secret_mode=%s",
+            user_id, current_role, total_score, completed, chapter, score, chapter_idx, cipher_idx,
+            chapter_in_progress, event_type, server_penalty_applied, retreat_count, banned,
+            ref_award_points_inviter, ref_award_points_invitee, ref_award_points_upstream, ref_award_chapters, secret_awarded_points, secret_mode_saved
+        )
+        return aiohttp_web.json_response(
+            {'ok': True, 'saved': {'score': db_score, 'completed': db_completed},
+              'banned': banned, 'db_score': db_score, 'db_completed': db_completed,
+              'db_reset_token': db_reset_token, 'stale': False, 'role': current_role,
+              'server_penalty_applied': server_penalty_applied,
+              'retreat_count': retreat_count,
+              'ref_bonus_awarded': ref_award_points,
+              'ref_bonus_awarded_inviter': ref_award_points_inviter,
+              'ref_bonus_awarded_invitee': ref_award_points_invitee,
+              'ref_bonus_awarded_upstream': ref_award_points_upstream,
+              'ref_bonus_chapters': ref_award_chapters,
+              'ref_inviter_percent': ref_inviter_percent,
+              'ref_invitee_percent': ref_invitee_percent,
+              'ref_invited_count': ref_invited_count,
+              'ref_summary': ref_summary,
+              'ref_agents': ref_agents,
+              'secret_mode': secret_mode_saved,
+              'secret_summary': secret_summary,
+              'secret_missions': secret_missions,
+              'secret_awards': secret_awards,
+              'secret_awarded_points': secret_awarded_points,
+              'force_state': bool(server_penalty_applied > 0)},
+            headers=headers)
+    except Exception as e:
+        logger.error(f"game_sync error: {e}")
+        return aiohttp_web.json_response(
+            {'ok': False, 'error': str(e)}, status=500, headers=headers)
+
+
+async def handle_cyber_reset(request):
+    """POST /cyber_reset — сброс прогресса Киберщита (только self-reset для cyber admin)."""
+    headers = _game_cors_headers(request, 'POST, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+    try:
+        data = await request.json()
+    except Exception:
+        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
+    user_id = data.get('user_id')
+    init_data_raw = data.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"cyber_reset auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        blocked, maint = await is_cyber_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'maintenance', 'maintenance_until': maint.get('until')},
+                status=503, headers=headers
+            )
+        role = await asyncio.to_thread(db.get_cyber_role, user_id)
+        if role != 'admin':
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'only cyber admin can self-reset'},
+                status=403, headers=headers
+            )
+        ok = await asyncio.to_thread(db.reset_cyber_result, user_id)
+        return aiohttp_web.json_response({'ok': ok}, headers=headers)
+    except Exception as e:
+        logger.error(f"handle_cyber_reset error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, headers=headers)
+
+
+async def handle_cyber_state(request):
+    """GET /cyber_state?user_id=... — состояние игрока Киберщита."""
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
+    user_id = request.rel_url.query.get('user_id')
+    init_data_raw = request.rel_url.query.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"cyber_state auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        if _is_game_rate_limited('cyber_state', user_id, limit=80):
+            return aiohttp_web.json_response({'ok': False, 'error': 'rate_limited'}, status=429, headers=headers)
+
+        blocked, maint = await is_cyber_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {
+                    'ok': True,
+                    'allowed': False,
+                    'access_reason': 'maintenance',
+                    'maintenance': True,
+                    'maintenance_until': maint.get('until'),
+                    'role': 'player',
+                    'admin_mode': False,
+                    'tester_mode': False,
+                    'in_rating': True,
+                    'me': {'xp': 0, 'solved_count': 0, 'streak': 0, 'reset_token': 0, 'progress_json': {}},
+                    'leaderboard': [],
+                },
+                headers=headers,
+            )
+
+        allowed = await is_cyber_allowed(user_id)
+        access_mode = await _get_cached_cyber_mode()
+        access_reason = access_mode if not allowed else None
+
+        result, role = await asyncio.gather(
+            asyncio.to_thread(db.get_cyber_result, user_id),
+            asyncio.to_thread(db.get_cyber_role, user_id),
+        )
+        if not result:
+            await asyncio.to_thread(db.register_cyber_player, user_id, _extract_user_name_from_init_data(init_data_raw) or 'Игрок')
+            result = await asyncio.to_thread(db.get_cyber_result, user_id)
+        if role not in ('admin', 'tester', 'player'):
+            role = 'player'
+            await asyncio.to_thread(db.set_cyber_role, user_id, role)
+
+        admin_mode = role == 'admin'
+        tester_mode = role == 'tester'
+        in_rating = role == 'player'
+
+        xp = int(result[2] or 0) if result else 0
+        solved_count = int(result[3] or 0) if result else 0
+        streak = int(result[4] or 0) if result else 0
+        banned = bool(result[6]) if result and len(result) > 6 else False
+        reset_token = _cyber_reset_token(result)
+        progress_json = result[8] if result and len(result) > 8 else {}
+        if not isinstance(progress_json, dict):
+            progress_json = {}
+        if banned:
+            xp = 0
+            solved_count = 0
+            streak = 0
+            progress_json = {}
+
+        lb_rows = await asyncio.to_thread(db.get_cyber_leaderboard, 30)
+        leaderboard = [
+            {
+                'uid': str(r[0]),
+                'name': r[1] or 'Игрок',
+                'xp': int(r[2] or 0),
+                'solved': int(r[3] or 0),
+                'streak': int(r[4] or 0),
+                'role': (r[5] if len(r) > 5 else 'player') or 'player',
+            }
+            for r in lb_rows
+        ]
+
+        return aiohttp_web.json_response(
+            {
+                'ok': True,
+                'allowed': bool(allowed),
+                'access_reason': access_reason,
+                'role': role,
+                'admin_mode': admin_mode,
+                'tester_mode': tester_mode,
+                'in_rating': in_rating,
+                'banned': banned,
+                'reset_token': reset_token,
+                'me': {
+                    'xp': xp,
+                    'solved_count': solved_count,
+                    'streak': streak,
+                    'reset_token': reset_token,
+                    'progress_json': progress_json,
+                    'role': role,
+                    'admin_mode': admin_mode,
+                    'tester_mode': tester_mode,
+                    'in_rating': in_rating,
+                },
+                'leaderboard': leaderboard,
+            },
+            headers=headers,
+        )
+    except Exception as e:
+        logger.error(f"handle_cyber_state error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, headers=headers)
+
+
+async def handle_cyber_leaderboard(request):
+    """GET /cyber_leaderboard?user_id=... — рейтинг Киберщита."""
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
+    user_id = request.rel_url.query.get('user_id')
+    init_data_raw = request.rel_url.query.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"cyber_leaderboard auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        if _is_game_rate_limited('cyber_leaderboard', user_id, limit=80):
+            return aiohttp_web.json_response({'ok': False, 'error': 'rate_limited'}, status=429, headers=headers)
+        rows = await asyncio.to_thread(db.get_cyber_leaderboard, 50)
+        players_count = len(rows)
+        payload = [
+            {
+                'uid': str(r[0]),
+                'name': r[1] or 'Игрок',
+                'xp': int(r[2] or 0),
+                'solved': int(r[3] or 0),
+                'streak': int(r[4] or 0),
+                'role': (r[5] if len(r) > 5 else 'player') or 'player',
+            }
+            for r in rows
+        ]
+        return aiohttp_web.json_response(
+            {'ok': True, 'leaderboard': payload, 'players_count': players_count},
+            headers=headers
+        )
+    except Exception as e:
+        logger.error(f"handle_cyber_leaderboard error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, headers=headers)
+
+
+async def handle_cyber_sync(request):
+    """POST /cyber_sync — сохранение прогресса Киберщита."""
+    headers = _game_cors_headers(request, 'POST, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+    try:
+        data = await request.json()
+    except Exception:
+        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
+
+    user_id = data.get('user_id')
+    init_data_raw = data.get('init_data', '')
+    if not user_id:
+        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
+    try:
+        user_id = _to_int(user_id, 0)
+        if user_id <= 0:
+            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
+        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
+        if not auth_ok:
+            logger.warning(f"cyber_sync auth failed: user={user_id}, reason={auth_reason}")
+            return _unauthorized_game_response(headers, auth_reason)
+        if _is_game_rate_limited('cyber_sync', user_id, limit=50):
+            return aiohttp_web.json_response({'ok': False, 'error': 'rate_limited'}, status=429, headers=headers)
+        blocked, maint = await is_cyber_blocked_by_maintenance(user_id)
+        if blocked:
+            return aiohttp_web.json_response(
+                {'ok': False, 'error': 'maintenance', 'maintenance_until': maint.get('until')},
+                status=503, headers=headers
+            )
+
+        role = await asyncio.to_thread(db.get_cyber_role, user_id)
+        if role not in ('admin', 'tester', 'player'):
+            role = 'player'
+            await asyncio.to_thread(db.set_cyber_role, user_id, role)
+
+        current_result = await asyncio.to_thread(db.get_cyber_result, user_id)
+        db_reset_token_before = _cyber_reset_token(current_result)
+        client_reset_token = _clamp_int(data.get('reset_token', 0), 0, 2147483647)
+        if is_stale_sync_token(client_reset_token, db_reset_token_before):
+            return aiohttp_web.json_response(
+                {
+                    'ok': False,
+                    'stale': True,
+                    'reset_required': True,
+                    'db_reset_token': db_reset_token_before,
+                    'role': role,
+                },
+                status=409,
+                headers=headers,
+            )
+
+        user_name = _extract_user_name_from_init_data(init_data_raw) or data.get('user_name') or 'Игрок'
+        total_xp = _clamp_int(data.get('total_xp', 0), 0, 2000000)
+        solved_count = _clamp_int(data.get('solved_count', 0), 0, 10000)
+        streak = _clamp_int(data.get('streak', 0), 0, 10000)
+        progress_json = data.get('progress_json')
+        if not isinstance(progress_json, dict):
+            progress_json = {}
+
+        saved = await asyncio.to_thread(
+            db.save_cyber_sync_result,
+            user_id,
+            user_name,
+            total_xp,
+            solved_count,
+            streak,
+            progress_json,
+        )
+        if not saved:
+            return aiohttp_web.json_response({'ok': False, 'error': 'save_failed'}, status=500, headers=headers)
+
+        banned = bool(saved[6]) if len(saved) > 6 else False
+        db_reset_token = _cyber_reset_token(saved)
+        return aiohttp_web.json_response(
+            {
+                'ok': True,
+                'saved': {
+                    'xp': int(saved[2] or 0),
+                    'solved_count': int(saved[3] or 0),
+                    'streak': int(saved[4] or 0),
+                },
+                'banned': banned,
+                'db_reset_token': db_reset_token,
+                'role': role,
+                'stale': False,
+            },
+            headers=headers,
+        )
+    except Exception as e:
+        logger.error(f"handle_cyber_sync error: {e}")
+        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, status=500, headers=headers)
+
+
+async def handle_game_media(request):
+    """GET /game_media/{track_id} — проксирует CC0-треки для стабильного воспроизведения в WebApp."""
+    headers = _game_cors_headers(request, 'GET, OPTIONS')
+    if request.method == 'OPTIONS':
+        return aiohttp_web.Response(headers=headers)
+
+    track_id = str(request.match_info.get('track_id', '') or '').strip().lower()
+    src_url = GAME_AUDIO_TRACKS.get(track_id)
+    if not src_url:
+        return aiohttp_web.Response(text='Track not found', status=404, headers=headers)
+
+    req_headers = {}
+    range_header = request.headers.get('Range')
+    if range_header:
+        req_headers['Range'] = range_header
+
+    try:
+        timeout = httpx.Timeout(20.0, connect=7.0)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            upstream = await client.get(src_url, headers=req_headers)
+    except Exception as e:
+        logger.warning(f"game_media upstream fetch failed: track={track_id}, err={e}")
+        return aiohttp_web.Response(text='Audio source unavailable', status=502, headers=headers)
+
+    if upstream.status_code not in (200, 206):
+        logger.warning(f"game_media upstream bad status: track={track_id}, status={upstream.status_code}")
+        return aiohttp_web.Response(text='Audio source error', status=502, headers=headers)
+
+    out_headers = dict(headers)
+    content_type = upstream.headers.get('content-type')
+    if content_type:
+        out_headers['Content-Type'] = content_type
+    content_length = upstream.headers.get('content-length')
+    if content_length:
+        out_headers['Content-Length'] = content_length
+    content_range = upstream.headers.get('content-range')
+    if content_range:
+        out_headers['Content-Range'] = content_range
+    accept_ranges = upstream.headers.get('accept-ranges')
+    if accept_ranges:
+        out_headers['Accept-Ranges'] = accept_ranges
+    etag = upstream.headers.get('etag')
+    if etag:
+        out_headers['ETag'] = etag
+    last_modified = upstream.headers.get('last-modified')
+    if last_modified:
+        out_headers['Last-Modified'] = last_modified
+    out_headers['Cache-Control'] = 'public, max-age=86400'
+
+    return aiohttp_web.Response(
+        body=upstream.content,
+        status=upstream.status_code,
+        headers=out_headers
+    )
+
+
+def start_http_server_thread():
+    """Запускает aiohttp в отдельном потоке чтобы не конфликтовать с event loop бота."""
+    import threading
+    import pathlib
+
+    GAME_DIR = pathlib.Path(__file__).parent / 'game'
+    CYBER_DIR = pathlib.Path(__file__).parent / 'cybershield-summer'
+
+    async def serve_game_index(request):
+        """Отдаёт index.html игры."""
+        fpath = GAME_DIR / 'index.html'
+        if fpath.exists():
+            return aiohttp_web.FileResponse(fpath, headers={
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            })
+        return aiohttp_web.Response(text='Game not found', status=404)
+
+    async def serve_game_file(request):
+        """Отдаёт файлы игры (game.js и пр.)."""
+        filename = request.match_info.get('filename', '')
+        safe_filename = pathlib.Path(filename).name
+        # Защита от path traversal и скрытых файлов
+        if safe_filename != filename or safe_filename.startswith('.'):
+            logger.warning(f"serve_game_file forbidden: filename='{filename}', path='{request.path_qs}'")
+            return aiohttp_web.Response(text='Forbidden', status=403)
+        fpath = GAME_DIR / safe_filename
+        if fpath.exists() and fpath.is_file():
+            content_types = {
+                '.js': 'application/javascript; charset=utf-8',
+                '.css': 'text/css; charset=utf-8',
+                '.html': 'text/html; charset=utf-8',
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.svg': 'image/svg+xml',
+            }
+            ct = content_types.get(fpath.suffix, 'application/octet-stream')
+            return aiohttp_web.FileResponse(fpath, headers={
+                'Content-Type': ct,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            })
+        logger.warning(f"serve_game_file not found: filename='{filename}', path='{request.path_qs}'")
+        return aiohttp_web.Response(text='Not found', status=404)
+
+    async def serve_cyber_index(request):
+        """Отдаёт index.html Киберщита."""
+        fpath = CYBER_DIR / 'index.html'
+        if fpath.exists():
+            return aiohttp_web.FileResponse(fpath, headers={
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            })
+        return aiohttp_web.Response(text='CyberShield not found', status=404)
+
+    async def serve_cyber_file(request):
+        """Отдаёт статические файлы Киберщита."""
+        filename = request.match_info.get('filename', '')
+        safe_filename = pathlib.Path(filename).name
+        if safe_filename != filename or safe_filename.startswith('.'):
+            logger.warning(f"serve_cyber_file forbidden: filename='{filename}', path='{request.path_qs}'")
+            return aiohttp_web.Response(text='Forbidden', status=403)
+        fpath = CYBER_DIR / safe_filename
+        if fpath.exists() and fpath.is_file():
+            content_types = {
+                '.js': 'application/javascript; charset=utf-8',
+                '.css': 'text/css; charset=utf-8',
+                '.html': 'text/html; charset=utf-8',
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.svg': 'image/svg+xml',
+                '.webp': 'image/webp',
+                '.woff2': 'font/woff2',
+            }
+            ct = content_types.get(fpath.suffix, 'application/octet-stream')
+            return aiohttp_web.FileResponse(fpath, headers={
+                'Content-Type': ct,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            })
+        logger.warning(f"serve_cyber_file not found: filename='{filename}', path='{request.path_qs}'")
+        return aiohttp_web.Response(text='Not found', status=404)
+
+    async def _run():
+        app_http = aiohttp_web.Application()
+        # API
+        app_http.router.add_post('/game_reset', handle_game_reset)
+        app_http.router.add_options('/game_reset', handle_game_reset)
+        app_http.router.add_get('/game_state', handle_game_state)
+        app_http.router.add_options('/game_state', handle_game_state)
+        app_http.router.add_get('/game_leaderboard', handle_game_leaderboard)
+        app_http.router.add_options('/game_leaderboard', handle_game_leaderboard)
+        app_http.router.add_post('/game_sync', handle_game_sync)
+        app_http.router.add_options('/game_sync', handle_game_sync)
+        app_http.router.add_get('/game_media/{track_id}', handle_game_media)
+        app_http.router.add_options('/game_media/{track_id}', handle_game_media)
+        # API: Киберщит
+        app_http.router.add_post('/cyber_reset', handle_cyber_reset)
+        app_http.router.add_options('/cyber_reset', handle_cyber_reset)
+        app_http.router.add_get('/cyber_state', handle_cyber_state)
+        app_http.router.add_options('/cyber_state', handle_cyber_state)
+        app_http.router.add_get('/cyber_leaderboard', handle_cyber_leaderboard)
+        app_http.router.add_options('/cyber_leaderboard', handle_cyber_leaderboard)
+        app_http.router.add_post('/cyber_sync', handle_cyber_sync)
+        app_http.router.add_options('/cyber_sync', handle_cyber_sync)
+        app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
+        # Файлы игры
+        app_http.router.add_get('/', serve_game_index)
+        app_http.router.add_get('/index.html', serve_game_index)
+        app_http.router.add_get('/game', serve_game_index)
+        app_http.router.add_get('/game/', serve_game_index)
+        app_http.router.add_get('/game/{filename}', serve_game_file)
+        # Файлы Киберщита
+        app_http.router.add_get('/cyber', serve_cyber_index)
+        app_http.router.add_get('/cyber/', serve_cyber_index)
+        app_http.router.add_get('/cyber/{filename}', serve_cyber_file)
+        app_http.router.add_get('/{filename}', serve_game_file)
+        runner = aiohttp_web.AppRunner(app_http)
+        await runner.setup()
+        site = aiohttp_web.TCPSite(runner, '0.0.0.0', PORT)
+        await site.start()
+        logger.info(f"✅ HTTP server started on port {PORT}")
+        logger.info(f"📁 Game dir: {GAME_DIR} (exists: {GAME_DIR.exists()})")
+        logger.info(f"📁 Cyber dir: {CYBER_DIR} (exists: {CYBER_DIR.exists()})")
+        # Держим сервер запущенным
+        await asyncio.Event().wait()
+
+    def _thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_run())
+        except Exception as e:
+            logger.error(f"HTTP server error: {e}")
+
+    t = threading.Thread(target=_thread, daemon=True)
+    t.start()
+    logger.info(f"HTTP server thread started (port {PORT})")
+
+def main():
+    # Ждём БД при старте (Railway PostgreSQL стартует чуть позже бота)
+    max_wait = _env_int('DB_STARTUP_MAX_WAIT_SEC', 180)
+    interval = max(1, _env_int('DB_STARTUP_RETRY_SEC', 5))
+    attempts = max(1, max_wait // interval)
+    for attempt in range(attempts):
+        try:
+            db.init_db()
+            db.init_pool()
+            db.seed_teachers(ALL_TEACHERS)
+            db.migrate_bot_admins_table()
+            logger.info("✅ БД инициализирована успешно")
+            break
+        except Exception as e:
+            if attempt < attempts - 1:
+                logger.warning(f"⏳ Жду БД (попытка {attempt + 1}/{attempts}): {e}")
+                import time; time.sleep(interval)
+            else:
+                logger.critical(f"❌ БД недоступна после {max_wait}с: {e}")
+                raise SystemExit(1)
+
+    # Запускаем HTTP-сервер ДО ожидания polling lock —
+    # чтобы файлы игры отдавались сразу, даже пока старый инстанс ещё жив.
+    start_http_server_thread()
+
+    # Один активный poller на весь бот (исключаем Conflict при параллельных инстансах)
+    if not db.wait_for_polling_lock(max_wait_sec=60, interval_sec=3):
+        logger.critical("❌ Не удалось получить polling lock: другой экземпляр уже выполняет getUpdates")
+        raise SystemExit(1)
+
+    async def post_init(application):
+        await application.bot.set_my_commands([
+            ("start",   "🏠 Главное меню"),
+            ("teacher", "📝 Зарегистрироваться как учитель"),
+            ("cancel",  "❌ Отменить последнее действие"),
+        ])
+
+    app = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(post_init)
+        # Не блокируем все кнопки одним долгим обработчиком (ИИ/админка и т.п.)
+        .concurrent_updates(64)
+        .read_timeout(REQUEST_TIMEOUT)
+        .write_timeout(REQUEST_TIMEOUT)
+        .connect_timeout(REQUEST_TIMEOUT)
+        .pool_timeout(REQUEST_TIMEOUT)
+        .build()
+    )
+
+    # group=-1 — /start и /cancel срабатывают ВСЕГДА, даже в середине любого флоу
+    app.add_handler(CommandHandler("start",       cmd_start),  group=-1)
+    app.add_handler(CommandHandler("cancel",      cmd_cancel), group=-1)
+    app.add_handler(CommandHandler("version",     cmd_version))
+    app.add_handler(CommandHandler("teacher",     cmd_teacher))
+    app.add_handler(CommandHandler("claim_admin", cmd_claim_admin))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
+    app.add_error_handler(global_error_handler)
+
+    print("🤖 Бот запущен!")
+    print(f"🔖 Версия бота: {BOT_VERSION}")
+    print(f"🎮 Версия Шифровальщика: {GAME_VERSION}")
+    print(f"🛡 Версия Киберщита: {CYBER_VERSION}")
+    print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
+    print("👑 Администраторы: определяются через БД (role=admin)")
+    print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
+    print(f"👥 Пользователей: {db.get_user_count()}")
+    print(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
+    print(f"🛡 CYBER_URL: {CYBER_URL or '❌ НЕ ЗАДАН'}")
+    print(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
+    print(f"🔌 HTTP-порт: {PORT}")
+    if not BOT_PUBLIC_URL:
+        print("⚠️  ВНИМАНИЕ: Задайте BOT_PUBLIC_URL в Railway → Variables!")
+        print("⚠️  Пример: BOT_PUBLIC_URL=https://ваш-домен.up.railway.app")
+
+    try:
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            close_loop=False,
+        )
+    except KeyboardInterrupt:
+        print("\n🛑 Бот остановлен")
+    except Exception as e:
+        logger.critical(f"Критическая ошибка: {e}")
+    finally:
+        try:
+            db.release_polling_lock()
+        except Exception:
+            pass
+
+async def menu_games(query, context):
+    """Подменю игр."""
+    kb = [
+        [btn("🎮 Шифровальщик", 'menu_game')],
+        [btn("🛡 Киберщит", 'menu_cyber')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "🎮 <b>ИГРЫ</b>\n\nВыберите игру:",
+        kb,
+    )
+
+
+def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
+                     teacher_name: str | None = None) -> list:
+    """Главное меню по классическому макету."""
+    if teacher_name:
+        profile_label = teacher_name.strip()
+    elif profile and profile.get('display_name'):
+        profile_label = str(profile.get('display_name')).strip()
+    else:
+        profile_label = 'Гость'
+    kb = [
+        [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
+        [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
+        [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
+        [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ-помощник", 'menu_ai')],
+        [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
+        [btn("🎮 Игры", 'menu_games')],
+        [btn("🆘 Помощь", 'menu_help')],
+    ]
+
+    if is_admin:
+        kb.append([btn("🛠 Админка", 'admin_panel')])
+    return kb
+
+
+if __name__ == '__main__':
+    main()
