@@ -394,8 +394,17 @@
     el.xpValue.textContent = String(state.progress.xp);
     el.streakValue.textContent = String(state.progress.streak);
 
-    el.startMissionBtn.textContent = isMissionSolved() ? "Операция уже выполнена" : "Начать операцию";
-    el.startMissionBtn.disabled = !runtime.allowed || isMissionSolved();
+    const solved = isMissionSolved();
+    if (!runtime.allowed) {
+      el.startMissionBtn.textContent = "Игра закрыта";
+      el.startMissionBtn.disabled = true;
+    } else if (solved) {
+      el.startMissionBtn.textContent = "Повторить (без XP)";
+      el.startMissionBtn.disabled = false;
+    } else {
+      el.startMissionBtn.textContent = "Начать операцию";
+      el.startMissionBtn.disabled = false;
+    }
 
     if (el.modeHint) {
       if (state.mission.mode === "chat") {
