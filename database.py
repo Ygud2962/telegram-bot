@@ -1,4 +1,4 @@
-import psycopg2
+﻿import psycopg2
 from psycopg2 import pool
 import os
 import time
@@ -218,7 +218,7 @@ _SECRET_MISSIONS_BY_ID = {m['id']: m for m in _SECRET_MISSIONS}
 
 
 def init_pool():
-    """Инициализирует пул соединений с retry."""
+    '''Инициализирует пул соединений с retry.'''
     global db_pool
     last_err = None
     for attempt, delay in enumerate(_DB_RETRY_DELAYS, 1):
@@ -245,7 +245,7 @@ def init_pool():
 
 
 def _try_new_connection():
-    """Создаёт новое прямое соединение с retry."""
+    '''Создаёт новое прямое соединение с retry.'''
     last_err = None
     for attempt, delay in enumerate(_DB_RETRY_DELAYS[:3], 1):  # макс 3 попытки для одного запроса
         try:
@@ -262,7 +262,7 @@ def _try_new_connection():
 
 
 def _pool_is_dead():
-    """Проверяет, сломан ли пул (закрыт или None)."""
+    '''Проверяет, сломан ли пул (закрыт или None).'''
     global db_pool
     if db_pool is None:
         return True
@@ -276,7 +276,7 @@ def _pool_is_dead():
 
 
 def get_connection():
-    """Возвращает живое соединение из пула. При обрыве — пересоздаёт с retry."""
+    '''Возвращает живое соединение из пула. При обрыве — пересоздаёт с retry.'''
     global db_pool
     if db_pool is None:
         init_pool()
@@ -345,7 +345,7 @@ def release_connection(conn):
 
 
 def _safe_rollback(conn):
-    """Безопасный rollback — не падает если соединение уже закрыто."""
+    '''Безопасный rollback — не падает если соединение уже закрыто.'''
     if conn is None:
         return
     try:
@@ -563,7 +563,7 @@ def _secret_export(mode: str, missions_map: dict) -> dict:
 
 
 def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
-    """Пытается взять глобальную advisory-блокировку для polling (один инстанс бота)."""
+    '''Пытается взять глобальную advisory-блокировку для polling (один инстанс бота).'''
     global _POLLING_LOCK_CONN
     if _POLLING_LOCK_CONN is not None:
         try:
@@ -599,7 +599,7 @@ def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
 
 
 def wait_for_polling_lock(max_wait_sec: int = 180, interval_sec: int = 5) -> bool:
-    """Ждёт освобождения polling lock до max_wait_sec."""
+    '''Ждёт освобождения polling lock до max_wait_sec.'''
     interval = max(1, int(interval_sec))
     attempts = max(1, int(max_wait_sec) // interval)
     for i in range(attempts):
@@ -615,7 +615,7 @@ def wait_for_polling_lock(max_wait_sec: int = 180, interval_sec: int = 5) -> boo
 
 
 def release_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> None:
-    """Освобождает advisory lock polling при остановке процесса."""
+    '''Освобождает advisory lock polling при остановке процесса.'''
     global _POLLING_LOCK_CONN
     conn = _POLLING_LOCK_CONN
     _POLLING_LOCK_CONN = None
@@ -891,6 +891,61 @@ def init_db():
         cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS bonus_points INTEGER DEFAULT 0")
         cur.execute("ALTER TABLE game_secret_state ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()")
 
+        # Летняя игра "Киберщит" (отдельный контур, не влияет на "Шифровальщик")
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_results (
+                id            SERIAL PRIMARY KEY,
+                user_id       BIGINT NOT NULL UNIQUE,
+                user_name     TEXT,
+                total_xp      INTEGER DEFAULT 0,
+                solved_count  INTEGER DEFAULT 0,
+                streak        INTEGER DEFAULT 0,
+                progress_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                banned        BOOLEAN DEFAULT FALSE,
+                reset_token   BIGINT DEFAULT 0,
+                updated_at    TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_cyber_score ON cyber_results(total_xp DESC)')
+        cur.execute('CREATE INDEX IF NOT EXISTS idx_cyber_user  ON cyber_results(user_id)')
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS progress_json JSONB NOT NULL DEFAULT '{}'::jsonb")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT FALSE")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS reset_token BIGINT DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS streak INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS solved_count INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS total_xp INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE cyber_results ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()")
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_roles (
+                user_id    BIGINT PRIMARY KEY,
+                role       TEXT DEFAULT 'player',
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_access_settings (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                access_mode TEXT NOT NULL DEFAULT 'open',
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute('''
+            INSERT INTO cyber_access_settings (id, access_mode)
+            VALUES (1, 'open')
+            ON CONFLICT (id) DO NOTHING
+        ''')
+
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS cyber_beta (
+                user_id    BIGINT PRIMARY KEY,
+                user_name  TEXT,
+                note       TEXT,
+                added_at   TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+
         cur.execute('''
             INSERT INTO game_chapters (chapter_id, is_open)
             VALUES (1,TRUE),(2,FALSE),(3,FALSE),(4,FALSE),(5,FALSE),(6,FALSE)
@@ -1034,7 +1089,7 @@ def get_user_role(user_id):
 
 
 def get_user_info(user_id):
-    """Возвращает информацию о пользователе: dict или None."""
+    '''Возвращает информацию о пользователе: dict или None.'''
     conn = None
     try:
         conn = get_connection()
@@ -1059,7 +1114,7 @@ def get_user_info(user_id):
 #  ПРОФИЛИ ПОЛЬЗОВАТЕЛЕЙ
 # ──────────────────────────────────────────────
 def get_user_profile(user_id):
-    """Возвращает профиль пользователя или None."""
+    '''Возвращает профиль пользователя или None.'''
     conn = None
     try:
         conn = get_connection()
@@ -1081,7 +1136,7 @@ def get_user_profile(user_id):
 
 
 def save_user_profile(user_id, role, display_name=None, class_name=None):
-    """Сохраняет или обновляет профиль пользователя."""
+    '''Сохраняет или обновляет профиль пользователя.'''
     conn = None
     try:
         conn = get_connection()
@@ -1107,7 +1162,7 @@ def save_user_profile(user_id, role, display_name=None, class_name=None):
 
 
 def delete_user_profile(user_id):
-    """Удаляет профиль пользователя (сброс регистрации)."""
+    '''Удаляет профиль пользователя (сброс регистрации).'''
     conn = None
     try:
         conn = get_connection()
@@ -1125,7 +1180,7 @@ def delete_user_profile(user_id):
 
 
 def get_profile_stats():
-    """Возвращает статистику по ролям для аналитики."""
+    '''Возвращает статистику по ролям для аналитики.'''
     conn = None
     try:
         conn = get_connection()
@@ -1165,7 +1220,7 @@ def subscribe_class(user_id, class_name):
 
 
 def get_class_subscribers(class_name):
-    """Возвращает список user_id подписанных на замены класса."""
+    '''Возвращает список user_id подписанных на замены класса.'''
     conn = None
     try:
         conn = get_connection()
@@ -1211,7 +1266,7 @@ def get_teacher_telegram_id(full_name):
 
 
 def register_teacher(full_name, telegram_id):
-    """Привязывает Telegram-ID к учителю по имени. Возвращает True при успехе."""
+    '''Привязывает Telegram-ID к учителю по имени. Возвращает True при успехе.'''
     if isinstance(full_name, dict):
         full_name = full_name.get('full_name')
     if not full_name:
@@ -1237,7 +1292,7 @@ def register_teacher(full_name, telegram_id):
 
 
 def find_teacher_by_telegram_id(telegram_id):
-    """Возвращает {'full_name': ..., 'registered_at': ...} или None."""
+    '''Возвращает {'full_name': ..., 'registered_at': ...} или None.'''
     conn = None
     try:
         conn = get_connection()
@@ -1258,7 +1313,7 @@ def find_teacher_by_telegram_id(telegram_id):
 
 
 def unregister_teacher(full_name):
-    """Сбрасывает telegram_id и registered для учителя — освобождает имя."""
+    '''Сбрасывает telegram_id и registered для учителя — освобождает имя.'''
     # Защита: если случайно передали dict — извлекаем строку
     if isinstance(full_name, dict):
         full_name = full_name.get('full_name')
@@ -1284,7 +1339,7 @@ def unregister_teacher(full_name):
 
 
 def get_registered_teacher_names():
-    """Возвращает set имён учителей которые уже зарегистрировались в боте."""
+    '''Возвращает set имён учителей которые уже зарегистрировались в боте.'''
     conn = None
     try:
         conn = get_connection()
@@ -1299,7 +1354,7 @@ def get_registered_teacher_names():
 
 
 def seed_teachers(teacher_names: list):
-    """Заполняет таблицу teachers из списка имён (только если ещё нет записей)."""
+    '''Заполняет таблицу teachers из списка имён (только если ещё нет записей).'''
     conn = None
     try:
         conn = get_connection()
@@ -1354,8 +1409,8 @@ def add_news(title, content, scope='bot'):
 
 
 def get_news(offset=0, limit=8, order='DESC', scope=None):
-    """Универсальная функция получения новостей. Заменяет get_news_page_asc,
-    get_latest_news, get_archive_news_page, get_recent_news."""
+    '''Универсальная функция получения новостей. Заменяет get_news_page_asc,
+    get_latest_news, get_archive_news_page, get_recent_news.'''
     conn = None
     try:
         conn = get_connection()
@@ -1446,7 +1501,7 @@ def get_news_detail(news_id, scope=None):
 
 
 def get_news_by_id(news_id):
-    """Возвращает кортеж (id, title, content, published_at, category) или None."""
+    '''Возвращает кортеж (id, title, content, published_at, category) или None.'''
     conn = None
     try:
         conn = get_connection()
@@ -1705,7 +1760,7 @@ def _normalize_season_mode(mode: str | None) -> str:
 
 
 def get_season_mode() -> str:
-    """Возвращает режим сезона: auto / summer / school."""
+    '''Возвращает режим сезона: auto / summer / school.'''
     conn = None
     try:
         conn = get_connection()
@@ -1725,7 +1780,7 @@ def get_season_mode() -> str:
 
 
 def set_season_mode(mode: str) -> bool:
-    """Устанавливает режим сезона: auto / summer / school."""
+    '''Устанавливает режим сезона: auto / summer / school.'''
     mode_norm = _normalize_season_mode(mode)
     conn = None
     try:
@@ -1936,9 +1991,9 @@ def _referral_total_bonus_for_base(base_score: int, percent: int) -> int:
 
 def save_game_result(user_id, user_name, chapter, score, total_score,
                      completed, game_over=False, failed=False):
-    """Save/update player game result with monotonic score/completed/chapter fields.
+    '''Save/update player game result with monotonic score/completed/chapter fields.
     Full resets must be done via dedicated reset_* methods.
-    """
+    '''
     conn = None
     try:
         conn = get_connection()
@@ -1976,7 +2031,7 @@ def save_game_result(user_id, user_name, chapter, score, total_score,
 
 
 def register_game_player(user_id, user_name=None):
-    """Регистрирует игрока при первом открытии — НИКОГДА не трогает очки/прогресс."""
+    '''Регистрирует игрока при первом открытии — НИКОГДА не трогает очки/прогресс.'''
     conn = None
     try:
         conn = get_connection()
@@ -1997,7 +2052,7 @@ def register_game_player(user_id, user_name=None):
 
 
 def attach_game_referral(referrer_id: int, referred_id: int, referred_name: str | None = None) -> dict:
-    """Attach referrer to a new player and initialize referral % program."""
+    '''Attach referrer to a new player and initialize referral % program.'''
     conn = None
     try:
         referrer_id = int(referrer_id or 0)
@@ -2117,7 +2172,7 @@ def apply_referral_bonus_for_completed(
     completed_after: int,
     total_score_after: int = 0,
 ) -> dict:
-    """Apply referral bonuses by % from invited player's earned score."""
+    '''Apply referral bonuses by % from invited player's earned score.'''
     conn = None
     try:
         referred_id = int(referred_id or 0)
@@ -2274,7 +2329,7 @@ def apply_referral_bonus_for_completed(
 
 
 def refresh_referrer_bonus(referrer_id: int) -> dict:
-    """Recalculate inviter % bonuses across all agents for current inviter rate."""
+    '''Recalculate inviter % bonuses across all agents for current inviter rate.'''
     conn = None
     try:
         referrer_id = int(referrer_id or 0)
@@ -2389,7 +2444,7 @@ def refresh_referrer_bonus(referrer_id: int) -> dict:
 
 
 def get_referral_summary(referrer_id: int) -> dict:
-    """Aggregate referral stats for inviter and invited-player bonuses."""
+    '''Aggregate referral stats for inviter and invited-player bonuses.'''
     conn = None
     try:
         referrer_id = int(referrer_id or 0)
@@ -2473,7 +2528,7 @@ def get_referral_summary(referrer_id: int) -> dict:
 
 
 def get_referral_agents(referrer_id: int, limit: int = 15) -> list:
-    """Return referred players list for inviter."""
+    '''Return referred players list for inviter.'''
     conn = None
     try:
         referrer_id = int(referrer_id or 0)
@@ -2847,7 +2902,7 @@ def apply_secret_missions_sync(user_id: int, payload: dict | None = None) -> dic
 
 
 def get_game_players_count():
-    """Возвращает количество участников рейтинга (только role=player)."""
+    '''Возвращает количество участников рейтинга (только role=player).'''
     conn = None
     try:
         conn = get_connection()
@@ -2879,7 +2934,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
                           completed, game_over=False, failed=False,
                           event_type='sync', chapter_idx=-1, cipher_idx=-1,
                           chapter_in_progress=False, restart_penalty_points=0):
-    """Сохраняет sync из игры с серверной фиксацией штрафа "отхода/перегруппировки".
+    '''Сохраняет sync из игры с серверной фиксацией штрафа "отхода/перегруппировки".
 
     Возвращает dict:
       {
@@ -2889,7 +2944,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
         server_penalty_applied: int,
         retreat_count: int
       }
-    """
+    '''
     conn = None
     try:
         conn = get_connection()
@@ -3147,7 +3202,7 @@ def save_game_sync_result(user_id, user_name, chapter, score, total_score,
 
 
 def get_game_player_rank(user_id):
-    """Возвращает позицию игрока в публичном рейтинге (role=player), либо (None, total_players)."""
+    '''Возвращает позицию игрока в публичном рейтинге (role=player), либо (None, total_players).'''
     conn = None
     try:
         conn = get_connection()
@@ -3189,8 +3244,8 @@ def get_game_player_rank(user_id):
         release_connection(conn)
 
 def get_game_leaderboard(limit=20):
-    """Возвращает публичный топ игроков.
-    Админы, тестировщики и игроки с 0 очков НЕ включаются."""
+    '''Возвращает публичный топ игроков.
+    Админы, тестировщики и игроки с 0 очков НЕ включаются.'''
     conn = None
     try:
         conn = get_connection()
@@ -3219,7 +3274,7 @@ def get_game_leaderboard(limit=20):
 
 
 def get_game_result(user_id):
-    """Возвращает результат конкретного игрока или None."""
+    '''Возвращает результат конкретного игрока или None.'''
     conn = None
     try:
         conn = get_connection()
@@ -3247,12 +3302,12 @@ def get_game_result(user_id):
 
 
 def reset_game_result(user_id):
-    """Сбрасывает прогресс конкретного игрока (обнуляет, не удаляет), включая достижения."""
+    '''Сбрасывает прогресс конкретного игрока (обнуляет, не удаляет), включая достижения.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute('''
             UPDATE game_results
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE,
@@ -3263,7 +3318,7 @@ def reset_game_result(user_id):
                 reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
             WHERE user_id=%s
-        """, (user_id,))
+        ''', (user_id,))
         updated = cur.rowcount
         cur.execute("DELETE FROM game_secret_state WHERE user_id=%s", (user_id,))
         conn.commit()
@@ -3277,7 +3332,7 @@ def reset_game_result(user_id):
 
 
 def update_achievement_stats(user_id, achievement_count, achievement_pts):
-    """Обновляет статистику достижений игрока. Всегда записывает переданное значение."""
+    '''Обновляет статистику достижений игрока. Всегда записывает переданное значение.'''
     conn = None
     try:
         conn = get_connection()
@@ -3298,20 +3353,20 @@ def update_achievement_stats(user_id, achievement_count, achievement_pts):
 
 
 def reset_game_result_soft(user_id, mode='penalty'):
-    """Мягкий сброс — сохраняет очки, только снимает game_over.
+    '''Мягкий сброс — сохраняет очки, только снимает game_over.
     mode='penalty': game_over=FALSE, restart_mode='penalty' (+10с к заданиям)
     mode='nopts':   game_over=FALSE, restart_mode='nopts'   (без очков)
-    """
+    '''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         # Добавляем колонку если нет
-        cur.execute("""
+        cur.execute('''
             ALTER TABLE game_results
             ADD COLUMN IF NOT EXISTS restart_mode VARCHAR(20) DEFAULT NULL
-        """)
-        cur.execute("""
+        ''')
+        cur.execute('''
             UPDATE game_results
             SET game_over=FALSE, restart_mode=%s,
                 pending_retreat_penalty=0, pending_retreat_chapter=0,
@@ -3319,7 +3374,7 @@ def reset_game_result_soft(user_id, mode='penalty'):
                 reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
             WHERE user_id=%s
-        """, (mode, user_id))
+        ''', (mode, user_id))
         updated = cur.rowcount
         conn.commit()
         return updated > 0
@@ -3332,14 +3387,14 @@ def reset_game_result_soft(user_id, mode='penalty'):
 
 
 def get_restart_mode(user_id):
-    """Возвращает режим перезапуска для игрока или None."""
+    '''Возвращает режим перезапуска для игрока или None.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute('''
             SELECT restart_mode FROM game_results WHERE user_id=%s
-        """, (user_id,))
+        ''', (user_id,))
         row = cur.fetchone()
         return row[0] if row else None
     except Exception as e:
@@ -3350,14 +3405,14 @@ def get_restart_mode(user_id):
 
 
 def clear_restart_mode(user_id):
-    """Сбрасывает restart_mode после того как игрок начал заново."""
+    '''Сбрасывает restart_mode после того как игрок начал заново.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute('''
             UPDATE game_results SET restart_mode=NULL WHERE user_id=%s
-        """, (user_id,))
+        ''', (user_id,))
         conn.commit()
     except Exception as e:
         logger.error(f"clear_restart_mode error {user_id}: {e}")
@@ -3367,12 +3422,12 @@ def clear_restart_mode(user_id):
 
 
 def reset_all_game_results(drop_referrals: bool = False):
-    """Сбрасывает прогресс всех игроков включая достижения и доступ к главам."""
+    '''Сбрасывает прогресс всех игроков включая достижения и доступ к главам.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute('''
             UPDATE game_results
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE,
@@ -3382,7 +3437,7 @@ def reset_all_game_results(drop_referrals: bool = False):
                 sync_chapter=0, sync_max_chapter_score=0, sync_max_cipher_idx=-1,
                 reset_token=(EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
                 updated_at=NOW()
-        """)
+        ''')
         updated = cur.rowcount
         cur.execute("DELETE FROM player_chapter_access")
         cur.execute("DELETE FROM game_secret_state")
@@ -3399,7 +3454,7 @@ def reset_all_game_results(drop_referrals: bool = False):
 
 
 def ban_game_user(user_id):
-    """Банит игрока — обнуляет очки и ставит флаг banned."""
+    '''Банит игрока — обнуляет очки и ставит флаг banned.'''
     conn = None
     try:
         conn = get_connection()
@@ -3429,7 +3484,7 @@ def ban_game_user(user_id):
 
 
 def unban_game_user(user_id):
-    """Снимает бан игрока."""
+    '''Снимает бан игрока.'''
     conn = None
     try:
         conn = get_connection()
@@ -3449,7 +3504,7 @@ def unban_game_user(user_id):
 
 
 def get_game_leaderboard_admin(limit=50):
-    """Полный список для админа: user_id, user_name, total_score, completed, game_over, failed, banned, updated_at, retreat_count."""
+    '''Полный список для админа: user_id, user_name, total_score, completed, game_over, failed, banned, updated_at, retreat_count.'''
     conn = None
     try:
         conn = get_connection()
@@ -3473,7 +3528,7 @@ def get_game_leaderboard_admin(limit=50):
 
 
 def get_game_result_detail(user_id):
-    """Детальный результат игрока для админа."""
+    '''Детальный результат игрока для админа.'''
     conn = None
     try:
         conn = get_connection()
@@ -3502,7 +3557,7 @@ def get_game_result_detail(user_id):
 # ──────────────────────────────────────────────
 
 def get_chapters_status():
-    """Возвращает статус всех глав: [(chapter_id, is_open, open_at), ...]"""
+    '''Возвращает статус всех глав: [(chapter_id, is_open, open_at), ...]'''
     conn = None
     try:
         conn = get_connection()
@@ -3520,7 +3575,7 @@ def get_chapters_status():
 
 
 def get_open_chapters():
-    """Возвращает set открытых chapter_id (с учётом open_at)."""
+    '''Возвращает set открытых chapter_id (с учётом open_at).'''
     conn = None
     try:
         conn = get_connection()
@@ -3539,7 +3594,7 @@ def get_open_chapters():
 
 
 def open_chapter(chapter_id):
-    """Немедленно открывает главу."""
+    '''Немедленно открывает главу.'''
     conn = None
     try:
         conn = get_connection()
@@ -3560,7 +3615,7 @@ def open_chapter(chapter_id):
 
 
 def close_chapter(chapter_id):
-    """Закрывает главу."""
+    '''Закрывает главу.'''
     conn = None
     try:
         conn = get_connection()
@@ -3581,7 +3636,7 @@ def close_chapter(chapter_id):
 
 
 def schedule_chapter(chapter_id, open_at_dt):
-    """Устанавливает дату/время автоматического открытия главы."""
+    '''Устанавливает дату/время автоматического открытия главы.'''
     conn = None
     try:
         conn = get_connection()
@@ -3602,7 +3657,7 @@ def schedule_chapter(chapter_id, open_at_dt):
 
 
 def open_all_chapters():
-    """Открывает все главы сразу."""
+    '''Открывает все главы сразу.'''
     conn = None
     try:
         conn = get_connection()
@@ -3624,7 +3679,7 @@ def open_all_chapters():
 # ──────────────────────────────────────────────
 
 def init_game_roles_table():
-    """Создаёт таблицу game_roles если не существует."""
+    '''Создаёт таблицу game_roles если не существует.'''
     conn = None
     try:
         conn = get_connection()
@@ -3645,7 +3700,7 @@ def init_game_roles_table():
 
 
 def set_game_role(user_id, role):
-    """Устанавливает роль игрока: admin / tester / player."""
+    '''Устанавливает роль игрока: admin / tester / player.'''
     conn = None
     try:
         conn = get_connection()
@@ -3666,7 +3721,7 @@ def set_game_role(user_id, role):
 
 
 def get_game_role(user_id):
-    """Возвращает роль игрока или 'player' по умолчанию."""
+    '''Возвращает роль игрока или 'player' по умолчанию.'''
     conn = None
     try:
         conn = get_connection()
@@ -3682,7 +3737,7 @@ def get_game_role(user_id):
 
 
 def get_game_leaderboard_with_roles(limit=20):
-    """Таблица лидеров с ролями — сортировка: admin → tester → player, внутри по очкам."""
+    '''Таблица лидеров с ролями — сортировка: admin → tester → player, внутри по очкам.'''
     conn = None
     try:
         conn = get_connection()
@@ -3725,7 +3780,7 @@ def get_game_leaderboard_with_roles(limit=20):
 # ──────────────────────────────────────────────
 
 def init_beta_table():
-    """Создаёт таблицу game_beta если не существует."""
+    '''Создаёт таблицу game_beta если не существует.'''
     conn = None
     try:
         conn = get_connection()
@@ -3747,7 +3802,7 @@ def init_beta_table():
 
 
 def get_game_access_mode() -> str:
-    """Возвращает глобальный режим доступа: beta/open/closed."""
+    '''Возвращает глобальный режим доступа: beta/open/closed.'''
     conn = None
     try:
         conn = get_connection()
@@ -3777,7 +3832,7 @@ def get_game_access_mode() -> str:
 
 
 def set_game_access_mode(mode: str) -> bool:
-    """Устанавливает глобальный режим доступа: beta/open/closed."""
+    '''Устанавливает глобальный режим доступа: beta/open/closed.'''
     mode = (mode or '').strip().lower()
     if mode not in ('beta', 'open', 'closed'):
         return False
@@ -3810,7 +3865,7 @@ def set_game_access_mode(mode: str) -> bool:
 
 
 def is_beta_enabled():
-    """Проверяет включён ли режим бета (есть ли хоть один тестер в списке)."""
+    '''Проверяет включён ли режим бета (есть ли хоть один тестер в списке).'''
     conn = None
     try:
         conn = get_connection()
@@ -3836,7 +3891,7 @@ def is_beta_enabled():
 
 
 def is_beta_allowed(user_id):
-    """True если пользователь в белом списке бета-теста."""
+    '''True если пользователь в белом списке бета-теста.'''
     conn = None
     try:
         conn = get_connection()
@@ -3851,7 +3906,7 @@ def is_beta_allowed(user_id):
 
 
 def add_beta_user(user_id, user_name=None, note=None):
-    """Добавляет пользователя в белый список."""
+    '''Добавляет пользователя в белый список.'''
     conn = None
     try:
         conn = get_connection()
@@ -3874,7 +3929,7 @@ def add_beta_user(user_id, user_name=None, note=None):
 
 
 def remove_beta_user(user_id):
-    """Убирает пользователя из белого списка."""
+    '''Убирает пользователя из белого списка.'''
     conn = None
     try:
         conn = get_connection()
@@ -3892,7 +3947,7 @@ def remove_beta_user(user_id):
 
 
 def get_beta_users():
-    """Возвращает всех тестеров: [(user_id, user_name, added_at, note), ...]."""
+    '''Возвращает всех тестеров: [(user_id, user_name, added_at, note), ...].'''
     conn = None
     try:
         conn = get_connection()
@@ -3911,7 +3966,7 @@ def get_beta_users():
 
 
 def clear_beta_list():
-    """Полностью очищает белый список (открывает игру всем)."""
+    '''Полностью очищает белый список (открывает игру всем).'''
     conn = None
     try:
         conn = get_connection()
@@ -3929,7 +3984,7 @@ def clear_beta_list():
 
 
 def count_admins() -> int:
-    """Возвращает количество пользователей с ролью admin в game_roles."""
+    '''Возвращает количество пользователей с ролью admin в game_roles.'''
     conn = None
     try:
         conn = get_connection()
@@ -3950,20 +4005,20 @@ def count_admins() -> int:
 # ══════════════════════════════════════════════════════════
 
 def migrate_bot_admins_table():
-    """Создаёт таблицу bot_admins и player_chapter_access если не существуют."""
+    '''Создаёт таблицу bot_admins и player_chapter_access если не существуют.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS bot_admins (
                 user_id    BIGINT PRIMARY KEY,
                 granted_by BIGINT,
                 granted_at TIMESTAMPTZ DEFAULT NOW()
             )
-        """)
+        ''')
         # Таблица индивидуального доступа к главам для игроков
-        cur.execute("""
+        cur.execute('''
             CREATE TABLE IF NOT EXISTS player_chapter_access (
                 user_id    BIGINT NOT NULL,
                 chapter_id INTEGER NOT NULL,
@@ -3971,7 +4026,7 @@ def migrate_bot_admins_table():
                 granted_by BIGINT,
                 PRIMARY KEY (user_id, chapter_id)
             )
-        """)
+        ''')
         conn.commit()
         logger.info("✅ Таблицы bot_admins и player_chapter_access созданы/проверены")
         return True
@@ -3984,7 +4039,7 @@ def migrate_bot_admins_table():
 
 
 def is_bot_admin_db(user_id: int) -> bool:
-    """Проверяет есть ли пользователь в таблице bot_admins."""
+    '''Проверяет есть ли пользователь в таблице bot_admins.'''
     conn = None
     try:
         conn = get_connection()
@@ -3999,16 +4054,16 @@ def is_bot_admin_db(user_id: int) -> bool:
 
 
 def add_bot_admin(user_id: int, granted_by: int = None) -> bool:
-    """Добавляет пользователя в таблицу bot_admins."""
+    '''Добавляет пользователя в таблицу bot_admins.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute('''
             INSERT INTO bot_admins(user_id, granted_by, granted_at)
             VALUES(%s, %s, NOW())
             ON CONFLICT(user_id) DO UPDATE SET granted_by=%s, granted_at=NOW()
-        """, (user_id, granted_by, granted_by))
+        ''', (user_id, granted_by, granted_by))
         conn.commit()
         return True
     except Exception as e:
@@ -4020,14 +4075,14 @@ def add_bot_admin(user_id: int, granted_by: int = None) -> bool:
 
 
 def claim_first_bot_admin(user_id: int) -> bool:
-    """Атомарно назначает первого админа бота. Возвращает True только если прав не было."""
+    '''Атомарно назначает первого админа бота. Возвращает True только если прав не было.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         # Глобальная транзакционная блокировка для bootstrap-сценария.
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (99177351,))
-        cur.execute("""
+        cur.execute('''
             WITH has_admin AS (
                 SELECT 1 FROM bot_admins LIMIT 1
             )
@@ -4036,7 +4091,7 @@ def claim_first_bot_admin(user_id: int) -> bool:
             WHERE NOT EXISTS (SELECT 1 FROM has_admin)
             ON CONFLICT (user_id) DO NOTHING
             RETURNING user_id
-        """, (user_id, user_id))
+        ''', (user_id, user_id))
         row = cur.fetchone()
         conn.commit()
         return bool(row)
@@ -4049,7 +4104,7 @@ def claim_first_bot_admin(user_id: int) -> bool:
 
 
 def remove_bot_admin(user_id: int) -> bool:
-    """Убирает пользователя из bot_admins."""
+    '''Убирает пользователя из bot_admins.'''
     conn = None
     try:
         conn = get_connection()
@@ -4066,7 +4121,7 @@ def remove_bot_admin(user_id: int) -> bool:
 
 
 def count_bot_admins() -> int:
-    """Возвращает количество бот-администраторов."""
+    '''Возвращает количество бот-администраторов.'''
     conn = None
     try:
         conn = get_connection()
@@ -4082,7 +4137,7 @@ def count_bot_admins() -> int:
 
 
 def get_all_bot_admins() -> list:
-    """Возвращает список всех бот-администраторов: [(user_id, granted_at), ...]."""
+    '''Возвращает список всех бот-администраторов: [(user_id, granted_at), ...].'''
     conn = None
     try:
         conn = get_connection()
@@ -4100,10 +4155,10 @@ def get_all_bot_admins() -> list:
 # ══════════════════════════════════════════════════════════
 
 def get_player_accessible_chapters(user_id: int) -> set:
-    """Возвращает set chapter_id, доступных конкретному игроку.
+    '''Возвращает set chapter_id, доступных конкретному игроку.
     Для admin/tester не нужно — у них всегда все главы.
     Для player — индивидуально открытые + глобально открытые.
-    """
+    '''
     conn = None
     try:
         conn = get_connection()
@@ -4126,7 +4181,7 @@ def get_player_accessible_chapters(user_id: int) -> set:
 
 
 def grant_chapter_to_player(user_id: int, chapter_id: int, granted_by: int = None) -> bool:
-    """Открывает конкретную главу конкретному игроку."""
+    '''Открывает конкретную главу конкретному игроку.'''
     conn = None
     try:
         conn = get_connection()
@@ -4147,7 +4202,7 @@ def grant_chapter_to_player(user_id: int, chapter_id: int, granted_by: int = Non
 
 
 def revoke_chapter_from_player(user_id: int, chapter_id: int) -> bool:
-    """Закрывает конкретную главу для конкретного игрока."""
+    '''Закрывает конкретную главу для конкретного игрока.'''
     conn = None
     try:
         conn = get_connection()
@@ -4167,7 +4222,7 @@ def revoke_chapter_from_player(user_id: int, chapter_id: int) -> bool:
 
 
 def grant_all_chapters_to_player(user_id: int, granted_by: int = None) -> bool:
-    """Открывает все 6 глав конкретному игроку."""
+    '''Открывает все 6 глав конкретному игроку.'''
     conn = None
     try:
         conn = get_connection()
@@ -4189,7 +4244,7 @@ def grant_all_chapters_to_player(user_id: int, granted_by: int = None) -> bool:
 
 
 def revoke_all_chapters_from_player(user_id: int) -> bool:
-    """Закрывает все главы для игрока (используется при сбросе прогресса)."""
+    '''Закрывает все главы для игрока (используется при сбросе прогресса).'''
     conn = None
     try:
         conn = get_connection()
@@ -4206,7 +4261,7 @@ def revoke_all_chapters_from_player(user_id: int) -> bool:
 
 
 def get_player_chapter_access_map(user_id: int) -> set:
-    """Возвращает set chapter_id открытых индивидуально для игрока."""
+    '''Возвращает set chapter_id открытых индивидуально для игрока.'''
     conn = None
     try:
         conn = get_connection()
@@ -4221,7 +4276,7 @@ def get_player_chapter_access_map(user_id: int) -> set:
 
 
 def _delete_game_referrals_for_user(cur, user_id: int) -> int:
-    """Delete referral links where user is inviter or invited."""
+    '''Delete referral links where user is inviter or invited.'''
     cur.execute(
         '''
         DELETE FROM game_referrals
@@ -4233,13 +4288,13 @@ def _delete_game_referrals_for_user(cur, user_id: int) -> int:
 
 
 def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
-    """Полный сброс игрока: обнуляет прогресс, достижения И закрывает все индивидуальные главы."""
+    '''Полный сброс игрока: обнуляет прогресс, достижения И закрывает все индивидуальные главы.'''
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         token_now = int(datetime.utcnow().timestamp())
-        cur.execute("""
+        cur.execute('''
             UPDATE game_results
             SET chapter=0, score=0, total_score=0, completed=0,
                 game_over=FALSE, failed=FALSE, restart_mode=NULL,
@@ -4250,17 +4305,17 @@ def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
                 reset_token=%s,
                 updated_at=NOW()
             WHERE user_id=%s
-        """, (token_now, user_id))
+        ''', (token_now, user_id))
         updated = cur.rowcount
         if updated == 0:
             # Страховка: создаём запись, если её не было, затем повторяем сброс.
-            cur.execute("""
+            cur.execute('''
                 INSERT INTO game_results
                     (user_id, user_name, chapter, score, total_score, completed, game_over, failed, updated_at)
                 VALUES (%s, %s, 0, 0, 0, 0, FALSE, FALSE, NOW())
                 ON CONFLICT (user_id) DO NOTHING
-            """, (user_id, 'Игрок'))
-            cur.execute("""
+            ''', (user_id, 'Игрок'))
+            cur.execute('''
                 UPDATE game_results
                 SET chapter=0, score=0, total_score=0, completed=0,
                     game_over=FALSE, failed=FALSE, restart_mode=NULL,
@@ -4271,7 +4326,7 @@ def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
                     reset_token=%s,
                     updated_at=NOW()
                 WHERE user_id=%s
-            """, (token_now, user_id))
+            ''', (token_now, user_id))
             updated = cur.rowcount
         cur.execute('DELETE FROM player_chapter_access WHERE user_id = %s', (user_id,))
         if drop_referrals:
@@ -4287,7 +4342,7 @@ def reset_game_result_full(user_id: int, drop_referrals: bool = False) -> bool:
 
 
 def get_all_game_players_with_roles(limit: int = 100) -> list:
-    """Все игроки с ролями: [(user_id, user_name, role, total_score, completed), ...]"""
+    '''Все игроки с ролями: [(user_id, user_name, role, total_score, completed), ...]'''
     conn = None
     try:
         conn = get_connection()
@@ -4311,10 +4366,10 @@ def get_all_game_players_with_roles(limit: int = 100) -> list:
 
 
 def get_players_only(limit: int = 200) -> list:
-    """Только обычные игроки (role='player') для выдачи доступа к главам.
+    '''Только обычные игроки (role='player') для выдачи доступа к главам.
     Включает всех пользователей бота с ролью player.
     [(user_id, first_name, username, total_score, completed), ...]
-    """
+    '''
     conn = None
     try:
         conn = get_connection()
@@ -4341,9 +4396,9 @@ def get_players_only(limit: int = 200) -> list:
 
 
 def get_chapter_schedule_for_game() -> list:
-    """Возвращает расписание глав для передачи в игру (таймеры).
+    '''Возвращает расписание глав для передачи в игру (таймеры).
     [(chapter_id, is_open, open_at_iso_string_or_null), ...]
-    """
+    '''
     conn = None
     try:
         conn = get_connection()
@@ -4378,3 +4433,574 @@ def get_chapter_schedule_for_game() -> list:
 # ══════════════════════════════════════════════════════════
 #  КИБЕРЩИТ (ЛЕТНИЙ КОНТУР): РЕЗУЛЬТАТЫ / РОЛИ / ДОСТУП
 # ══════════════════════════════════════════════════════════
+
+def register_cyber_player(user_id: int, user_name: str | None = None) -> bool:
+    '''Гарантирует наличие записи игрока Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_results (user_id, user_name, total_xp, solved_count, streak, progress_json, updated_at)
+            VALUES (%s, %s, 0, 0, 0, '{}'::jsonb, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                user_name = COALESCE(EXCLUDED.user_name, cyber_results.user_name),
+                updated_at = NOW()
+            ''',
+            (int(user_id), user_name),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"register_cyber_player error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def set_cyber_role(user_id: int, role: str) -> bool:
+    '''Устанавливает роль в Киберщите: admin / tester / player.'''
+    role_val = str(role or "player").strip().lower()
+    if role_val not in ("admin", "tester", "player"):
+        role_val = "player"
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_roles (user_id, role, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                role = EXCLUDED.role,
+                updated_at = NOW()
+            ''',
+            (int(user_id), role_val),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_cyber_role error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_role(user_id: int) -> str:
+    '''Возвращает роль игрока в Киберщите.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT role FROM cyber_roles WHERE user_id = %s', (int(user_id),))
+        row = cur.fetchone()
+        role_val = (row[0] if row and row[0] else "player")
+        role_val = str(role_val).strip().lower()
+        if role_val not in ("admin", "tester", "player"):
+            return "player"
+        return role_val
+    except Exception as e:
+        logger.error(f"get_cyber_role error {user_id}: {e}")
+        return "player"
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_access_mode() -> str:
+    '''Режим доступа к Киберщиту: beta/open/closed.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS cyber_access_settings (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                access_mode TEXT NOT NULL DEFAULT 'open',
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+            '''
+        )
+        cur.execute(
+            '''
+            INSERT INTO cyber_access_settings (id, access_mode)
+            VALUES (1, 'open')
+            ON CONFLICT (id) DO NOTHING
+            '''
+        )
+        cur.execute('SELECT access_mode FROM cyber_access_settings WHERE id = 1')
+        row = cur.fetchone()
+        conn.commit()
+        mode = str((row[0] if row and row[0] else "open")).strip().lower()
+        return mode if mode in ("beta", "open", "closed") else "open"
+    except Exception as e:
+        logger.error(f"get_cyber_access_mode error: {e}")
+        return "open"
+    finally:
+        release_connection(conn)
+
+
+def set_cyber_access_mode(mode: str) -> bool:
+    '''Устанавливает режим доступа к Киберщиту: beta/open/closed.'''
+    mode_val = str(mode or "").strip().lower()
+    if mode_val not in ("beta", "open", "closed"):
+        return False
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_access_settings (id, access_mode, updated_at)
+            VALUES (1, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                access_mode = EXCLUDED.access_mode,
+                updated_at = NOW()
+            ''',
+            (mode_val,),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"set_cyber_access_mode error: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def add_cyber_beta_user(user_id: int, user_name: str | None = None, note: str | None = None) -> bool:
+    '''Добавляет пользователя в бета-список Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_beta (user_id, user_name, note, added_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                user_name = COALESCE(EXCLUDED.user_name, cyber_beta.user_name),
+                note = COALESCE(EXCLUDED.note, cyber_beta.note)
+            ''',
+            (int(user_id), user_name, note),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"add_cyber_beta_user error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def remove_cyber_beta_user(user_id: int) -> bool:
+    '''Удаляет пользователя из бета-списка Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM cyber_beta WHERE user_id = %s', (int(user_id),))
+        removed = cur.rowcount > 0
+        conn.commit()
+        return removed
+    except Exception as e:
+        logger.error(f"remove_cyber_beta_user error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_beta_users() -> list:
+    '''Список бета-пользователей Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT user_id, user_name, added_at, note
+            FROM cyber_beta
+            ORDER BY added_at DESC
+            '''
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_beta_users error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def clear_cyber_beta_list() -> int:
+    '''Очищает бета-список Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM cyber_beta')
+        deleted = int(cur.rowcount or 0)
+        conn.commit()
+        return deleted
+    except Exception as e:
+        logger.error(f"clear_cyber_beta_list error: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_result(user_id: int):
+    '''Возвращает прогресс игрока Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                user_id,
+                user_name,
+                COALESCE(total_xp, 0) AS total_xp,
+                COALESCE(solved_count, 0) AS solved_count,
+                COALESCE(streak, 0) AS streak,
+                updated_at,
+                COALESCE(banned, FALSE) AS banned,
+                COALESCE(reset_token, 0) AS reset_token,
+                COALESCE(progress_json, '{}'::jsonb) AS progress_json
+            FROM cyber_results
+            WHERE user_id = %s
+            ''',
+            (int(user_id),),
+        )
+        return cur.fetchone()
+    except Exception as e:
+        logger.error(f"get_cyber_result error {user_id}: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+
+def save_cyber_sync_result(
+    user_id: int,
+    user_name: str | None,
+    total_xp: int,
+    solved_count: int,
+    streak: int,
+    progress_json=None,
+):
+    '''Сохраняет прогресс Киберщита (монотонный рост, кроме админ-сброса).'''
+    conn = None
+    try:
+        xp = max(0, min(2000000, int(total_xp or 0)))
+        solved = max(0, min(10000, int(solved_count or 0)))
+        streak_val = max(0, min(10000, int(streak or 0)))
+        progress_payload = progress_json if isinstance(progress_json, (dict, list)) else {}
+        progress_text = json.dumps(progress_payload, ensure_ascii=False)
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            INSERT INTO cyber_results
+                (user_id, user_name, total_xp, solved_count, streak, progress_json, updated_at)
+            VALUES
+                (%s, %s, %s, %s, %s, %s::jsonb, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                user_name = COALESCE(EXCLUDED.user_name, cyber_results.user_name),
+                total_xp = GREATEST(COALESCE(cyber_results.total_xp, 0), COALESCE(EXCLUDED.total_xp, 0)),
+                solved_count = GREATEST(COALESCE(cyber_results.solved_count, 0), COALESCE(EXCLUDED.solved_count, 0)),
+                streak = GREATEST(COALESCE(cyber_results.streak, 0), COALESCE(EXCLUDED.streak, 0)),
+                progress_json = CASE
+                    WHEN jsonb_typeof(EXCLUDED.progress_json) IN ('object', 'array')
+                        THEN EXCLUDED.progress_json
+                    ELSE cyber_results.progress_json
+                END,
+                updated_at = NOW()
+            RETURNING
+                user_id,
+                user_name,
+                total_xp,
+                solved_count,
+                streak,
+                updated_at,
+                banned,
+                reset_token,
+                progress_json
+            ''',
+            (int(user_id), user_name, xp, solved, streak_val, progress_text),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return row
+    except Exception as e:
+        logger.error(f"save_cyber_sync_result error {user_id}: {e}")
+        _safe_rollback(conn)
+        return None
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_leaderboard(limit: int = 20) -> list:
+    '''Публичный рейтинг Киберщита (только обычные игроки).'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                cr.user_id,
+                cr.user_name,
+                COALESCE(cr.total_xp, 0) AS total_xp,
+                COALESCE(cr.solved_count, 0) AS solved_count,
+                COALESCE(cr.streak, 0) AS streak,
+                COALESCE(rol.role, 'player') AS role
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            WHERE NOT COALESCE(cr.banned, FALSE)
+              AND COALESCE(rol.role, 'player') NOT IN ('admin', 'tester')
+              AND COALESCE(cr.total_xp, 0) > 0
+            ORDER BY cr.total_xp DESC, cr.updated_at ASC
+            LIMIT %s
+            ''',
+            (int(limit),),
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_leaderboard error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_leaderboard_admin(limit: int = 100) -> list:
+    '''Полный список игроков Киберщита для админки.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                cr.user_id,
+                cr.user_name,
+                COALESCE(cr.total_xp, 0) AS total_xp,
+                COALESCE(cr.solved_count, 0) AS solved_count,
+                COALESCE(cr.streak, 0) AS streak,
+                COALESCE(cr.banned, FALSE) AS banned,
+                cr.updated_at,
+                COALESCE(rol.role, 'player') AS role
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            ORDER BY cr.total_xp DESC, cr.updated_at ASC
+            LIMIT %s
+            ''',
+            (int(limit),),
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_leaderboard_admin error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_player_rank(user_id: int) -> tuple[None | int, int]:
+    '''Позиция игрока в публичном рейтинге Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            WITH ranked AS (
+                SELECT
+                    cr.user_id,
+                    ROW_NUMBER() OVER (ORDER BY cr.total_xp DESC, cr.updated_at ASC) AS pos,
+                    COUNT(*) OVER () AS total_players
+                FROM cyber_results cr
+                LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+                WHERE NOT COALESCE(cr.banned, FALSE)
+                  AND COALESCE(rol.role, 'player') = 'player'
+                  AND COALESCE(cr.total_xp, 0) > 0
+            )
+            SELECT pos, total_players
+            FROM ranked
+            WHERE user_id = %s
+            ''',
+            (int(user_id),),
+        )
+        row = cur.fetchone()
+        if row:
+            return int(row[0]), int(row[1])
+        cur.execute(
+            '''
+            SELECT COUNT(*)
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            WHERE NOT COALESCE(cr.banned, FALSE)
+              AND COALESCE(rol.role, 'player') = 'player'
+              AND COALESCE(cr.total_xp, 0) > 0
+            '''
+        )
+        total = int((cur.fetchone() or [0])[0] or 0)
+        return None, total
+    except Exception as e:
+        logger.error(f"get_cyber_player_rank error {user_id}: {e}")
+        return None, 0
+    finally:
+        release_connection(conn)
+
+
+def reset_cyber_result(user_id: int) -> bool:
+    '''Полный сброс прогресса одного игрока Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        token_now = int(datetime.utcnow().timestamp())
+        cur.execute(
+            '''
+            UPDATE cyber_results
+            SET total_xp = 0,
+                solved_count = 0,
+                streak = 0,
+                progress_json = '{}'::jsonb,
+                banned = FALSE,
+                reset_token = %s,
+                updated_at = NOW()
+            WHERE user_id = %s
+            ''',
+            (token_now, int(user_id)),
+        )
+        updated = cur.rowcount
+        if updated == 0:
+            cur.execute(
+                '''
+                INSERT INTO cyber_results
+                    (user_id, user_name, total_xp, solved_count, streak, progress_json, banned, reset_token, updated_at)
+                VALUES
+                    (%s, %s, 0, 0, 0, '{}'::jsonb, FALSE, %s, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+                ''',
+                (int(user_id), 'Игрок', token_now),
+            )
+            cur.execute(
+                '''
+                UPDATE cyber_results
+                SET total_xp = 0,
+                    solved_count = 0,
+                    streak = 0,
+                    progress_json = '{}'::jsonb,
+                    banned = FALSE,
+                    reset_token = %s,
+                    updated_at = NOW()
+                WHERE user_id = %s
+                ''',
+                (token_now, int(user_id)),
+            )
+            updated = cur.rowcount
+        conn.commit()
+        return updated > 0
+    except Exception as e:
+        logger.error(f"reset_cyber_result error {user_id}: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def reset_all_cyber_results() -> int:
+    '''Полный сброс прогресса всех игроков Киберщита.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            UPDATE cyber_results
+            SET total_xp = 0,
+                solved_count = 0,
+                streak = 0,
+                progress_json = '{}'::jsonb,
+                banned = FALSE,
+                reset_token = (EXTRACT(EPOCH FROM clock_timestamp())::BIGINT),
+                updated_at = NOW()
+            '''
+        )
+        updated = int(cur.rowcount or 0)
+        conn.commit()
+        return updated
+    except Exception as e:
+        logger.error(f"reset_all_cyber_results error: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_players_with_roles(limit: int = 200) -> list:
+    '''Игроки Киберщита с ролями для управления в админке.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                cr.user_id,
+                cr.user_name,
+                COALESCE(rol.role, 'player') AS role,
+                COALESCE(cr.total_xp, 0) AS total_xp,
+                COALESCE(cr.solved_count, 0) AS solved_count
+            FROM cyber_results cr
+            LEFT JOIN cyber_roles rol ON rol.user_id = cr.user_id
+            ORDER BY cr.updated_at DESC
+            LIMIT %s
+            ''',
+            (int(limit),),
+        )
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_cyber_players_with_roles error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_cyber_result_detail(user_id: int):
+    '''Детальная карточка игрока Киберщита для админки.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT
+                user_id,
+                user_name,
+                COALESCE(total_xp, 0) AS total_xp,
+                COALESCE(solved_count, 0) AS solved_count,
+                COALESCE(streak, 0) AS streak,
+                COALESCE(banned, FALSE) AS banned,
+                COALESCE(reset_token, 0) AS reset_token,
+                updated_at
+            FROM cyber_results
+            WHERE user_id = %s
+            ''',
+            (int(user_id),),
+        )
+        return cur.fetchone()
+    except Exception as e:
+        logger.error(f"get_cyber_result_detail error {user_id}: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+

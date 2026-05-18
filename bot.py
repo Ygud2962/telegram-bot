@@ -1539,11 +1539,11 @@ async def check_maintenance(update: Update, context: CallbackContext,
 
     if scope in ('game', 'cyber'):
         is_cyber_scope = (scope == 'cyber')
-        title = "🛡 <b>КИБЕРЩИТ В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>" if is_cyber_scope else "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>"
+        title = "🧨 <b>ZERO_DAY В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>" if is_cyber_scope else "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>"
         check_btn_text = "🛡 Проверить доступ" if is_cyber_scope else "🎮 Проверить доступ"
         check_btn_cb = 'menu_cyber' if is_cyber_scope else 'menu_game'
-        admin_line = "• администраторы Киберщита" if is_cyber_scope else "• администраторы игры"
-        tester_line = "• тестировщики Киберщита (в режимах beta/open)" if is_cyber_scope else "• тестировщики игры (в режимах beta/open)"
+        admin_line = "• администраторы ZERO_DAY" if is_cyber_scope else "• администраторы игры"
+        tester_line = "• тестировщики ZERO_DAY (в режимах beta/open)" if is_cyber_scope else "• тестировщики игры (в режимах beta/open)"
         msg = (
             f"{title}\n\n"
             "Вход в игру временно ограничен.\n"
@@ -1567,7 +1567,7 @@ async def check_maintenance(update: Update, context: CallbackContext,
     try:
         if update.callback_query:
             await update.callback_query.answer(
-                "⚠️ Технические работы" if scope not in ('game', 'cyber') else ("🛡 Киберщит в техрежиме" if scope == 'cyber' else "⚠️ Игра в техрежиме"),
+                "⚠️ Технические работы" if scope not in ('game', 'cyber') else ("🧨 ZERO_DAY в техрежиме" if scope == 'cyber' else "⚠️ Игра в техрежиме"),
                 show_alert=True
             )
             await safe_edit(update.callback_query, msg, kb)
@@ -2534,7 +2534,7 @@ async def cmd_version(update: Update, context: CallbackContext):
         "🧩 <b>Версии системы</b>\n\n"
         f"🤖 Бот: <b>{BOT_VERSION}</b>\n"
         f"🎮 Игра: <b>{GAME_VERSION}</b>\n"
-        f"🛡 Киберщит: <b>{CYBER_VERSION}</b>\n"
+        f"🧨 ZERO_DAY: <b>{CYBER_VERSION}</b>\n"
         f"🌐 GAME_URL: <b>{game_url_state}</b>\n"
         f"🌐 CYBER_URL: <b>{cyber_url_state}</b>\n"
     )
@@ -3662,14 +3662,14 @@ async def menu_cyber(query, context):
         mode = await _get_cached_cyber_mode()
         if mode == 'closed':
             denied_text = (
-                "🔧 <b>Киберщит в техническом режиме</b>\n\n"
+                "🔧 <b>ZERO_DAY в техническом режиме</b>\n\n"
                 "Сейчас вход в игру ограничен.\n"
                 "Доступ есть только у администраторов игры."
             )
         else:
             denied_text = (
                 "🔒 <b>Нет доступа</b>\n\n"
-                "Вы пока не добавлены в активный режим Киберщита.\n"
+                "Вы пока не добавлены в активный режим ZERO_DAY.\n"
                 "Попросите администратора выдать доступ."
             )
         await safe_edit(query, denied_text, [BACK_TO_MAIN[0]])
@@ -3678,7 +3678,7 @@ async def menu_cyber(query, context):
     if not CYBER_URL:
         await safe_edit(
             query,
-            "🛡 <b>КИБЕРЩИТ</b>\n\n"
+            "🧨 <b>ZERO_DAY</b>\n\n"
             "⚠️ Игра временно недоступна.\n"
             "<i>Администратор ещё не добавил CYBER_URL в Railway.</i>",
             [BACK_TO_MAIN[0]],
@@ -3821,25 +3821,25 @@ async def menu_cyber(query, context):
 
     btn_rows = [
         [InlineKeyboardButton(
-            "🛡 ОТКРЫТЬ КИБЕРЩИТ"
+            "🧨 ОТКРЫТЬ ZERO_DAY"
             if role == 'player'
-            else ("👑 ОТКРЫТЬ КИБЕРЩИТ (АДМИН)" if role == 'admin' else "🧪 ОТКРЫТЬ КИБЕРЩИТ (ТЕСТЕР)"),
+            else ("👑 ОТКРЫТЬ ZERO_DAY (АДМИН)" if role == 'admin' else "🧪 ОТКРЫТЬ ZERO_DAY (ТЕСТЕР)"),
             web_app=WebAppInfo(url=cyber_url),
         )],
-        [InlineKeyboardButton("🏆 Рейтинг Киберщита", callback_data='cyber_leaderboard')],
+        [InlineKeyboardButton("🏆 Рейтинг ZERO_DAY", callback_data='cyber_leaderboard')],
     ]
     if role == 'admin':
         btn_rows.append([InlineKeyboardButton("🗑 Сбросить мой прогресс", callback_data='cyber_admin_self_reset')])
     btn_rows.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
 
     await query.message.edit_text(
-        "🛡 <b>КИБЕРЩИТ</b>\n"
-        "<i>Летняя школа цифровой безопасности</i>\n\n"
-        "Тренажёр безопасного поведения в интернете:\n"
-        "• 💬 Симулятор переписки\n"
-        "• 🔎 Поиск улик в фишинговых письмах\n"
-        "• 🎯 Операции по реагированию на инциденты\n\n"
-        "Режимы обновляются ежедневно на всё лето."
+        "🧨 <b>ZERO_DAY: ШКОЛЬНЫЙ ПРОТОКОЛ</b>\n"
+        "<i>Эпизодический кибер-триллер на всё лето</i>\n\n"
+        "Контур активных операций:\n"
+        "• 💬 Messenger — выборы в диалогах\n"
+        "• 🔎 Gallery — поиск цифровых улик\n"
+        "• 🌐 Browser/Map/Terminal — расследования и пазлы\n\n"
+        "Новые эпизоды выходят по расписанию."
         + my_info + role_hint,
         parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(btn_rows),
@@ -3847,18 +3847,18 @@ async def menu_cyber(query, context):
 
 
 async def cyber_leaderboard(query, context):
-    """Публичный рейтинг Киберщита."""
+    """Публичный рейтинг ZERO_DAY."""
     await query.answer()
     rows = await asyncio.to_thread(db.get_cyber_leaderboard, 30)
     total = len(rows)
     if not rows:
         await safe_edit(
             query,
-            "🏆 <b>Рейтинг Киберщита</b>\n\nПока нет игроков с очками.",
+            "🏆 <b>Рейтинг ZERO_DAY</b>\n\nПока нет игроков с очками.",
             [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
         )
         return
-    lines = [f"🏆 <b>РЕЙТИНГ КИБЕРЩИТА</b>  👥 {total}\n"]
+    lines = [f"🏆 <b>РЕЙТИНГ ZERO_DAY</b>  👥 {total}\n"]
     for i, r in enumerate(rows, start=1):
         uid = int(r[0] or 0)
         name = (r[1] or "Игрок").strip()
@@ -3880,7 +3880,7 @@ async def cyber_admin_self_reset(query, context):
     await query.answer()
     await safe_edit(
         query,
-        "⚠️ <b>Сбросить свой прогресс Киберщита?</b>\n\n"
+        "⚠️ <b>Сбросить свой прогресс ZERO_DAY?</b>\n\n"
         "XP, серия и выполненные операции будут очищены.",
         [
             [btn("✅ Да, сбросить", "cyber_admin_self_reset_confirm")],
@@ -3897,14 +3897,14 @@ async def cyber_admin_self_reset_confirm(query, context):
     if role != 'admin':
         await safe_edit(
             query,
-            "⛔ Только игровой администратор Киберщита может выполнить этот сброс.",
+            "⛔ Только игровой администратор ZERO_DAY может выполнить этот сброс.",
             [[btn("↩️ Назад", "menu_cyber")]],
         )
         return
     ok = await asyncio.to_thread(db.reset_cyber_result, uid)
     await safe_edit(
         query,
-        "✅ Прогресс Киберщита сброшен." if ok else "❌ Не удалось сбросить прогресс.",
+        "✅ Прогресс ZERO_DAY сброшен." if ok else "❌ Не удалось сбросить прогресс.",
         [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
     )
 
@@ -5101,7 +5101,7 @@ async def admin_game_panel(query, context):
         [btn("🔓 Доступ игроков к главам", 'admin_player_chapters')],
         [btn("👤 Роли игроков", 'admin_roles_panel')],
         [btn("🗑 Сбросить игру всем", 'admin_game_reset_all')],
-        [btn("🛡 Киберщит", 'admin_cyber_panel')],
+        [btn("🧨 ZERO_DAY", 'admin_cyber_panel')],
         [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
@@ -5123,7 +5123,7 @@ async def admin_set_game_mode(query, context, mode: str):
 
 
 async def admin_cyber_panel(query, context):
-    """Панель управления Киберщитом."""
+    """Панель управления ZERO_DAY."""
     if not await is_bot_admin_async(query.from_user.id):
         await query.answer("⛔"); return
     await query.answer()
@@ -5145,7 +5145,7 @@ async def admin_cyber_panel(query, context):
     }
     mode_title = mode_labels.get(access_mode, access_mode)
     text = (
-        "🛡 <b>УПРАВЛЕНИЕ КИБЕРЩИТОМ</b>\n\n"
+        "🧨 <b>УПРАВЛЕНИЕ ZERO_DAY</b>\n\n"
         f"👥 Игроков: <b>{total}</b>\n"
         f"📊 Активных: <b>{active}</b>\n"
         f"👑 Админов игры: <b>{admins}</b>\n"
@@ -5169,7 +5169,7 @@ async def admin_cyber_panel(query, context):
         current_row,
         list(mode_btns.values()),
         [btn("🧪 Бета-список", 'admin_cyber_beta_panel')],
-        [btn("🗑 Сбросить Киберщит всем", 'admin_cyber_reset_all')],
+        [btn("🗑 Сбросить ZERO_DAY всем", 'admin_cyber_reset_all')],
         [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
@@ -5188,8 +5188,8 @@ async def admin_set_cyber_mode(query, context, mode: str):
     _cyber_beta_cache = set()
     _cyber_beta_cache_ts = 0
     mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
-    text = f"✅ Режим Киберщита: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
-    await safe_edit(query, text, [[btn("◀️ Киберщит", 'admin_cyber_panel')]])
+    text = f"✅ Режим ZERO_DAY: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
+    await safe_edit(query, text, [[btn("◀️ ZERO_DAY", 'admin_cyber_panel')]])
 
 
 async def admin_cyber_leaderboard(query, context):
@@ -5199,9 +5199,9 @@ async def admin_cyber_leaderboard(query, context):
     await query.answer()
     rows = await asyncio.to_thread(db.get_cyber_leaderboard_admin, 60)
     if not rows:
-        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ Киберщит", "admin_cyber_panel")]])
+        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ ZERO_DAY", "admin_cyber_panel")]])
         return
-    lines = [f"🛡 <b>ИГРОКИ КИБЕРЩИТА</b> ({len(rows)})\n"]
+    lines = [f"🧨 <b>ИГРОКИ ZERO_DAY</b> ({len(rows)})\n"]
     kb = []
     for i, row in enumerate(rows, start=1):
         uid = int(row[0] or 0)
@@ -5215,7 +5215,7 @@ async def admin_cyber_leaderboard(query, context):
         lines.append(f"{i}. {role_icon} <b>{name}</b> <code>{uid}</code>")
         lines.append(f"   ⭐ {xp} XP · ✅ {solved} · 🔥 {streak}" + (" · 🚫 бан" if banned else ""))
         kb.append([btn(f"👤 {name[:16]} · {xp} XP", f'acyber_view_{uid}')])
-    kb.append([btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
+    kb.append([btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -5227,7 +5227,7 @@ async def admin_cyber_view_player(query, context, uid: int):
     row = await asyncio.to_thread(db.get_cyber_result_detail, uid)
     role = await asyncio.to_thread(db.get_cyber_role, uid)
     if not row:
-        await safe_edit(query, "Игрок не найден в Киберщите.", [[btn("↩️ Назад", "admin_cyber_leaderboard")]])
+        await safe_edit(query, "Игрок не найден в ZERO_DAY.", [[btn("↩️ Назад", "admin_cyber_leaderboard")]])
         return
     name = row[1] or "Игрок"
     xp = int(row[2] or 0)
@@ -5272,7 +5272,7 @@ async def admin_cyber_reset_all(query, context):
     await query.answer()
     await safe_edit(
         query,
-        "⚠️ <b>Сбросить прогресс Киберщита всем игрокам?</b>\n\n"
+        "⚠️ <b>Сбросить прогресс ZERO_DAY всем игрокам?</b>\n\n"
         "XP/серия/операции будут очищены у всех.",
         [
             [btn("✅ Да, сбросить всем", "acyber_reset_all_confirm")],
@@ -5290,7 +5290,7 @@ async def admin_cyber_reset_all_confirm(query, context):
     await safe_edit(
         query,
         f"✅ Сброшено игроков: <b>{deleted}</b>",
-        [[btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")]],
+        [[btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")]],
     )
 
 
@@ -5301,9 +5301,9 @@ async def admin_cyber_roles(query, context):
     await query.answer()
     rows = await asyncio.to_thread(db.get_cyber_players_with_roles, 50)
     if not rows:
-        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ Киберщит", "admin_cyber_panel")]])
+        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ ZERO_DAY", "admin_cyber_panel")]])
         return
-    lines = ["🎭 <b>РОЛИ КИБЕРЩИТА</b>\n"]
+    lines = ["🎭 <b>РОЛИ ZERO_DAY</b>\n"]
     kb = []
     for uid, name, role, xp, solved in rows:
         icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}.get(role, '🎮')
@@ -5317,7 +5317,7 @@ async def admin_cyber_roles(query, context):
             row_btns.append(btn("🎮", f'crole_player_{uid}'))
         row_btns.append(btn(f"👤 {(name or str(uid))[:12]}", f'acyber_view_{uid}'))
         kb.append(row_btns)
-    kb.append([btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
+    kb.append([btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
     await safe_edit(query, "\n".join(lines), kb)
 
 
@@ -5337,7 +5337,7 @@ async def handle_cyber_role_action(query, context, data: str):
     role_name = {'admin': 'Администратор 👑', 'tester': 'Тестировщик 🧪', 'player': 'Игрок 🎮'}.get(role, role)
     await safe_edit(
         query,
-        f"{'✅' if ok else '❌'} Роль Киберщита обновлена.\nID: <code>{uid}</code>\nНовая роль: <b>{role_name}</b>",
+        f"{'✅' if ok else '❌'} Роль ZERO_DAY обновлена.\nID: <code>{uid}</code>\nНовая роль: <b>{role_name}</b>",
         [[btn("↩️ Роли", "admin_cyber_roles"), btn("🏠 Меню", "back_to_main")]],
     )
 
@@ -5349,7 +5349,7 @@ async def admin_cyber_beta_panel(query, context):
     await query.answer()
     users = await asyncio.to_thread(db.get_cyber_beta_users)
     mode = await asyncio.to_thread(db.get_cyber_access_mode)
-    lines = [f"🧪 <b>БЕТА-СПИСОК КИБЕРЩИТА</b>\n\nРежим: <b>{mode}</b>"]
+    lines = [f"🧪 <b>БЕТА-СПИСОК ZERO_DAY</b>\n\nРежим: <b>{mode}</b>"]
     if users:
         lines.append(f"\nВсего: <b>{len(users)}</b>")
         for uid, name, _added, note in users[:20]:
@@ -5359,7 +5359,7 @@ async def admin_cyber_beta_panel(query, context):
     kb = [
         [btn("➕ Добавить", "admin_cyber_beta_add"), btn("➖ Убрать", "admin_cyber_beta_remove")],
         [btn("🧹 Очистить список", "admin_cyber_beta_clear_confirm")],
-        [btn("↩️ Киберщит", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")],
+        [btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")],
     ]
     await safe_edit(query, "\n".join(lines), kb)
 
@@ -5372,7 +5372,7 @@ async def admin_cyber_beta_add(query, context):
     context.user_data['cyber_beta_action'] = 'add'
     await safe_edit(
         query,
-        "➕ <b>Добавить в beta Киберщита</b>\n\n"
+        "➕ <b>Добавить в beta ZERO_DAY</b>\n\n"
         "Отправьте один или несколько Telegram ID (через запятую).\n"
         "Пример: <code>123456, 987654</code>",
         [[btn("❌ Отмена", "admin_cyber_beta_panel")]],
@@ -5400,7 +5400,7 @@ async def admin_cyber_beta_clear_confirm(query, context):
     await query.answer()
     await safe_edit(
         query,
-        "⚠️ Очистить beta-список Киберщита?",
+        "⚠️ Очистить beta-список ZERO_DAY?",
         [
             [btn("✅ Да, очистить", "acyber_beta_clear_do")],
             [btn("❌ Отмена", "admin_cyber_beta_panel")],
@@ -5905,7 +5905,7 @@ async def show_admin_panel(query):
 
     kb = [
         [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Шифровальщик", 'admin_game_panel')],
-        [btn("🛡 Киберщит", 'admin_cyber_panel'), btn("⚙️ Система", 'admin_system_panel')],
+        [btn("🧨 ZERO_DAY", 'admin_cyber_panel'), btn("⚙️ Система", 'admin_system_panel')],
         [btn("👤 Мой игровой режим", 'admin_my_game_role')],
         [btn("🏠 Главное меню",  'back_to_main')],
     ]
@@ -6416,7 +6416,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             await safe_edit(
                 query,
                 f"{'✅ Пользователь удалён из beta.' if ok else '❌ Пользователь не найден.'}",
-                [[btn("↩️ Beta Киберщита", 'admin_cyber_beta_panel')]],
+                [[btn("↩️ Beta ZERO_DAY", 'admin_cyber_beta_panel')]],
             )
             return
         if d.startswith('acyber_view_'):
@@ -8566,7 +8566,7 @@ def main():
     print("🤖 Бот запущен!")
     print(f"🔖 Версия бота: {BOT_VERSION}")
     print(f"🎮 Версия Шифровальщика: {GAME_VERSION}")
-    print(f"🛡 Версия Киберщита: {CYBER_VERSION}")
+    print(f"🧨 Версия ZERO_DAY: {CYBER_VERSION}")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
     print("👑 Администраторы: определяются через БД (role=admin)")
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
@@ -8599,7 +8599,7 @@ async def menu_games(query, context):
     """Подменю игр."""
     kb = [
         [btn("🎮 Шифровальщик", 'menu_game')],
-        [btn("🛡 Киберщит", 'menu_cyber')],
+        [btn("🧨 ZERO_DAY", 'menu_cyber')],
         [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(
