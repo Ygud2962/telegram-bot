@@ -3768,23 +3768,86 @@ async def menu_cyber(query, context):
         'lb': lb_data,
         'me': my_data,
     }
-    payload = urllib.parse.quote(json.dumps(payload_obj, ensure_ascii=False))
-    if len(payload) >= 2000:
-        slim_payload_obj = {
-            'sync_url': sync_url_val,
-            'leaderboard_url': leaderboard_url,
-            'state_url': state_url,
-            'reset_url': reset_url,
-            'role': role,
-            'admin_mode': admin_mode,
-            'tester_mode': tester_mode,
-            'in_rating': in_rating,
-            'version': CYBER_VERSION,
-            'me': my_data,
-        }
-        payload = urllib.parse.quote(json.dumps(slim_payload_obj, ensure_ascii=False))
+    slim_payload_obj = {
+        'sync_url': sync_url_val,
+        'leaderboard_url': leaderboard_url,
+        'state_url': state_url,
+        'reset_url': reset_url,
+        'role': role,
+        'admin_mode': admin_mode,
+        'tester_mode': tester_mode,
+        'in_rating': in_rating,
+        'version': CYBER_VERSION,
+        'me': my_data,
+    }
+    tiny_payload_obj = {
+        'sync_url': sync_url_val,
+        'state_url': state_url,
+        'role': role,
+        'admin_mode': admin_mode,
+        'tester_mode': tester_mode,
+        'in_rating': in_rating,
+        'version': CYBER_VERSION,
+    }
 
-    cyber_url = build_game_launch_url(CYBER_URL, CYBER_VERSION, payload)
+    payload_full = urllib.parse.quote(json.dumps(payload_obj, ensure_ascii=False))
+    payload_slim = urllib.parse.quote(json.dumps(slim_payload_obj, ensure_ascii=False))
+    payload_tiny = urllib.parse.quote(json.dumps(tiny_payload_obj, ensure_ascii=False))
+    payload_variants = [payload_full, payload_slim, payload_tiny, '']
+
+    def _is_valid_telegram_webapp_base(raw_url: str) -> bool:
+        if not raw_url:
+            return False
+        try:
+            parsed = urllib.parse.urlparse(raw_url.strip())
+            if parsed.scheme not in ('https', 'http') or not parsed.netloc:
+                return False
+            # raises ValueError for malformed port (e.g. :abc)
+            _ = parsed.port
+            return True
+        except Exception:
+            return False
+
+    candidate_bases: list[str] = []
+    if CYBER_URL:
+        candidate_bases.append(CYBER_URL.strip())
+    if BOT_PUBLIC_URL:
+        fallback_cyber = BOT_PUBLIC_URL.rstrip('/') + '/cyber/'
+        if fallback_cyber not in candidate_bases:
+            candidate_bases.append(fallback_cyber)
+
+    MAX_WEBAPP_URL_LEN = 1700
+    cyber_url = ''
+    used_base = ''
+    used_payload_len = 0
+    for base in candidate_bases:
+        if not _is_valid_telegram_webapp_base(base):
+            logger.warning(f"menu_cyber: skip invalid base url: {base!r}")
+            continue
+        for p in payload_variants:
+            test_url = build_game_launch_url(base, CYBER_VERSION, p)
+            if len(test_url) <= MAX_WEBAPP_URL_LEN:
+                cyber_url = test_url
+                used_base = base
+                used_payload_len = len(p)
+                break
+        if cyber_url:
+            break
+
+    if not cyber_url:
+        await safe_edit(
+            query,
+            "🧨 <b>ZERO_DAY временно недоступен</b>\n\n"
+            "Не удалось собрать корректную ссылку запуска.\n"
+            "Проверьте переменные Railway:\n"
+            "<code>BOT_PUBLIC_URL</code> и <code>CYBER_URL</code>.",
+            [[btn("🏠 Главное меню", "back_to_main")]],
+        )
+        return
+    logger.info(
+        "menu_cyber launch url ready: len=%s payload_len=%s base=%s",
+        len(cyber_url), used_payload_len, used_base
+    )
 
     if my_result:
         total_xp = int(my_result[2] or 0)
