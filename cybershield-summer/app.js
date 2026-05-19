@@ -1,571 +1,719 @@
-(() => {
-  const tg = window.Telegram?.WebApp;
-  if (tg) {
-    tg.ready();
-    tg.expand();
+// ============================================================
+// ZERO_DAY: Школьный Протокол — APP ENGINE
+// ============================================================
+
+(function () {
+  'use strict';
+
+  const frame = document.getElementById('appFrame');
+  const bottomNav = document.getElementById('bottomNav');
+  let currentScreen = 'home';
+  let currentChat = null;
+
+  // ---- CLOCK ----
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const el = document.getElementById('sbTime');
+    if (el) el.textContent = h + ':' + m;
+  }
+  updateClock();
+  setInterval(updateClock, 15000);
+
+  // ---- TOAST ----
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    frame.appendChild(t);
+    setTimeout(() => t.remove(), 1900);
   }
 
-  const params = new URLSearchParams(window.location.search);
-  const decodeMaybe = (value) => {
-    if (!value) return "";
-    let out = String(value);
-    try { out = decodeURIComponent(out); } catch {}
-    try {
-      const second = decodeURIComponent(out);
-      if (second.includes("http") || second.includes("/")) out = second;
-    } catch {}
-    return out;
-  };
-
-  const cfg = {
-    userId: Number(params.get("user_id") || tg?.initDataUnsafe?.user?.id || 0),
-    initData: tg?.initData || decodeMaybe(params.get("init_data") || ""),
-    stateUrl: decodeMaybe(params.get("state_url") || "/cyber_state"),
-    syncUrl: decodeMaybe(params.get("sync_url") || "/cyber_sync"),
-    leaderboardUrl: decodeMaybe(params.get("leaderboard_url") || "/cyber_leaderboard"),
-    resetUrl: decodeMaybe(params.get("reset_url") || "/cyber_reset"),
-    version: decodeMaybe(params.get("version") || "1.0.0"),
-  };
-
-  const EPISODES = Array.from({ length: 24 }, (_, i) => {
-    const no = i + 1;
-    const act = Math.ceil(no / 6);
-    const names = [
-      "Не открывай файл", "Сломанный аккаунт", "Чужой голос", "Кто внутри чата", "Подмена личности", "Первый след",
-      "Зеркальные профили", "Давление толпы", "Ложный герой", "Тихий предатель", "Падение доверия", "Ночной протокол",
-      "Слепые метаданные", "Сетка контактов", "Глубокий канал", "След в геометке", "Сторонний наблюдатель", "Лабиринт фактов",
-      "Критический доступ", "Школьный шлюз", "План эвакуации", "Голосование школ", "Последняя связка", "ZERO_DAY",
-    ];
-    return { id: no, title: names[i], act, week: no };
-  });
-
-  const SHOP_ITEMS = [
-    { id: "usb", title: "USB-руббердак", cost: 120, desc: "+10 XP при провале Terminal (1 раз)" },
-    { id: "proxy", title: "VPN-прокси", cost: 160, desc: "+1 попытка в Browser-проверке" },
-    { id: "badge", title: "Нашивка Отряда 404", cost: 90, desc: "Косметика профиля" },
-    { id: "drone", title: "Дрон-камера", cost: 220, desc: "+15 XP за Gallery-задачу" },
-  ];
-
-  const TASKS = ["messenger", "gallery", "browser", "map", "terminal"];
-  const state = {
-    role: "player",
-    totalXp: 0,
-    solvedCount: 0,
-    streak: 0,
-    episode: 1,
-    unlocked: 1,
-    completed: {},
-    inventory: {},
-    resetToken: 0,
-    syncTimer: null,
-  };
-
-  const el = {
-    tabs: document.getElementById("tabs"),
-    playerName: document.getElementById("playerName"),
-    playerRole: document.getElementById("playerRole"),
-    xpValue: document.getElementById("xpValue"),
-    solvedValue: document.getElementById("solvedValue"),
-    episodeProgress: document.getElementById("episodeProgress"),
-    streakInfo: document.getElementById("streakInfo"),
-    weekInfo: document.getElementById("weekInfo"),
-    episodesGrid: document.getElementById("episodesGrid"),
-    chatLog: document.getElementById("chatLog"),
-    chatChoices: document.getElementById("chatChoices"),
-    galleryBoard: document.getElementById("galleryBoard"),
-    galleryCounter: document.getElementById("galleryCounter"),
-    newsCards: document.getElementById("newsCards"),
-    mapChoices: document.getElementById("mapChoices"),
-    terminalInput: document.getElementById("terminalInput"),
-    terminalHint: document.getElementById("terminalHint"),
-    shopGrid: document.getElementById("shopGrid"),
-    ratingList: document.getElementById("ratingList"),
-    profileFacts: document.getElementById("profileFacts"),
-    toast: document.getElementById("toast"),
-  };
-
-  const tabs = [
-    ["episodes", "Эпизоды"],
-    ["messenger", "Messenger"],
-    ["gallery", "Gallery"],
-    ["browser", "Browser"],
-    ["map", "Map"],
-    ["terminal", "Terminal"],
-    ["shop", "Магазин"],
-    ["rating", "Рейтинг"],
-    ["profile", "Профиль"],
-  ];
-
-  const galleryHotspots = [
-    { x: 76, y: 132, key: "sender" },
-    { x: 436, y: 168, key: "link" },
-    { x: 88, y: 208, key: "urgency" },
-    { x: 410, y: 245, key: "sms" },
-    { x: 122, y: 80, key: "domain" },
-    { x: 280, y: 126, key: "decoy1", decoy: true },
-    { x: 330, y: 220, key: "decoy2", decoy: true },
-  ];
-  const selectedHotspots = new Set();
-  const browserCases = [
-    { id: "n1", title: "\"Срочно! Школа просит пароль от дневника\"", legit: false },
-    { id: "n2", title: "Новость с официального сайта школы и подписью директора", legit: true },
-    { id: "n3", title: "Пост без источников: \"всем отключат аккаунты сегодня\"", legit: false },
-  ];
-  const browserAnswered = new Set();
-  let mapSolved = false;
-  let messengerSolved = false;
-  let terminalSolved = false;
-
-  function taskKey(task) { return `ep${state.episode}:${task}`; }
-  function isTaskDone(task) { return Boolean(state.completed[taskKey(task)]); }
-
-  function toast(text, mode = "ok") {
-    el.toast.textContent = text;
-    el.toast.className = `toast show ${mode}`;
-    setTimeout(() => { el.toast.className = "toast"; }, 2200);
+  function addStars(n) {
+    if (n <= 0) return;
+    ZD.state.stars += n;
+    updateStarsDisplay();
+    toast('+' + n + ' ⭐ Stars');
   }
 
-  function renderTabs(active = "episodes") {
-    el.tabs.innerHTML = "";
-    tabs.forEach(([id, label]) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = `tab-btn${id === active ? " active" : ""}`;
-      b.textContent = label;
-      b.addEventListener("click", () => openPanel(id));
-      el.tabs.appendChild(b);
+  function updateStarsDisplay() {
+    document.querySelectorAll('.stars-val').forEach(el => {
+      el.textContent = ZD.state.stars;
     });
   }
 
-  function openPanel(id) {
-    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-    document.getElementById(`panel-${id}`)?.classList.add("active");
-    renderTabs(id);
-    if (id === "rating") refreshRating();
+  // ---- BOTTOM NAV ----
+  function buildNav() {
+    const items = [
+      { id: 'home',      ico: '🏠', label: 'ГЛАВНАЯ' },
+      { id: 'messenger', ico: '💬', label: 'ЧАТЫ',    badge: 2 },
+      { id: 'map',       ico: '🗺️', label: 'КАРТА' },
+      { id: 'shop',      ico: '🛒', label: 'МАГАЗИН' },
+    ];
+    bottomNav.innerHTML = items.map(it => `
+      <div class="nav-item ${it.id === 'home' ? 'active' : ''}" data-nav="${it.id}">
+        ${it.badge ? `<div class="nav-dot"></div>` : ''}
+        <span class="nav-ico">${it.ico}</span>
+        <span class="nav-lbl">${it.label}</span>
+      </div>
+    `).join('');
+    bottomNav.querySelectorAll('.nav-item').forEach(el => {
+      el.addEventListener('click', () => navigateTo(el.dataset.nav));
+    });
   }
 
-  function renderStats() {
-    el.xpValue.textContent = `${state.totalXp} XP`;
-    el.solvedValue.textContent = `заданий: ${state.solvedCount}`;
-    el.streakInfo.textContent = `серия: ${state.streak}`;
-    el.episodeProgress.textContent = `${Math.min(state.unlocked - 1, 24)} / 24`;
-    el.weekInfo.textContent = `Неделя ${state.episode}`;
+  function setActiveNav(id) {
+    bottomNav.querySelectorAll('.nav-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.nav === id);
+    });
   }
 
-  function markTaskDone(task, bonus, message) {
-    const key = taskKey(task);
-    if (state.completed[key]) return;
-    state.completed[key] = true;
-    state.totalXp += bonus;
-    state.solvedCount += 1;
-    toast(`+${bonus} XP · ${message}`, "ok");
-    checkEpisodeComplete();
-    renderStats();
-    renderProfile();
-    scheduleSync();
+  // ---- NAVIGATION ----
+  function navigateTo(id) {
+    currentScreen = id;
+    setActiveNav(id);
+    renderScreen(id);
   }
 
-  function checkEpisodeComplete() {
-    const done = TASKS.every(isTaskDone);
-    if (!done) return;
-    const nextUnlocked = Math.max(state.unlocked, state.episode + 1);
-    if (nextUnlocked !== state.unlocked) {
-      state.unlocked = nextUnlocked;
-      state.streak += 1;
-      state.totalXp += 80;
-      toast("Эпизод закрыт: +80 XP и открыт следующий", "ok");
-      renderEpisodes();
+  function renderScreen(id) {
+    frame.innerHTML = '';
+    switch (id) {
+      case 'home':      buildHome(); break;
+      case 'messenger': buildMessengerList(); break;
+      case 'chat':      buildChat(currentChat); break;
+      case 'gallery':   buildGallery(); break;
+      case 'browser':   buildBrowser(); break;
+      case 'map':       buildMap(); break;
+      case 'terminal':  buildTerminal(); break;
+      case 'shop':      buildShop(); break;
+      default:          buildHome();
     }
   }
 
-  function renderEpisodes() {
-    el.episodesGrid.innerHTML = "";
-    EPISODES.forEach((ep) => {
-      const card = document.createElement("article");
-      const locked = ep.id > state.unlocked && state.role !== "admin";
-      card.className = `episode-card${locked ? " locked" : ""}`;
-      card.innerHTML = `<h3>Эпизод ${ep.id}: ${ep.title}</h3><p>Акт ${ep.act} · неделя ${ep.week}</p>`;
-      const btn = document.createElement("button");
-      btn.className = locked ? "ghost-btn" : "primary-btn";
-      btn.textContent = locked ? "Закрыто" : (state.episode === ep.id ? "Активен" : "Запустить");
-      btn.disabled = locked;
-      btn.addEventListener("click", () => {
-        state.episode = ep.id;
-        messengerSolved = isTaskDone("messenger");
-        terminalSolved = isTaskDone("terminal");
-        mapSolved = isTaskDone("map");
-        renderEpisodes();
-        renderMessenger();
-        renderBrowser();
-        renderMap();
-        toast(`Эпизод ${ep.id} активирован`, "ok");
-      });
-      card.appendChild(btn);
-      el.episodesGrid.appendChild(card);
+  function screenDiv(id) {
+    const s = document.createElement('div');
+    s.className = 'screen active';
+    s.id = id;
+    frame.appendChild(s);
+    return s;
+  }
+
+  function header(backTo, title, sub, extra) {
+    return `
+      <div class="screen-header">
+        <div class="back-btn" data-back="${backTo}">←</div>
+        <div>
+          <div class="hdr-title">${title}</div>
+          ${sub ? `<div class="hdr-sub">${sub}</div>` : ''}
+        </div>
+        ${extra || ''}
+      </div>
+    `;
+  }
+
+  function bindBack(s) {
+    s.querySelectorAll('[data-back]').forEach(el => {
+      el.addEventListener('click', () => navigateTo(el.dataset.back));
     });
   }
 
-  function renderMessenger() {
-    el.chatLog.innerHTML = "";
-    el.chatChoices.innerHTML = "";
-    [
-      { who: "npc", text: "Марина: «Срочно открой файл invoice_final.zip и скинь код из SMS»" },
-      { who: "npc", text: "Номер отправителя скрыт. Аватар и стиль сообщений отличаются от привычных." },
-    ].forEach((msg) => {
-      const row = document.createElement("div");
-      row.className = `chat-msg ${msg.who}`;
-      row.textContent = msg.text;
-      el.chatLog.appendChild(row);
+  // ==================================================
+  // HOME
+  // ==================================================
+  function buildHome() {
+    const s = screenDiv('homeScreen');
+    s.innerHTML = `
+      <div class="scrollable">
+        <div class="home-hero">
+          <div class="hero-act">АКТ ${ZD.state.act} · ЭПИЗОД ${ZD.state.episode}</div>
+          <div class="hero-title">ZERO_<em>DAY</em></div>
+          <div class="hero-subtitle">ШКОЛЬНЫЙ ПРОТОКОЛ · ОТРЯД 404</div>
+          <div class="ep-card" data-goto="chat" data-chat="dasha">
+            <div>
+              <div class="ep-num">EP.03 · АКТИВЕН</div>
+              <div class="ep-name">«Файл от Марины»</div>
+              <div class="ep-meta">Фишинг · Социальная инженерия</div>
+            </div>
+            <div class="ep-play">▶</div>
+          </div>
+        </div>
+        <div class="notif-strip">📨 Новое сообщение от <strong style="margin:0 3px">Даши Ковы</strong> — Отряд 404</div>
+        <div class="home-apps">
+          <div class="section-lbl">ПРИЛОЖЕНИЯ</div>
+          <div class="apps-grid">
+            <div class="app-tile has-badge" data-goto="messenger">
+              <div class="app-tile-ico">💬</div>
+              <div class="app-tile-lbl">МЕССЕНДЖЕР</div>
+            </div>
+            <div class="app-tile" data-goto="gallery">
+              <div class="app-tile-ico">🖼️</div>
+              <div class="app-tile-lbl">ГАЛЕРЕЯ</div>
+            </div>
+            <div class="app-tile" data-goto="browser">
+              <div class="app-tile-ico">🌐</div>
+              <div class="app-tile-lbl">БРАУЗЕР</div>
+            </div>
+            <div class="app-tile" data-goto="map">
+              <div class="app-tile-ico">🗺️</div>
+              <div class="app-tile-lbl">КАРТА</div>
+            </div>
+            <div class="app-tile" data-goto="terminal">
+              <div class="app-tile-ico">💻</div>
+              <div class="app-tile-lbl">ТЕРМИНАЛ</div>
+            </div>
+            <div class="app-tile" data-goto="shop">
+              <div class="app-tile-ico">🛒</div>
+              <div class="app-tile-lbl">МАГАЗИН</div>
+            </div>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-val stars-val">${ZD.state.stars}</div>
+            <div class="stat-lbl">⭐ STARS</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">${ZD.state.trust}%</div>
+            <div class="stat-lbl">ДОВЕРИЕ</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val">${ZD.state.reputation}</div>
+            <div class="stat-lbl">РЕПУТАЦИЯ</div>
+          </div>
+        </div>
+      </div>
+    `;
+    s.querySelectorAll('[data-goto]').forEach(el => {
+      el.addEventListener('click', () => {
+        const chat = el.dataset.chat;
+        if (chat) { currentChat = chat; navigateTo('chat'); }
+        else navigateTo(el.dataset.goto);
+      });
+    });
+  }
+
+  // ==================================================
+  // MESSENGER LIST
+  // ==================================================
+  function buildMessengerList() {
+    const s = screenDiv('messengerScreen');
+    let rows = ZD.contacts.map(c => `
+      <div class="chat-list-item" data-chat="${c.id}">
+        <div class="chat-avatar ${c.online ? 'avatar-online' : ''}" style="background:${c.color}">${c.initials}</div>
+        <div class="chat-info">
+          <div class="chat-name">${c.name}</div>
+          <div class="chat-preview">${c.preview}</div>
+        </div>
+        <div class="chat-meta">
+          <div class="chat-time">${c.time}</div>
+          ${c.unread ? `<span class="chat-unread">${c.unread}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+    s.innerHTML = `
+      ${header('home', 'Сообщения', null, `<span style="margin-left:auto;font-size:10px;color:var(--muted)">✏️</span>`)}
+      <div class="scrollable">${rows}</div>
+    `;
+    bindBack(s);
+    s.querySelectorAll('.chat-list-item').forEach(el => {
+      el.addEventListener('click', () => {
+        currentChat = el.dataset.chat;
+        navigateTo('chat');
+      });
+    });
+  }
+
+  // ==================================================
+  // CHAT DETAIL
+  // ==================================================
+  function buildChat(contactId) {
+    const contact = ZD.contacts.find(c => c.id === contactId);
+    if (!contact) return buildMessengerList();
+    const msgs = ZD.messages[contactId] || [];
+    const choices = ZD.choices[contactId];
+
+    const s = screenDiv('chatScreen');
+
+    const msgsHtml = msgs.map(m => {
+      if (m.from === 'system') return `<div class="bubble bubble-system">${m.text}</div>`;
+      if (m.from === 'in') return `<div class="bubble bubble-in">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
+      if (m.from === 'out') return `<div class="bubble bubble-out">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
+      return '';
+    }).join('');
+
+    const choicesHtml = choices && !ZD.state.choiceMade ? `
+      <div class="choices-wrap" id="choicesWrap">
+        <div class="choices-lbl">ТВОЙ ВЫБОР</div>
+        ${choices.map(c => `
+          <button class="choice ${c.good ? '' : 'bad'}" data-key="${c.key}">
+            <span class="choice-key">[${c.key}]</span>${c.text}
+          </button>
+        `).join('')}
+      </div>
+    ` : choices && ZD.state.choiceMade ? `
+      <div class="choices-wrap">
+        <div class="choices-lbl" style="color:var(--accent)">✓ ВЫБОР СДЕЛАН · ПОСЛЕДСТВИЯ В ЭП.5</div>
+      </div>
+    ` : '';
+
+    s.innerHTML = `
+      <div class="screen-header">
+        <div class="back-btn" data-back="messenger">←</div>
+        <div class="chat-avatar" style="background:${contact.color};width:34px;height:34px;font-size:13px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0">${contact.initials}</div>
+        <div>
+          <div class="hdr-title">${contact.name}</div>
+          <div class="hdr-sub" style="color:${contact.online ? 'var(--accent)' : 'var(--muted)'}">
+            ${contact.online ? '● онлайн' : '● был(а) недавно'}
+          </div>
+        </div>
+      </div>
+      <div class="chat-bg" id="chatBg">
+        <div class="bubble bubble-system">Сегодня · 19:47</div>
+        ${msgsHtml}
+        <div class="typing-bub" id="typingBub">
+          <div class="td"></div><div class="td"></div><div class="td"></div>
+        </div>
+      </div>
+      ${choicesHtml}
+    `;
+    bindBack(s);
+
+    const chatBg = s.querySelector('#chatBg');
+    if (chatBg) chatBg.scrollTop = 9999;
+
+    if (choices && !ZD.state.choiceMade) {
+      s.querySelectorAll('.choice').forEach(btn => {
+        btn.addEventListener('click', () => handleChoice(contactId, btn.dataset.key, s));
+      });
+    }
+  }
+
+  function handleChoice(contactId, key, s) {
+    ZD.state.choiceMade = true;
+    const reply = ZD.choiceReplies[key];
+
+    // disable all choices
+    s.querySelectorAll('.choice').forEach(b => {
+      b.disabled = true;
+      b.style.opacity = b.dataset.key === key ? '1' : '0.35';
+      if (b.dataset.key === key) b.classList.add('selected');
     });
 
-    if (messengerSolved) {
-      const done = document.createElement("div");
-      done.className = "chat-msg you";
-      done.textContent = "Операция уже закрыта в этом эпизоде.";
-      el.chatLog.appendChild(done);
+    const chatBg = s.querySelector('#chatBg');
+    const typingBub = s.querySelector('#typingBub');
+    const choicesWrap = s.querySelector('#choicesWrap');
+
+    // add outgoing bubble
+    const outChoice = ZD.choices[contactId].find(c => c.key === key);
+    const outBub = document.createElement('div');
+    outBub.className = 'bubble bubble-out';
+    const outTexts = { A: 'Всем стоп! «Расписание_новое.exe» — это вирус. Не открывайте!', B: '...ладно, сам посмотрю что там.', C: 'Давай сначала напишем самой Марине — проверим, она ли это.' };
+    outBub.innerHTML = outTexts[key] + `<div class="bub-time">19:49</div>`;
+    chatBg.insertBefore(outBub, typingBub);
+
+    typingBub.style.display = 'flex';
+    chatBg.scrollTop = 9999;
+
+    setTimeout(() => {
+      typingBub.style.display = 'none';
+      const inBub = document.createElement('div');
+      inBub.className = 'bubble bubble-in';
+      inBub.innerHTML = reply.text + `<div class="bub-time">19:50</div>`;
+      chatBg.insertBefore(inBub, typingBub);
+      chatBg.scrollTop = 9999;
+
+      if (choicesWrap) {
+        choicesWrap.innerHTML = `<div class="choices-lbl" style="color:var(--accent)">✓ ВЫБОР СДЕЛАН · ПОСЛЕДСТВИЯ В ЭП.5</div>`;
+      }
+      addStars(reply.stars);
+    }, 2200);
+  }
+
+  // ==================================================
+  // GALLERY
+  // ==================================================
+  function buildGallery() {
+    const s = screenDiv('galleryScreen');
+    const thumbs = ZD.gallery.map(item => {
+      const cls = ZD.state.analyzed.has(item.id) ? 'analyzed' : (item.flagged ? 'flagged' : '');
+      return `<div class="gal-thumb ${cls}" data-item="${item.id}">${item.emoji}</div>`;
+    }).join('');
+
+    s.innerHTML = `
+      ${header('home', 'Галерея · Улики', `${ZD.gallery.length} файлов`)}
+      <div class="gal-grid">${thumbs}</div>
+      <div id="galDetailOverlay">
+        <div class="screen-header">
+          <div class="back-btn" id="galDetailBack">←</div>
+          <div>
+            <div class="hdr-title" id="galDetailName">—</div>
+            <div class="hdr-sub" id="galDetailDesc">—</div>
+          </div>
+        </div>
+        <div class="gal-detail-img" id="galDetailImg">
+          <div class="gal-scan-overlay" id="galScanOverlay"></div>
+          <div class="scan-anim" id="scanAnim"></div>
+          <span id="galDetailEmoji" style="font-size:80px"></span>
+        </div>
+        <button class="analyze-btn" id="analyzeBtn">▶ АНАЛИЗИРОВАТЬ МЕТАДАННЫЕ</button>
+        <div class="exif-panel scrollable" id="exifPanel"></div>
+      </div>
+    `;
+    bindBack(s);
+
+    s.querySelector('#galDetailBack').addEventListener('click', () => {
+      s.querySelector('#galDetailOverlay').classList.remove('open');
+    });
+
+    s.querySelectorAll('.gal-thumb').forEach(el => {
+      el.addEventListener('click', () => openGalDetail(el.dataset.item, s));
+    });
+  }
+
+  function openGalDetail(itemId, s) {
+    const item = ZD.gallery.find(g => g.id === itemId);
+    if (!item) return;
+    const overlay = s.querySelector('#galDetailOverlay');
+    overlay.classList.add('open');
+    s.querySelector('#galDetailName').textContent = item.name;
+    s.querySelector('#galDetailDesc').textContent = item.desc;
+    s.querySelector('#galDetailEmoji').textContent = item.emoji;
+
+    const exifPanel = s.querySelector('#exifPanel');
+    if (ZD.state.analyzed.has(itemId)) {
+      renderExif(item, exifPanel);
+      s.querySelector('#analyzeBtn').textContent = '✓ ПРОАНАЛИЗИРОВАНО';
+      s.querySelector('#analyzeBtn').style.borderColor = 'var(--accent)';
+    } else {
+      exifPanel.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:8px 0">Нажми «Анализировать» для извлечения метаданных</div>`;
+      s.querySelector('#analyzeBtn').textContent = '▶ АНАЛИЗИРОВАТЬ МЕТАДАННЫЕ';
+      s.querySelector('#analyzeBtn').style.borderColor = 'var(--accent)';
+    }
+
+    s.querySelector('#analyzeBtn').onclick = () => startAnalysis(itemId, item, s);
+  }
+
+  function renderExif(item, panel) {
+    panel.innerHTML = item.exif.map(row => `
+      <div class="exif-row">
+        <span class="exif-k">${row.k}</span>
+        <span class="exif-v ${row.cls || ''}">${row.v}</span>
+      </div>
+    `).join('');
+  }
+
+  function startAnalysis(itemId, item, s) {
+    if (ZD.state.analyzed.has(itemId)) return;
+    const btn = s.querySelector('#analyzeBtn');
+    const scanAnim = s.querySelector('#scanAnim');
+    const scanOverlay = s.querySelector('#galScanOverlay');
+    btn.textContent = '⏳ СКАНИРОВАНИЕ...';
+    btn.style.opacity = '0.6';
+    btn.style.pointerEvents = 'none';
+    scanAnim.style.display = 'block';
+    scanOverlay.style.display = 'block';
+
+    setTimeout(() => {
+      ZD.state.analyzed.add(itemId);
+      scanAnim.style.display = 'none';
+      scanOverlay.style.display = 'none';
+      btn.textContent = '✓ ПРОАНАЛИЗИРОВАНО';
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'none';
+      btn.style.borderColor = 'var(--accent)';
+      renderExif(item, s.querySelector('#exifPanel'));
+      if (item.flagged) addStars(3);
+    }, 2000);
+  }
+
+  // ==================================================
+  // BROWSER
+  // ==================================================
+  function buildBrowser() {
+    const s = screenDiv('browserScreen');
+    const flags = ZD.gallery; // reuse state
+
+    s.innerHTML = `
+      <div class="screen-header">
+        <div class="back-btn" data-back="home">←</div>
+        <div style="display:flex;gap:5px;font-size:11px;color:var(--muted)">
+          <span style="cursor:pointer">←</span>
+          <span style="cursor:pointer">→</span>
+          <span style="cursor:pointer">↻</span>
+        </div>
+      </div>
+      <div class="url-bar-wrap">
+        <div class="url-bar">
+          <span class="url-lock http" id="urlLock">🔓</span>
+          <span class="url-txt" id="urlTxt">sekur-bank-online.ru</span>
+        </div>
+      </div>
+      <div class="site-content scrollable">
+        <div class="site-topbar">
+          <div class="site-logo">🏦 СекурБанк Online</div>
+          <div class="site-tagline">Ваш надёжный партнёр · 24/7</div>
+          <div class="site-nav-row">
+            <span class="site-nav-item">Вход</span>
+            <span class="site-nav-item">Кабинет</span>
+            <span class="site-nav-item">Поддержка</span>
+            <span class="site-nav-item">О банке</span>
+          </div>
+        </div>
+        <div class="site-body">
+          <div class="phish-warning">
+            <div class="phish-w-title">⚠️ СРОЧНО: Ваш аккаунт заблокирован</div>
+            <div class="phish-w-txt">Для восстановления доступа введите данные карты в течение 24 часов.</div>
+          </div>
+          <div class="site-headline">Подтвердите личность — введите данные карты</div>
+          <div class="site-meta">Обновлено сегодня в 18:30 · Служба безопасности</div>
+          <div class="site-para">Уважаемый клиент! В целях безопасности нам необходимо подтвердить вашу личность. Нажмите кнопку ниже и введите полные реквизиты карты.</div>
+          <div class="flags-box">
+            <div class="flags-title">🔍 НАЙДИ ПРИЗНАКИ ФИШИНГА</div>
+            <div class="flag-row" data-flag="1"><div class="flag-chk" id="fc1"></div><span>Подозрительный домен — не официальный сайт банка</span></div>
+            <div class="flag-row" data-flag="2"><div class="flag-chk" id="fc2"></div><span>Нет защищённого соединения (HTTP вместо HTTPS)</span></div>
+            <div class="flag-row" data-flag="3"><div class="flag-chk" id="fc3"></div><span>Создание искусственной срочности («24 часа»)</span></div>
+            <div class="flag-row" data-flag="4"><div class="flag-chk" id="fc4"></div><span>Запрос данных карты — настоящий банк так не делает</span></div>
+            <div class="flags-success" id="flagsSuccess">
+              ✓ Отлично! Все 4 признака фишинга найдены.<br>Ты защитил бы себя от кражи данных. +5 ⭐
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    bindBack(s);
+
+    s.querySelectorAll('.flag-row').forEach(el => {
+      el.addEventListener('click', () => handleFlag(el.dataset.flag, s));
+    });
+  }
+
+  function handleFlag(n, s) {
+    if (ZD.state.foundFlags.has(n)) return;
+    ZD.state.foundFlags.add(n);
+    const row = s.querySelector(`[data-flag="${n}"]`);
+    const chk = s.querySelector(`#fc${n}`);
+    if (row) row.classList.add('found');
+    if (chk) chk.textContent = '✓';
+    if (n === '2') {
+      const lock = s.querySelector('#urlLock');
+      if (lock) { lock.textContent = '🔓'; }
+    }
+    if (ZD.state.foundFlags.size >= 4) {
+      const succ = s.querySelector('#flagsSuccess');
+      if (succ) succ.style.display = 'block';
+      addStars(5);
+    }
+  }
+
+  // ==================================================
+  // MAP
+  // ==================================================
+  function buildMap() {
+    const s = screenDiv('mapScreen');
+
+    const pinsHtml = ZD.locations.map(loc => `
+      <div class="loc-pin" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}">
+        <div class="pin-circle ${loc.pulse ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
+        <div class="pin-lbl">${loc.emoji} ${loc.label}</div>
+        <div class="pin-status" style="color:${loc.statusColor}">${loc.status}</div>
+      </div>
+    `).join('');
+
+    s.innerHTML = `
+      ${header('home', 'Карта · Локации', 'АКТ I · Выбери точку')}
+      <div class="map-canvas">
+        <div class="map-grid-lines"></div>
+        <div class="map-glow"></div>
+        ${pinsHtml}
+        <div class="map-panel" id="mapPanel">
+          <div class="map-panel-name" id="mapPanelName">—</div>
+          <div class="map-panel-desc" id="mapPanelDesc">—</div>
+          <button class="map-go-btn" id="mapGoBtn">▶ ИССЛЕДОВАТЬ</button>
+        </div>
+      </div>
+    `;
+    bindBack(s);
+
+    s.querySelectorAll('.loc-pin').forEach(el => {
+      el.addEventListener('click', () => openMapPanel(el.dataset.loc, s));
+    });
+    s.querySelector('#mapGoBtn').addEventListener('click', () => {
+      s.querySelector('#mapPanel').classList.remove('open');
+    });
+  }
+
+  function openMapPanel(locId, s) {
+    const loc = ZD.locations.find(l => l.id === locId);
+    if (!loc) return;
+    const panel = s.querySelector('#mapPanel');
+    const nameEl = s.querySelector('#mapPanelName');
+    const descEl = s.querySelector('#mapPanelDesc');
+    const btn = s.querySelector('#mapGoBtn');
+    nameEl.textContent = loc.emoji + ' ' + loc.label;
+    descEl.textContent = loc.desc;
+    btn.textContent = loc.action;
+    btn.className = 'map-go-btn ' + (loc.type === 'locked' ? 'locked' : loc.type === 'req' ? 'req' : '');
+    panel.classList.add('open');
+  }
+
+  // ==================================================
+  // TERMINAL
+  // ==================================================
+  function buildTerminal() {
+    const s = screenDiv('terminalScreen');
+    const c = ZD.cipher;
+
+    s.innerHTML = `
+      <div class="term-topbar">
+        <div class="back-btn" data-back="home">←</div>
+        <div class="term-dots">
+          <div class="tdot tdot-r"></div>
+          <div class="tdot tdot-y"></div>
+          <div class="tdot tdot-g"></div>
+        </div>
+        <div class="term-title-txt">TERMINAL · MISSION_03</div>
+      </div>
+      <div class="term-body scrollable" id="termBody">
+        <div class="t-g">Отряд404@school:~$ ./decrypt_mission_03.sh</div>
+        <div class="t-d">Инициализация протоколов...</div>
+        <div class="t-d">Загрузка ключей безопасности...</div>
+        <div class="t-c">► Перехвачено зашифрованное сообщение</div>
+        <div class="t-d">Метод шифрования: <span class="t-y">Шифр Цезаря (ROT-N)</span></div>
+        <div class="t-w">Сдвиг ключа: <span class="t-r">неизвестен</span>. Диапазон: 1–25.</div>
+        <div class="term-br"></div>
+        <div class="t-a">ЗАДАЧА: Расшифруй перехваченное сообщение</div>
+        <div class="t-d">Hint: Слово из 5 букв + слово из 5 букв</div>
+        <div class="term-br"></div>
+        <div class="cipher-block">
+          <div class="cipher-enc" id="cipherEnc">${c.encrypted}</div>
+          <div class="slider-row">
+            <span class="slider-lbl">СДВИГ ROT:</span>
+            <input type="range" id="caesarSlider" min="1" max="25" value="3" step="1">
+            <span class="slider-val" id="caesarVal">3</span>
+          </div>
+          <input class="cipher-out" id="cipherOut" readonly value="">
+          <div class="cipher-hint">Двигай слайдер — находи читаемое слово</div>
+          <div class="cipher-solved" id="cipherSolved">
+            ✓ РАСШИФРОВАНО! Попыток: <span id="solvedAttempts">0</span> · +8 ⭐
+          </div>
+        </div>
+        <div class="term-br"></div>
+        <div class="t-d">Попыток использовано: <span class="t-y" id="attemptsCount">0</span></div>
+        <div class="term-prompt">
+          <span class="t-g">agent@404:~$</span>
+          <span class="cursor"></span>
+        </div>
+      </div>
+    `;
+    bindBack(s);
+
+    const slider = s.querySelector('#caesarSlider');
+    slider.addEventListener('input', () => handleCaesar(s));
+    handleCaesar(s); // init display
+  }
+
+  function caesarDecrypt(text, shift) {
+    const ru = ZD.cipher.ruAlphabet;
+    return text.split('').map(ch => {
+      const i = ru.indexOf(ch);
+      if (i === -1) return ch;
+      return ru[((i - shift) % 33 + 33) % 33];
+    }).join('');
+  }
+
+  function handleCaesar(s) {
+    const slider = s.querySelector('#caesarSlider');
+    const valEl = s.querySelector('#caesarVal');
+    const outEl = s.querySelector('#cipherOut');
+    const attEl = s.querySelector('#attemptsCount');
+    const solvedEl = s.querySelector('#cipherSolved');
+    const solvedAtt = s.querySelector('#solvedAttempts');
+
+    const shift = parseInt(slider.value);
+    valEl.textContent = shift;
+    ZD.state.termAttempts++;
+    if (attEl) attEl.textContent = ZD.state.termAttempts;
+
+    const decrypted = caesarDecrypt(ZD.cipher.encrypted, shift);
+    outEl.value = decrypted;
+
+    if (shift === ZD.cipher.answerShift && !ZD.state.termSolved) {
+      ZD.state.termSolved = true;
+      outEl.style.color = 'var(--accent)';
+      solvedEl.style.display = 'block';
+      if (solvedAtt) solvedAtt.textContent = ZD.state.termAttempts;
+      addStars(8);
+    } else if (shift !== ZD.cipher.answerShift) {
+      outEl.style.color = 'var(--accent)';
+      solvedEl.style.display = 'none';
+    }
+  }
+
+  // ==================================================
+  // SHOP
+  // ==================================================
+  function buildShop() {
+    const s = screenDiv('shopScreen');
+
+    const rows = ZD.shopItems.map(cat => {
+      const items = cat.items.map(item => {
+        const isOwned = item.owned || ZD.state.inventory.includes(item.id);
+        const btnHtml = isOwned
+          ? `<button class="buy-btn owned">✓ ЕСТЬ</button>`
+          : `<button class="buy-btn" data-price="${item.price}" data-id="${item.id}">⭐ ${item.price}</button>`;
+        return `
+          <div class="shop-row">
+            <div class="shop-ico">${item.ico}</div>
+            <div class="shop-info">
+              <div class="shop-name">${item.name}</div>
+              <div class="shop-desc">${item.desc}</div>
+              <div class="shop-tags">${item.tags.map(t => `<span class="stag ${t.cls}">${t.label}</span>`).join('')}</div>
+            </div>
+            ${btnHtml}
+          </div>
+        `;
+      }).join('');
+      return `<div class="shop-cat">${cat.cat}</div>${items}`;
+    }).join('');
+
+    s.innerHTML = `
+      ${header('home', 'Магазин Реквизита', null)}
+      <div class="shop-balance-bar">
+        <span>⭐</span><span class="stars-val">${ZD.state.stars}</span>
+      </div>
+      <div class="shop-body scrollable">${rows}</div>
+    `;
+    bindBack(s);
+
+    s.querySelectorAll('.buy-btn[data-price]').forEach(btn => {
+      btn.addEventListener('click', () => handleBuy(btn, parseInt(btn.dataset.price), btn.dataset.id));
+    });
+  }
+
+  function handleBuy(btn, price, itemId) {
+    if (ZD.state.stars < price) {
+      btn.classList.add('no-stars');
+      btn.textContent = '✗ МАЛО ⭐';
+      setTimeout(() => {
+        btn.classList.remove('no-stars');
+        btn.textContent = '⭐ ' + price;
+      }, 1300);
       return;
     }
-
-    const choices = [
-      { text: "Открыть файл и отправить код", good: false, xp: 0, msg: "Рискованный путь: это фишинг." },
-      { text: "Попросить перезвонить и проверить личность", good: true, xp: 60, msg: "Верно: проверка личности спасла аккаунт." },
-      { text: "Переслать в общий чат без проверки", good: false, xp: 0, msg: "Ошибка: усилил атаку среди одноклассников." },
-    ];
-    choices.forEach((choice) => {
-      const btn = document.createElement("button");
-      btn.className = choice.good ? "primary-btn" : "ghost-btn";
-      btn.textContent = choice.text;
-      btn.addEventListener("click", () => {
-        messengerSolved = true;
-        if (choice.good) markTaskDone("messenger", choice.xp, choice.msg);
-        else toast(choice.msg, "err");
-        renderMessenger();
-      });
-      el.chatChoices.appendChild(btn);
-    });
+    ZD.state.stars -= price;
+    ZD.state.inventory.push(itemId);
+    updateStarsDisplay();
+    btn.textContent = '✓ КУПЛЕНО';
+    btn.classList.add('owned');
+    btn.onclick = null;
+    toast('Куплено! ⭐ осталось: ' + ZD.state.stars);
   }
 
-  function renderGallery() {
-    el.galleryBoard.innerHTML = [
-      "<p><b>От:</b> support-school@safe-mail.org</p>",
-      "<p><b>Тема:</b> Срочное подтверждение аккаунта</p>",
-      "<p>Здравствуйте! Для восстановления доступа к электронному дневнику срочно подтвердите данные.</p>",
-      "<p>Перейдите по ссылке: <b>http://school-safe-verify.ru/login</b></p>",
-      "<p>Если вы не подтвердите вход в течение 3 минут, аккаунт будет удалён.</p>",
-      "<p>Также отправьте код из SMS в ответном письме для ускоренной проверки.</p>",
-    ].join("");
-    selectedHotspots.clear();
-    galleryHotspots.forEach((spot) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "hotspot";
-      b.style.left = `${spot.x}px`;
-      b.style.top = `${spot.y}px`;
-      b.addEventListener("click", () => {
-        if (selectedHotspots.has(spot.key)) {
-          selectedHotspots.delete(spot.key);
-          b.classList.remove("active");
-        } else {
-          selectedHotspots.add(spot.key);
-          b.classList.add("active");
-        }
-        const hits = [...selectedHotspots].filter((x) => !x.startsWith("decoy")).length;
-        el.galleryCounter.textContent = `${hits} / 5`;
-      });
-      el.galleryBoard.appendChild(b);
-    });
-  }
+  // ==================================================
+  // INIT
+  // ==================================================
+  buildNav();
+  buildHome();
 
-  function checkGallery() {
-    if (isTaskDone("gallery")) { toast("Gallery уже выполнен в этом эпизоде", "ok"); return; }
-    const good = ["sender", "link", "urgency", "sms", "domain"];
-    const ok = good.every((k) => selectedHotspots.has(k)) && !selectedHotspots.has("decoy1") && !selectedHotspots.has("decoy2");
-    if (ok) markTaskDone("gallery", 70, "Все улики найдены точно");
-    else toast("Есть ошибки: проверь домен, срочность и запрос SMS-кода", "err");
-  }
-
-  function renderBrowser() {
-    el.newsCards.innerHTML = "";
-    browserCases.forEach((item) => {
-      const card = document.createElement("article");
-      card.className = "news-card";
-      card.innerHTML = `<h4>${item.title}</h4><p class=\"muted\">${browserAnswered.has(item.id) ? "Ответ принят" : "Выбери оценку источника"}</p>`;
-      const row = document.createElement("div");
-      row.className = "panel-actions";
-      const fake = document.createElement("button");
-      fake.className = "ghost-btn";
-      fake.textContent = "Фейк";
-      const legit = document.createElement("button");
-      legit.className = "primary-btn";
-      legit.textContent = "Надежно";
-      const answer = (value) => {
-        if (browserAnswered.has(item.id)) return;
-        browserAnswered.add(item.id);
-        if (value === item.legit) {
-          if (browserAnswered.size === browserCases.length) markTaskDone("browser", 65, "Фактчекинг выполнен без ошибок");
-          else toast("Верно, продолжаем анализ", "ok");
-        } else {
-          toast("Ошибка классификации: проверь источник и формулировки", "err");
-        }
-        renderBrowser();
-      };
-      fake.addEventListener("click", () => answer(false));
-      legit.addEventListener("click", () => answer(true));
-      row.appendChild(fake);
-      row.appendChild(legit);
-      card.appendChild(row);
-      el.newsCards.appendChild(card);
-    });
-  }
-
-  function renderMap() {
-    el.mapChoices.innerHTML = "";
-    const places = [
-      { title: "Школьный коридор", safe: false, risk: "Камеры и случайные свидетели." },
-      { title: "Библиотека (тихая зона)", safe: true, risk: "Нейтральная локация, меньше цифрового следа." },
-      { title: "ТЦ Wi-Fi фудкорт", safe: false, risk: "Открытая сеть, высокий риск перехвата." },
-    ];
-    places.forEach((place) => {
-      const card = document.createElement("article");
-      card.className = "map-item";
-      card.innerHTML = `<h4>${place.title}</h4><p class=\"muted\">${place.risk}</p>`;
-      const btn = document.createElement("button");
-      btn.className = place.safe ? "primary-btn" : "ghost-btn";
-      btn.textContent = mapSolved ? "Ответ зафиксирован" : "Выбрать";
-      btn.disabled = mapSolved;
-      btn.addEventListener("click", () => {
-        mapSolved = true;
-        if (place.safe) markTaskDone("map", 55, "Маршрут выбран с учетом приватности");
-        else toast("Маршрут рискованный: высокий шанс утечки", "err");
-        renderMap();
-      });
-      card.appendChild(btn);
-      el.mapChoices.appendChild(card);
-    });
-  }
-
-  function checkTerminal() {
-    if (terminalSolved || isTaskDone("terminal")) { toast("Terminal уже выполнен в этом эпизоде", "ok"); return; }
-    const answer = (el.terminalInput.value || "").trim().toUpperCase();
-    if (!answer) return;
-    if (answer === "ПРОРЫВ") {
-      terminalSolved = true;
-      markTaskDone("terminal", 75, "Шифр расшифрован: ПРОРЫВ");
-      el.terminalInput.value = "";
-    } else {
-      toast("Неверно. Проверь сдвиг и раскладку", "err");
-    }
-  }
-
-  function renderShop() {
-    el.shopGrid.innerHTML = "";
-    SHOP_ITEMS.forEach((item) => {
-      const owned = Number(state.inventory[item.id] || 0);
-      const card = document.createElement("article");
-      card.className = "shop-item";
-      card.innerHTML = `<h4>${item.title}</h4><p class=\"muted\">${item.desc}</p><p class=\"muted\">Цена: ${item.cost} XP</p><p class=\"muted\">В инвентаре: ${owned}</p>`;
-      const btn = document.createElement("button");
-      btn.className = "primary-btn";
-      btn.textContent = "Купить";
-      btn.addEventListener("click", () => {
-        if (state.totalXp < item.cost) { toast("Недостаточно XP", "err"); return; }
-        state.totalXp -= item.cost;
-        state.inventory[item.id] = owned + 1;
-        renderShop();
-        renderStats();
-        renderProfile();
-        toast(`Покупка: ${item.title}`, "ok");
-        scheduleSync();
-      });
-      card.appendChild(btn);
-      el.shopGrid.appendChild(card);
-    });
-  }
-
-  function renderProfile() {
-    const done = TASKS.filter(isTaskDone).length;
-    const facts = [
-      `Версия клиента: ${cfg.version}`,
-      `Текущий эпизод: ${state.episode}`,
-      `Открыто эпизодов: ${state.unlocked}`,
-      `Задач в эпизоде: ${done} / ${TASKS.length}`,
-      `Роль: ${state.role}`,
-      `Инвентарь: ${Object.keys(state.inventory).length ? JSON.stringify(state.inventory) : "пусто"}`,
-    ];
-    el.profileFacts.innerHTML = "";
-    facts.forEach((fact) => {
-      const row = document.createElement("div");
-      row.className = "fact";
-      row.textContent = fact;
-      el.profileFacts.appendChild(row);
-    });
-  }
-
-  async function syncState(manual = false) {
-    if (!cfg.syncUrl || !cfg.userId) return;
-    const payload = {
-      type: "sync",
-      user_id: String(cfg.userId),
-      init_data: cfg.initData,
-      total_xp: state.totalXp,
-      solved_count: state.solvedCount,
-      streak: state.streak,
-      progress_json: {
-        episode: state.episode,
-        unlocked: state.unlocked,
-        completed: state.completed,
-        inventory: state.inventory,
-      },
-      reset_token: state.resetToken,
-    };
-    try {
-      const response = await fetch(cfg.syncUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (data?.reset_token) state.resetToken = Number(data.reset_token || 0);
-      if (manual) toast("Сохранено", "ok");
-    } catch {
-      if (manual) toast("Ошибка сохранения", "err");
-    }
-  }
-
-  function scheduleSync() {
-    if (state.syncTimer) clearTimeout(state.syncTimer);
-    state.syncTimer = setTimeout(() => syncState(false), 700);
-  }
-
-  async function loadRemoteState() {
-    if (!cfg.stateUrl || !cfg.userId) return;
-    const url = new URL(cfg.stateUrl, window.location.origin);
-    url.searchParams.set("user_id", String(cfg.userId));
-    if (cfg.initData) url.searchParams.set("init_data", cfg.initData);
-    try {
-      const response = await fetch(url.toString(), { method: "GET" });
-      const data = await response.json();
-      if (!data?.ok) return;
-      state.role = data.role || "player";
-      state.resetToken = Number(data.reset_token || 0);
-      if (data.me) {
-        state.totalXp = Number(data.me.xp || 0);
-        state.solvedCount = Number(data.me.solved_count || 0);
-        state.streak = Number(data.me.streak || 0);
-        const progress = data.me.progress_json || {};
-        state.episode = Number(progress.episode || 1);
-        state.unlocked = Math.max(1, Number(progress.unlocked || 1));
-        state.completed = progress.completed || {};
-        state.inventory = progress.inventory || {};
-      }
-      renderAll();
-    } catch {
-      toast("Не удалось загрузить состояние", "err");
-    }
-  }
-
-  async function refreshRating() {
-    if (!cfg.leaderboardUrl || !cfg.userId) return;
-    const url = new URL(cfg.leaderboardUrl, window.location.origin);
-    url.searchParams.set("user_id", String(cfg.userId));
-    if (cfg.initData) url.searchParams.set("init_data", cfg.initData);
-    el.ratingList.innerHTML = "<div class=\"fact\">Загрузка рейтинга...</div>";
-    try {
-      const response = await fetch(url.toString(), { method: "GET" });
-      const data = await response.json();
-      const rows = Array.isArray(data?.rows) ? data.rows : [];
-      if (!rows.length) { el.ratingList.innerHTML = "<div class=\"fact\">Пока нет данных рейтинга.</div>"; return; }
-      el.ratingList.innerHTML = "";
-      rows.slice(0, 30).forEach((row, idx) => {
-        const div = document.createElement("div");
-        div.className = "rating-row";
-        const name = row.user_name || `Игрок ${row.user_id}`;
-        const xp = Number(row.total_xp || 0);
-        div.textContent = `${idx + 1}. ${name} — ${xp} XP`;
-        el.ratingList.appendChild(div);
-      });
-    } catch {
-      el.ratingList.innerHTML = "<div class=\"fact\">Ошибка загрузки рейтинга.</div>";
-    }
-  }
-
-  async function resetProgress() {
-    if (!cfg.resetUrl) return;
-    if (!window.confirm("Сбросить прогресс ZERO_DAY? Это действие необратимо.")) return;
-    try {
-      const response = await fetch(cfg.resetUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: String(cfg.userId), init_data: cfg.initData }),
-      });
-      const data = await response.json();
-      if (!data?.ok) { toast(data?.error || "Сброс недоступен", "err"); return; }
-      state.totalXp = 0;
-      state.solvedCount = 0;
-      state.streak = 0;
-      state.episode = 1;
-      state.unlocked = 1;
-      state.completed = {};
-      state.inventory = {};
-      state.resetToken = Number(data.reset_token || 0);
-      browserAnswered.clear();
-      renderAll();
-      toast("Прогресс сброшен", "ok");
-    } catch {
-      toast("Ошибка сброса", "err");
-    }
-  }
-
-  function renderAll() {
-    const fullName = tg?.initDataUnsafe?.user?.first_name || `Игрок ${cfg.userId || ""}`;
-    el.playerName.textContent = fullName;
-    el.playerRole.textContent = `роль: ${state.role}`;
-    renderStats();
-    renderEpisodes();
-    renderMessenger();
-    renderGallery();
-    renderBrowser();
-    renderMap();
-    renderShop();
-    renderProfile();
-    openPanel("episodes");
-  }
-
-  document.getElementById("syncBtn").addEventListener("click", () => syncState(true));
-  document.getElementById("checkGalleryBtn").addEventListener("click", checkGallery);
-  document.getElementById("resetGalleryBtn").addEventListener("click", () => {
-    selectedHotspots.clear();
-    renderGallery();
-    el.galleryCounter.textContent = "0 / 5";
-  });
-  document.getElementById("terminalCheckBtn").addEventListener("click", checkTerminal);
-  el.terminalInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") checkTerminal();
-  });
-  document.getElementById("refreshRatingBtn").addEventListener("click", refreshRating);
-  document.getElementById("resetProgressBtn").addEventListener("click", resetProgress);
-
-  window.addEventListener("beforeunload", () => {
-    try {
-      navigator.sendBeacon(cfg.syncUrl, JSON.stringify({
-        type: "sync",
-        user_id: String(cfg.userId),
-        init_data: cfg.initData,
-        total_xp: state.totalXp,
-        solved_count: state.solvedCount,
-        streak: state.streak,
-        progress_json: {
-          episode: state.episode,
-          unlocked: state.unlocked,
-          completed: state.completed,
-          inventory: state.inventory,
-        },
-        reset_token: state.resetToken,
-      }));
-    } catch {}
-  });
-
-  renderTabs("episodes");
-  renderAll();
-  loadRemoteState();
 })();

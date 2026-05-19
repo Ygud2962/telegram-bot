@@ -1,139 +1,48 @@
-﻿<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>ZERO_DAY: ШКОЛЬНЫЙ ПРОТОКОЛ</title>
-  <meta name="theme-color" content="#08111e" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/cyber/app.css" />
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZERO_DAY: Школьный Протокол</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app" class="app">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">ОТРЯД 404</p>
-        <h1>ZERO_DAY: ШКОЛЬНЫЙ ПРОТОКОЛ</h1>
+<div class="scene">
+  <div class="phone">
+    <div class="btn-power"></div>
+    <div class="btn-vol-up"></div>
+    <div class="btn-vol-down"></div>
+    <div class="notch">
+      <div class="notch-speaker"></div>
+      <div class="notch-camera"></div>
+    </div>
+    <div class="screen-wrap">
+      <div class="screen-glass"></div>
+      <div class="status-bar">
+        <div class="sb-left">
+          <span class="sb-time" id="sbTime">20:14</span>
+        </div>
+        <div class="sb-right">
+          <div class="sb-signal"><span></span><span></span><span></span><span></span></div>
+          <div class="sb-wifi">
+            <svg width="14" height="11" viewBox="0 0 14 11"><path d="M7 8.5a1 1 0 110 2 1 1 0 010-2zM7 5.5C8.7 5.5 10.2 6.2 11.3 7.3l-1.1 1.1C9.4 7.6 8.3 7 7 7s-2.4.6-3.2 1.4L2.7 7.3C3.8 6.2 5.3 5.5 7 5.5zM7 2C9.6 2 12 3.1 13.7 4.9L12.6 6C11.2 4.5 9.2 3.5 7 3.5S2.8 4.5 1.4 6L.3 4.9C2 3.1 4.4 2 7 2z" fill="currentColor"/></svg>
+          </div>
+          <div class="sb-battery">
+            <div class="sb-batt-fill"></div>
+            <div class="sb-batt-cap"></div>
+          </div>
+        </div>
       </div>
-      <button id="syncBtn" class="ghost-btn" type="button">Сохранить</button>
-    </header>
-
-    <section class="status-grid">
-      <article class="status-card">
-        <p class="label">Оперативник</p>
-        <p id="playerName" class="value">—</p>
-        <p id="playerRole" class="muted">роль: player</p>
-      </article>
-      <article class="status-card">
-        <p class="label">Прогресс</p>
-        <p id="episodeProgress" class="value">0 / 24</p>
-        <p id="streakInfo" class="muted">серия: 0</p>
-      </article>
-      <article class="status-card">
-        <p class="label">Репутация</p>
-        <p id="xpValue" class="value">0 XP</p>
-        <p id="solvedValue" class="muted">заданий: 0</p>
-      </article>
-    </section>
-
-    <section class="tabs-wrap">
-      <div class="tabs" id="tabs"></div>
-    </section>
-
-    <main class="workspace">
-      <section class="panel active" id="panel-episodes">
-        <div class="panel-header">
-          <h2>Эпизоды</h2>
-          <span id="weekInfo" class="chip">Неделя 1</span>
-        </div>
-        <p class="muted">Еженедельные эпизоды. Первый акт уже доступен, остальные открываются по расписанию.</p>
-        <div id="episodesGrid" class="episodes-grid"></div>
-      </section>
-
-      <section class="panel" id="panel-messenger">
-        <div class="panel-header">
-          <h2>Messenger</h2>
-          <span class="chip">социнженерия</span>
-        </div>
-        <div id="chatLog" class="chat-log"></div>
-        <div id="chatChoices" class="choices"></div>
-      </section>
-
-      <section class="panel" id="panel-gallery">
-        <div class="panel-header">
-          <h2>Gallery: Поиск улик</h2>
-          <span id="galleryCounter" class="chip">0 / 5</span>
-        </div>
-        <p class="muted">Отметь все признаки фишинга в письме: домен, срочность, запрос кода, ссылка, отправитель.</p>
-        <div id="galleryBoard" class="gallery-board"></div>
-        <div class="panel-actions">
-          <button class="primary-btn" id="checkGalleryBtn" type="button">Проверить улики</button>
-          <button class="ghost-btn" id="resetGalleryBtn" type="button">Сбросить отметки</button>
-        </div>
-      </section>
-
-      <section class="panel" id="panel-browser">
-        <div class="panel-header">
-          <h2>Browser: Проверка источников</h2>
-          <span class="chip">фактчекинг</span>
-        </div>
-        <div id="newsCards" class="news-cards"></div>
-      </section>
-
-      <section class="panel" id="panel-map">
-        <div class="panel-header">
-          <h2>Map: Выбор маршрута</h2>
-          <span class="chip">приватность</span>
-        </div>
-        <p class="muted">Куда безопаснее идти на встречу с информатором?</p>
-        <div id="mapChoices" class="map-choices"></div>
-      </section>
-
-      <section class="panel" id="panel-terminal">
-        <div class="panel-header">
-          <h2>Terminal: Шифр</h2>
-          <span class="chip mono">caesar +3</span>
-        </div>
-        <p class="mono terminal-task">SURYBY → ?</p>
-        <div class="terminal-row">
-          <input id="terminalInput" type="text" autocomplete="off" placeholder="Введите расшифровку" />
-          <button class="primary-btn" id="terminalCheckBtn" type="button">Проверить</button>
-        </div>
-        <p id="terminalHint" class="muted">Подсказка: сдвиг на -3.</p>
-      </section>
-
-      <section class="panel" id="panel-shop">
-        <div class="panel-header">
-          <h2>Магазин реквизита</h2>
-          <span class="chip">MVP</span>
-        </div>
-        <p class="muted">Пока без платежей: тестовый магазин для баланса миссий. Покупка за кредиты (XP).</p>
-        <div id="shopGrid" class="shop-grid"></div>
-      </section>
-
-      <section class="panel" id="panel-rating">
-        <div class="panel-header">
-          <h2>Рейтинг</h2>
-          <button class="ghost-btn" id="refreshRatingBtn" type="button">Обновить</button>
-        </div>
-        <div id="ratingList" class="rating-list"></div>
-      </section>
-
-      <section class="panel" id="panel-profile">
-        <div class="panel-header">
-          <h2>Профиль</h2>
-          <button class="danger-btn" id="resetProgressBtn" type="button">Сбросить прогресс</button>
-        </div>
-        <div id="profileFacts" class="facts"></div>
-      </section>
-    </main>
-
-    <div id="toast" class="toast" aria-live="polite"></div>
+      <div class="app-frame" id="appFrame"></div>
+      <div class="bottom-nav" id="bottomNav"></div>
+      <div class="home-indicator"></div>
+    </div>
+    <div class="phone-chin">
+      <div class="chin-port"></div>
+    </div>
   </div>
-
-  <script src="/cyber/app.js" defer></script>
+</div>
+<script src="data.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
