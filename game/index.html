@@ -988,71 +988,70 @@
             }
 
             function appendScript(urls, timeoutMs) {
-                var timeout = timeoutMs || 12000;
+                var timeout = timeoutMs || 30000;
                 var candidates = Array.isArray(urls) ? urls.filter(Boolean) : [];
                 if (!candidates.length) {
                     return Promise.reject(new Error("no script urls"));
                 }
                 return new Promise(function (resolve, reject) {
-                    var script = document.createElement("script");
                     var idx = 0;
-                    var timer = null;
-                    var settled = false;
 
-                    function clearTimer() {
-                        if (timer) {
-                            clearTimeout(timer);
-                            timer = null;
-                        }
-                    }
-
-                    function finishWithError(message) {
-                        if (settled) return;
-                        settled = true;
-                        clearTimer();
-                        if (script && script.parentNode) script.parentNode.removeChild(script);
-                        reject(new Error(message));
-                    }
-
-                    function tryNext(reason) {
-                        if (idx + 1 < candidates.length) {
-                            idx += 1;
-                            script.src = candidates[idx];
-                            armTimeout();
+                    function tryCandidate(reason) {
+                        if (idx >= candidates.length) {
+                            reject(new Error((reason || "script load failed") + ": " + candidates[candidates.length - 1]));
                             return;
                         }
-                        finishWithError(reason + ": " + (script.src || candidates[0]));
-                    }
+                        var src = candidates[idx];
+                        idx += 1;
 
-                    function armTimeout() {
-                        clearTimer();
-                        timer = setTimeout(function () {
-                            tryNext("script load timeout");
+                        var script = document.createElement("script");
+                        script.async = false;
+                        script.setAttribute("data-boot-script", "1");
+
+                        var settled = false;
+                        var timer = setTimeout(function () {
+                            if (settled) return;
+                            settled = true;
+                            if (script.parentNode) script.parentNode.removeChild(script);
+                            tryCandidate("script load timeout");
                         }, timeout);
+
+                        function finish(ok, failReason) {
+                            if (settled) return;
+                            settled = true;
+                            clearTimeout(timer);
+                            if (!ok && script.parentNode) script.parentNode.removeChild(script);
+                            if (ok) resolve();
+                            else tryCandidate(failReason || "script load failed");
+                        }
+
+                        script.onload = function () {
+                            if (window.__GAME_JS_LOADED || src.indexOf("game.js") === -1) {
+                                finish(true);
+                                return;
+                            }
+                            // Some Telegram WebViews may delay globals; give a short grace period.
+                            setTimeout(function () {
+                                if (window.__GAME_JS_LOADED) finish(true);
+                                else finish(false, "script loaded but game flag missing");
+                            }, 250);
+                        };
+                        script.onerror = function () {
+                            finish(false, "script load failed");
+                        };
+                        script.src = src;
+                        document.body.appendChild(script);
                     }
 
-                    script.async = false;
-                    script.setAttribute("data-boot-script", "1");
-                    script.onload = function () {
-                        if (settled) return;
-                        settled = true;
-                        clearTimer();
-                        resolve();
-                    };
-                    script.onerror = function () {
-                        tryNext("script load failed");
-                    };
-                    script.src = candidates[idx];
-                    armTimeout();
-                    document.body.appendChild(script);
+                    tryCandidate();
                 });
             }
 
             var version = encodeURIComponent(getBootVersion());
             // Hard cache-bust for Telegram WebView/CDN caches on hotfix releases.
-            var buildRev = "r20260506_ios_audio_boot_fix";
+            var buildRev = "r20260519_boot_retry_fix";
             var versionQuery = "v=" + version + "&rev=" + encodeURIComponent(buildRev);
-            var scriptLoadTimeoutMs = 12000;
+            var scriptLoadTimeoutMs = 30000;
             var baseOrigin = window.location.origin || "";
 
             function buildScriptUrls(fileName) {
