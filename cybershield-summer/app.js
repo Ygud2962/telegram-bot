@@ -1,719 +1,380 @@
 // ============================================================
-// ZERO_DAY: Школьный Протокол — APP ENGINE
+// ZERO_DAY: Школьный Протокол — GAME DATA ENGINE
 // ============================================================
 
-(function () {
-  'use strict';
+const ZD = {
+  // ---- STORAGE ----
+  STORAGE_KEY: 'zd_state_v1',
 
-  const frame = document.getElementById('appFrame');
-  const bottomNav = document.getElementById('bottomNav');
-  let currentScreen = 'home';
-  let currentChat = null;
+  saveState() {
+    const data = {
+      stars: this.state.stars,
+      reputation: this.state.reputation,
+      trust: this.state.trust,
+      episode: this.state.episode,
+      act: this.state.act,
+      choiceMade: this.state.choiceMade,
+      analyzed: Array.from(this.state.analyzed),
+      foundFlags: Array.from(this.state.foundFlags),
+      termAttempts: this.state.termAttempts,
+      termSolved: this.state.termSolved,
+      inventory: this.state.inventory,
+      lastSave: Date.now(),
+    };
+    try {
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+    } catch(e) {}
+  },
 
-  // ---- CLOCK ----
-  function updateClock() {
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    const el = document.getElementById('sbTime');
-    if (el) el.textContent = h + ':' + m;
-  }
-  updateClock();
-  setInterval(updateClock, 15000);
+  loadState() {
+    try {
+      const raw = localStorage.getItem(this.STORAGE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (data.stars !== undefined) this.state.stars = data.stars;
+      if (data.reputation !== undefined) this.state.reputation = data.reputation;
+      if (data.trust !== undefined) this.state.trust = data.trust;
+      if (data.episode !== undefined) this.state.episode = data.episode;
+      if (data.act !== undefined) this.state.act = data.act;
+      if (data.choiceMade !== undefined) this.state.choiceMade = data.choiceMade;
+      if (data.analyzed) this.state.analyzed = new Set(data.analyzed);
+      if (data.foundFlags) this.state.foundFlags = new Set(data.foundFlags);
+      if (data.termAttempts !== undefined) this.state.termAttempts = data.termAttempts;
+      if (data.termSolved !== undefined) this.state.termSolved = data.termSolved;
+      if (data.inventory) this.state.inventory = data.inventory;
+      return true;
+    } catch(e) { return false; }
+  },
 
-  // ---- TOAST ----
-  function toast(msg) {
-    const t = document.createElement('div');
-    t.className = 'toast';
-    t.textContent = msg;
-    frame.appendChild(t);
-    setTimeout(() => t.remove(), 1900);
-  }
+  resetState() {
+    this.state = {
+      stars: 47,
+      reputation: 12,
+      trust: 78,
+      episode: 3,
+      act: 1,
+      choiceMade: false,
+      analyzed: new Set(),
+      foundFlags: new Set(),
+      termAttempts: 0,
+      termSolved: false,
+      inventory: ['school_pass'],
+    };
+    this.saveState();
+  },
 
-  function addStars(n) {
-    if (n <= 0) return;
-    ZD.state.stars += n;
-    updateStarsDisplay();
-    toast('+' + n + ' ⭐ Stars');
-  }
+  // ---- PLAYER STATE ----
+  state: {
+    stars: 47,
+    reputation: 12,
+    trust: 78,
+    episode: 3,
+    act: 1,
+    choiceMade: false,
+    analyzed: new Set(),
+    foundFlags: new Set(),
+    termAttempts: 0,
+    termSolved: false,
+    inventory: ['school_pass'],
+  },
 
-  function updateStarsDisplay() {
-    document.querySelectorAll('.stars-val').forEach(el => {
-      el.textContent = ZD.state.stars;
-    });
-  }
+  // ---- EPISODES ----
+  episodes: [
+    { id: 1, title: 'Первое сообщение', theme: 'Цифровой след · Пароли', done: true },
+    { id: 2, title: 'Отряд 404', theme: 'Фишинг · MFA', done: true },
+    { id: 3, title: 'Файл от Марины', theme: 'Социальная инженерия', done: false, active: true },
+    { id: 4, title: 'Зеркало', theme: 'Дипфейки', done: false, locked: true },
+  ],
 
-  // ---- BOTTOM NAV ----
-  function buildNav() {
-    const items = [
-      { id: 'home',      ico: '🏠', label: 'ГЛАВНАЯ' },
-      { id: 'messenger', ico: '💬', label: 'ЧАТЫ',    badge: 2 },
-      { id: 'map',       ico: '🗺️', label: 'КАРТА' },
-      { id: 'shop',      ico: '🛒', label: 'МАГАЗИН' },
-    ];
-    bottomNav.innerHTML = items.map(it => `
-      <div class="nav-item ${it.id === 'home' ? 'active' : ''}" data-nav="${it.id}">
-        ${it.badge ? `<div class="nav-dot"></div>` : ''}
-        <span class="nav-ico">${it.ico}</span>
-        <span class="nav-lbl">${it.label}</span>
-      </div>
-    `).join('');
-    bottomNav.querySelectorAll('.nav-item').forEach(el => {
-      el.addEventListener('click', () => navigateTo(el.dataset.nav));
-    });
-  }
+  // ---- CHAT CONTACTS ----
+  contacts: [
+    {
+      id: 'dasha',
+      name: 'Даша Кова',
+      role: 'Отряд 404',
+      initials: 'ДК',
+      color: '#7b5fff',
+      online: true,
+      unread: 2,
+      preview: 'Слушай, Марина прислала файл...',
+      time: '19:48',
+    },
+    {
+      id: 'unknown',
+      name: 'Неизвестный',
+      role: 'Анонимный контакт',
+      initials: '??',
+      color: '#ff4a6a',
+      online: false,
+      unread: 0,
+      preview: 'Не открывай файл от Марины.',
+      time: 'вчера',
+    },
+    {
+      id: 'marina',
+      name: 'Марина Сол.',
+      role: 'Одноклассница',
+      initials: 'МС',
+      color: '#00cfff',
+      online: false,
+      unread: 0,
+      preview: '(недоступна)',
+      time: '',
+    },
+  ],
 
-  function setActiveNav(id) {
-    bottomNav.querySelectorAll('.nav-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.nav === id);
-    });
-  }
+  // ---- CHAT MESSAGES ----
+  messages: {
+    dasha: [
+      { from: 'in', text: 'Слушай, Марина прислала файл всему классу. Я не открывала.', time: '19:47' },
+      { from: 'out', text: 'Правильно. Что за файл?', time: '19:48' },
+      { from: 'in', text: '«Расписание_новое.exe» 😨 Это явно не Марина писала.', time: '19:48' },
+    ],
+    unknown: [
+      { from: 'system', text: 'Сообщение получено вчера в 21:00' },
+      { from: 'in', text: 'Не открывай файл, который тебе скинет Марина завтра. Это не она.', time: '21:00' },
+    ],
+    marina: [
+      { from: 'system', text: 'Контакт временно недоступен' },
+    ],
+  },
 
-  // ---- NAVIGATION ----
-  function navigateTo(id) {
-    currentScreen = id;
-    setActiveNav(id);
-    renderScreen(id);
-  }
+  // ---- CHOICES ----
+  choices: {
+    dasha: [
+      { key: 'A', text: 'Скажи всем в классовом чате — это вирус!', good: true },
+      { key: 'B', text: 'Открою сам — проверю что внутри', good: false },
+      { key: 'C', text: 'Попробуем связаться с настоящей Мариной', good: true },
+    ],
+  },
+  choiceReplies: {
+    A: { text: '⚡ Правильно! Ты защитил класс. Репутация +5. Но хакер теперь знает, что мы его заметили...', stars: 5 },
+    B: { text: '🚨 СТОП! Не открывай! Если уже открыл — немедленно отключи интернет. Это вирус-шантажист!', stars: 0 },
+    C: { text: '🧠 Умно. Проверка личности — правило №1 цифровой гигиены. Займёт время, но безопасно. +3⭐', stars: 3 },
+  },
 
-  function renderScreen(id) {
-    frame.innerHTML = '';
-    switch (id) {
-      case 'home':      buildHome(); break;
-      case 'messenger': buildMessengerList(); break;
-      case 'chat':      buildChat(currentChat); break;
-      case 'gallery':   buildGallery(); break;
-      case 'browser':   buildBrowser(); break;
-      case 'map':       buildMap(); break;
-      case 'terminal':  buildTerminal(); break;
-      case 'shop':      buildShop(); break;
-      default:          buildHome();
-    }
-  }
+  // ---- GALLERY ----
+  gallery: [
+    {
+      id: 'g1', emoji: '📸', name: 'photo_marina_001.jpg', flagged: true,
+      desc: 'Фото из профиля отправителя',
+      exif: [
+        { k: 'GPS-метка', v: '55.7522°N 37.6156°E', cls: 'danger' },
+        { k: 'Устройство', v: 'Samsung S22', cls: '' },
+        { k: 'Время', v: '19:32:14', cls: '' },
+        { k: 'Автор', v: 'unknown_sender', cls: 'danger' },
+        { k: 'Редактор', v: 'PhotoEditor_crack_v2.1', cls: 'danger' },
+        { k: 'Оригинал', v: 'Подменён', cls: 'danger' },
+      ],
+    },
+    {
+      id: 'g2', emoji: '🖥️', name: 'screenshot_class.png', flagged: false,
+      desc: 'Скрин из классового чата',
+      exif: [
+        { k: 'GPS-метка', v: 'Не указан', cls: 'ok' },
+        { k: 'Устройство', v: 'iPhone 14', cls: '' },
+        { k: 'Время', v: '17:15:00', cls: '' },
+        { k: 'Автор', v: 'marina.ivanova', cls: 'ok' },
+        { k: 'Подпись', v: 'Проверена', cls: 'ok' },
+      ],
+    },
+    {
+      id: 'g3', emoji: '📄', name: 'raspisanie.exe', flagged: true,
+      desc: 'Подозрительный файл от "Марины"',
+      exif: [
+        { k: 'Тип', v: '.EXE (исполняемый!)', cls: 'danger' },
+        { k: 'Размер', v: '4.2 MB — слишком большой', cls: 'danger' },
+        { k: 'Подпись', v: 'НЕТ цифровой подписи', cls: 'danger' },
+        { k: 'Создан', v: 'вчера 03:00 (ночью)', cls: 'danger' },
+        { k: 'Энтропия', v: '7.94 (упакован/шифр)', cls: 'danger' },
+      ],
+    },
+    {
+      id: 'g4', emoji: '🔲', name: 'qr_code_mystery.jpg', flagged: false,
+      desc: 'QR-код на доске объявлений',
+      exif: [
+        { k: 'GPS-метка', v: '55.7489°N 37.6220°E', cls: '' },
+        { k: 'Устройство', v: 'Xiaomi 12', cls: '' },
+        { k: 'QR-ссылка', v: 't.me/otryad404_secret', cls: 'danger' },
+        { k: 'Стего-данные', v: 'Обнаружены скрытые биты', cls: 'danger' },
+      ],
+    },
+    {
+      id: 'g5', emoji: '🌐', name: 'network_map.png', flagged: false,
+      desc: 'Карта школьной сети',
+      exif: [
+        { k: 'GPS-метка', v: 'Не указан', cls: 'ok' },
+        { k: 'Узлы', v: '14 устройств', cls: '' },
+        { k: 'Заражено', v: '3 хоста', cls: 'danger' },
+        { k: 'Протокол', v: 'HTTP (незащищён)', cls: 'danger' },
+      ],
+    },
+    {
+      id: 'g6', emoji: '🤳', name: 'selfie_group.jpg', flagged: false,
+      desc: 'Селфи класса на перемене',
+      exif: [
+        { k: 'GPS-метка', v: '55.7501°N 37.6189°E', cls: 'danger' },
+        { k: 'Устройство', v: 'iPhone 13', cls: '' },
+        { k: 'Лиц', v: '4 распознано', cls: '' },
+        { k: 'Отражение', v: 'Экран с паролем!', cls: 'danger' },
+        { k: 'Метаданные', v: 'Не удалены', cls: 'danger' },
+      ],
+    },
+  ],
 
-  function screenDiv(id) {
-    const s = document.createElement('div');
-    s.className = 'screen active';
-    s.id = id;
-    frame.appendChild(s);
-    return s;
-  }
+  // ---- MAP LOCATIONS ----
+  locations: [
+    {
+      id: 'school', emoji: '🏫', label: 'Школа №17',
+      color: '#00e5a0', pulse: true,
+      status: 'ГОРЯЧАЯ ТОЧКА', statusColor: '#00e5a0',
+      x: '28%', y: '38%',
+      desc: 'Эпицентр атаки. В компьютерном классе найди следы заражения на машинах. Базовый инвентарь.',
+      action: '▶ ИССЛЕДОВАТЬ',
+      type: 'open',
+    },
+    {
+      id: 'cafe', emoji: '☕', label: 'Кафе «Байт»',
+      color: '#00cfff', pulse: false,
+      status: 'NPC ЗДЕСЬ', statusColor: '#00cfff',
+      x: '63%', y: '55%',
+      desc: 'Здесь прячется Саша из Отряда 404. Он знает, кто подбросил вирус и где взял оборудование.',
+      action: '▶ ВСТРЕТИТЬСЯ С САШЕЙ',
+      type: 'open',
+    },
+    {
+      id: 'library', emoji: '📚', label: 'Библиотека',
+      color: '#7b5fff', pulse: false,
+      status: 'ЗАШИФРОВАНО', statusColor: '#7b5fff',
+      x: '47%', y: '73%',
+      desc: 'Зашифрованный архив из библиотечной сети. Требуется дешифратор (50⭐) или 48 часов ожидания.',
+      action: '🔐 НУЖЕН ДЕШИФРАТОР (50⭐)',
+      type: 'req',
+    },
+    {
+      id: 'server', emoji: '🖥️', label: 'Серверная',
+      color: '#ff4a6a', pulse: false,
+      status: 'РЕКВИЗИТ', statusColor: '#ff4a6a',
+      x: '18%', y: '68%',
+      desc: 'Серверная школы. Хранит логи атаки. Требуется USB-руббердак (80⭐) + пропуск (уже есть).',
+      action: '🔌 НУЖЕН РУББЕРДАК (80⭐)',
+      type: 'req',
+    },
+    {
+      id: 'park', emoji: '🌳', label: 'Сквер',
+      color: '#555570', pulse: false,
+      status: 'ЭП.4', statusColor: '#555570',
+      x: '78%', y: '26%',
+      desc: 'Локация заблокирована. Разблокируется в Эпизоде 4 после события «Живой дроп».',
+      action: '🔒 ЗАБЛОКИРОВАНО',
+      type: 'locked',
+    },
+  ],
 
-  function header(backTo, title, sub, extra) {
-    return `
-      <div class="screen-header">
-        <div class="back-btn" data-back="${backTo}">←</div>
-        <div>
-          <div class="hdr-title">${title}</div>
-          ${sub ? `<div class="hdr-sub">${sub}</div>` : ''}
-        </div>
-        ${extra || ''}
-      </div>
-    `;
-  }
+  // ---- CIPHER PUZZLE ----
+  cipher: {
+    encrypted: 'ВМТАЩ ЗОБЩВ',
+    answerShift: 4,
+    plain: 'РОВИЛ ДОРОГ',
+    ruAlphabet: 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ',
+  },
 
-  function bindBack(s) {
-    s.querySelectorAll('[data-back]').forEach(el => {
-      el.addEventListener('click', () => navigateTo(el.dataset.back));
-    });
-  }
+  // ---- SHOP ITEMS ----
+  shopItems: [
+    {
+      cat: '🔧 Инструменты',
+      items: [
+        {
+          id: 'rubber_duck', ico: '🔌', name: 'USB-Руббердак',
+          desc: 'Физический обход замков. Нужен для миссии «Серверная школы».',
+          tags: [{ label: 'ОДНОРАЗОВЫЙ', cls: 'stag-tool' }, { label: 'МИС: СЕРВЕРНАЯ', cls: 'stag-tool' }],
+          price: 80,
+        },
+        {
+          id: 'wifi_antenna', ico: '📡', name: 'Wi-Fi Антенна',
+          desc: 'Перехват незащищённого трафика в радиусе 50м. Миссия «Взлом камер».',
+          tags: [{ label: 'ОДНОРАЗОВЫЙ', cls: 'stag-tool' }, { label: 'МИС: КАМЕРЫ', cls: 'stag-tool' }],
+          price: 30,
+        },
+        {
+          id: 'decryptor', ico: '🔓', name: 'Ключ дешифратора',
+          desc: 'Расшифровывает архив из библиотечной сети без ожидания 48 часов.',
+          tags: [{ label: 'ОДНОРАЗОВЫЙ', cls: 'stag-tool' }, { label: 'МИС: БИБЛИОТЕКА', cls: 'stag-tool' }],
+          price: 50,
+        },
+      ],
+    },
+    {
+      cat: '🎟️ Доступы',
+      items: [
+        {
+          id: 'school_pass', ico: '🗝️', name: 'Пропуск в серверную',
+          desc: 'Открывает локацию «Серверная школы». Постоянный. Уже у тебя.',
+          tags: [{ label: 'ПОСТОЯННЫЙ', cls: 'stag-access' }, { label: 'ЕСТЬ', cls: 'stag-access' }],
+          price: 0, owned: true,
+        },
+        {
+          id: 'darknet_acc', ico: '🕶️', name: 'VIP-аккаунт на форуме',
+          desc: 'Доступ к закрытым разделам даркнет-форума. Эксклюзивные диалоги.',
+          tags: [{ label: 'ПОСТОЯННЫЙ', cls: 'stag-access' }, { label: 'НОВЫЕ ДИАЛОГИ', cls: 'stag-access' }],
+          price: 120,
+        },
+      ],
+    },
+    {
+      cat: '💊 Бустеры',
+      items: [
+        {
+          id: 'energy', ico: '⚡', name: 'Энергетик',
+          desc: '+2 дополнительные попытки в любой миссии.',
+          tags: [{ label: 'РАСХОДНИК', cls: 'stag-boost' }],
+          price: 15,
+        },
+        {
+          id: 'antivirus', ico: '🛡️', name: 'Антивирус',
+          desc: 'Отменяет штраф репутации за провал миссии.',
+          tags: [{ label: 'РАСХОДНИК', cls: 'stag-boost' }],
+          price: 25,
+        },
+        {
+          id: 'hint', ico: '💡', name: 'Подсказка NPC',
+          desc: 'Персонаж раскрывает прямую подсказку к текущей задаче.',
+          tags: [{ label: 'РАСХОДНИК', cls: 'stag-boost' }],
+          price: 10,
+        },
+        {
+          id: 'skip_timer', ico: '⏩', name: 'Пропуск таймера',
+          desc: 'Мгновенно убирает таймер ожидания в любой миссии.',
+          tags: [{ label: 'РАСХОДНИК', cls: 'stag-boost' }],
+          price: 20,
+        },
+      ],
+    },
+    {
+      cat: '🎨 Косметика',
+      items: [
+        {
+          id: 'theme_neon', ico: '🌈', name: 'Тема «НЕОН»',
+          desc: 'Переключает акцентный цвет интерфейса на розово-неоновый.',
+          tags: [{ label: 'ПОСТОЯННАЯ', cls: 'stag-cosm' }],
+          price: 50,
+        },
+        {
+          id: 'theme_retro', ico: '🕹️', name: 'Тема «РЕТРО»',
+          desc: 'Зелёный монохром в стиле старых терминалов 80-х.',
+          tags: [{ label: 'ПОСТОЯННАЯ', cls: 'stag-cosm' }],
+          price: 50,
+        },
+        {
+          id: 'early_access', ico: '📺', name: 'Ранний доступ +24ч',
+          desc: 'Следующий эпизод откроется на 24 часа раньше всех.',
+          tags: [{ label: 'РАЗОВОЕ', cls: 'stag-cosm' }],
+          price: 30,
+        },
+      ],
+    },
+  ],
+};
 
-  // ==================================================
-  // HOME
-  // ==================================================
-  function buildHome() {
-    const s = screenDiv('homeScreen');
-    s.innerHTML = `
-      <div class="scrollable">
-        <div class="home-hero">
-          <div class="hero-act">АКТ ${ZD.state.act} · ЭПИЗОД ${ZD.state.episode}</div>
-          <div class="hero-title">ZERO_<em>DAY</em></div>
-          <div class="hero-subtitle">ШКОЛЬНЫЙ ПРОТОКОЛ · ОТРЯД 404</div>
-          <div class="ep-card" data-goto="chat" data-chat="dasha">
-            <div>
-              <div class="ep-num">EP.03 · АКТИВЕН</div>
-              <div class="ep-name">«Файл от Марины»</div>
-              <div class="ep-meta">Фишинг · Социальная инженерия</div>
-            </div>
-            <div class="ep-play">▶</div>
-          </div>
-        </div>
-        <div class="notif-strip">📨 Новое сообщение от <strong style="margin:0 3px">Даши Ковы</strong> — Отряд 404</div>
-        <div class="home-apps">
-          <div class="section-lbl">ПРИЛОЖЕНИЯ</div>
-          <div class="apps-grid">
-            <div class="app-tile has-badge" data-goto="messenger">
-              <div class="app-tile-ico">💬</div>
-              <div class="app-tile-lbl">МЕССЕНДЖЕР</div>
-            </div>
-            <div class="app-tile" data-goto="gallery">
-              <div class="app-tile-ico">🖼️</div>
-              <div class="app-tile-lbl">ГАЛЕРЕЯ</div>
-            </div>
-            <div class="app-tile" data-goto="browser">
-              <div class="app-tile-ico">🌐</div>
-              <div class="app-tile-lbl">БРАУЗЕР</div>
-            </div>
-            <div class="app-tile" data-goto="map">
-              <div class="app-tile-ico">🗺️</div>
-              <div class="app-tile-lbl">КАРТА</div>
-            </div>
-            <div class="app-tile" data-goto="terminal">
-              <div class="app-tile-ico">💻</div>
-              <div class="app-tile-lbl">ТЕРМИНАЛ</div>
-            </div>
-            <div class="app-tile" data-goto="shop">
-              <div class="app-tile-ico">🛒</div>
-              <div class="app-tile-lbl">МАГАЗИН</div>
-            </div>
-          </div>
-        </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-val stars-val">${ZD.state.stars}</div>
-            <div class="stat-lbl">⭐ STARS</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val">${ZD.state.trust}%</div>
-            <div class="stat-lbl">ДОВЕРИЕ</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val">${ZD.state.reputation}</div>
-            <div class="stat-lbl">РЕПУТАЦИЯ</div>
-          </div>
-        </div>
-      </div>
-    `;
-    s.querySelectorAll('[data-goto]').forEach(el => {
-      el.addEventListener('click', () => {
-        const chat = el.dataset.chat;
-        if (chat) { currentChat = chat; navigateTo('chat'); }
-        else navigateTo(el.dataset.goto);
-      });
-    });
-  }
-
-  // ==================================================
-  // MESSENGER LIST
-  // ==================================================
-  function buildMessengerList() {
-    const s = screenDiv('messengerScreen');
-    let rows = ZD.contacts.map(c => `
-      <div class="chat-list-item" data-chat="${c.id}">
-        <div class="chat-avatar ${c.online ? 'avatar-online' : ''}" style="background:${c.color}">${c.initials}</div>
-        <div class="chat-info">
-          <div class="chat-name">${c.name}</div>
-          <div class="chat-preview">${c.preview}</div>
-        </div>
-        <div class="chat-meta">
-          <div class="chat-time">${c.time}</div>
-          ${c.unread ? `<span class="chat-unread">${c.unread}</span>` : ''}
-        </div>
-      </div>
-    `).join('');
-    s.innerHTML = `
-      ${header('home', 'Сообщения', null, `<span style="margin-left:auto;font-size:10px;color:var(--muted)">✏️</span>`)}
-      <div class="scrollable">${rows}</div>
-    `;
-    bindBack(s);
-    s.querySelectorAll('.chat-list-item').forEach(el => {
-      el.addEventListener('click', () => {
-        currentChat = el.dataset.chat;
-        navigateTo('chat');
-      });
-    });
-  }
-
-  // ==================================================
-  // CHAT DETAIL
-  // ==================================================
-  function buildChat(contactId) {
-    const contact = ZD.contacts.find(c => c.id === contactId);
-    if (!contact) return buildMessengerList();
-    const msgs = ZD.messages[contactId] || [];
-    const choices = ZD.choices[contactId];
-
-    const s = screenDiv('chatScreen');
-
-    const msgsHtml = msgs.map(m => {
-      if (m.from === 'system') return `<div class="bubble bubble-system">${m.text}</div>`;
-      if (m.from === 'in') return `<div class="bubble bubble-in">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
-      if (m.from === 'out') return `<div class="bubble bubble-out">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
-      return '';
-    }).join('');
-
-    const choicesHtml = choices && !ZD.state.choiceMade ? `
-      <div class="choices-wrap" id="choicesWrap">
-        <div class="choices-lbl">ТВОЙ ВЫБОР</div>
-        ${choices.map(c => `
-          <button class="choice ${c.good ? '' : 'bad'}" data-key="${c.key}">
-            <span class="choice-key">[${c.key}]</span>${c.text}
-          </button>
-        `).join('')}
-      </div>
-    ` : choices && ZD.state.choiceMade ? `
-      <div class="choices-wrap">
-        <div class="choices-lbl" style="color:var(--accent)">✓ ВЫБОР СДЕЛАН · ПОСЛЕДСТВИЯ В ЭП.5</div>
-      </div>
-    ` : '';
-
-    s.innerHTML = `
-      <div class="screen-header">
-        <div class="back-btn" data-back="messenger">←</div>
-        <div class="chat-avatar" style="background:${contact.color};width:34px;height:34px;font-size:13px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0">${contact.initials}</div>
-        <div>
-          <div class="hdr-title">${contact.name}</div>
-          <div class="hdr-sub" style="color:${contact.online ? 'var(--accent)' : 'var(--muted)'}">
-            ${contact.online ? '● онлайн' : '● был(а) недавно'}
-          </div>
-        </div>
-      </div>
-      <div class="chat-bg" id="chatBg">
-        <div class="bubble bubble-system">Сегодня · 19:47</div>
-        ${msgsHtml}
-        <div class="typing-bub" id="typingBub">
-          <div class="td"></div><div class="td"></div><div class="td"></div>
-        </div>
-      </div>
-      ${choicesHtml}
-    `;
-    bindBack(s);
-
-    const chatBg = s.querySelector('#chatBg');
-    if (chatBg) chatBg.scrollTop = 9999;
-
-    if (choices && !ZD.state.choiceMade) {
-      s.querySelectorAll('.choice').forEach(btn => {
-        btn.addEventListener('click', () => handleChoice(contactId, btn.dataset.key, s));
-      });
-    }
-  }
-
-  function handleChoice(contactId, key, s) {
-    ZD.state.choiceMade = true;
-    const reply = ZD.choiceReplies[key];
-
-    // disable all choices
-    s.querySelectorAll('.choice').forEach(b => {
-      b.disabled = true;
-      b.style.opacity = b.dataset.key === key ? '1' : '0.35';
-      if (b.dataset.key === key) b.classList.add('selected');
-    });
-
-    const chatBg = s.querySelector('#chatBg');
-    const typingBub = s.querySelector('#typingBub');
-    const choicesWrap = s.querySelector('#choicesWrap');
-
-    // add outgoing bubble
-    const outChoice = ZD.choices[contactId].find(c => c.key === key);
-    const outBub = document.createElement('div');
-    outBub.className = 'bubble bubble-out';
-    const outTexts = { A: 'Всем стоп! «Расписание_новое.exe» — это вирус. Не открывайте!', B: '...ладно, сам посмотрю что там.', C: 'Давай сначала напишем самой Марине — проверим, она ли это.' };
-    outBub.innerHTML = outTexts[key] + `<div class="bub-time">19:49</div>`;
-    chatBg.insertBefore(outBub, typingBub);
-
-    typingBub.style.display = 'flex';
-    chatBg.scrollTop = 9999;
-
-    setTimeout(() => {
-      typingBub.style.display = 'none';
-      const inBub = document.createElement('div');
-      inBub.className = 'bubble bubble-in';
-      inBub.innerHTML = reply.text + `<div class="bub-time">19:50</div>`;
-      chatBg.insertBefore(inBub, typingBub);
-      chatBg.scrollTop = 9999;
-
-      if (choicesWrap) {
-        choicesWrap.innerHTML = `<div class="choices-lbl" style="color:var(--accent)">✓ ВЫБОР СДЕЛАН · ПОСЛЕДСТВИЯ В ЭП.5</div>`;
-      }
-      addStars(reply.stars);
-    }, 2200);
-  }
-
-  // ==================================================
-  // GALLERY
-  // ==================================================
-  function buildGallery() {
-    const s = screenDiv('galleryScreen');
-    const thumbs = ZD.gallery.map(item => {
-      const cls = ZD.state.analyzed.has(item.id) ? 'analyzed' : (item.flagged ? 'flagged' : '');
-      return `<div class="gal-thumb ${cls}" data-item="${item.id}">${item.emoji}</div>`;
-    }).join('');
-
-    s.innerHTML = `
-      ${header('home', 'Галерея · Улики', `${ZD.gallery.length} файлов`)}
-      <div class="gal-grid">${thumbs}</div>
-      <div id="galDetailOverlay">
-        <div class="screen-header">
-          <div class="back-btn" id="galDetailBack">←</div>
-          <div>
-            <div class="hdr-title" id="galDetailName">—</div>
-            <div class="hdr-sub" id="galDetailDesc">—</div>
-          </div>
-        </div>
-        <div class="gal-detail-img" id="galDetailImg">
-          <div class="gal-scan-overlay" id="galScanOverlay"></div>
-          <div class="scan-anim" id="scanAnim"></div>
-          <span id="galDetailEmoji" style="font-size:80px"></span>
-        </div>
-        <button class="analyze-btn" id="analyzeBtn">▶ АНАЛИЗИРОВАТЬ МЕТАДАННЫЕ</button>
-        <div class="exif-panel scrollable" id="exifPanel"></div>
-      </div>
-    `;
-    bindBack(s);
-
-    s.querySelector('#galDetailBack').addEventListener('click', () => {
-      s.querySelector('#galDetailOverlay').classList.remove('open');
-    });
-
-    s.querySelectorAll('.gal-thumb').forEach(el => {
-      el.addEventListener('click', () => openGalDetail(el.dataset.item, s));
-    });
-  }
-
-  function openGalDetail(itemId, s) {
-    const item = ZD.gallery.find(g => g.id === itemId);
-    if (!item) return;
-    const overlay = s.querySelector('#galDetailOverlay');
-    overlay.classList.add('open');
-    s.querySelector('#galDetailName').textContent = item.name;
-    s.querySelector('#galDetailDesc').textContent = item.desc;
-    s.querySelector('#galDetailEmoji').textContent = item.emoji;
-
-    const exifPanel = s.querySelector('#exifPanel');
-    if (ZD.state.analyzed.has(itemId)) {
-      renderExif(item, exifPanel);
-      s.querySelector('#analyzeBtn').textContent = '✓ ПРОАНАЛИЗИРОВАНО';
-      s.querySelector('#analyzeBtn').style.borderColor = 'var(--accent)';
-    } else {
-      exifPanel.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:8px 0">Нажми «Анализировать» для извлечения метаданных</div>`;
-      s.querySelector('#analyzeBtn').textContent = '▶ АНАЛИЗИРОВАТЬ МЕТАДАННЫЕ';
-      s.querySelector('#analyzeBtn').style.borderColor = 'var(--accent)';
-    }
-
-    s.querySelector('#analyzeBtn').onclick = () => startAnalysis(itemId, item, s);
-  }
-
-  function renderExif(item, panel) {
-    panel.innerHTML = item.exif.map(row => `
-      <div class="exif-row">
-        <span class="exif-k">${row.k}</span>
-        <span class="exif-v ${row.cls || ''}">${row.v}</span>
-      </div>
-    `).join('');
-  }
-
-  function startAnalysis(itemId, item, s) {
-    if (ZD.state.analyzed.has(itemId)) return;
-    const btn = s.querySelector('#analyzeBtn');
-    const scanAnim = s.querySelector('#scanAnim');
-    const scanOverlay = s.querySelector('#galScanOverlay');
-    btn.textContent = '⏳ СКАНИРОВАНИЕ...';
-    btn.style.opacity = '0.6';
-    btn.style.pointerEvents = 'none';
-    scanAnim.style.display = 'block';
-    scanOverlay.style.display = 'block';
-
-    setTimeout(() => {
-      ZD.state.analyzed.add(itemId);
-      scanAnim.style.display = 'none';
-      scanOverlay.style.display = 'none';
-      btn.textContent = '✓ ПРОАНАЛИЗИРОВАНО';
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'none';
-      btn.style.borderColor = 'var(--accent)';
-      renderExif(item, s.querySelector('#exifPanel'));
-      if (item.flagged) addStars(3);
-    }, 2000);
-  }
-
-  // ==================================================
-  // BROWSER
-  // ==================================================
-  function buildBrowser() {
-    const s = screenDiv('browserScreen');
-    const flags = ZD.gallery; // reuse state
-
-    s.innerHTML = `
-      <div class="screen-header">
-        <div class="back-btn" data-back="home">←</div>
-        <div style="display:flex;gap:5px;font-size:11px;color:var(--muted)">
-          <span style="cursor:pointer">←</span>
-          <span style="cursor:pointer">→</span>
-          <span style="cursor:pointer">↻</span>
-        </div>
-      </div>
-      <div class="url-bar-wrap">
-        <div class="url-bar">
-          <span class="url-lock http" id="urlLock">🔓</span>
-          <span class="url-txt" id="urlTxt">sekur-bank-online.ru</span>
-        </div>
-      </div>
-      <div class="site-content scrollable">
-        <div class="site-topbar">
-          <div class="site-logo">🏦 СекурБанк Online</div>
-          <div class="site-tagline">Ваш надёжный партнёр · 24/7</div>
-          <div class="site-nav-row">
-            <span class="site-nav-item">Вход</span>
-            <span class="site-nav-item">Кабинет</span>
-            <span class="site-nav-item">Поддержка</span>
-            <span class="site-nav-item">О банке</span>
-          </div>
-        </div>
-        <div class="site-body">
-          <div class="phish-warning">
-            <div class="phish-w-title">⚠️ СРОЧНО: Ваш аккаунт заблокирован</div>
-            <div class="phish-w-txt">Для восстановления доступа введите данные карты в течение 24 часов.</div>
-          </div>
-          <div class="site-headline">Подтвердите личность — введите данные карты</div>
-          <div class="site-meta">Обновлено сегодня в 18:30 · Служба безопасности</div>
-          <div class="site-para">Уважаемый клиент! В целях безопасности нам необходимо подтвердить вашу личность. Нажмите кнопку ниже и введите полные реквизиты карты.</div>
-          <div class="flags-box">
-            <div class="flags-title">🔍 НАЙДИ ПРИЗНАКИ ФИШИНГА</div>
-            <div class="flag-row" data-flag="1"><div class="flag-chk" id="fc1"></div><span>Подозрительный домен — не официальный сайт банка</span></div>
-            <div class="flag-row" data-flag="2"><div class="flag-chk" id="fc2"></div><span>Нет защищённого соединения (HTTP вместо HTTPS)</span></div>
-            <div class="flag-row" data-flag="3"><div class="flag-chk" id="fc3"></div><span>Создание искусственной срочности («24 часа»)</span></div>
-            <div class="flag-row" data-flag="4"><div class="flag-chk" id="fc4"></div><span>Запрос данных карты — настоящий банк так не делает</span></div>
-            <div class="flags-success" id="flagsSuccess">
-              ✓ Отлично! Все 4 признака фишинга найдены.<br>Ты защитил бы себя от кражи данных. +5 ⭐
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-    bindBack(s);
-
-    s.querySelectorAll('.flag-row').forEach(el => {
-      el.addEventListener('click', () => handleFlag(el.dataset.flag, s));
-    });
-  }
-
-  function handleFlag(n, s) {
-    if (ZD.state.foundFlags.has(n)) return;
-    ZD.state.foundFlags.add(n);
-    const row = s.querySelector(`[data-flag="${n}"]`);
-    const chk = s.querySelector(`#fc${n}`);
-    if (row) row.classList.add('found');
-    if (chk) chk.textContent = '✓';
-    if (n === '2') {
-      const lock = s.querySelector('#urlLock');
-      if (lock) { lock.textContent = '🔓'; }
-    }
-    if (ZD.state.foundFlags.size >= 4) {
-      const succ = s.querySelector('#flagsSuccess');
-      if (succ) succ.style.display = 'block';
-      addStars(5);
-    }
-  }
-
-  // ==================================================
-  // MAP
-  // ==================================================
-  function buildMap() {
-    const s = screenDiv('mapScreen');
-
-    const pinsHtml = ZD.locations.map(loc => `
-      <div class="loc-pin" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}">
-        <div class="pin-circle ${loc.pulse ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
-        <div class="pin-lbl">${loc.emoji} ${loc.label}</div>
-        <div class="pin-status" style="color:${loc.statusColor}">${loc.status}</div>
-      </div>
-    `).join('');
-
-    s.innerHTML = `
-      ${header('home', 'Карта · Локации', 'АКТ I · Выбери точку')}
-      <div class="map-canvas">
-        <div class="map-grid-lines"></div>
-        <div class="map-glow"></div>
-        ${pinsHtml}
-        <div class="map-panel" id="mapPanel">
-          <div class="map-panel-name" id="mapPanelName">—</div>
-          <div class="map-panel-desc" id="mapPanelDesc">—</div>
-          <button class="map-go-btn" id="mapGoBtn">▶ ИССЛЕДОВАТЬ</button>
-        </div>
-      </div>
-    `;
-    bindBack(s);
-
-    s.querySelectorAll('.loc-pin').forEach(el => {
-      el.addEventListener('click', () => openMapPanel(el.dataset.loc, s));
-    });
-    s.querySelector('#mapGoBtn').addEventListener('click', () => {
-      s.querySelector('#mapPanel').classList.remove('open');
-    });
-  }
-
-  function openMapPanel(locId, s) {
-    const loc = ZD.locations.find(l => l.id === locId);
-    if (!loc) return;
-    const panel = s.querySelector('#mapPanel');
-    const nameEl = s.querySelector('#mapPanelName');
-    const descEl = s.querySelector('#mapPanelDesc');
-    const btn = s.querySelector('#mapGoBtn');
-    nameEl.textContent = loc.emoji + ' ' + loc.label;
-    descEl.textContent = loc.desc;
-    btn.textContent = loc.action;
-    btn.className = 'map-go-btn ' + (loc.type === 'locked' ? 'locked' : loc.type === 'req' ? 'req' : '');
-    panel.classList.add('open');
-  }
-
-  // ==================================================
-  // TERMINAL
-  // ==================================================
-  function buildTerminal() {
-    const s = screenDiv('terminalScreen');
-    const c = ZD.cipher;
-
-    s.innerHTML = `
-      <div class="term-topbar">
-        <div class="back-btn" data-back="home">←</div>
-        <div class="term-dots">
-          <div class="tdot tdot-r"></div>
-          <div class="tdot tdot-y"></div>
-          <div class="tdot tdot-g"></div>
-        </div>
-        <div class="term-title-txt">TERMINAL · MISSION_03</div>
-      </div>
-      <div class="term-body scrollable" id="termBody">
-        <div class="t-g">Отряд404@school:~$ ./decrypt_mission_03.sh</div>
-        <div class="t-d">Инициализация протоколов...</div>
-        <div class="t-d">Загрузка ключей безопасности...</div>
-        <div class="t-c">► Перехвачено зашифрованное сообщение</div>
-        <div class="t-d">Метод шифрования: <span class="t-y">Шифр Цезаря (ROT-N)</span></div>
-        <div class="t-w">Сдвиг ключа: <span class="t-r">неизвестен</span>. Диапазон: 1–25.</div>
-        <div class="term-br"></div>
-        <div class="t-a">ЗАДАЧА: Расшифруй перехваченное сообщение</div>
-        <div class="t-d">Hint: Слово из 5 букв + слово из 5 букв</div>
-        <div class="term-br"></div>
-        <div class="cipher-block">
-          <div class="cipher-enc" id="cipherEnc">${c.encrypted}</div>
-          <div class="slider-row">
-            <span class="slider-lbl">СДВИГ ROT:</span>
-            <input type="range" id="caesarSlider" min="1" max="25" value="3" step="1">
-            <span class="slider-val" id="caesarVal">3</span>
-          </div>
-          <input class="cipher-out" id="cipherOut" readonly value="">
-          <div class="cipher-hint">Двигай слайдер — находи читаемое слово</div>
-          <div class="cipher-solved" id="cipherSolved">
-            ✓ РАСШИФРОВАНО! Попыток: <span id="solvedAttempts">0</span> · +8 ⭐
-          </div>
-        </div>
-        <div class="term-br"></div>
-        <div class="t-d">Попыток использовано: <span class="t-y" id="attemptsCount">0</span></div>
-        <div class="term-prompt">
-          <span class="t-g">agent@404:~$</span>
-          <span class="cursor"></span>
-        </div>
-      </div>
-    `;
-    bindBack(s);
-
-    const slider = s.querySelector('#caesarSlider');
-    slider.addEventListener('input', () => handleCaesar(s));
-    handleCaesar(s); // init display
-  }
-
-  function caesarDecrypt(text, shift) {
-    const ru = ZD.cipher.ruAlphabet;
-    return text.split('').map(ch => {
-      const i = ru.indexOf(ch);
-      if (i === -1) return ch;
-      return ru[((i - shift) % 33 + 33) % 33];
-    }).join('');
-  }
-
-  function handleCaesar(s) {
-    const slider = s.querySelector('#caesarSlider');
-    const valEl = s.querySelector('#caesarVal');
-    const outEl = s.querySelector('#cipherOut');
-    const attEl = s.querySelector('#attemptsCount');
-    const solvedEl = s.querySelector('#cipherSolved');
-    const solvedAtt = s.querySelector('#solvedAttempts');
-
-    const shift = parseInt(slider.value);
-    valEl.textContent = shift;
-    ZD.state.termAttempts++;
-    if (attEl) attEl.textContent = ZD.state.termAttempts;
-
-    const decrypted = caesarDecrypt(ZD.cipher.encrypted, shift);
-    outEl.value = decrypted;
-
-    if (shift === ZD.cipher.answerShift && !ZD.state.termSolved) {
-      ZD.state.termSolved = true;
-      outEl.style.color = 'var(--accent)';
-      solvedEl.style.display = 'block';
-      if (solvedAtt) solvedAtt.textContent = ZD.state.termAttempts;
-      addStars(8);
-    } else if (shift !== ZD.cipher.answerShift) {
-      outEl.style.color = 'var(--accent)';
-      solvedEl.style.display = 'none';
-    }
-  }
-
-  // ==================================================
-  // SHOP
-  // ==================================================
-  function buildShop() {
-    const s = screenDiv('shopScreen');
-
-    const rows = ZD.shopItems.map(cat => {
-      const items = cat.items.map(item => {
-        const isOwned = item.owned || ZD.state.inventory.includes(item.id);
-        const btnHtml = isOwned
-          ? `<button class="buy-btn owned">✓ ЕСТЬ</button>`
-          : `<button class="buy-btn" data-price="${item.price}" data-id="${item.id}">⭐ ${item.price}</button>`;
-        return `
-          <div class="shop-row">
-            <div class="shop-ico">${item.ico}</div>
-            <div class="shop-info">
-              <div class="shop-name">${item.name}</div>
-              <div class="shop-desc">${item.desc}</div>
-              <div class="shop-tags">${item.tags.map(t => `<span class="stag ${t.cls}">${t.label}</span>`).join('')}</div>
-            </div>
-            ${btnHtml}
-          </div>
-        `;
-      }).join('');
-      return `<div class="shop-cat">${cat.cat}</div>${items}`;
-    }).join('');
-
-    s.innerHTML = `
-      ${header('home', 'Магазин Реквизита', null)}
-      <div class="shop-balance-bar">
-        <span>⭐</span><span class="stars-val">${ZD.state.stars}</span>
-      </div>
-      <div class="shop-body scrollable">${rows}</div>
-    `;
-    bindBack(s);
-
-    s.querySelectorAll('.buy-btn[data-price]').forEach(btn => {
-      btn.addEventListener('click', () => handleBuy(btn, parseInt(btn.dataset.price), btn.dataset.id));
-    });
-  }
-
-  function handleBuy(btn, price, itemId) {
-    if (ZD.state.stars < price) {
-      btn.classList.add('no-stars');
-      btn.textContent = '✗ МАЛО ⭐';
-      setTimeout(() => {
-        btn.classList.remove('no-stars');
-        btn.textContent = '⭐ ' + price;
-      }, 1300);
-      return;
-    }
-    ZD.state.stars -= price;
-    ZD.state.inventory.push(itemId);
-    updateStarsDisplay();
-    btn.textContent = '✓ КУПЛЕНО';
-    btn.classList.add('owned');
-    btn.onclick = null;
-    toast('Куплено! ⭐ осталось: ' + ZD.state.stars);
-  }
-
-  // ==================================================
-  // INIT
-  // ==================================================
-  buildNav();
-  buildHome();
-
-})();
+// Auto-load on init
+ZD.loadState();

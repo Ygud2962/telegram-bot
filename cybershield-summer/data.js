@@ -1,8 +1,67 @@
 // ============================================================
-// ZERO_DAY: Школьный Протокол — GAME DATA
+// ZERO_DAY: Школьный Протокол — GAME DATA ENGINE
 // ============================================================
 
 const ZD = {
+  // ---- STORAGE ----
+  STORAGE_KEY: 'zd_state_v1',
+
+  saveState() {
+    const data = {
+      stars: this.state.stars,
+      reputation: this.state.reputation,
+      trust: this.state.trust,
+      episode: this.state.episode,
+      act: this.state.act,
+      choiceMade: this.state.choiceMade,
+      analyzed: Array.from(this.state.analyzed),
+      foundFlags: Array.from(this.state.foundFlags),
+      termAttempts: this.state.termAttempts,
+      termSolved: this.state.termSolved,
+      inventory: this.state.inventory,
+      lastSave: Date.now(),
+    };
+    try {
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+    } catch(e) {}
+  },
+
+  loadState() {
+    try {
+      const raw = localStorage.getItem(this.STORAGE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (data.stars !== undefined) this.state.stars = data.stars;
+      if (data.reputation !== undefined) this.state.reputation = data.reputation;
+      if (data.trust !== undefined) this.state.trust = data.trust;
+      if (data.episode !== undefined) this.state.episode = data.episode;
+      if (data.act !== undefined) this.state.act = data.act;
+      if (data.choiceMade !== undefined) this.state.choiceMade = data.choiceMade;
+      if (data.analyzed) this.state.analyzed = new Set(data.analyzed);
+      if (data.foundFlags) this.state.foundFlags = new Set(data.foundFlags);
+      if (data.termAttempts !== undefined) this.state.termAttempts = data.termAttempts;
+      if (data.termSolved !== undefined) this.state.termSolved = data.termSolved;
+      if (data.inventory) this.state.inventory = data.inventory;
+      return true;
+    } catch(e) { return false; }
+  },
+
+  resetState() {
+    this.state = {
+      stars: 47,
+      reputation: 12,
+      trust: 78,
+      episode: 3,
+      act: 1,
+      choiceMade: false,
+      analyzed: new Set(),
+      foundFlags: new Set(),
+      termAttempts: 0,
+      termSolved: false,
+      inventory: ['school_pass'],
+    };
+    this.saveState();
+  },
 
   // ---- PLAYER STATE ----
   state: {
@@ -67,13 +126,13 @@ const ZD = {
   // ---- CHAT MESSAGES ----
   messages: {
     dasha: [
-      { from: 'in',     text: 'Слушай, Марина прислала файл всему классу. Я не открывала.', time: '19:47' },
-      { from: 'out',    text: 'Правильно. Что за файл?', time: '19:48' },
-      { from: 'in',     text: '«Расписание_новое.exe» 😨 Это явно не Марина писала.', time: '19:48' },
+      { from: 'in', text: 'Слушай, Марина прислала файл всему классу. Я не открывала.', time: '19:47' },
+      { from: 'out', text: 'Правильно. Что за файл?', time: '19:48' },
+      { from: 'in', text: '«Расписание_новое.exe» 😨 Это явно не Марина писала.', time: '19:48' },
     ],
     unknown: [
       { from: 'system', text: 'Сообщение получено вчера в 21:00' },
-      { from: 'in',     text: 'Не открывай файл, который тебе скинет Марина завтра. Это не она.', time: '21:00' },
+      { from: 'in', text: 'Не открывай файл, который тебе скинет Марина завтра. Это не она.', time: '21:00' },
     ],
     marina: [
       { from: 'system', text: 'Контакт временно недоступен' },
@@ -100,65 +159,65 @@ const ZD = {
       id: 'g1', emoji: '📸', name: 'photo_marina_001.jpg', flagged: true,
       desc: 'Фото из профиля отправителя',
       exif: [
-        { k: 'GPS-метка',   v: '55.7522°N 37.6156°E', cls: 'danger' },
-        { k: 'Устройство',  v: 'Samsung S22', cls: '' },
-        { k: 'Время',       v: '19:32:14', cls: '' },
-        { k: 'Автор',       v: 'unknown_sender', cls: 'danger' },
-        { k: 'Редактор',    v: 'PhotoEditor_crack_v2.1', cls: 'danger' },
-        { k: 'Оригинал',    v: 'Подменён', cls: 'danger' },
+        { k: 'GPS-метка', v: '55.7522°N 37.6156°E', cls: 'danger' },
+        { k: 'Устройство', v: 'Samsung S22', cls: '' },
+        { k: 'Время', v: '19:32:14', cls: '' },
+        { k: 'Автор', v: 'unknown_sender', cls: 'danger' },
+        { k: 'Редактор', v: 'PhotoEditor_crack_v2.1', cls: 'danger' },
+        { k: 'Оригинал', v: 'Подменён', cls: 'danger' },
       ],
     },
     {
       id: 'g2', emoji: '🖥️', name: 'screenshot_class.png', flagged: false,
       desc: 'Скрин из классового чата',
       exif: [
-        { k: 'GPS-метка',   v: 'Не указан', cls: 'ok' },
-        { k: 'Устройство',  v: 'iPhone 14', cls: '' },
-        { k: 'Время',       v: '17:15:00', cls: '' },
-        { k: 'Автор',       v: 'marina.ivanova', cls: 'ok' },
-        { k: 'Подпись',     v: 'Проверена', cls: 'ok' },
+        { k: 'GPS-метка', v: 'Не указан', cls: 'ok' },
+        { k: 'Устройство', v: 'iPhone 14', cls: '' },
+        { k: 'Время', v: '17:15:00', cls: '' },
+        { k: 'Автор', v: 'marina.ivanova', cls: 'ok' },
+        { k: 'Подпись', v: 'Проверена', cls: 'ok' },
       ],
     },
     {
       id: 'g3', emoji: '📄', name: 'raspisanie.exe', flagged: true,
       desc: 'Подозрительный файл от "Марины"',
       exif: [
-        { k: 'Тип',         v: '.EXE (исполняемый!)', cls: 'danger' },
-        { k: 'Размер',      v: '4.2 MB — слишком большой', cls: 'danger' },
-        { k: 'Подпись',     v: 'НЕТ цифровой подписи', cls: 'danger' },
-        { k: 'Создан',      v: 'вчера 03:00 (ночью)', cls: 'danger' },
-        { k: 'Энтропия',    v: '7.94 (упакован/шифр)', cls: 'danger' },
+        { k: 'Тип', v: '.EXE (исполняемый!)', cls: 'danger' },
+        { k: 'Размер', v: '4.2 MB — слишком большой', cls: 'danger' },
+        { k: 'Подпись', v: 'НЕТ цифровой подписи', cls: 'danger' },
+        { k: 'Создан', v: 'вчера 03:00 (ночью)', cls: 'danger' },
+        { k: 'Энтропия', v: '7.94 (упакован/шифр)', cls: 'danger' },
       ],
     },
     {
       id: 'g4', emoji: '🔲', name: 'qr_code_mystery.jpg', flagged: false,
       desc: 'QR-код на доске объявлений',
       exif: [
-        { k: 'GPS-метка',   v: '55.7489°N 37.6220°E', cls: '' },
-        { k: 'Устройство',  v: 'Xiaomi 12', cls: '' },
-        { k: 'QR-ссылка',   v: 't.me/otryad404_secret', cls: 'danger' },
-        { k: 'Стего-данные',v: 'Обнаружены скрытые биты', cls: 'danger' },
+        { k: 'GPS-метка', v: '55.7489°N 37.6220°E', cls: '' },
+        { k: 'Устройство', v: 'Xiaomi 12', cls: '' },
+        { k: 'QR-ссылка', v: 't.me/otryad404_secret', cls: 'danger' },
+        { k: 'Стего-данные', v: 'Обнаружены скрытые биты', cls: 'danger' },
       ],
     },
     {
       id: 'g5', emoji: '🌐', name: 'network_map.png', flagged: false,
       desc: 'Карта школьной сети',
       exif: [
-        { k: 'GPS-метка',   v: 'Не указан', cls: 'ok' },
-        { k: 'Узлы',        v: '14 устройств', cls: '' },
-        { k: 'Заражено',    v: '3 хоста', cls: 'danger' },
-        { k: 'Протокол',    v: 'HTTP (незащищён)', cls: 'danger' },
+        { k: 'GPS-метка', v: 'Не указан', cls: 'ok' },
+        { k: 'Узлы', v: '14 устройств', cls: '' },
+        { k: 'Заражено', v: '3 хоста', cls: 'danger' },
+        { k: 'Протокол', v: 'HTTP (незащищён)', cls: 'danger' },
       ],
     },
     {
       id: 'g6', emoji: '🤳', name: 'selfie_group.jpg', flagged: false,
       desc: 'Селфи класса на перемене',
       exif: [
-        { k: 'GPS-метка',   v: '55.7501°N 37.6189°E', cls: 'danger' },
-        { k: 'Устройство',  v: 'iPhone 13', cls: '' },
-        { k: 'Лиц',         v: '4 распознано', cls: '' },
-        { k: 'Отражение',   v: 'Экран с паролем!', cls: 'danger' },
-        { k: 'Метаданные',  v: 'Не удалены', cls: 'danger' },
+        { k: 'GPS-метка', v: '55.7501°N 37.6189°E', cls: 'danger' },
+        { k: 'Устройство', v: 'iPhone 13', cls: '' },
+        { k: 'Лиц', v: '4 распознано', cls: '' },
+        { k: 'Отражение', v: 'Экран с паролем!', cls: 'danger' },
+        { k: 'Метаданные', v: 'Не удалены', cls: 'danger' },
       ],
     },
   ],
@@ -216,7 +275,7 @@ const ZD = {
   cipher: {
     encrypted: 'ВМТАЩ ЗОБЩВ',
     answerShift: 4,
-    plain: 'РОВИЛ ДОРОГ', // encrypted text decrypted at shift=4
+    plain: 'РОВИЛ ДОРОГ',
     ruAlphabet: 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ',
   },
 
@@ -316,3 +375,6 @@ const ZD = {
     },
   ],
 };
+
+// Auto-load on init
+ZD.loadState();

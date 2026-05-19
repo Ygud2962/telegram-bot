@@ -2,45 +2,77 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>ZERO_DAY: Школьный Протокол</title>
 <link rel="stylesheet" href="styles.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<base target="_blank">
 </head>
 <body>
 <div class="scene">
-  <div class="phone">
+  <div class="ambient-glow"></div>
+  <div class="phone" id="phone">
+    <div class="phone-reflection"></div>
     <div class="btn-power"></div>
     <div class="btn-vol-up"></div>
     <div class="btn-vol-down"></div>
+    <div class="antenna-bands">
+      <div class="ant-band top"></div>
+      <div class="ant-band bottom"></div>
+    </div>
     <div class="notch">
       <div class="notch-speaker"></div>
-      <div class="notch-camera"></div>
+      <div class="notch-camera">
+        <div class="camera-lens"></div>
+        <div class="camera-glint"></div>
+      </div>
+      <div class="proximity-sensor"></div>
     </div>
     <div class="screen-wrap">
       <div class="screen-glass"></div>
-      <div class="status-bar">
+      <div class="screen-bezel"></div>
+      <div class="status-bar" id="statusBar">
         <div class="sb-left">
           <span class="sb-time" id="sbTime">20:14</span>
+        </div>
+        <div class="sb-center">
+          <div class="dynamic-island" id="dynamicIsland"></div>
         </div>
         <div class="sb-right">
           <div class="sb-signal"><span></span><span></span><span></span><span></span></div>
           <div class="sb-wifi">
             <svg width="14" height="11" viewBox="0 0 14 11"><path d="M7 8.5a1 1 0 110 2 1 1 0 010-2zM7 5.5C8.7 5.5 10.2 6.2 11.3 7.3l-1.1 1.1C9.4 7.6 8.3 7 7 7s-2.4.6-3.2 1.4L2.7 7.3C3.8 6.2 5.3 5.5 7 5.5zM7 2C9.6 2 12 3.1 13.7 4.9L12.6 6C11.2 4.5 9.2 3.5 7 3.5S2.8 4.5 1.4 6L.3 4.9C2 3.1 4.4 2 7 2z" fill="currentColor"/></svg>
           </div>
-          <div class="sb-battery">
-            <div class="sb-batt-fill"></div>
+          <div class="sb-battery" id="sbBattery">
+            <div class="sb-batt-fill" id="sbBattFill"></div>
             <div class="sb-batt-cap"></div>
           </div>
         </div>
       </div>
-      <div class="app-frame" id="appFrame"></div>
+      <div class="app-frame" id="appFrame">
+        <div class="preloader" id="preloader">
+          <div class="preloader-logo">ZERO_<em>DAY</em></div>
+          <div class="preloader-bar">
+            <div class="preloader-progress" id="preloaderProgress"></div>
+          </div>
+          <div class="preloader-text">Инициализация протоколов...</div>
+        </div>
+      </div>
       <div class="bottom-nav" id="bottomNav"></div>
       <div class="home-indicator"></div>
     </div>
     <div class="phone-chin">
       <div class="chin-port"></div>
+      <div class="chin-screws">
+        <div class="screw"></div>
+        <div class="screw"></div>
+      </div>
     </div>
   </div>
+  <div class="desk-reflection"></div>
 </div>
 <script src="data.js"></script>
 <script src="app.js"></script>
