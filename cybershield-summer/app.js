@@ -31,6 +31,7 @@
   // ---- DOM REFS ----
   const frame = document.getElementById('appFrame');
   const bottomNav = document.getElementById('bottomNav');
+  const iosHomeBtn = document.getElementById('iosHomeBtn');
   const statusBar = document.getElementById('statusBar');
   const sbTime = document.getElementById('sbTime');
   const sbBattFill = document.getElementById('sbBattFill');
@@ -324,25 +325,7 @@
 
   // ---- BOTTOM NAV ----
   function buildNav() {
-    const items = [
-      { id: 'home',      ico: '🏠', label: 'ГЛАВНАЯ' },
-      { id: 'messenger', ico: '💬', label: 'ЧАТЫ',    badge: getUnreadCount() },
-      { id: 'map',       ico: '🗺️', label: 'КАРТА' },
-      { id: 'shop',      ico: '🛒', label: 'МАГАЗИН' },
-    ];
-    bottomNav.innerHTML = items.map(it => `
-      <div class="nav-item ${it.id === 'home' ? 'active' : ''}" data-nav="${it.id}">
-        ${it.badge ? `<div class="nav-dot"></div>` : ''}
-        <span class="nav-ico">${it.ico}</span>
-        <span class="nav-lbl">${it.label}</span>
-      </div>
-    `).join('');
-    bottomNav.querySelectorAll('.nav-item').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('light');
-        navigateTo(el.dataset.nav);
-      });
-    });
+    if (bottomNav) bottomNav.innerHTML = '';
   }
 
   function getUnreadCount() {
@@ -350,9 +333,7 @@
   }
 
   function setActiveNav(id) {
-    bottomNav.querySelectorAll('.nav-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.nav === id);
-    });
+    return id;
   }
 
   // ---- NAVIGATION ----
@@ -382,9 +363,9 @@
     currentScreen = id;
     setActiveNav(id);
 
-    const hideNav = ['chat', 'terminal', 'gallery', 'browser'].includes(id);
-    bottomNav.classList.toggle('hidden', hideNav);
-    statusBar.classList.toggle('scrolled', hideNav);
+    const compactStatus = ['chat', 'terminal', 'gallery', 'browser'].includes(id);
+    if (bottomNav) bottomNav.classList.toggle('hidden', compactStatus);
+    if (statusBar) statusBar.classList.toggle('scrolled', compactStatus);
   }
 
   function goBack() {
@@ -409,6 +390,14 @@
       goBack();
     }
   });
+
+  if (iosHomeBtn) {
+    iosHomeBtn.addEventListener('click', () => {
+      haptic('medium');
+      showIsland('HOME');
+      navigateTo('home', { force: true, noHistory: true });
+    });
+  }
 
   function renderScreen(id) {
     frame.innerHTML = '';
