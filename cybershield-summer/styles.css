@@ -808,3 +808,457 @@ input[type=range]::-moz-range-thumb{
   .screen-glass{inset:0;border-radius:0}
   .iphone-chin{display:none}
 }
+
+/* ===== CURRENT PHONE SHELL POLISH ===== */
+:root{
+  --phone-ratio:.46154;
+  --phone-max:430px;
+  --shell-radius:56px;
+  --screen-radius:44px;
+  --shell-metal:#303746;
+  --shell-dark:#0a0e17;
+  --shell-edge:#596174;
+  --dock-h:74px;
+}
+
+body{
+  background:#05070d;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  touch-action:manipulation;
+}
+
+.scene{
+  min-height:100svh;
+  padding:clamp(8px,2.4vmin,22px);
+  overflow:hidden;
+  background:
+    linear-gradient(120deg,rgba(255,255,255,.035) 0 1px,transparent 1px 42px),
+    linear-gradient(30deg,rgba(255,255,255,.025) 0 1px,transparent 1px 36px),
+    radial-gradient(900px 640px at 50% -160px,rgba(94,199,255,.16),transparent 62%),
+    radial-gradient(900px 640px at 24% 110%,rgba(0,229,160,.10),transparent 58%),
+    linear-gradient(180deg,#080b13 0%,#03050a 100%);
+  perspective:1400px;
+}
+
+.ambient-glow{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.05),transparent 18%),
+    repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 4px);
+  mix-blend-mode:screen;
+  opacity:.45;
+}
+
+.desk-reflection{
+  position:fixed;
+  left:12%;
+  right:12%;
+  bottom:-10%;
+  height:28%;
+  pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(88,183,255,.16),transparent 62%);
+  filter:blur(30px);
+  opacity:.7;
+}
+
+.phone{
+  position:relative;
+  width:min(var(--phone-max),calc((100svh - 28px) * var(--phone-ratio)),calc(100vw - 16px));
+  aspect-ratio:9/19.5;
+  display:flex;
+  flex-direction:column;
+  flex-shrink:0;
+  border-radius:var(--shell-radius);
+  background:
+    linear-gradient(145deg,#647083 0%,#1a202b 13%,#090d16 48%,#202735 82%,#758094 100%);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.16),
+    0 0 0 3px rgba(0,0,0,.92),
+    inset 0 1px 0 rgba(255,255,255,.2),
+    inset 0 -22px 34px rgba(0,0,0,.48),
+    0 34px 90px rgba(0,0,0,.72),
+    0 0 60px rgba(88,183,255,.14);
+  transform-style:preserve-3d;
+}
+
+.phone:hover{
+  transform:rotateX(1.6deg) rotateY(-1.6deg);
+}
+
+.phone::before{
+  content:'';
+  position:absolute;
+  inset:7px;
+  border-radius:calc(var(--shell-radius) - 8px);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:inset 0 0 28px rgba(255,255,255,.035);
+  pointer-events:none;
+  z-index:2;
+}
+
+.phone::after{
+  content:'';
+  position:absolute;
+  inset:-10px;
+  border-radius:calc(var(--shell-radius) + 12px);
+  background:linear-gradient(130deg,rgba(255,255,255,.18),transparent 24%,transparent 70%,rgba(255,255,255,.06));
+  pointer-events:none;
+  z-index:-1;
+  filter:blur(.2px);
+}
+
+.phone-reflection{
+  position:absolute;
+  inset:0;
+  border-radius:var(--shell-radius);
+  pointer-events:none;
+  z-index:80;
+  background:
+    linear-gradient(122deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.045) 22%,transparent 42%),
+    linear-gradient(290deg,rgba(255,255,255,.08),transparent 28%);
+  opacity:.72;
+}
+
+.btn-power,
+.btn-vol-up,
+.btn-vol-down{
+  position:absolute;
+  width:4px;
+  background:linear-gradient(180deg,#6c7588,#202838 45%,#596275);
+  box-shadow:0 1px 4px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.18);
+  z-index:4;
+}
+
+.btn-power{
+  right:-4px;
+  top:18%;
+  height:10%;
+  border-radius:0 4px 4px 0;
+}
+
+.btn-vol-up{
+  left:-4px;
+  top:15%;
+  height:6.7%;
+  border-radius:4px 0 0 4px;
+}
+
+.btn-vol-down{
+  left:-4px;
+  top:23%;
+  height:6.7%;
+  border-radius:4px 0 0 4px;
+}
+
+.antenna-bands{
+  position:absolute;
+  inset:0;
+  border-radius:var(--shell-radius);
+  pointer-events:none;
+  z-index:3;
+}
+
+.ant-band{
+  position:absolute;
+  left:4px;
+  right:4px;
+  height:2px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);
+}
+
+.ant-band.top{top:9.8%}
+.ant-band.bottom{bottom:9.8%}
+
+.notch{
+  position:absolute;
+  top:12px;
+  left:50%;
+  width:clamp(116px,33%,138px);
+  height:clamp(31px,4.4%,38px);
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  padding:0 11px;
+  border-radius:999px;
+  background:linear-gradient(180deg,#070911,#000);
+  border:1px solid rgba(255,255,255,.06);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 5px 16px rgba(0,0,0,.45);
+  z-index:30;
+}
+
+.notch-speaker{
+  width:50px;
+  height:5px;
+  border-radius:99px;
+  background:#171b25;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.9);
+}
+
+.notch-camera{
+  position:relative;
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  background:#05070d;
+  border:1px solid #222b3d;
+  box-shadow:inset 0 0 4px #000,0 0 8px rgba(88,183,255,.12);
+}
+
+.camera-lens{
+  position:absolute;
+  inset:2px;
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#334461,#05070d 65%);
+}
+
+.camera-glint{
+  position:absolute;
+  top:2px;
+  right:3px;
+  width:3px;
+  height:3px;
+  border-radius:50%;
+  background:rgba(255,255,255,.36);
+}
+
+.proximity-sensor{
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:#121720;
+}
+
+.screen-wrap{
+  position:relative;
+  flex:1;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  margin:12px 12px 0;
+  padding-top:54px;
+  overflow:hidden;
+  border-radius:var(--screen-radius);
+  background:
+    linear-gradient(180deg,rgba(18,25,39,.98),rgba(4,7,13,.99) 44%,#000 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.08),
+    inset 0 0 32px rgba(0,0,0,.74);
+}
+
+.screen-bezel{
+  position:absolute;
+  inset:0;
+  border-radius:var(--screen-radius);
+  border:2px solid rgba(0,0,0,.82);
+  pointer-events:none;
+  z-index:70;
+}
+
+.screen-glass{
+  position:absolute;
+  inset:0;
+  border-radius:var(--screen-radius);
+  pointer-events:none;
+  z-index:75;
+  background:
+    linear-gradient(122deg,rgba(255,255,255,.12),rgba(255,255,255,.025) 24%,transparent 48%),
+    linear-gradient(290deg,transparent 58%,rgba(255,255,255,.045));
+}
+
+.status-bar{
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  height:54px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  padding:0 27px 9px;
+  z-index:45;
+  background:linear-gradient(180deg,rgba(0,0,0,.56),transparent);
+}
+
+.sb-left .sb-time{
+  letter-spacing:0;
+  font-size:15px;
+}
+
+.sb-center .dynamic-island{
+  position:absolute;
+  left:50%;
+  top:10px;
+  width:96px;
+  height:28px;
+  transform:translateX(-50%);
+  border-radius:999px;
+  background:#000;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07);
+  padding:0;
+}
+
+.app-frame{
+  flex:1;
+  min-height:0;
+  overflow:hidden;
+  position:relative;
+  background:#000;
+}
+
+.screen{
+  min-height:0;
+}
+
+.bottom-nav{
+  display:none!important;
+}
+
+.ios-home-dock{
+  height:var(--dock-h);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+  padding:8px 0 15px;
+  border-top:1px solid rgba(255,255,255,.08);
+  background:linear-gradient(180deg,rgba(0,0,0,.25),rgba(0,0,0,.92) 66%);
+  backdrop-filter:blur(26px) saturate(1.15);
+  -webkit-backdrop-filter:blur(26px) saturate(1.15);
+}
+
+.ios-home-btn{
+  position:relative;
+  width:62px;
+  height:62px;
+  border:1px solid rgba(255,255,255,.22);
+  border-radius:50%;
+  cursor:pointer;
+  background:
+    radial-gradient(circle at 32% 24%,rgba(255,255,255,.32),rgba(255,255,255,.07) 40%,rgba(0,0,0,.88) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.36),
+    inset 0 -9px 18px rgba(0,0,0,.58),
+    0 9px 24px rgba(0,0,0,.42),
+    0 0 20px rgba(88,183,255,.2);
+}
+
+.ios-home-btn:active{
+  transform:scale(.96);
+}
+
+.ios-home-glyph{
+  font-size:0;
+}
+
+.ios-home-glyph::before,
+.ios-home-ring{
+  content:'';
+  position:absolute;
+  inset:17px;
+  border-radius:50%;
+  border:1.5px solid rgba(235,245,255,.78);
+  box-shadow:0 0 10px rgba(88,183,255,.16),inset 0 0 8px rgba(255,255,255,.1);
+}
+
+.phone-chin{
+  height:24px;
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+}
+
+.chin-port{
+  width:44px;
+  height:6px;
+  border-radius:99px;
+  background:#0d111a;
+  border:1px solid rgba(255,255,255,.05);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.9);
+}
+
+.chin-screws{
+  position:absolute;
+  left:22px;
+  right:22px;
+  bottom:8px;
+  display:flex;
+  justify-content:space-between;
+}
+
+.screw{
+  width:4px;
+  height:4px;
+  border-radius:50%;
+  background:#171d29;
+  box-shadow:inset 0 1px 1px rgba(0,0,0,.9);
+}
+
+@media(max-width:520px){
+  .scene{
+    padding:4px;
+  }
+
+  .phone{
+    width:min(calc(100vw - 8px),calc((100svh - 8px) * var(--phone-ratio)));
+    max-height:calc(100svh - 8px);
+  }
+
+  .phone:hover{
+    transform:none;
+  }
+}
+
+@media(max-width:380px), (max-height:720px){
+  :root{
+    --dock-h:66px;
+    --shell-radius:46px;
+    --screen-radius:36px;
+  }
+
+  .scene{
+    padding:3px;
+  }
+
+  .screen-wrap{
+    margin:9px 9px 0;
+    padding-top:50px;
+  }
+
+  .status-bar{
+    height:50px;
+    padding:0 22px 8px;
+  }
+
+  .notch{
+    top:9px;
+    height:30px;
+  }
+
+  .ios-home-btn{
+    width:54px;
+    height:54px;
+  }
+}
+
+@media(orientation:landscape) and (max-height:560px){
+  .scene{
+    padding:4px;
+  }
+
+  .phone{
+    width:min(380px,calc((100svh - 8px) * var(--phone-ratio)),calc(100vw - 8px));
+  }
+
+  .btn-power,
+  .btn-vol-up,
+  .btn-vol-down{
+    display:none;
+  }
+}

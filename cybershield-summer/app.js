@@ -7,6 +7,7 @@
 
   const frame = document.getElementById('appFrame');
   const bottomNav = document.getElementById('bottomNav');
+  const iosHomeBtn = document.getElementById('iosHomeBtn');
   let currentScreen = 'home';
   let currentChat = null;
 
@@ -713,6 +714,10 @@
   // ==================================================
   // INIT
   // ==================================================
+  if (iosHomeBtn) {
+    iosHomeBtn.addEventListener('click', () => navigateTo('home'));
+  }
+
   buildNav();
   buildHome();
 
