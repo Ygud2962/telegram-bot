@@ -1,1007 +1,729 @@
-// ============================================================
-// ZERO_DAY: Школьный Протокол — APP ENGINE v2.0
-// Production-ready with animations, haptics, state persistence
-// ============================================================
-
-(function () {
-  'use strict';
-
-  // ---- TELEGRAM WEBAPP ----
-  const tg = window.Telegram?.WebApp;
-  if (tg) {
-    tg.ready();
-    tg.expand();
-    tg.enableClosingConfirmation?.();
-    if (tg.setHeaderColor) tg.setHeaderColor('#0a0a0f');
-    if (tg.setBackgroundColor) tg.setBackgroundColor('#0a0a0f');
-  }
-
-  function haptic(type) {
-    if (tg?.HapticFeedback) {
-      if (type === 'light') tg.HapticFeedback.impactOccurred('light');
-      if (type === 'medium') tg.HapticFeedback.impactOccurred('medium');
-      if (type === 'heavy') tg.HapticFeedback.impactOccurred('heavy');
-      if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
-      if (type === 'error') tg.HapticFeedback.notificationOccurred('error');
-      if (type === 'warning') tg.HapticFeedback.notificationOccurred('warning');
-    }
-  }
-
-  // ---- DOM REFS ----
-  const frame = document.getElementById('appFrame');
-  const bottomNav = document.getElementById('bottomNav');
-  const statusBar = document.getElementById('statusBar');
-  const sbTime = document.getElementById('sbTime');
-  const sbBattFill = document.getElementById('sbBattFill');
-  const preloader = document.getElementById('preloader');
-  const preloaderProgress = document.getElementById('preloaderProgress');
-  const dynamicIsland = document.getElementById('dynamicIsland');
-
-  // ---- STATE ----
-  let currentScreen = 'home';
-  let currentChat = null;
-  let navHistory = [];
-  let isTransitioning = false;
-  let islandTimeout = null;
-
-  // ---- CLOCK & BATTERY ----
-  function updateClock() {
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    if (sbTime) sbTime.textContent = h + ':' + m;
-  }
-  updateClock();
-  setInterval(updateClock, 15000);
-
-  function updateBattery() {
-    if ('getBattery' in navigator) {
-      navigator.getBattery().then(bat => {
-        const level = Math.round(bat.level * 100);
-        if (sbBattFill) {
-          sbBattFill.style.width = level + '%';
-          if (level <= 20) sbBattFill.classList.add('low');
-          else sbBattFill.classList.remove('low');
-          if (bat.charging) sbBattFill.classList.add('charging');
-          else sbBattFill.classList.remove('charging');
-        }
-      });
-    }
-  }
-  updateBattery();
-
-  // ---- PRELOADER ----
-  function runPreloader() {
-    if (!preloader || !preloaderProgress) return;
-    preloaderProgress.style.animation = 'preloaderProgress 1.8s ease forwards';
-    setTimeout(() => {
-      preloader.classList.add('done');
-      setTimeout(() => preloader.remove(), 600);
-    }, 2000);
-  }
-  setTimeout(runPreloader, 100);
-
-  // ---- TOAST ----
-  function toast(msg, type = 'success') {
-    const t = document.createElement('div');
-    t.className = 'toast ' + (type || '');
-    t.textContent = msg;
-    frame.appendChild(t);
-    haptic(type === 'danger' ? 'error' : type === 'warn' ? 'warning' : 'success');
-    setTimeout(() => t.remove(), 2200);
-  }
-
-  // ---- DYNAMIC ISLAND ----
-  function showIsland(text, duration = 2000) {
-    if (!dynamicIsland) return;
-    dynamicIsland.textContent = text;
-    dynamicIsland.classList.add('active');
-    clearTimeout(islandTimeout);
-    islandTimeout = setTimeout(() => {
-      dynamicIsland.classList.remove('active');
-      dynamicIsland.textContent = '';
-    }, duration);
-  }
-
-  // ---- STARS ----
-  function addStars(n) {
-    if (n <= 0) return;
-    ZD.state.stars += n;
-    updateStarsDisplay();
-    toast('+' + n + ' ⭐ Stars', 'success');
-    ZD.saveState();
-  }
-
-  function updateStarsDisplay() {
-    document.querySelectorAll('.stars-val').forEach(el => {
-      el.textContent = ZD.state.stars;
-    });
-  }
-
-  // ---- RIPPLE EFFECT ----
-  function createRipple(e, el) {
-    const rect = el.getBoundingClientRect();
-    const ripple = document.createElement('span');
-    const size = Math.max(rect.width, rect.height);
-    ripple.style.width = ripple.style.height = size + 'px';
-    ripple.style.left = (e.clientX - rect.left - size/2) + 'px';
-    ripple.style.top = (e.clientY - rect.top - size/2) + 'px';
-    ripple.className = 'ripple';
-    el.appendChild(ripple);
-    setTimeout(() => ripple.remove(), 600);
-  }
-
-  function bindRipple(selector, container) {
-    (container || document).querySelectorAll(selector).forEach(el => {
-      el.style.position = 'relative';
-      el.style.overflow = 'hidden';
-      el.addEventListener('click', e => createRipple(e, el));
-    });
-  }
-
-  // ---- BOTTOM NAV ----
-  function buildNav() {
-    const items = [
-      { id: 'home',      ico: '🏠', label: 'ГЛАВНАЯ' },
-      { id: 'messenger', ico: '💬', label: 'ЧАТЫ',    badge: 2 },
-      { id: 'map',       ico: '🗺️', label: 'КАРТА' },
-      { id: 'shop',      ico: '🛒', label: 'МАГАЗИН' },
-    ];
-    bottomNav.innerHTML = items.map(it => `
-      <div class="nav-item ${it.id === 'home' ? 'active' : ''}" data-nav="${it.id}">
-        ${it.badge ? `<div class="nav-dot"></div>` : ''}
-        <span class="nav-ico">${it.ico}</span>
-        <span class="nav-lbl">${it.label}</span>
-      </div>
-    `).join('');
-    bottomNav.querySelectorAll('.nav-item').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('light');
-        navigateTo(el.dataset.nav);
-      });
-    });
-  }
-
-  function setActiveNav(id) {
-    bottomNav.querySelectorAll('.nav-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.nav === id);
-    });
-  }
-
-  // ---- NAVIGATION ----
-  function navigateTo(id, options = {}) {
-    if (isTransitioning && !options.force) return;
-    if (id === currentScreen && !options.force) return;
-
-    isTransitioning = true;
-    haptic('light');
-
-    if (!options.noHistory && currentScreen !== id) {
-      navHistory.push(currentScreen);
-    }
-
-    const oldScreen = frame.querySelector('.screen.active');
-    if (oldScreen && !options.noAnimate) {
-      oldScreen.classList.add('exiting');
-      setTimeout(() => {
-        renderScreen(id);
-        isTransitioning = false;
-      }, 250);
-    } else {
-      renderScreen(id);
-      isTransitioning = false;
-    }
-
-    currentScreen = id;
-    setActiveNav(id);
-
-    // Show/hide bottom nav
-    const hideNav = ['chat', 'terminal', 'gallery', 'browser'].includes(id);
-    bottomNav.classList.toggle('hidden', hideNav);
-
-    // Update status bar
-    statusBar.classList.toggle('scrolled', hideNav);
-  }
-
-  function goBack() {
-    if (navHistory.length > 0) {
-      const prev = navHistory.pop();
-      navigateTo(prev, { noHistory: true });
-    } else {
-      navigateTo('home');
-    }
-  }
-
-  // Handle hardware back button / swipe
-  if (tg) {
-    tg.BackButton.onClick(() => {
-      haptic('medium');
-      goBack();
-    });
-  }
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Backspace' || e.key === 'Escape') {
-      e.preventDefault();
-      goBack();
-    }
-  });
-
-  function renderScreen(id) {
-    frame.innerHTML = '';
-    switch (id) {
-      case 'home':      buildHome(); break;
-      case 'messenger': buildMessengerList(); break;
-      case 'chat':      buildChat(currentChat); break;
-      case 'gallery':   buildGallery(); break;
-      case 'browser':   buildBrowser(); break;
-      case 'map':       buildMap(); break;
-      case 'terminal':  buildTerminal(); break;
-      case 'shop':      buildShop(); break;
-      default:          buildHome();
-    }
-  }
-
-  function screenDiv(id) {
-    const s = document.createElement('div');
-    s.className = 'screen active';
-    s.id = id;
-    frame.appendChild(s);
-    return s;
-  }
-
-  function header(backTo, title, sub, extra) {
-    return `
-      <div class="screen-header">
-        <div class="back-btn" data-back="${backTo}">←</div>
-        <div>
-          <div class="hdr-title">${title}</div>
-          ${sub ? `<div class="hdr-sub">${sub}</div>` : ''}
-        </div>
-        ${extra || ''}
-      </div>
-    `;
-  }
-
-  function bindBack(s) {
-    s.querySelectorAll('[data-back]').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('medium');
-        goBack();
-      });
-    });
-  }
-
-  // ==================================================
-  // HOME
-  // ==================================================
-  function buildHome() {
-    const s = screenDiv('homeScreen');
-    s.innerHTML = `
-      <div class="scrollable">
-        <div class="home-hero">
-          <div class="hero-act">АКТ ${ZD.state.act} · ЭПИЗОД ${ZD.state.episode}</div>
-          <div class="hero-title">ZERO_<em>DAY</em></div>
-          <div class="hero-subtitle">ШКОЛЬНЫЙ ПРОТОКОЛ · ОТРЯД 404</div>
-          <div class="ep-card" data-goto="chat" data-chat="dasha">
-            <div>
-              <div class="ep-num">EP.03 · АКТИВЕН</div>
-              <div class="ep-name">«Файл от Марины»</div>
-              <div class="ep-meta">Фишинг · Социальная инженерия</div>
-            </div>
-            <div class="ep-play">▶</div>
-          </div>
-        </div>
-        <div class="notif-strip" data-goto="messenger">
-          📨 Новое сообщение от <strong style="margin:0 4px;color:var(--accent)">Даши Ковы</strong> — Отряд 404
-        </div>
-        <div class="home-apps">
-          <div class="section-lbl">ПРИЛОЖЕНИЯ</div>
-          <div class="apps-grid">
-            <div class="app-tile has-badge" data-goto="messenger">
-              <div class="app-tile-ico">💬</div>
-              <div class="app-tile-lbl">МЕССЕНДЖЕР</div>
-            </div>
-            <div class="app-tile" data-goto="gallery">
-              <div class="app-tile-ico">🖼️</div>
-              <div class="app-tile-lbl">ГАЛЕРЕЯ</div>
-            </div>
-            <div class="app-tile" data-goto="browser">
-              <div class="app-tile-ico">🌐</div>
-              <div class="app-tile-lbl">БРАУЗЕР</div>
-            </div>
-            <div class="app-tile" data-goto="map">
-              <div class="app-tile-ico">🗺️</div>
-              <div class="app-tile-lbl">КАРТА</div>
-            </div>
-            <div class="app-tile" data-goto="terminal">
-              <div class="app-tile-ico">💻</div>
-              <div class="app-tile-lbl">ТЕРМИНАЛ</div>
-            </div>
-            <div class="app-tile" data-goto="shop">
-              <div class="app-tile-ico">🛒</div>
-              <div class="app-tile-lbl">МАГАЗИН</div>
-            </div>
-          </div>
-        </div>
-        <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-val stars-val">${ZD.state.stars}</div>
-            <div class="stat-lbl">⭐ STARS</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val">${ZD.state.trust}%</div>
-            <div class="stat-lbl">ДОВЕРИЕ</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val">${ZD.state.reputation}</div>
-            <div class="stat-lbl">РЕПУТАЦИЯ</div>
-          </div>
-        </div>
-      </div>
-    `;
-    s.querySelectorAll('[data-goto]').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('medium');
-        const chat = el.dataset.chat;
-        if (chat) { currentChat = chat; navigateTo('chat'); }
-        else navigateTo(el.dataset.goto);
-      });
-    });
-    bindRipple('.app-tile, .ep-card, .notif-strip, .stat-card', s);
-  }
-
-  // ==================================================
-  // MESSENGER LIST
-  // ==================================================
-  function buildMessengerList() {
-    const s = screenDiv('messengerScreen');
-    let rows = ZD.contacts.map(c => `
-      <div class="chat-list-item" data-chat="${c.id}">
-        <div class="chat-avatar ${c.online ? 'avatar-online' : ''}" style="background:${c.color}">${c.initials}</div>
-        <div class="chat-info">
-          <div class="chat-name">${c.name}</div>
-          <div class="chat-preview">${c.preview}</div>
-        </div>
-        <div class="chat-meta">
-          <div class="chat-time">${c.time}</div>
-          ${c.unread ? `<span class="chat-unread">${c.unread}</span>` : ''}
-        </div>
-      </div>
-    `).join('');
-    s.innerHTML = `
-      ${header('home', 'Сообщения', null, `<span style="margin-left:auto;font-size:11px;color:var(--muted)">✏️</span>`)}
-      <div class="scrollable">${rows}</div>
-    `;
-    bindBack(s);
-    s.querySelectorAll('.chat-list-item').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('medium');
-        currentChat = el.dataset.chat;
-        navigateTo('chat');
-      });
-    });
-    bindRipple('.chat-list-item', s);
-  }
-
-  // ==================================================
-  // CHAT DETAIL
-  // ==================================================
-  function buildChat(contactId) {
-    const contact = ZD.contacts.find(c => c.id === contactId);
-    if (!contact) return buildMessengerList();
-    const msgs = ZD.messages[contactId] || [];
-    const choices = ZD.choices[contactId];
-
-    const s = screenDiv('chatScreen');
-
-    const msgsHtml = msgs.map((m, i) => {
-      const delay = i * 0.05;
-      if (m.from === 'system') return `<div class="bubble bubble-system" style="animation-delay:${delay}s">${m.text}</div>`;
-      if (m.from === 'in') return `<div class="bubble bubble-in" style="animation-delay:${delay}s">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
-      if (m.from === 'out') return `<div class="bubble bubble-out" style="animation-delay:${delay}s">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
-      return '';
-    }).join('');
-
-    const choicesHtml = choices && !ZD.state.choiceMade ? `
-      <div class="choices-wrap" id="choicesWrap">
-        <div class="choices-lbl">ТВОЙ ВЫБОР</div>
-        ${choices.map(c => `
-          <button class="choice ${c.good ? '' : 'bad'}" data-key="${c.key}">
-            <span class="choice-key">[${c.key}]</span>${c.text}
-          </button>
-        `).join('')}
-      </div>
-    ` : choices && ZD.state.choiceMade ? `
-      <div class="choices-wrap">
-        <div class="choices-lbl" style="color:var(--accent)">✓ ВЫБОР СДЕЛАН · ПОСЛЕДСТВИЯ В ЭП.5</div>
-      </div>
-    ` : '';
-
-    s.innerHTML = `
-      <div class="screen-header">
-        <div class="back-btn" data-back="messenger">←</div>
-        <div class="chat-avatar" style="background:${contact.color};width:36px;height:36px;font-size:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;box-shadow:0 2px 8px ${contact.color}40">${contact.initials}</div>
-        <div>
-          <div class="hdr-title">${contact.name}</div>
-          <div class="hdr-sub" style="color:${contact.online ? 'var(--accent)' : 'var(--muted)'};font-size:11px">
-            ${contact.online ? '● онлайн' : '● был(а) недавно'}
-          </div>
-        </div>
-      </div>
-      <div class="chat-bg" id="chatBg">
-        <div class="bubble bubble-system">Сегодня · 19:47</div>
-        ${msgsHtml}
-        <div class="typing-bub" id="typingBub">
-          <div class="td"></div><div class="td"></div><div class="td"></div>
-        </div>
-      </div>
-      ${choicesHtml}
-    `;
-    bindBack(s);
-
-    const chatBg = s.querySelector('#chatBg');
-    if (chatBg) {
-      requestAnimationFrame(() => {
-        chatBg.scrollTop = chatBg.scrollHeight;
-      });
-    }
-
-    if (choices && !ZD.state.choiceMade) {
-      s.querySelectorAll('.choice').forEach(btn => {
-        btn.addEventListener('click', () => {
-          haptic('medium');
-          handleChoice(contactId, btn.dataset.key, s);
-        });
-      });
-    }
-    bindRipple('.choice', s);
-  }
-
-  function handleChoice(contactId, key, s) {
-    if (ZD.state.choiceMade) return;
-    ZD.state.choiceMade = true;
-    ZD.saveState();
-    const reply = ZD.choiceReplies[key];
-
-    s.querySelectorAll('.choice').forEach(b => {
-      b.disabled = true;
-      b.style.opacity = b.dataset.key === key ? '1' : '0.35';
-      if (b.dataset.key === key) b.classList.add('selected');
-    });
-
-    const chatBg = s.querySelector('#chatBg');
-    const typingBub = s.querySelector('#typingBub');
-    const choicesWrap = s.querySelector('#choicesWrap');
-
-    const outTexts = {
-      A: 'Всем стоп! «Расписание_новое.exe» — это вирус. Не открывайте!',
-      B: '...ладно, сам посмотрю что там.',
-      C: 'Давай сначала напишем самой Марине — проверим, она ли это.'
-    };
-
-    const outBub = document.createElement('div');
-    outBub.className = 'bubble bubble-out';
-    outBub.style.animationDelay = '0s';
-    outBub.innerHTML = outTexts[key] + `<div class="bub-time">19:49</div>`;
-    chatBg.insertBefore(outBub, typingBub);
-    chatBg.scrollTop = chatBg.scrollHeight;
-
-    typingBub.style.display = 'flex';
-    chatBg.scrollTop = chatBg.scrollHeight;
-
-    setTimeout(() => {
-      typingBub.style.display = 'none';
-      const inBub = document.createElement('div');
-      inBub.className = 'bubble bubble-in';
-      inBub.style.animationDelay = '0s';
-      inBub.innerHTML = reply.text + `<div class="bub-time">19:50</div>`;
-      chatBg.insertBefore(inBub, typingBub);
-      chatBg.scrollTop = chatBg.scrollHeight;
-
-      if (choicesWrap) {
-        choicesWrap.innerHTML = `<div class="choices-lbl" style="color:var(--accent)">✓ ВЫБОР СДЕЛАН · ПОСЛЕДСТВИЯ В ЭП.5</div>`;
-      }
-
-      if (reply.stars > 0) {
-        addStars(reply.stars);
-      } else {
-        toast(reply.text, 'warn');
-      }
-
-      showIsland('Выбор сохранён');
-    }, 2200);
-  }
-
-  // ==================================================
-  // GALLERY
-  // ==================================================
-  function buildGallery() {
-    const s = screenDiv('galleryScreen');
-    const thumbs = ZD.gallery.map((item, i) => {
-      const cls = ZD.state.analyzed.has(item.id) ? 'analyzed' : (item.flagged ? 'flagged' : '');
-      return `<div class="gal-thumb ${cls}" data-item="${item.id}" style="animation-delay:${i*0.05}s">${item.emoji}</div>`;
-    }).join('');
-
-    s.innerHTML = `
-      ${header('home', 'Галерея · Улики', `${ZD.gallery.length} файлов`)}
-      <div class="gal-grid">${thumbs}</div>
-      <div id="galDetailOverlay">
-        <div class="screen-header">
-          <div class="back-btn" id="galDetailBack">←</div>
-          <div>
-            <div class="hdr-title" id="galDetailName">—</div>
-            <div class="hdr-sub" id="galDetailDesc">—</div>
-          </div>
-        </div>
-        <div class="gal-detail-img" id="galDetailImg">
-          <div class="gal-scan-overlay" id="galScanOverlay"></div>
-          <div class="scan-anim" id="scanAnim"></div>
-          <span id="galDetailEmoji" style="font-size:90px;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.5));transition:transform 0.3s ease"></span>
-        </div>
-        <button class="analyze-btn" id="analyzeBtn">▶ АНАЛИЗИРОВАТЬ МЕТАДАННЫЕ</button>
-        <div class="exif-panel scrollable" id="exifPanel"></div>
-      </div>
-    `;
-    bindBack(s);
-
-    s.querySelector('#galDetailBack').addEventListener('click', () => {
-      haptic('light');
-      s.querySelector('#galDetailOverlay').classList.remove('open');
-    });
-
-    s.querySelectorAll('.gal-thumb').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('medium');
-        openGalDetail(el.dataset.item, s);
-      });
-    });
-  }
-
-  function openGalDetail(itemId, s) {
-    const item = ZD.gallery.find(g => g.id === itemId);
-    if (!item) return;
-    const overlay = s.querySelector('#galDetailOverlay');
-    overlay.classList.add('open');
-    s.querySelector('#galDetailName').textContent = item.name;
-    s.querySelector('#galDetailDesc').textContent = item.desc;
-    s.querySelector('#galDetailEmoji').textContent = item.emoji;
-
-    const exifPanel = s.querySelector('#exifPanel');
-    const btn = s.querySelector('#analyzeBtn');
-
-    if (ZD.state.analyzed.has(itemId)) {
-      renderExif(item, exifPanel);
-      btn.textContent = '✓ ПРОАНАЛИЗИРОВАНО';
-      btn.style.borderColor = 'var(--accent)';
-      btn.disabled = true;
-    } else {
-      exifPanel.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:10px 0;text-align:center">Нажми «Анализировать» для извлечения метаданных</div>`;
-      btn.textContent = '▶ АНАЛИЗИРОВАТЬ МЕТАДАННЫЕ';
-      btn.style.borderColor = 'var(--accent)';
-      btn.disabled = false;
-    }
-
-    btn.onclick = () => {
-      haptic('medium');
-      startAnalysis(itemId, item, s);
-    };
-  }
-
-  function renderExif(item, panel) {
-    panel.innerHTML = item.exif.map((row, i) => `
-      <div class="exif-row" style="animation:slideRight 0.3s ease ${i*0.05}s both">
-        <span class="exif-k">${row.k}</span>
-        <span class="exif-v ${row.cls || ''}">${row.v}</span>
-      </div>
-    `).join('');
-  }
-
-  function startAnalysis(itemId, item, s) {
-    if (ZD.state.analyzed.has(itemId)) return;
-    const btn = s.querySelector('#analyzeBtn');
-    const scanAnim = s.querySelector('#scanAnim');
-    const scanOverlay = s.querySelector('#galScanOverlay');
-    const emoji = s.querySelector('#galDetailEmoji');
-
-    btn.textContent = '⏳ СКАНИРОВАНИЕ...';
-    btn.style.opacity = '0.6';
-    btn.disabled = true;
-    scanAnim.style.display = 'block';
-    scanOverlay.style.display = 'block';
-    emoji.style.transform = 'scale(1.1)';
-
-    haptic('heavy');
-
-    setTimeout(() => {
-      ZD.state.analyzed.add(itemId);
-      ZD.saveState();
-      scanAnim.style.display = 'none';
-      scanOverlay.style.display = 'none';
-      emoji.style.transform = 'scale(1)';
-      btn.textContent = '✓ ПРОАНАЛИЗИРОВАНО';
-      btn.style.opacity = '1';
-      btn.style.borderColor = 'var(--accent)';
-      renderExif(item, s.querySelector('#exifPanel'));
-
-      if (item.flagged) {
-        addStars(3);
-        showIsland('Угроза обнаружена!');
-      } else {
-        toast('Анализ завершён', 'success');
-        showIsland('Метаданные извлечены');
-      }
-    }, 2000);
-  }
-
-  // ==================================================
-  // BROWSER
-  // ==================================================
-  function buildBrowser() {
-    const s = screenDiv('browserScreen');
-
-    s.innerHTML = `
-      <div class="screen-header">
-        <div class="back-btn" data-back="home">←</div>
-        <div style="display:flex;gap:6px;font-size:12px;color:var(--muted)">
-          <span style="cursor:pointer;padding:4px;border-radius:4px;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">←</span>
-          <span style="cursor:pointer;padding:4px;border-radius:4px;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">→</span>
-          <span style="cursor:pointer;padding:4px;border-radius:4px;transition:background 0.15s" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">↻</span>
-        </div>
-      </div>
-      <div class="url-bar-wrap">
-        <div class="url-bar">
-          <span class="url-lock http" id="urlLock">🔓</span>
-          <span class="url-txt" id="urlTxt">sekur-bank-online.ru</span>
-        </div>
-      </div>
-      <div class="site-content scrollable">
-        <div class="site-topbar">
-          <div class="site-logo">🏦 СекурБанк Online</div>
-          <div class="site-tagline">Ваш надёжный партнёр · 24/7</div>
-          <div class="site-nav-row">
-            <span class="site-nav-item">Вход</span>
-            <span class="site-nav-item">Кабинет</span>
-            <span class="site-nav-item">Поддержка</span>
-            <span class="site-nav-item">О банке</span>
-          </div>
-        </div>
-        <div class="site-body">
-          <div class="phish-warning">
-            <div class="phish-w-title">⚠️ СРОЧНО: Ваш аккаунт заблокирован</div>
-            <div class="phish-w-txt">Для восстановления доступа введите данные карты в течение 24 часов.</div>
-          </div>
-          <div class="site-headline">Подтвердите личность — введите данные карты</div>
-          <div class="site-meta">Обновлено сегодня в 18:30 · Служба безопасности</div>
-          <div class="site-para">Уважаемый клиент! В целях безопасности нам необходимо подтвердить вашу личность. Нажмите кнопку ниже и введите полные реквизиты карты.</div>
-          <div class="flags-box">
-            <div class="flags-title">🔍 НАЙДИ ПРИЗНАКИ ФИШИНГА</div>
-            <div class="flag-row" data-flag="1"><div class="flag-chk" id="fc1"></div><span>Подозрительный домен — не официальный сайт банка</span></div>
-            <div class="flag-row" data-flag="2"><div class="flag-chk" id="fc2"></div><span>Нет защищённого соединения (HTTP вместо HTTPS)</span></div>
-            <div class="flag-row" data-flag="3"><div class="flag-chk" id="fc3"></div><span>Создание искусственной срочности («24 часа»)</span></div>
-            <div class="flag-row" data-flag="4"><div class="flag-chk" id="fc4"></div><span>Запрос данных карты — настоящий банк так не делает</span></div>
-            <div class="flags-success" id="flagsSuccess">
-              ✓ Отлично! Все 4 признака фишинга найдены.<br>Ты защитил бы себя от кражи данных. +5 ⭐
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-    bindBack(s);
-
-    s.querySelectorAll('.flag-row').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('light');
-        handleFlag(el.dataset.flag, s);
-      });
-    });
-    bindRipple('.flag-row', s);
-  }
-
-  function handleFlag(n, s) {
-    if (ZD.state.foundFlags.has(n)) return;
-    ZD.state.foundFlags.add(n);
-    ZD.saveState();
-
-    const row = s.querySelector(`[data-flag="${n}"]`);
-    const chk = s.querySelector(`#fc${n}`);
-    if (row) {
-      row.classList.add('found');
-      row.style.animation = 'successPop 0.4s ease';
-    }
-    if (chk) {
-      chk.textContent = '✓';
-      chk.style.animation = 'scaleIn 0.3s ease';
-    }
-
-    if (n === '2') {
-      const lock = s.querySelector('#urlLock');
-      if (lock) { lock.textContent = '🔓'; lock.style.animation = 'shake 0.5s ease'; }
-    }
-
-    haptic('success');
-
-    if (ZD.state.foundFlags.size >= 4) {
-      const succ = s.querySelector('#flagsSuccess');
-      if (succ) {
-        succ.style.display = 'block';
-        succ.style.animation = 'successPop 0.5s cubic-bezier(0.34,1.56,0.64,1)';
-      }
-      addStars(5);
-      showIsland('🛡️ Фишинг распознан!');
-    } else {
-      toast('Признак найден! ' + ZD.state.foundFlags.size + '/4', 'success');
-    }
-  }
-
-  // ==================================================
-  // MAP
-  // ==================================================
-  function buildMap() {
-    const s = screenDiv('mapScreen');
-
-    const pinsHtml = ZD.locations.map((loc, i) => `
-      <div class="loc-pin" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y};animation-delay:${i*0.1}s">
-        <div class="pin-circle ${loc.pulse ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
-        <div class="pin-lbl">${loc.emoji} ${loc.label}</div>
-        <div class="pin-status" style="color:${loc.statusColor}">${loc.status}</div>
-      </div>
-    `).join('');
-
-    s.innerHTML = `
-      ${header('home', 'Карта · Локации', 'АКТ I · Выбери точку')}
-      <div class="map-canvas">
-        <div class="map-grid-lines"></div>
-        <div class="map-glow"></div>
-        ${pinsHtml}
-        <div class="map-panel" id="mapPanel">
-          <div class="map-panel-name" id="mapPanelName">—</div>
-          <div class="map-panel-desc" id="mapPanelDesc">—</div>
-          <button class="map-go-btn" id="mapGoBtn">▶ ИССЛЕДОВАТЬ</button>
-        </div>
-      </div>
-    `;
-    bindBack(s);
-
-    s.querySelectorAll('.loc-pin').forEach(el => {
-      el.addEventListener('click', () => {
-        haptic('medium');
-        openMapPanel(el.dataset.loc, s);
-      });
-    });
-    s.querySelector('#mapGoBtn').addEventListener('click', () => {
-      haptic('heavy');
-      s.querySelector('#mapPanel').classList.remove('open');
-    });
-  }
-
-  function openMapPanel(locId, s) {
-    const loc = ZD.locations.find(l => l.id === locId);
-    if (!loc) return;
-    const panel = s.querySelector('#mapPanel');
-    const nameEl = s.querySelector('#mapPanelName');
-    const descEl = s.querySelector('#mapPanelDesc');
-    const btn = s.querySelector('#mapGoBtn');
-
-    nameEl.textContent = loc.emoji + ' ' + loc.label;
-    descEl.textContent = loc.desc;
-    btn.textContent = loc.action;
-    btn.className = 'map-go-btn ' + (loc.type === 'locked' ? 'locked' : loc.type === 'req' ? 'req' : '');
-    panel.classList.add('open');
-
-    if (loc.type === 'locked') {
-      haptic('error');
-      toast('Локация заблокирована', 'warn');
-    } else if (loc.type === 'req') {
-      haptic('warning');
-    } else {
-      haptic('success');
-    }
-  }
-
-  // ==================================================
-  // TERMINAL
-  // ==================================================
-  function buildTerminal() {
-    const s = screenDiv('terminalScreen');
-    const c = ZD.cipher;
-
-    s.innerHTML = `
-      <div class="term-topbar">
-        <div class="back-btn" data-back="home">←</div>
-        <div class="term-dots">
-          <div class="tdot tdot-r"></div>
-          <div class="tdot tdot-y"></div>
-          <div class="tdot tdot-g"></div>
-        </div>
-        <div class="term-title-txt">TERMINAL · MISSION_03</div>
-      </div>
-      <div class="term-body scrollable" id="termBody">
-        <div class="t-g">Отряд404@school:~$ ./decrypt_mission_03.sh</div>
-        <div class="t-d">Инициализация протоколов...</div>
-        <div class="t-d">Загрузка ключей безопасности...</div>
-        <div class="t-c">► Перехвачено зашифрованное сообщение</div>
-        <div class="t-d">Метод шифрования: <span class="t-y">Шифр Цезаря (ROT-N)</span></div>
-        <div class="t-w">Сдвиг ключа: <span class="t-r">неизвестен</span>. Диапазон: 1–25.</div>
-        <div class="term-br"></div>
-        <div class="t-a">ЗАДАЧА: Расшифруй перехваченное сообщение</div>
-        <div class="t-d">Hint: Слово из 5 букв + слово из 5 букв</div>
-        <div class="term-br"></div>
-        <div class="cipher-block">
-          <div class="cipher-enc" id="cipherEnc">${c.encrypted}</div>
-          <div class="slider-row">
-            <span class="slider-lbl">СДВИГ ROT:</span>
-            <input type="range" id="caesarSlider" min="1" max="25" value="3" step="1">
-            <span class="slider-val" id="caesarVal">3</span>
-          </div>
-          <input class="cipher-out" id="cipherOut" readonly value="">
-          <div class="cipher-hint">Двигай слайдер — находи читаемое слово</div>
-          <div class="cipher-solved" id="cipherSolved">
-            ✓ РАСШИФРОВАНО! Попыток: <span id="solvedAttempts">0</span> · +8 ⭐
-          </div>
-        </div>
-        <div class="term-br"></div>
-        <div class="t-d">Попыток использовано: <span class="t-y" id="attemptsCount">0</span></div>
-        <div class="term-prompt">
-          <span class="t-g">agent@404:~$</span>
-          <span class="cursor"></span>
-        </div>
-      </div>
-    `;
-    bindBack(s);
-
-    const slider = s.querySelector('#caesarSlider');
-    const outEl = s.querySelector('#cipherOut');
-
-    // Reset if already solved for display
-    if (ZD.state.termSolved) {
-      slider.value = c.answerShift;
-      s.querySelector('#caesarVal').textContent = c.answerShift;
-      s.querySelector('#solvedAttempts').textContent = ZD.state.termAttempts;
-      s.querySelector('#attemptsCount').textContent = ZD.state.termAttempts;
-      outEl.value = c.plain;
-      outEl.style.color = 'var(--accent)';
-      s.querySelector('#cipherSolved').style.display = 'block';
-      slider.disabled = true;
-    } else {
-      slider.addEventListener('input', () => {
-        haptic('light');
-        handleCaesar(s);
-      });
-      handleCaesar(s);
-    }
-  }
-
-  function caesarDecrypt(text, shift) {
-    const ru = ZD.cipher.ruAlphabet;
-    return text.split('').map(ch => {
-      const i = ru.indexOf(ch);
-      if (i === -1) return ch;
-      return ru[((i - shift) % 33 + 33) % 33];
-    }).join('');
-  }
-
-  function handleCaesar(s) {
-    const slider = s.querySelector('#caesarSlider');
-    const valEl = s.querySelector('#caesarVal');
-    const outEl = s.querySelector('#cipherOut');
-    const attEl = s.querySelector('#attemptsCount');
-    const solvedEl = s.querySelector('#cipherSolved');
-    const solvedAtt = s.querySelector('#solvedAttempts');
-
-    const shift = parseInt(slider.value);
-    valEl.textContent = shift;
-
-    if (!ZD.state.termSolved) {
-      ZD.state.termAttempts++;
-      ZD.saveState();
-    }
-
-    if (attEl) attEl.textContent = ZD.state.termAttempts;
-
-    const decrypted = caesarDecrypt(ZD.cipher.encrypted, shift);
-    outEl.value = decrypted;
-
-    if (shift === ZD.cipher.answerShift && !ZD.state.termSolved) {
-      ZD.state.termSolved = true;
-      ZD.saveState();
-      outEl.style.color = 'var(--accent)';
-      outEl.style.textShadow = '0 0 20px var(--accent-glow)';
-      solvedEl.style.display = 'block';
-      if (solvedAtt) solvedAtt.textContent = ZD.state.termAttempts;
-      slider.disabled = true;
-      addStars(8);
-      haptic('success');
-      showIsland('🔓 Шифр взломан!');
-
-      // Confetti-like effect via CSS
-      outEl.style.animation = 'pulseGlow 1s ease 3';
-    } else if (shift !== ZD.cipher.answerShift) {
-      outEl.style.color = 'var(--accent)';
-      outEl.style.textShadow = 'none';
-      solvedEl.style.display = 'none';
-    }
-  }
-
-  // ==================================================
-  // SHOP
-  // ==================================================
-  function buildShop() {
-    const s = screenDiv('shopScreen');
-
-    const rows = ZD.shopItems.map(cat => {
-      const items = cat.items.map((item, idx) => {
-        const isOwned = item.owned || ZD.state.inventory.includes(item.id);
-        const btnHtml = isOwned
-          ? `<button class="buy-btn owned" disabled>✓ ЕСТЬ</button>`
-          : `<button class="buy-btn" data-price="${item.price}" data-id="${item.id}">⭐ ${item.price}</button>`;
-        return `
-          <div class="shop-row" style="animation-delay:${idx*0.05}s">
-            <div class="shop-ico">${item.ico}</div>
-            <div class="shop-info">
-              <div class="shop-name">${item.name}</div>
-              <div class="shop-desc">${item.desc}</div>
-              <div class="shop-tags">${item.tags.map(t => `<span class="stag ${t.cls}">${t.label}</span>`).join('')}</div>
-            </div>
-            ${btnHtml}
-          </div>
-        `;
-      }).join('');
-      return `<div class="shop-cat">${cat.cat}</div>${items}`;
-    }).join('');
-
-    s.innerHTML = `
-      ${header('home', 'Магазин Реквизита', null)}
-      <div class="shop-balance-bar">
-        <span>⭐</span><span class="stars-val">${ZD.state.stars}</span>
-      </div>
-      <div class="shop-body scrollable">${rows}</div>
-    `;
-    bindBack(s);
-
-    s.querySelectorAll('.buy-btn[data-price]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        haptic('medium');
-        handleBuy(btn, parseInt(btn.dataset.price), btn.dataset.id);
-      });
-    });
-    bindRipple('.buy-btn', s);
-  }
-
-  function handleBuy(btn, price, itemId) {
-    if (ZD.state.stars < price) {
-      haptic('error');
-      btn.classList.add('no-stars');
-      btn.textContent = '✗ МАЛО ⭐';
-      toast('Недостаточно Stars!', 'danger');
-      setTimeout(() => {
-        btn.classList.remove('no-stars');
-        btn.textContent = '⭐ ' + price;
-      }, 1500);
-      return;
-    }
-
-    ZD.state.stars -= price;
-    ZD.state.inventory.push(itemId);
-    ZD.saveState();
-    updateStarsDisplay();
-
-    btn.textContent = '✓ КУПЛЕНО';
-    btn.classList.add('owned');
-    btn.disabled = true;
-    btn.onclick = null;
-
-    haptic('success');
-    toast('Куплено! ⭐ осталось: ' + ZD.state.stars, 'success');
-    showIsland('Предмет приобретён');
-  }
-
-  // ==================================================
-  // INIT
-  // ==================================================
-  buildNav();
-  buildHome();
-
-  // Expose for debugging
-  window.ZD_APP = { navigateTo, goBack, addStars, toast, showIsland, haptic };
-
-})();
+/* ===== RESET ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#0a0a0f;font-family:'Courier New',monospace}
+
+/* ===== SCENE / PHONE FRAME ===== */
+.scene{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;width:100%;
+  background:radial-gradient(ellipse at 50% 40%, #12122a 0%, #060608 70%);
+  padding:24px 12px;
+}
+
+.phone{
+  position:relative;
+  width:360px;
+  background:linear-gradient(160deg,#1c1c20 0%,#111114 40%,#0e0e11 100%);
+  border-radius:50px;
+  box-shadow:
+    0 0 0 1px #2a2a35,
+    0 0 0 2px #111116,
+    0 0 0 3px #333340,
+    inset 0 0 0 1px rgba(255,255,255,0.05),
+    0 40px 120px rgba(0,0,0,0.9),
+    0 0 60px rgba(0,229,160,0.04);
+  flex-shrink:0;
+}
+
+/* PHYSICAL BUTTONS */
+.btn-power{
+  position:absolute;right:-3px;top:130px;
+  width:3px;height:64px;
+  background:linear-gradient(180deg,#2a2a30,#1a1a20,#2a2a30);
+  border-radius:0 2px 2px 0;
+  box-shadow:1px 0 3px rgba(0,0,0,0.5);
+}
+.btn-vol-up{
+  position:absolute;left:-3px;top:110px;
+  width:3px;height:44px;
+  background:linear-gradient(180deg,#2a2a30,#1a1a20,#2a2a30);
+  border-radius:2px 0 0 2px;
+}
+.btn-vol-down{
+  position:absolute;left:-3px;top:164px;
+  width:3px;height:44px;
+  background:linear-gradient(180deg,#2a2a30,#1a1a20,#2a2a30);
+  border-radius:2px 0 0 2px;
+}
+
+/* NOTCH */
+.notch{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  width:126px;height:34px;
+  background:#0a0a0d;
+  border-radius:0 0 20px 20px;
+  z-index:10;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.notch-speaker{
+  width:52px;height:5px;
+  background:#1a1a1e;
+  border-radius:3px;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.8);
+}
+.notch-camera{
+  width:11px;height:11px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#2a2a3a,#0d0d12);
+  border:1px solid #1e1e26;
+  box-shadow:inset 0 0 4px rgba(0,0,0,0.8);
+}
+
+/* SCREEN WRAP */
+.screen-wrap{
+  margin:0 10px;
+  padding-top:48px;
+  padding-bottom:0;
+  background:#0a0a0f;
+  border-radius:38px;
+  overflow:hidden;
+  position:relative;
+  display:flex;flex-direction:column;
+  height:780px;
+}
+.screen-glass{
+  position:absolute;inset:0;
+  border-radius:38px;
+  background:linear-gradient(135deg,rgba(255,255,255,0.04) 0%,transparent 50%,rgba(255,255,255,0.01) 100%);
+  pointer-events:none;z-index:100;
+}
+
+/* STATUS BAR */
+.status-bar{
+  position:absolute;top:0;left:0;right:0;
+  height:48px;
+  display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 22px 8px;
+  z-index:50;
+  background:transparent;
+}
+.sb-left .sb-time{
+  font-size:14px;font-weight:700;letter-spacing:0.3px;
+  color:#e8e8f0;
+}
+.sb-right{
+  display:flex;align-items:center;gap:6px;
+}
+.sb-signal{
+  display:flex;align-items:flex-end;gap:2px;height:12px;
+}
+.sb-signal span{
+  width:3px;background:#e8e8f0;border-radius:1px;
+}
+.sb-signal span:nth-child(1){height:4px}
+.sb-signal span:nth-child(2){height:6px}
+.sb-signal span:nth-child(3){height:9px}
+.sb-signal span:nth-child(4){height:12px}
+.sb-wifi{display:flex;align-items:center;color:#e8e8f0}
+.sb-battery{
+  display:flex;align-items:center;gap:1px;
+  border:1.5px solid rgba(255,255,255,0.5);
+  border-radius:3px;
+  width:22px;height:11px;
+  position:relative;padding:2px;
+}
+.sb-battery::after{
+  content:'';position:absolute;right:-4px;top:50%;transform:translateY(-50%);
+  width:2px;height:5px;background:rgba(255,255,255,0.5);border-radius:0 1px 1px 0;
+}
+.sb-batt-fill{
+  height:100%;width:72%;
+  background:#4cde80;border-radius:1px;
+}
+
+/* APP FRAME */
+.app-frame{
+  flex:1;overflow:hidden;position:relative;
+}
+.screen{
+  position:absolute;inset:0;
+  display:none;flex-direction:column;
+  background:#0a0a0f;
+  overflow:hidden;
+  animation:screenIn 0.22s ease-out;
+}
+.screen.active{display:flex}
+@keyframes screenIn{from{opacity:0;transform:scale(0.98)}to{opacity:1;transform:scale(1)}}
+
+/* BOTTOM NAV */
+.bottom-nav{
+  display:flex;
+  background:rgba(14,14,18,0.96);
+  border-top:1px solid rgba(255,255,255,0.07);
+  backdrop-filter:blur(20px);
+  padding:8px 0 4px;
+  flex-shrink:0;
+}
+.nav-item{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  cursor:pointer;padding:4px 0;
+  transition:opacity 0.15s;
+  position:relative;
+}
+.nav-item:active{opacity:0.6}
+.nav-ico{font-size:22px;line-height:1;transition:transform 0.15s}
+.nav-lbl{font-size:9px;color:#555570;letter-spacing:0.5px;font-family:'Courier New',monospace}
+.nav-item.active .nav-ico{transform:scale(1.12)}
+.nav-item.active .nav-lbl{color:#00e5a0}
+.nav-dot{
+  position:absolute;top:3px;right:20%;
+  width:7px;height:7px;border-radius:50%;
+  background:#ff4a6a;
+  border:1.5px solid #0a0a0f;
+}
+
+/* HOME INDICATOR */
+.home-indicator{
+  height:26px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.home-indicator::before{
+  content:'';display:block;
+  width:120px;height:4px;
+  background:rgba(255,255,255,0.25);
+  border-radius:2px;
+}
+
+/* PHONE CHIN */
+.phone-chin{
+  height:18px;display:flex;align-items:center;justify-content:center;
+}
+.chin-port{
+  width:44px;height:6px;border-radius:3px;
+  background:#1a1a20;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* ===== DESIGN TOKENS ===== */
+:root{
+  --bg:#0a0a0f;
+  --surface:#111118;
+  --card:#16161f;
+  --border:rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.14);
+  --accent:#00e5a0;
+  --accent2:#7b5fff;
+  --danger:#ff4a6a;
+  --warn:#f5a623;
+  --cyan:#00cfff;
+  --text:#e8e8f0;
+  --muted:#6b6b80;
+  --r:12px;
+}
+
+/* ===== SHARED COMPONENTS ===== */
+.screen-header{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 16px 10px;
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+  z-index:5;
+}
+.back-btn{
+  width:30px;height:30px;border-radius:50%;
+  background:rgba(255,255,255,0.06);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:16px;color:var(--accent);
+  flex-shrink:0;transition:background 0.15s;
+}
+.back-btn:active{background:rgba(255,255,255,0.12)}
+.hdr-title{font-size:14px;font-weight:700;color:var(--text)}
+.hdr-sub{font-size:10px;color:var(--muted);margin-top:1px}
+.scrollable{overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
+.scrollable::-webkit-scrollbar{display:none}
+
+/* ===== HOME SCREEN ===== */
+#homeScreen{background:var(--bg)}
+.home-hero{
+  padding:20px 16px 16px;
+  background:linear-gradient(160deg,#0d0d1a 0%,#0a1622 60%,#0d0d1a 100%);
+  border-bottom:1px solid var(--border);
+  position:relative;overflow:hidden;flex-shrink:0;
+}
+.home-hero::before{
+  content:'';position:absolute;top:-60px;right:-60px;
+  width:200px;height:200px;border-radius:50%;
+  background:radial-gradient(circle,rgba(0,229,160,0.07) 0%,transparent 70%);
+  pointer-events:none;
+}
+.home-hero::after{
+  content:'';position:absolute;bottom:-40px;left:-40px;
+  width:160px;height:160px;border-radius:50%;
+  background:radial-gradient(circle,rgba(123,95,255,0.06) 0%,transparent 70%);
+  pointer-events:none;
+}
+.hero-act{
+  font-size:10px;letter-spacing:2.5px;color:var(--accent);
+  text-transform:uppercase;margin-bottom:6px;
+  display:flex;align-items:center;gap:6px;
+}
+.hero-act::before{content:'';display:block;width:20px;height:1px;background:var(--accent)}
+.hero-title{font-size:28px;font-weight:900;letter-spacing:-1px;color:var(--text);line-height:1.1}
+.hero-title em{color:var(--accent);font-style:normal}
+.hero-subtitle{font-size:11px;color:var(--muted);margin:4px 0 14px;letter-spacing:1px}
+.ep-card{
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(0,229,160,0.25);
+  border-left:3px solid var(--accent);
+  border-radius:10px;padding:10px 12px;
+  display:flex;align-items:center;gap:10px;
+  cursor:pointer;transition:all 0.15s;
+}
+.ep-card:active{transform:scale(0.98);background:rgba(0,229,160,0.08)}
+.ep-num{font-size:9px;letter-spacing:1.5px;color:var(--accent);margin-bottom:3px}
+.ep-name{font-size:13px;font-weight:700;color:var(--text)}
+.ep-meta{font-size:9px;color:var(--muted);margin-top:2px}
+.ep-play{
+  margin-left:auto;width:32px;height:32px;border-radius:50%;
+  background:var(--accent);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  color:#000;font-size:12px;
+}
+.notif-strip{
+  margin:10px 16px 0;
+  background:rgba(0,229,160,0.07);
+  border:1px solid rgba(0,229,160,0.2);
+  border-radius:10px;padding:9px 12px;
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;color:var(--accent);flex-shrink:0;
+}
+.home-apps{padding:14px 16px 0;flex-shrink:0}
+.section-lbl{font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+.apps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.app-tile{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:18px;padding:14px 8px 10px;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  cursor:pointer;transition:all 0.15s;
+  position:relative;
+}
+.app-tile:active{transform:scale(0.93);background:rgba(255,255,255,0.05)}
+.app-tile.has-badge::after{
+  content:'';position:absolute;top:8px;right:10px;
+  width:8px;height:8px;border-radius:50%;
+  background:var(--danger);border:1.5px solid var(--bg);
+}
+.app-tile-ico{font-size:26px;line-height:1}
+.app-tile-lbl{font-size:9px;color:var(--muted);letter-spacing:0.5px;text-align:center}
+.stats-row{display:flex;gap:8px;padding:8px 16px 14px;flex-shrink:0}
+.stat-card{
+  flex:1;background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:10px 8px;text-align:center;
+}
+.stat-val{font-size:20px;font-weight:700;color:var(--accent)}
+.stat-lbl{font-size:8px;color:var(--muted);letter-spacing:1px;margin-top:2px}
+
+/* ===== MESSENGER ===== */
+#messengerScreen{background:var(--bg)}
+.chat-list-item{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;border-bottom:1px solid var(--border);
+  cursor:pointer;transition:background 0.15s;
+}
+.chat-list-item:active{background:rgba(255,255,255,0.04)}
+.chat-avatar{
+  width:46px;height:46px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:700;color:#fff;flex-shrink:0;
+  position:relative;
+}
+.avatar-online::after{
+  content:'';position:absolute;bottom:1px;right:1px;
+  width:11px;height:11px;border-radius:50%;
+  background:var(--accent);border:2px solid var(--bg);
+}
+.chat-info{flex:1;min-width:0}
+.chat-name{font-size:13px;font-weight:700;color:var(--text)}
+.chat-preview{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-meta{text-align:right;flex-shrink:0}
+.chat-time{font-size:9px;color:var(--muted);margin-bottom:4px}
+.chat-unread{
+  background:var(--accent);color:#000;
+  font-size:9px;font-weight:700;
+  border-radius:10px;padding:2px 6px;
+  display:inline-block;
+}
+
+/* CHAT DETAIL */
+#chatScreen{background:var(--bg)}
+.chat-bg{
+  flex:1;overflow-y:auto;padding:12px 14px;
+  display:flex;flex-direction:column;gap:8px;
+  background:linear-gradient(180deg,rgba(0,229,160,0.02) 0%,var(--bg) 100%);
+}
+.chat-bg::-webkit-scrollbar{display:none}
+.bubble{
+  max-width:80%;padding:9px 13px;
+  font-size:12px;line-height:1.55;
+  word-break:break-word;
+}
+.bubble-in{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:14px 14px 14px 3px;
+  align-self:flex-start;color:var(--text);
+}
+.bubble-out{
+  background:var(--accent2);
+  border-radius:14px 14px 3px 14px;
+  align-self:flex-end;color:#fff;
+}
+.bubble-system{
+  align-self:center;font-size:9px;color:var(--muted);
+  background:rgba(255,255,255,0.04);
+  border-radius:20px;padding:4px 12px;
+  letter-spacing:0.5px;
+}
+.bub-time{font-size:9px;opacity:0.5;margin-top:3px;text-align:right}
+.typing-bub{
+  display:flex;gap:4px;align-items:center;padding:9px 13px;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:14px 14px 14px 3px;align-self:flex-start;
+  display:none;
+}
+.td{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:td 1.2s infinite}
+.td:nth-child(2){animation-delay:.2s}.td:nth-child(3){animation-delay:.4s}
+@keyframes td{0%,60%,100%{opacity:.3;transform:scale(1)}30%{opacity:1;transform:scale(1.4)}}
+.choices-wrap{
+  padding:10px 14px 12px;
+  border-top:1px solid var(--border);
+  background:var(--surface);flex-shrink:0;
+}
+.choices-lbl{font-size:9px;letter-spacing:1.5px;color:var(--muted);margin-bottom:7px;text-transform:uppercase}
+.choice{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:10px 13px;
+  color:var(--text);font-family:'Courier New',monospace;font-size:11px;
+  cursor:pointer;width:100%;text-align:left;
+  margin-bottom:6px;transition:all 0.15s;display:flex;gap:8px;align-items:flex-start;
+}
+.choice:last-child{margin-bottom:0}
+.choice:active{transform:scale(0.98)}
+.choice:hover{border-color:var(--accent);color:var(--accent)}
+.choice.bad:hover{border-color:var(--danger);color:var(--danger)}
+.choice.selected{border-color:var(--accent);background:rgba(0,229,160,0.08);color:var(--accent)}
+.choice-key{font-size:10px;opacity:0.5;flex-shrink:0;margin-top:1px}
+
+/* ===== GALLERY ===== */
+#galleryScreen{background:var(--bg)}
+.gal-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:2px;
+  padding:2px;flex:1;overflow-y:auto;
+}
+.gal-grid::-webkit-scrollbar{display:none}
+.gal-thumb{
+  aspect-ratio:1;background:var(--card);
+  display:flex;align-items:center;justify-content:center;
+  font-size:34px;cursor:pointer;position:relative;
+  transition:opacity 0.15s;overflow:hidden;
+}
+.gal-thumb:active{opacity:0.7}
+.gal-thumb.flagged::after{
+  content:'!';position:absolute;top:5px;right:5px;
+  width:16px;height:16px;border-radius:50%;
+  background:var(--danger);color:#fff;
+  font-size:10px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+.gal-thumb.analyzed::after{
+  content:'✓';position:absolute;top:5px;right:5px;
+  width:16px;height:16px;border-radius:50%;
+  background:var(--accent);color:#000;
+  font-size:9px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+/* Detail overlay */
+#galDetailOverlay{
+  position:absolute;inset:0;z-index:20;
+  background:var(--bg);display:none;flex-direction:column;
+}
+#galDetailOverlay.open{display:flex}
+.gal-detail-img{
+  flex:1;background:#060608;
+  display:flex;align-items:center;justify-content:center;
+  font-size:80px;position:relative;overflow:hidden;
+}
+.scan-anim{
+  position:absolute;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  animation:scanY 2s linear infinite;display:none;
+}
+@keyframes scanY{0%{top:0%}100%{top:100%}}
+.gal-scan-overlay{
+  position:absolute;inset:0;pointer-events:none;display:none;
+  background:repeating-linear-gradient(0deg,rgba(0,229,160,0.02) 0px,transparent 2px,transparent 4px);
+}
+.exif-panel{
+  background:var(--surface);border-top:1px solid var(--border);
+  padding:12px 16px;flex-shrink:0;max-height:180px;overflow-y:auto;
+}
+.exif-panel::-webkit-scrollbar{display:none}
+.exif-row{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);
+  font-size:11px;
+}
+.exif-row:last-child{border-bottom:none}
+.exif-k{color:var(--muted)}
+.exif-v{color:var(--cyan);text-align:right;max-width:60%;word-break:break-all}
+.exif-v.danger{color:var(--danger)}
+.exif-v.ok{color:var(--accent)}
+.analyze-btn{
+  margin:10px 16px;padding:11px;
+  background:transparent;border:1px solid var(--accent);
+  border-radius:10px;color:var(--accent);
+  font-family:'Courier New',monospace;font-size:12px;font-weight:700;
+  cursor:pointer;letter-spacing:1px;width:calc(100% - 32px);
+  transition:all 0.15s;flex-shrink:0;
+}
+.analyze-btn:active{background:rgba(0,229,160,0.12)}
+
+/* ===== BROWSER ===== */
+#browserScreen{background:var(--bg)}
+.url-bar-wrap{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 14px 10px;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.url-bar{
+  flex:1;background:var(--card);border:1px solid var(--border);
+  border-radius:8px;padding:7px 10px;
+  display:flex;align-items:center;gap:6px;
+  font-size:11px;
+}
+.url-lock{font-size:11px}
+.url-lock.http{color:var(--warn)}
+.url-lock.https{color:var(--accent)}
+.url-txt{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.site-content{flex:1;overflow-y:auto}
+.site-content::-webkit-scrollbar{display:none}
+.site-topbar{
+  background:linear-gradient(180deg,#0e1928,#0c1520);
+  padding:14px 16px 10px;
+  border-bottom:2px solid #1e4a8a;
+}
+.site-logo{font-size:17px;font-weight:700;color:#4a9eff;margin-bottom:2px}
+.site-tagline{font-size:10px;color:#5a7a99}
+.site-nav-row{display:flex;gap:14px;margin-top:8px}
+.site-nav-item{font-size:10px;color:#4a9eff;text-decoration:underline;cursor:pointer}
+.site-body{padding:14px 16px}
+.phish-warning{
+  background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.3);
+  border-radius:10px;padding:11px 13px;margin-bottom:12px;
+}
+.phish-w-title{color:var(--warn);font-size:12px;font-weight:700;margin-bottom:4px}
+.phish-w-txt{color:#c8a860;font-size:11px;line-height:1.5}
+.site-headline{font-size:15px;font-weight:700;color:var(--text);margin-bottom:5px;line-height:1.3}
+.site-meta{font-size:10px;color:var(--muted);margin-bottom:10px}
+.site-para{font-size:11px;color:#9898a8;line-height:1.6;margin-bottom:12px}
+.flags-box{
+  background:rgba(255,74,106,0.06);border:1px solid rgba(255,74,106,0.2);
+  border-radius:10px;padding:13px;
+}
+.flags-title{color:var(--danger);font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:9px}
+.flag-row{
+  display:flex;align-items:flex-start;gap:9px;
+  padding:5px 0;cursor:pointer;transition:color 0.15s;
+  font-size:11px;color:#bb7070;
+}
+.flag-row:hover{color:var(--danger)}
+.flag-row.found{color:var(--accent)}
+.flag-chk{
+  width:15px;height:15px;border-radius:3px;
+  border:1.5px solid currentColor;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;margin-top:1px;
+}
+.flags-success{
+  display:none;margin-top:10px;padding:9px;
+  background:rgba(0,229,160,0.08);border-radius:8px;
+  font-size:11px;color:var(--accent);line-height:1.5;
+}
+
+/* ===== MAP ===== */
+#mapScreen{background:var(--bg)}
+.map-canvas{
+  flex:1;position:relative;background:#08080e;overflow:hidden;
+}
+.map-grid-lines{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(0,229,160,0.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,229,160,0.04) 1px,transparent 1px);
+  background-size:30px 30px;
+}
+.map-glow{
+  position:absolute;top:40%;left:30%;
+  width:120px;height:120px;border-radius:50%;
+  background:radial-gradient(circle,rgba(0,229,160,0.06) 0%,transparent 70%);
+  pointer-events:none;
+}
+.loc-pin{
+  position:absolute;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;
+  cursor:pointer;user-select:none;
+}
+.pin-circle{
+  width:16px;height:16px;border-radius:50%;
+  border:2.5px solid;position:relative;
+  transition:transform 0.15s;
+}
+.pin-circle::after{
+  content:'';position:absolute;inset:3px;
+  border-radius:50%;background:currentColor;opacity:0.6;
+}
+.loc-pin:active .pin-circle{transform:scale(1.3)}
+.pin-pulse{animation:pinPulse 2s infinite}
+@keyframes pinPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(0,229,160,0.5)}
+  50%{box-shadow:0 0 0 10px rgba(0,229,160,0)}
+}
+.pin-lbl{
+  font-size:9px;color:var(--text);background:rgba(0,0,0,0.85);
+  border:1px solid var(--border);border-radius:5px;
+  padding:2px 7px;margin-top:4px;white-space:nowrap;
+}
+.pin-status{font-size:8px;margin-top:2px;letter-spacing:0.5px}
+.map-panel{
+  position:absolute;bottom:0;left:0;right:0;
+  background:rgba(17,17,24,0.97);
+  border-top:1px solid var(--border);
+  backdrop-filter:blur(16px);
+  padding:16px 16px 12px;
+  transform:translateY(100%);transition:transform 0.25s ease;
+}
+.map-panel.open{transform:translateY(0)}
+.map-panel-name{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px}
+.map-panel-desc{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px}
+.map-go-btn{
+  background:var(--accent);color:#000;
+  border:none;border-radius:10px;
+  padding:12px;width:100%;
+  font-family:'Courier New',monospace;font-size:12px;font-weight:700;
+  cursor:pointer;letter-spacing:0.5px;transition:opacity 0.15s;
+}
+.map-go-btn:active{opacity:0.8}
+.map-go-btn.locked{background:var(--muted);cursor:not-allowed}
+.map-go-btn.req{background:var(--danger)}
+
+/* ===== TERMINAL ===== */
+#terminalScreen{background:#050508}
+.term-topbar{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 14px;background:#0d0d12;
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.term-dots{display:flex;gap:6px}
+.tdot{width:11px;height:11px;border-radius:50%}
+.tdot-r{background:#ff5f57}.tdot-y{background:#ffbd2e}.tdot-g{background:#28c840}
+.term-title-txt{flex:1;text-align:center;font-size:11px;color:var(--muted)}
+.term-body{
+  flex:1;overflow-y:auto;padding:14px 15px;
+  font-size:12px;line-height:1.7;
+}
+.term-body::-webkit-scrollbar{display:none}
+.t-g{color:#28c840}.t-c{color:var(--cyan)}.t-r{color:var(--danger)}
+.t-y{color:var(--warn)}.t-d{color:var(--muted)}.t-w{color:var(--text)}.t-a{color:var(--accent)}
+.term-br{height:6px}
+.cipher-block{
+  background:rgba(0,229,160,0.04);border:1px solid rgba(0,229,160,0.18);
+  border-radius:10px;padding:14px;margin-top:6px;
+}
+.cipher-enc{
+  font-size:18px;letter-spacing:5px;color:var(--warn);
+  text-align:center;margin-bottom:12px;font-weight:700;
+}
+.slider-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.slider-lbl{font-size:10px;color:var(--muted);white-space:nowrap}
+.slider-val{font-size:13px;font-weight:700;color:var(--warn);min-width:22px;text-align:right}
+input[type=range]{
+  flex:1;height:4px;
+  -webkit-appearance:none;
+  background:var(--border2);border-radius:2px;
+  accent-color:var(--accent);
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:18px;height:18px;border-radius:50%;
+  background:var(--accent);cursor:pointer;
+}
+.cipher-out{
+  width:100%;background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:9px 11px;
+  color:var(--accent);font-family:'Courier New',monospace;
+  font-size:15px;letter-spacing:4px;text-align:center;
+  font-weight:700;text-transform:uppercase;border:none;outline:none;
+}
+.cipher-hint{font-size:10px;color:var(--muted);text-align:center;margin-top:7px}
+.cipher-solved{
+  display:none;margin-top:9px;padding:9px 11px;
+  background:rgba(0,229,160,0.08);border-radius:8px;
+  font-size:11px;color:var(--accent);text-align:center;
+}
+.term-prompt{display:flex;align-items:center;gap:6px;margin-top:10px}
+.cursor{
+  display:inline-block;width:8px;height:14px;
+  background:var(--accent);animation:cursorBlink 1s infinite;
+  vertical-align:middle;
+}
+@keyframes cursorBlink{0%,50%{opacity:1}51%,100%{opacity:0}}
+
+/* ===== SHOP ===== */
+#shopScreen{background:var(--bg)}
+.shop-balance-bar{
+  display:flex;align-items:center;justify-content:flex-end;gap:6px;
+  padding:0 16px 10px;font-size:13px;color:var(--warn);font-weight:700;
+  flex-shrink:0;
+}
+.shop-body{flex:1;overflow-y:auto;padding:0 16px 16px}
+.shop-body::-webkit-scrollbar{display:none}
+.shop-cat{
+  font-size:9px;letter-spacing:2px;color:var(--muted);
+  text-transform:uppercase;padding:12px 0 8px;
+}
+.shop-row{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:12px;padding:12px;
+  display:flex;gap:11px;align-items:center;
+  margin-bottom:8px;transition:border-color 0.15s;
+}
+.shop-row:hover{border-color:rgba(123,95,255,0.3)}
+.shop-ico{font-size:26px;flex-shrink:0}
+.shop-info{flex:1;min-width:0}
+.shop-name{font-size:13px;font-weight:700;color:var(--text)}
+.shop-desc{font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4}
+.shop-tags{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.stag{font-size:9px;padding:2px 7px;border-radius:4px;letter-spacing:0.4px}
+.stag-tool{background:rgba(0,229,160,.1);color:var(--accent);border:1px solid rgba(0,229,160,.2)}
+.stag-access{background:rgba(123,95,255,.1);color:var(--accent2);border:1px solid rgba(123,95,255,.2)}
+.stag-boost{background:rgba(0,207,255,.1);color:var(--cyan);border:1px solid rgba(0,207,255,.2)}
+.stag-cosm{background:rgba(255,74,106,.1);color:var(--danger);border:1px solid rgba(255,74,106,.2)}
+.buy-btn{
+  background:transparent;border:1px solid var(--accent2);
+  border-radius:8px;padding:7px 11px;
+  color:var(--accent2);font-family:'Courier New',monospace;
+  font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0;
+  transition:all 0.15s;display:flex;align-items:center;gap:4px;
+}
+.buy-btn:active{background:rgba(123,95,255,.2)}
+.buy-btn.owned{border-color:var(--accent);color:var(--accent);cursor:default}
+.buy-btn.no-stars{border-color:var(--danger);color:var(--danger)}
+
+/* ===== TOAST ===== */
+.toast{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  background:var(--accent);color:#000;
+  border-radius:20px;padding:7px 16px;
+  font-size:12px;font-weight:700;
+  white-space:nowrap;z-index:200;
+  animation:toastAnim 1.8s ease forwards;
+  pointer-events:none;
+}
+@keyframes toastAnim{
+  0%{opacity:0;transform:translateX(-50%) translateY(-10px)}
+  15%{opacity:1;transform:translateX(-50%) translateY(0)}
+  70%{opacity:1;transform:translateX(-50%) translateY(0)}
+  100%{opacity:0;transform:translateX(-50%) translateY(-10px)}
+}
