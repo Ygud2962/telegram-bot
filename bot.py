@@ -53,19 +53,6 @@ def _game_reset_token(result_row) -> int:
     return 0
 
 
-def _cyber_reset_token(result_row) -> int:
-    """Стабильный reset_token из cyber_results (меняется только при сбросе)."""
-    if not result_row:
-        return 0
-    try:
-        if len(result_row) > 7:
-            token = int(result_row[7] or 0)
-            return token if token > 0 else 0
-    except Exception:
-        return 0
-    return 0
-
-
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -157,8 +144,6 @@ GPT_AVAILABLE = bool(GROQ_API_KEY)
 GAME_URL      = (os.environ.get('GAME_URL', '') or '').strip()
 if GAME_URL and not GAME_URL.startswith('http'):
     GAME_URL = 'https://' + GAME_URL
-# URL Mini App игры "Киберщит" (по умолчанию отдаём из этого же бота: /cyber/)
-CYBER_URL = (os.environ.get('CYBER_URL', '') or '').strip()
 # Public URL бота на Railway (для приёма sync запросов из игры)
 # Приоритет: BOT_PUBLIC_URL (ручная) > RAILWAY_PUBLIC_DOMAIN (авто)
 BOT_PUBLIC_URL = (
@@ -168,10 +153,6 @@ BOT_PUBLIC_URL = (
 )
 if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
-if not CYBER_URL and BOT_PUBLIC_URL:
-    CYBER_URL = BOT_PUBLIC_URL.rstrip('/') + '/cyber/'
-if CYBER_URL and not CYBER_URL.startswith('http'):
-    CYBER_URL = 'https://' + CYBER_URL
 def _origin_from_url(raw_url: str) -> str:
     if not raw_url:
         return ''
@@ -186,7 +167,6 @@ def _origin_from_url(raw_url: str) -> str:
 
 _ALLOWED_GAME_ORIGINS: tuple[str, ...] = tuple(dict.fromkeys(filter(None, (
     _origin_from_url(GAME_URL),
-    _origin_from_url(CYBER_URL),
     _origin_from_url(BOT_PUBLIC_URL),
 ))))
 
@@ -212,7 +192,6 @@ if not (1 <= PORT <= 65535):
 # Принята "честная" схема по количеству деплоев: X.Y.Z ~= сотни/десятки/единицы.
 BOT_VERSION = os.environ.get('BOT_VERSION', '9.8.0').strip() or '9.8.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.7.78').strip() or '1.7.78'
-CYBER_VERSION = os.environ.get('CYBER_VERSION', '0.1.0').strip() or '0.1.0'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 GAME_AUTH_REQUIRED = os.environ.get('GAME_AUTH_REQUIRED', '1').strip() != '0'
@@ -223,10 +202,6 @@ _beta_cache_ts: float = 0
 # Кэш режима доступа к игре
 _game_mode_cache: str = 'beta'
 _game_mode_cache_ts: float = 0
-_cyber_beta_cache: set = set()
-_cyber_beta_cache_ts: float = 0
-_cyber_mode_cache: str = 'open'
-_cyber_mode_cache_ts: float = 0
 
 
 # ══════════════════════════════════════════════════════════
@@ -320,22 +295,6 @@ async def is_game_privileged_async(user_id: int, *, bot_admin: bool | None = Non
     return False
 
 
-async def is_cyber_privileged_async(user_id: int, *, bot_admin: bool | None = None,
-                                    cyber_role: str | None = None) -> bool:
-    """True, если пользователь может входить в Киберщит в техрежиме."""
-    if cyber_role is None:
-        try:
-            cyber_role = await asyncio.to_thread(db.get_cyber_role, user_id)
-        except Exception:
-            cyber_role = None
-    if cyber_role == 'admin':
-        return True
-    if cyber_role == 'tester':
-        mode = await _get_cached_cyber_mode()
-        return mode in ('beta', 'open')
-    return False
-
-
 async def is_game_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None = None,
                                          game_role: str | None = None) -> tuple[bool, dict]:
     """Проверяет блокируется ли вход в игру техрежимом для конкретного пользователя."""
@@ -350,18 +309,6 @@ async def is_game_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None
     return (not allowed), status
 
 
-async def is_cyber_blocked_by_maintenance(user_id: int, *, bot_admin: bool | None = None,
-                                          cyber_role: str | None = None) -> tuple[bool, dict]:
-    """Проверяет блокируется ли вход в Киберщит техрежимом для конкретного пользователя."""
-    status = await get_maintenance_status_cached()
-    if not status.get('enabled'):
-        return False, status
-    allowed = await is_cyber_privileged_async(
-        user_id,
-        bot_admin=bot_admin,
-        cyber_role=cyber_role,
-    )
-    return (not allowed), status
 REQUEST_TIMEOUT = 30.0
 TZ_MINSK        = pytz.timezone('Europe/Minsk')
 
@@ -1537,13 +1484,12 @@ async def check_maintenance(update: Update, context: CallbackContext,
     if not status.get('enabled'):
         return False
 
-    if scope in ('game', 'cyber'):
-        is_cyber_scope = (scope == 'cyber')
-        title = "🧨 <b>ZERO_DAY В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>" if is_cyber_scope else "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>"
-        check_btn_text = "🛡 Проверить доступ" if is_cyber_scope else "🎮 Проверить доступ"
-        check_btn_cb = 'menu_cyber' if is_cyber_scope else 'menu_game'
-        admin_line = "• администраторы ZERO_DAY" if is_cyber_scope else "• администраторы игры"
-        tester_line = "• тестировщики ZERO_DAY (в режимах beta/open)" if is_cyber_scope else "• тестировщики игры (в режимах beta/open)"
+    if scope == 'game':
+        title = "⚠️ <b>ИГРА В ТЕХНИЧЕСКОМ РЕЖИМЕ</b>"
+        check_btn_text = "🎮 Проверить доступ"
+        check_btn_cb = 'menu_game'
+        admin_line = "• администраторы игры"
+        tester_line = "• тестировщики игры (в режимах beta/open)"
         msg = (
             f"{title}\n\n"
             "Вход в игру временно ограничен.\n"
@@ -1567,7 +1513,7 @@ async def check_maintenance(update: Update, context: CallbackContext,
     try:
         if update.callback_query:
             await update.callback_query.answer(
-                "⚠️ Технические работы" if scope not in ('game', 'cyber') else ("🧨 ZERO_DAY в техрежиме" if scope == 'cyber' else "⚠️ Игра в техрежиме"),
+                "⚠️ Игра в техрежиме" if scope == 'game' else "⚠️ Технические работы",
                 show_alert=True
             )
             await safe_edit(update.callback_query, msg, kb)
@@ -2529,14 +2475,11 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 async def cmd_version(update: Update, context: CallbackContext):
     """Показывает текущие версии бота и игры."""
     game_url_state = "настроен" if GAME_URL else "не задан"
-    cyber_url_state = "настроен" if CYBER_URL else "не задан"
     msg = (
         "🧩 <b>Версии системы</b>\n\n"
         f"🤖 Бот: <b>{BOT_VERSION}</b>\n"
         f"🎮 Игра: <b>{GAME_VERSION}</b>\n"
-        f"🧨 ZERO_DAY: <b>{CYBER_VERSION}</b>\n"
         f"🌐 GAME_URL: <b>{game_url_state}</b>\n"
-        f"🌐 CYBER_URL: <b>{cyber_url_state}</b>\n"
     )
     await update.message.reply_text(msg, parse_mode='HTML')
 
@@ -3320,46 +3263,6 @@ async def is_game_allowed(user_id: int) -> bool:
     return user_id in _beta_cache
 
 
-async def _get_cached_cyber_mode() -> str:
-    import time
-    global _cyber_mode_cache, _cyber_mode_cache_ts
-    if time.time() - _cyber_mode_cache_ts > 30:
-        _cyber_mode_cache = await asyncio.to_thread(db.get_cyber_access_mode)
-        _cyber_mode_cache_ts = time.time()
-    if _cyber_mode_cache not in ('beta', 'open', 'closed'):
-        _cyber_mode_cache = 'open'
-    return _cyber_mode_cache
-
-
-async def is_cyber_allowed(user_id: int) -> bool:
-    """Строгий доступ к Киберщиту по режимам: closed / beta / open."""
-    import time
-    global _cyber_beta_cache, _cyber_beta_cache_ts
-
-    try:
-        cyber_role = await asyncio.to_thread(db.get_cyber_role, user_id)
-    except Exception:
-        cyber_role = 'player'
-
-    if cyber_role == 'admin':
-        return True
-
-    mode = await _get_cached_cyber_mode()
-    if mode == 'closed':
-        return False
-    if cyber_role == 'tester':
-        return mode in ('beta', 'open')
-    if mode == 'open':
-        return True
-
-    # beta mode
-    if time.time() - _cyber_beta_cache_ts > 60:
-        rows = await asyncio.to_thread(db.get_cyber_beta_users)
-        _cyber_beta_cache = {r[0] for r in rows}
-        _cyber_beta_cache_ts = time.time()
-    return user_id in _cyber_beta_cache
-
-
 async def menu_game(query, context):
     """Запуск игры Шифровальщик с учётом роли (admin/tester/player)."""
     await query.answer()
@@ -3650,325 +3553,6 @@ async def menu_game(query, context):
         "🏆 <b>Таблица лидеров</b> всей школы"
         + my_info + role_hint,
         parse_mode='HTML', reply_markup=kb
-    )
-
-
-async def menu_cyber(query, context):
-    """Запуск игры Киберщит с ролями admin/tester/player."""
-    await query.answer()
-    user = query.from_user
-
-    if not await is_cyber_allowed(user.id):
-        mode = await _get_cached_cyber_mode()
-        if mode == 'closed':
-            denied_text = (
-                "🔧 <b>ZERO_DAY в техническом режиме</b>\n\n"
-                "Сейчас вход в игру ограничен.\n"
-                "Доступ есть только у администраторов игры."
-            )
-        else:
-            denied_text = (
-                "🔒 <b>Нет доступа</b>\n\n"
-                "Вы пока не добавлены в активный режим ZERO_DAY.\n"
-                "Попросите администратора выдать доступ."
-            )
-        await safe_edit(query, denied_text, [BACK_TO_MAIN[0]])
-        return
-
-    if not CYBER_URL:
-        await safe_edit(
-            query,
-            "🧨 <b>ZERO_DAY</b>\n\n"
-            "⚠️ Игра временно недоступна.\n"
-            "<i>Администратор ещё не добавил CYBER_URL в Railway.</i>",
-            [BACK_TO_MAIN[0]],
-        )
-        return
-
-    from telegram import InlineKeyboardButton, WebAppInfo
-
-    # Регистрируем игрока и роль
-    try:
-        reg_task = asyncio.to_thread(db.register_cyber_player, user.id, user.first_name)
-        role_task = asyncio.to_thread(db.get_cyber_role, user.id)
-        _, role = await asyncio.gather(reg_task, role_task)
-    except Exception as e:
-        logger.warning(f"menu_cyber register/read error: {e}")
-        role = 'player'
-    if role not in ('admin', 'tester', 'player'):
-        role = 'player'
-        try:
-            await asyncio.to_thread(db.set_cyber_role, user.id, role)
-        except Exception:
-            pass
-
-    my_rank_info = (None, 0)
-    try:
-        tasks = [
-            asyncio.to_thread(db.get_cyber_result, user.id),
-            asyncio.to_thread(db.get_cyber_leaderboard, 20),
-        ]
-        if role == 'player':
-            tasks.append(asyncio.to_thread(db.get_cyber_player_rank, user.id))
-        gathered = await asyncio.gather(*tasks)
-        my_result = gathered[0]
-        lb_rows = gathered[1]
-        if role == 'player' and len(gathered) > 2 and isinstance(gathered[2], tuple):
-            my_rank_info = gathered[2]
-    except Exception as e:
-        logger.warning(f"menu_cyber data read error: {e}")
-        my_result, lb_rows = None, []
-
-    lb_data = [
-        {
-            'uid': str(r[0]),
-            'name': r[1] or 'Игрок',
-            'xp': int(r[2] or 0),
-            'solved': int(r[3] or 0),
-            'streak': int(r[4] or 0),
-            'role': (r[5] if len(r) > 5 else 'player') or 'player',
-        }
-        for r in lb_rows
-    ]
-
-    admin_mode = role == 'admin'
-    tester_mode = role == 'tester'
-    in_rating = role == 'player'
-    my_data = None
-    if my_result:
-        my_data = {
-            'uid': str(my_result[0]),
-            'name': my_result[1] or 'Игрок',
-            'xp': int(my_result[2] or 0),
-            'solved': int(my_result[3] or 0),
-            'streak': int(my_result[4] or 0),
-            'banned': bool(my_result[6]) if len(my_result) > 6 else False,
-            'reset_token': int(my_result[7] or 0) if len(my_result) > 7 else 0,
-            'role': role,
-            'admin_mode': admin_mode,
-            'tester_mode': tester_mode,
-            'in_rating': in_rating,
-        }
-
-    sync_url_val = f"{BOT_PUBLIC_URL}/cyber_sync" if BOT_PUBLIC_URL else ''
-    leaderboard_url = f"{BOT_PUBLIC_URL}/cyber_leaderboard" if BOT_PUBLIC_URL else ''
-    state_url = f"{BOT_PUBLIC_URL}/cyber_state" if BOT_PUBLIC_URL else ''
-    reset_url = f"{BOT_PUBLIC_URL}/cyber_reset" if BOT_PUBLIC_URL else ''
-
-    payload_obj = {
-        'sync_url': sync_url_val,
-        'leaderboard_url': leaderboard_url,
-        'state_url': state_url,
-        'reset_url': reset_url,
-        'role': role,
-        'admin_mode': admin_mode,
-        'tester_mode': tester_mode,
-        'in_rating': in_rating,
-        'version': CYBER_VERSION,
-        'lb': lb_data,
-        'me': my_data,
-    }
-    slim_payload_obj = {
-        'sync_url': sync_url_val,
-        'leaderboard_url': leaderboard_url,
-        'state_url': state_url,
-        'reset_url': reset_url,
-        'role': role,
-        'admin_mode': admin_mode,
-        'tester_mode': tester_mode,
-        'in_rating': in_rating,
-        'version': CYBER_VERSION,
-        'me': my_data,
-    }
-    tiny_payload_obj = {
-        'sync_url': sync_url_val,
-        'state_url': state_url,
-        'role': role,
-        'admin_mode': admin_mode,
-        'tester_mode': tester_mode,
-        'in_rating': in_rating,
-        'version': CYBER_VERSION,
-    }
-
-    payload_full = urllib.parse.quote(json.dumps(payload_obj, ensure_ascii=False))
-    payload_slim = urllib.parse.quote(json.dumps(slim_payload_obj, ensure_ascii=False))
-    payload_tiny = urllib.parse.quote(json.dumps(tiny_payload_obj, ensure_ascii=False))
-    payload_variants = [payload_full, payload_slim, payload_tiny, '']
-
-    def _is_valid_telegram_webapp_base(raw_url: str) -> bool:
-        if not raw_url:
-            return False
-        try:
-            parsed = urllib.parse.urlparse(raw_url.strip())
-            if parsed.scheme not in ('https', 'http') or not parsed.netloc:
-                return False
-            # raises ValueError for malformed port (e.g. :abc)
-            _ = parsed.port
-            return True
-        except Exception:
-            return False
-
-    candidate_bases: list[str] = []
-    if CYBER_URL:
-        candidate_bases.append(CYBER_URL.strip())
-    if BOT_PUBLIC_URL:
-        fallback_cyber = BOT_PUBLIC_URL.rstrip('/') + '/cyber/'
-        if fallback_cyber not in candidate_bases:
-            candidate_bases.append(fallback_cyber)
-
-    MAX_WEBAPP_URL_LEN = 1700
-    cyber_url = ''
-    used_base = ''
-    used_payload_len = 0
-    for base in candidate_bases:
-        if not _is_valid_telegram_webapp_base(base):
-            logger.warning(f"menu_cyber: skip invalid base url: {base!r}")
-            continue
-        for p in payload_variants:
-            test_url = build_game_launch_url(base, CYBER_VERSION, p)
-            if len(test_url) <= MAX_WEBAPP_URL_LEN:
-                cyber_url = test_url
-                used_base = base
-                used_payload_len = len(p)
-                break
-        if cyber_url:
-            break
-
-    if not cyber_url:
-        await safe_edit(
-            query,
-            "🧨 <b>ZERO_DAY временно недоступен</b>\n\n"
-            "Не удалось собрать корректную ссылку запуска.\n"
-            "Проверьте переменные Railway:\n"
-            "<code>BOT_PUBLIC_URL</code> и <code>CYBER_URL</code>.",
-            [[btn("🏠 Главное меню", "back_to_main")]],
-        )
-        return
-    logger.info(
-        "menu_cyber launch url ready: len=%s payload_len=%s base=%s",
-        len(cyber_url), used_payload_len, used_base
-    )
-
-    if my_result:
-        total_xp = int(my_result[2] or 0)
-        solved = int(my_result[3] or 0)
-        streak = int(my_result[4] or 0)
-        updated = my_result[5]
-        updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y') if updated else '—'
-        rank_pos, rank_total = my_rank_info if isinstance(my_rank_info, tuple) else (None, 0)
-        if role != 'player':
-            rank_line = "\n🏆 Рейтинг: <i>не учитывается для этой роли</i>"
-        elif rank_pos:
-            rank_line = f"\n🏆 Рейтинг: <b>#{rank_pos}</b> из {rank_total}"
-        elif total_xp > 0 and (rank_total or 0) > 0:
-            rank_line = f"\n🏆 Рейтинг: <b>вне топ-20</b> · участников: {rank_total}"
-        else:
-            rank_line = "\n🏆 Рейтинг: <i>пока без позиции</i>"
-        my_info = (
-            "\n\n📊 <b>Ваш прогресс</b>"
-            f"\n⭐ XP: <b>{total_xp}</b>"
-            f"\n✅ Операций закрыто: <b>{solved}</b>"
-            f"\n🔥 Серия: <b>{streak}</b>"
-            f"\n📅 Последняя игра: {updated_str}"
-            + rank_line
-        )
-    else:
-        my_info = "\n\n<i>Вы ещё не играли — начните первую летнюю операцию.</i>"
-
-    if role == 'admin':
-        role_hint = "\n👑 <i>Режим администратора: вход всегда, рейтинг не учитывается.</i>"
-    elif role == 'tester':
-        role_hint = "\n🧪 <i>Режим тестировщика: вход в beta/open, рейтинг не учитывается.</i>"
-    else:
-        role_hint = "\n🎮 <i>Игровой режим: участие в общем рейтинге школы.</i>"
-
-    btn_rows = [
-        [InlineKeyboardButton(
-            "🧨 ОТКРЫТЬ ZERO_DAY"
-            if role == 'player'
-            else ("👑 ОТКРЫТЬ ZERO_DAY (АДМИН)" if role == 'admin' else "🧪 ОТКРЫТЬ ZERO_DAY (ТЕСТЕР)"),
-            web_app=WebAppInfo(url=cyber_url),
-        )],
-        [InlineKeyboardButton("🏆 Рейтинг ZERO_DAY", callback_data='cyber_leaderboard')],
-    ]
-    if role == 'admin':
-        btn_rows.append([InlineKeyboardButton("🗑 Сбросить мой прогресс", callback_data='cyber_admin_self_reset')])
-    btn_rows.append([InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')])
-
-    await query.message.edit_text(
-        "🧨 <b>ZERO_DAY: ШКОЛЬНЫЙ ПРОТОКОЛ</b>\n"
-        "<i>Эпизодический кибер-триллер на всё лето</i>\n\n"
-        "Контур активных операций:\n"
-        "• 💬 Messenger — выборы в диалогах\n"
-        "• 🔎 Gallery — поиск цифровых улик\n"
-        "• 🌐 Browser/Map/Terminal — расследования и пазлы\n\n"
-        "Новые эпизоды выходят по расписанию."
-        + my_info + role_hint,
-        parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup(btn_rows),
-    )
-
-
-async def cyber_leaderboard(query, context):
-    """Публичный рейтинг ZERO_DAY."""
-    await query.answer()
-    rows = await asyncio.to_thread(db.get_cyber_leaderboard, 30)
-    total = len(rows)
-    if not rows:
-        await safe_edit(
-            query,
-            "🏆 <b>Рейтинг ZERO_DAY</b>\n\nПока нет игроков с очками.",
-            [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
-        )
-        return
-    lines = [f"🏆 <b>РЕЙТИНГ ZERO_DAY</b>  👥 {total}\n"]
-    for i, r in enumerate(rows, start=1):
-        uid = int(r[0] or 0)
-        name = (r[1] or "Игрок").strip()
-        xp = int(r[2] or 0)
-        solved = int(r[3] or 0)
-        streak = int(r[4] or 0)
-        me_mark = " 👈" if uid == query.from_user.id else ""
-        lines.append(f"{i}. <b>{name}</b>{me_mark}")
-        lines.append(f"   ⭐ {xp} XP · ✅ {solved} · 🔥 {streak}")
-    await safe_edit(
-        query,
-        "\n".join(lines),
-        [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
-    )
-
-
-async def cyber_admin_self_reset(query, context):
-    """Запрос подтверждения self-reset для admin роли Киберщита."""
-    await query.answer()
-    await safe_edit(
-        query,
-        "⚠️ <b>Сбросить свой прогресс ZERO_DAY?</b>\n\n"
-        "XP, серия и выполненные операции будут очищены.",
-        [
-            [btn("✅ Да, сбросить", "cyber_admin_self_reset_confirm")],
-            [btn("❌ Отмена", "menu_cyber")],
-        ],
-    )
-
-
-async def cyber_admin_self_reset_confirm(query, context):
-    """Выполняет self-reset для admin роли Киберщита."""
-    await query.answer()
-    uid = query.from_user.id
-    role = await asyncio.to_thread(db.get_cyber_role, uid)
-    if role != 'admin':
-        await safe_edit(
-            query,
-            "⛔ Только игровой администратор ZERO_DAY может выполнить этот сброс.",
-            [[btn("↩️ Назад", "menu_cyber")]],
-        )
-        return
-    ok = await asyncio.to_thread(db.reset_cyber_result, uid)
-    await safe_edit(
-        query,
-        "✅ Прогресс ZERO_DAY сброшен." if ok else "❌ Не удалось сбросить прогресс.",
-        [[btn("↩️ Назад", "menu_cyber"), btn("🏠 Меню", "back_to_main")]],
     )
 
 
@@ -5164,7 +4748,6 @@ async def admin_game_panel(query, context):
         [btn("🔓 Доступ игроков к главам", 'admin_player_chapters')],
         [btn("👤 Роли игроков", 'admin_roles_panel')],
         [btn("🗑 Сбросить игру всем", 'admin_game_reset_all')],
-        [btn("🧨 ZERO_DAY", 'admin_cyber_panel')],
         [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
@@ -5183,344 +4766,6 @@ async def admin_set_game_mode(query, context, mode: str):
     mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
     txt = f"✅ Режим игры: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
     await safe_edit(query, txt, [[btn("◀️ Управление игрой", 'admin_game_panel')]])
-
-
-async def admin_cyber_panel(query, context):
-    """Панель управления ZERO_DAY."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-
-    rows, access_mode, beta_users = await asyncio.gather(
-        asyncio.to_thread(db.get_cyber_leaderboard_admin, 80),
-        asyncio.to_thread(db.get_cyber_access_mode),
-        asyncio.to_thread(db.get_cyber_beta_users),
-    )
-    total = len(rows)
-    active = sum(1 for r in rows if int(r[2] or 0) > 0)
-    admins = sum(1 for r in rows if (r[7] if len(r) > 7 else 'player') == 'admin')
-    testers = sum(1 for r in rows if (r[7] if len(r) > 7 else 'player') == 'tester')
-    beta_count = len(beta_users or [])
-    mode_labels = {
-        'beta': f"🧪 Бета ({beta_count})",
-        'open': "🟢 Открыта",
-        'closed': "🔒 Закрыта",
-    }
-    mode_title = mode_labels.get(access_mode, access_mode)
-    text = (
-        "🧨 <b>УПРАВЛЕНИЕ ZERO_DAY</b>\n\n"
-        f"👥 Игроков: <b>{total}</b>\n"
-        f"📊 Активных: <b>{active}</b>\n"
-        f"👑 Админов игры: <b>{admins}</b>\n"
-        f"🧪 Тестеров игры: <b>{testers}</b>\n\n"
-        f"🚦 Режим доступа: <b>{mode_title}</b>\n\n"
-        f"🔖 Версия: <b>{CYBER_VERSION}</b>"
-    )
-    mode_btns = {
-        'beta': btn("🧪 Бета", 'cyber_mode_beta'),
-        'open': btn("🟢 Открыта", 'cyber_mode_open'),
-        'closed': btn("🔒 Закрыта", 'cyber_mode_closed'),
-    }
-    if access_mode in mode_btns:
-        current = mode_btns.pop(access_mode)
-        current_row = [btn(f"✅ {current.text}", 'noop')]
-    else:
-        current_row = [btn(f"✅ {mode_title}", 'noop')]
-    kb = [
-        [btn("📋 Список игроков", 'admin_cyber_leaderboard')],
-        [btn("👤 Роли игроков", 'admin_cyber_roles')],
-        current_row,
-        list(mode_btns.values()),
-        [btn("🧪 Бета-список", 'admin_cyber_beta_panel')],
-        [btn("🗑 Сбросить ZERO_DAY всем", 'admin_cyber_reset_all')],
-        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
-    ]
-    await safe_edit(query, text, kb)
-
-
-async def admin_set_cyber_mode(query, context, mode: str):
-    """Переключает глобальный режим доступа к Киберщиту."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    ok = await asyncio.to_thread(db.set_cyber_access_mode, mode)
-    global _cyber_mode_cache, _cyber_mode_cache_ts, _cyber_beta_cache, _cyber_beta_cache_ts
-    if ok:
-        _cyber_mode_cache = mode
-    _cyber_mode_cache_ts = 0
-    _cyber_beta_cache = set()
-    _cyber_beta_cache_ts = 0
-    mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
-    text = f"✅ Режим ZERO_DAY: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
-    await safe_edit(query, text, [[btn("◀️ ZERO_DAY", 'admin_cyber_panel')]])
-
-
-async def admin_cyber_leaderboard(query, context):
-    """Список игроков Киберщита для администратора."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    rows = await asyncio.to_thread(db.get_cyber_leaderboard_admin, 60)
-    if not rows:
-        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ ZERO_DAY", "admin_cyber_panel")]])
-        return
-    lines = [f"🧨 <b>ИГРОКИ ZERO_DAY</b> ({len(rows)})\n"]
-    kb = []
-    for i, row in enumerate(rows, start=1):
-        uid = int(row[0] or 0)
-        name = row[1] or "Игрок"
-        xp = int(row[2] or 0)
-        solved = int(row[3] or 0)
-        streak = int(row[4] or 0)
-        banned = bool(row[5]) if len(row) > 5 else False
-        role = (row[7] if len(row) > 7 else 'player') or 'player'
-        role_icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}.get(role, '🎮')
-        lines.append(f"{i}. {role_icon} <b>{name}</b> <code>{uid}</code>")
-        lines.append(f"   ⭐ {xp} XP · ✅ {solved} · 🔥 {streak}" + (" · 🚫 бан" if banned else ""))
-        kb.append([btn(f"👤 {name[:16]} · {xp} XP", f'acyber_view_{uid}')])
-    kb.append([btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
-    await safe_edit(query, "\n".join(lines), kb)
-
-
-async def admin_cyber_view_player(query, context, uid: int):
-    """Карточка игрока Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    row = await asyncio.to_thread(db.get_cyber_result_detail, uid)
-    role = await asyncio.to_thread(db.get_cyber_role, uid)
-    if not row:
-        await safe_edit(query, "Игрок не найден в ZERO_DAY.", [[btn("↩️ Назад", "admin_cyber_leaderboard")]])
-        return
-    name = row[1] or "Игрок"
-    xp = int(row[2] or 0)
-    solved = int(row[3] or 0)
-    streak = int(row[4] or 0)
-    updated = row[7]
-    updated_str = updated.astimezone(pytz.timezone('Europe/Minsk')).strftime('%d.%m.%Y %H:%M') if updated else '—'
-    text = (
-        "🛡 <b>КАРТОЧКА ИГРОКА</b>\n\n"
-        f"👤 <b>{name}</b>\n"
-        f"🆔 <code>{uid}</code>\n"
-        f"🎭 Роль: <b>{role}</b>\n"
-        f"⭐ XP: <b>{xp}</b>\n"
-        f"✅ Операций: <b>{solved}</b>\n"
-        f"🔥 Серия: <b>{streak}</b>\n"
-        f"🕒 Обновлён: {updated_str}"
-    )
-    kb = [
-        [btn("🧹 Сбросить прогресс", f'acyber_reset_{uid}')],
-        [btn("↩️ К списку", "admin_cyber_leaderboard"), btn("🏠 Меню", "back_to_main")],
-    ]
-    await safe_edit(query, text, kb)
-
-
-async def admin_cyber_reset_player(query, context, uid: int):
-    """Сброс прогресса игрока Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    ok = await asyncio.to_thread(db.reset_cyber_result, uid)
-    await safe_edit(
-        query,
-        f"{'✅ Прогресс сброшен.' if ok else '❌ Не удалось сбросить прогресс.'}\nID: <code>{uid}</code>",
-        [[btn("↩️ К игроку", f'acyber_view_{uid}'), btn("🏠 Меню", "back_to_main")]],
-    )
-
-
-async def admin_cyber_reset_all(query, context):
-    """Подтверждение массового сброса Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    await safe_edit(
-        query,
-        "⚠️ <b>Сбросить прогресс ZERO_DAY всем игрокам?</b>\n\n"
-        "XP/серия/операции будут очищены у всех.",
-        [
-            [btn("✅ Да, сбросить всем", "acyber_reset_all_confirm")],
-            [btn("❌ Отмена", "admin_cyber_panel")],
-        ],
-    )
-
-
-async def admin_cyber_reset_all_confirm(query, context):
-    """Выполняет массовый сброс Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    deleted = await asyncio.to_thread(db.reset_all_cyber_results)
-    await safe_edit(
-        query,
-        f"✅ Сброшено игроков: <b>{deleted}</b>",
-        [[btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")]],
-    )
-
-
-async def admin_cyber_roles(query, context):
-    """Управление ролями игроков Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    rows = await asyncio.to_thread(db.get_cyber_players_with_roles, 50)
-    if not rows:
-        await safe_edit(query, "ℹ️ Игроков пока нет.", [[btn("↩️ ZERO_DAY", "admin_cyber_panel")]])
-        return
-    lines = ["🎭 <b>РОЛИ ZERO_DAY</b>\n"]
-    kb = []
-    for uid, name, role, xp, solved in rows:
-        icon = {'admin': '👑', 'tester': '🧪', 'player': '🎮'}.get(role, '🎮')
-        lines.append(f"{icon} <b>{name or 'Игрок'}</b> <code>{uid}</code> · ⭐{xp} · ✅{solved}")
-        row_btns = []
-        if role != 'admin':
-            row_btns.append(btn("👑", f'crole_admin_{uid}'))
-        if role != 'tester':
-            row_btns.append(btn("🧪", f'crole_tester_{uid}'))
-        if role != 'player':
-            row_btns.append(btn("🎮", f'crole_player_{uid}'))
-        row_btns.append(btn(f"👤 {(name or str(uid))[:12]}", f'acyber_view_{uid}'))
-        kb.append(row_btns)
-    kb.append([btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")])
-    await safe_edit(query, "\n".join(lines), kb)
-
-
-async def handle_cyber_role_action(query, context, data: str):
-    """Смена роли игрока Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    try:
-        parts = data.split('_')  # crole_admin_123
-        role = parts[1]
-        uid = int(parts[2])
-    except Exception:
-        await safe_edit(query, "❌ Некорректная команда роли.", [[btn("↩️ Назад", "admin_cyber_roles")]])
-        return
-    ok = await asyncio.to_thread(db.set_cyber_role, uid, role)
-    role_name = {'admin': 'Администратор 👑', 'tester': 'Тестировщик 🧪', 'player': 'Игрок 🎮'}.get(role, role)
-    await safe_edit(
-        query,
-        f"{'✅' if ok else '❌'} Роль ZERO_DAY обновлена.\nID: <code>{uid}</code>\nНовая роль: <b>{role_name}</b>",
-        [[btn("↩️ Роли", "admin_cyber_roles"), btn("🏠 Меню", "back_to_main")]],
-    )
-
-
-async def admin_cyber_beta_panel(query, context):
-    """Панель управления бета-списком Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    users = await asyncio.to_thread(db.get_cyber_beta_users)
-    mode = await asyncio.to_thread(db.get_cyber_access_mode)
-    lines = [f"🧪 <b>БЕТА-СПИСОК ZERO_DAY</b>\n\nРежим: <b>{mode}</b>"]
-    if users:
-        lines.append(f"\nВсего: <b>{len(users)}</b>")
-        for uid, name, _added, note in users[:20]:
-            lines.append(f"• <b>{name or 'Игрок'}</b> <code>{uid}</code>" + (f" — {note}" if note else ""))
-    else:
-        lines.append("\nСписок пуст.")
-    kb = [
-        [btn("➕ Добавить", "admin_cyber_beta_add"), btn("➖ Убрать", "admin_cyber_beta_remove")],
-        [btn("🧹 Очистить список", "admin_cyber_beta_clear_confirm")],
-        [btn("↩️ ZERO_DAY", "admin_cyber_panel"), btn("🏠 Меню", "back_to_main")],
-    ]
-    await safe_edit(query, "\n".join(lines), kb)
-
-
-async def admin_cyber_beta_add(query, context):
-    """Запрос ID для добавления в beta Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    context.user_data['cyber_beta_action'] = 'add'
-    await safe_edit(
-        query,
-        "➕ <b>Добавить в beta ZERO_DAY</b>\n\n"
-        "Отправьте один или несколько Telegram ID (через запятую).\n"
-        "Пример: <code>123456, 987654</code>",
-        [[btn("❌ Отмена", "admin_cyber_beta_panel")]],
-    )
-
-
-async def admin_cyber_beta_remove(query, context):
-    """Список для удаления из beta Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    users = await asyncio.to_thread(db.get_cyber_beta_users)
-    if not users:
-        await safe_edit(query, "ℹ️ Список beta пуст.", [[btn("↩️ Beta", "admin_cyber_beta_panel")]])
-        return
-    kb = [[btn(f"✖ {(u[1] or u[0])} ({u[0]})", f'acyber_beta_rm_{u[0]}')] for u in users[:40]]
-    kb.append([btn("↩️ Назад", "admin_cyber_beta_panel")])
-    await safe_edit(query, "➖ Выберите пользователя для удаления:", kb)
-
-
-async def admin_cyber_beta_clear_confirm(query, context):
-    """Подтверждение очистки beta Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    await safe_edit(
-        query,
-        "⚠️ Очистить beta-список ZERO_DAY?",
-        [
-            [btn("✅ Да, очистить", "acyber_beta_clear_do")],
-            [btn("❌ Отмена", "admin_cyber_beta_panel")],
-        ],
-    )
-
-
-async def admin_cyber_beta_clear_do(query, context):
-    """Очищает beta-список Киберщита."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    global _cyber_beta_cache, _cyber_beta_cache_ts
-    _cyber_beta_cache = set()
-    _cyber_beta_cache_ts = 0
-    deleted = await asyncio.to_thread(db.clear_cyber_beta_list)
-    await safe_edit(
-        query,
-        f"✅ Beta-список очищен ({deleted}).",
-        [[btn("↩️ Beta", "admin_cyber_beta_panel"), btn("🏠 Меню", "back_to_main")]],
-    )
-
-
-async def handle_cyber_beta_add_input(update, context, text: str):
-    """Обрабатывает ввод ID для добавления в beta Киберщита."""
-    global _cyber_beta_cache, _cyber_beta_cache_ts
-    parts = [p.strip() for p in text.replace(',', ' ').split()]
-    added, failed = [], []
-    for part in parts:
-        try:
-            uid = int(part)
-            uinfo = await asyncio.to_thread(db.get_user_info, uid) if hasattr(db, 'get_user_info') else None
-            uname = None
-            if isinstance(uinfo, dict):
-                uname = uinfo.get('first_name') or uinfo.get('username')
-            ok = await asyncio.to_thread(db.add_cyber_beta_user, uid, uname)
-            if ok:
-                added.append(str(uid))
-            else:
-                failed.append(str(uid))
-        except Exception:
-            failed.append(part)
-    _cyber_beta_cache = set()
-    _cyber_beta_cache_ts = 0
-    context.user_data.pop('cyber_beta_action', None)
-    lines = []
-    if added:
-        lines.append(f"✅ Добавлено: {', '.join(added)}")
-    if failed:
-        lines.append(f"❌ Ошибка: {', '.join(failed)}")
-    if not lines:
-        lines.append("ℹ️ Ничего не изменилось.")
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup([[btn("↩️ Beta", "admin_cyber_beta_panel")]]),
-    )
 
 
 async def admin_game_leaderboard(query, context):
@@ -5968,8 +5213,8 @@ async def show_admin_panel(query):
 
     kb = [
         [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Шифровальщик", 'admin_game_panel')],
-        [btn("🧨 ZERO_DAY", 'admin_cyber_panel'), btn("⚙️ Система", 'admin_system_panel')],
         [btn("👤 Мой игровой режим", 'admin_my_game_role')],
+        [btn("⚙️ Система", 'admin_system_panel')],
         [btn("🏠 Главное меню",  'back_to_main')],
     ]
     await safe_edit(
@@ -6251,12 +5496,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             user.id,
             bot_admin=user_is_admin,
         )
-    elif d == 'menu_cyber':
-        maintenance_scope = 'cyber'
-        maintenance_bypass = await is_cyber_privileged_async(
-            user.id,
-            bot_admin=user_is_admin,
-        )
     if await check_maintenance(
         update,
         context,
@@ -6454,9 +5693,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         if d.startswith('grole_'):
             await handle_game_role_action(query, context, d)
             return
-        if d.startswith('crole_'):
-            await handle_cyber_role_action(query, context, d)
-            return
 
         if d.startswith('ach_open_') or d.startswith('ach_close_') or d.startswith('ach_sched_'):
             await handle_chapter_action(query, context, d)
@@ -6471,30 +5707,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
                 f"{'✅ Тестер удалён из списка.' if ok else '❌ Не найден.'}",
                 [[btn("↩️ Бета-панель", 'admin_beta_panel')]])
             return
-        if d.startswith('acyber_beta_rm_'):
-            uid = int(d.replace('acyber_beta_rm_', ''))
-            global _cyber_beta_cache, _cyber_beta_cache_ts
-            _cyber_beta_cache = set(); _cyber_beta_cache_ts = 0
-            ok = await asyncio.to_thread(db.remove_cyber_beta_user, uid)
-            await safe_edit(
-                query,
-                f"{'✅ Пользователь удалён из beta.' if ok else '❌ Пользователь не найден.'}",
-                [[btn("↩️ Beta ZERO_DAY", 'admin_cyber_beta_panel')]],
-            )
-            return
-        if d.startswith('acyber_view_'):
-            uid = int(d.replace('acyber_view_', ''))
-            await admin_cyber_view_player(query, context, uid)
-            return
-        if d.startswith('acyber_reset_') and d != 'acyber_reset_all_confirm':
-            uid = int(d.replace('acyber_reset_', ''))
-            await admin_cyber_reset_player(query, context, uid)
-            return
-        if d == 'acyber_reset_all_confirm':
-            await admin_cyber_reset_all_confirm(query, context)
-            return
-
-        # ── Доступ к главам для игроков (apc_) ──
         if d.startswith('apc_player_'):
             target_uid = int(d.replace('apc_player_', ''))
             await admin_player_chapters_view(query, context, target_uid)
@@ -6726,10 +5938,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'menu_ai':                menu_ai,
         'menu_games':             menu_games,
         'menu_game':              menu_game,
-        'menu_cyber':             menu_cyber,
-        'cyber_leaderboard':      cyber_leaderboard,
-        'cyber_admin_self_reset': cyber_admin_self_reset,
-        'cyber_admin_self_reset_confirm': cyber_admin_self_reset_confirm,
         'menu_help':              menu_help,
         'admin_panel':                show_admin_panel,
         'admin_content_panel':        admin_content_panel,
@@ -6760,18 +5968,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             [[btn("❌ Отмена", 'admin_content_panel')]]),
         'admin_analytics':        show_analytics,
         'admin_game_panel':       admin_game_panel,
-        'admin_cyber_panel':      admin_cyber_panel,
-        'cyber_mode_beta':        lambda q, c: admin_set_cyber_mode(q, c, 'beta'),
-        'cyber_mode_open':        lambda q, c: admin_set_cyber_mode(q, c, 'open'),
-        'cyber_mode_closed':      lambda q, c: admin_set_cyber_mode(q, c, 'closed'),
-        'admin_cyber_leaderboard': admin_cyber_leaderboard,
-        'admin_cyber_roles':      admin_cyber_roles,
-        'admin_cyber_reset_all':  admin_cyber_reset_all,
-        'admin_cyber_beta_panel': admin_cyber_beta_panel,
-        'admin_cyber_beta_add':   admin_cyber_beta_add,
-        'admin_cyber_beta_remove': admin_cyber_beta_remove,
-        'admin_cyber_beta_clear_confirm': admin_cyber_beta_clear_confirm,
-        'acyber_beta_clear_do':   admin_cyber_beta_clear_do,
         'game_mode_beta':         lambda q, c: admin_set_game_mode(q, c, 'beta'),
         'game_mode_open':         lambda q, c: admin_set_game_mode(q, c, 'open'),
         'game_mode_closed':       lambda q, c: admin_set_game_mode(q, c, 'closed'),
@@ -6872,9 +6068,6 @@ async def handle_message(update: Update, context: CallbackContext):
 
     if context.user_data.get('beta_action') == 'add' and await is_bot_admin_async(user.id):
         await handle_beta_add_input(update, context, text)
-        return
-    if context.user_data.get('cyber_beta_action') == 'add' and await is_bot_admin_async(user.id):
-        await handle_cyber_beta_add_input(update, context, text)
         return
 
     # ── Удаление замены по ID ──
@@ -8078,299 +7271,6 @@ async def handle_game_sync(request):
             {'ok': False, 'error': str(e)}, status=500, headers=headers)
 
 
-async def handle_cyber_reset(request):
-    """POST /cyber_reset — сброс прогресса Киберщита (только self-reset для cyber admin)."""
-    headers = _game_cors_headers(request, 'POST, OPTIONS')
-    if request.method == 'OPTIONS':
-        return aiohttp_web.Response(headers=headers)
-    try:
-        data = await request.json()
-    except Exception:
-        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
-    user_id = data.get('user_id')
-    init_data_raw = data.get('init_data', '')
-    if not user_id:
-        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
-    try:
-        user_id = _to_int(user_id, 0)
-        if user_id <= 0:
-            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
-        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
-        if not auth_ok:
-            logger.warning(f"cyber_reset auth failed: user={user_id}, reason={auth_reason}")
-            return _unauthorized_game_response(headers, auth_reason)
-        blocked, maint = await is_cyber_blocked_by_maintenance(user_id)
-        if blocked:
-            return aiohttp_web.json_response(
-                {'ok': False, 'error': 'maintenance', 'maintenance_until': maint.get('until')},
-                status=503, headers=headers
-            )
-        role = await asyncio.to_thread(db.get_cyber_role, user_id)
-        if role != 'admin':
-            return aiohttp_web.json_response(
-                {'ok': False, 'error': 'only cyber admin can self-reset'},
-                status=403, headers=headers
-            )
-        ok = await asyncio.to_thread(db.reset_cyber_result, user_id)
-        return aiohttp_web.json_response({'ok': ok}, headers=headers)
-    except Exception as e:
-        logger.error(f"handle_cyber_reset error: {e}")
-        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, headers=headers)
-
-
-async def handle_cyber_state(request):
-    """GET /cyber_state?user_id=... — состояние игрока Киберщита."""
-    headers = _game_cors_headers(request, 'GET, OPTIONS')
-    if request.method == 'OPTIONS':
-        return aiohttp_web.Response(headers=headers)
-
-    user_id = request.rel_url.query.get('user_id')
-    init_data_raw = request.rel_url.query.get('init_data', '')
-    if not user_id:
-        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
-    try:
-        user_id = _to_int(user_id, 0)
-        if user_id <= 0:
-            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
-        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
-        if not auth_ok:
-            logger.warning(f"cyber_state auth failed: user={user_id}, reason={auth_reason}")
-            return _unauthorized_game_response(headers, auth_reason)
-        if _is_game_rate_limited('cyber_state', user_id, limit=80):
-            return aiohttp_web.json_response({'ok': False, 'error': 'rate_limited'}, status=429, headers=headers)
-
-        blocked, maint = await is_cyber_blocked_by_maintenance(user_id)
-        if blocked:
-            return aiohttp_web.json_response(
-                {
-                    'ok': True,
-                    'allowed': False,
-                    'access_reason': 'maintenance',
-                    'maintenance': True,
-                    'maintenance_until': maint.get('until'),
-                    'role': 'player',
-                    'admin_mode': False,
-                    'tester_mode': False,
-                    'in_rating': True,
-                    'me': {'xp': 0, 'solved_count': 0, 'streak': 0, 'reset_token': 0, 'progress_json': {}},
-                    'leaderboard': [],
-                },
-                headers=headers,
-            )
-
-        allowed = await is_cyber_allowed(user_id)
-        access_mode = await _get_cached_cyber_mode()
-        access_reason = access_mode if not allowed else None
-
-        result, role = await asyncio.gather(
-            asyncio.to_thread(db.get_cyber_result, user_id),
-            asyncio.to_thread(db.get_cyber_role, user_id),
-        )
-        if not result:
-            await asyncio.to_thread(db.register_cyber_player, user_id, _extract_user_name_from_init_data(init_data_raw) or 'Игрок')
-            result = await asyncio.to_thread(db.get_cyber_result, user_id)
-        if role not in ('admin', 'tester', 'player'):
-            role = 'player'
-            await asyncio.to_thread(db.set_cyber_role, user_id, role)
-
-        admin_mode = role == 'admin'
-        tester_mode = role == 'tester'
-        in_rating = role == 'player'
-
-        xp = int(result[2] or 0) if result else 0
-        solved_count = int(result[3] or 0) if result else 0
-        streak = int(result[4] or 0) if result else 0
-        banned = bool(result[6]) if result and len(result) > 6 else False
-        reset_token = _cyber_reset_token(result)
-        progress_json = result[8] if result and len(result) > 8 else {}
-        if not isinstance(progress_json, dict):
-            progress_json = {}
-        if banned:
-            xp = 0
-            solved_count = 0
-            streak = 0
-            progress_json = {}
-
-        lb_rows = await asyncio.to_thread(db.get_cyber_leaderboard, 30)
-        leaderboard = [
-            {
-                'uid': str(r[0]),
-                'name': r[1] or 'Игрок',
-                'xp': int(r[2] or 0),
-                'solved': int(r[3] or 0),
-                'streak': int(r[4] or 0),
-                'role': (r[5] if len(r) > 5 else 'player') or 'player',
-            }
-            for r in lb_rows
-        ]
-
-        return aiohttp_web.json_response(
-            {
-                'ok': True,
-                'allowed': bool(allowed),
-                'access_reason': access_reason,
-                'role': role,
-                'admin_mode': admin_mode,
-                'tester_mode': tester_mode,
-                'in_rating': in_rating,
-                'banned': banned,
-                'reset_token': reset_token,
-                'me': {
-                    'xp': xp,
-                    'solved_count': solved_count,
-                    'streak': streak,
-                    'reset_token': reset_token,
-                    'progress_json': progress_json,
-                    'role': role,
-                    'admin_mode': admin_mode,
-                    'tester_mode': tester_mode,
-                    'in_rating': in_rating,
-                },
-                'leaderboard': leaderboard,
-            },
-            headers=headers,
-        )
-    except Exception as e:
-        logger.error(f"handle_cyber_state error: {e}")
-        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, headers=headers)
-
-
-async def handle_cyber_leaderboard(request):
-    """GET /cyber_leaderboard?user_id=... — рейтинг Киберщита."""
-    headers = _game_cors_headers(request, 'GET, OPTIONS')
-    if request.method == 'OPTIONS':
-        return aiohttp_web.Response(headers=headers)
-
-    user_id = request.rel_url.query.get('user_id')
-    init_data_raw = request.rel_url.query.get('init_data', '')
-    if not user_id:
-        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
-    try:
-        user_id = _to_int(user_id, 0)
-        if user_id <= 0:
-            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
-        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
-        if not auth_ok:
-            logger.warning(f"cyber_leaderboard auth failed: user={user_id}, reason={auth_reason}")
-            return _unauthorized_game_response(headers, auth_reason)
-        if _is_game_rate_limited('cyber_leaderboard', user_id, limit=80):
-            return aiohttp_web.json_response({'ok': False, 'error': 'rate_limited'}, status=429, headers=headers)
-        rows = await asyncio.to_thread(db.get_cyber_leaderboard, 50)
-        players_count = len(rows)
-        payload = [
-            {
-                'uid': str(r[0]),
-                'name': r[1] or 'Игрок',
-                'xp': int(r[2] or 0),
-                'solved': int(r[3] or 0),
-                'streak': int(r[4] or 0),
-                'role': (r[5] if len(r) > 5 else 'player') or 'player',
-            }
-            for r in rows
-        ]
-        return aiohttp_web.json_response(
-            {'ok': True, 'leaderboard': payload, 'players_count': players_count},
-            headers=headers
-        )
-    except Exception as e:
-        logger.error(f"handle_cyber_leaderboard error: {e}")
-        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, headers=headers)
-
-
-async def handle_cyber_sync(request):
-    """POST /cyber_sync — сохранение прогресса Киберщита."""
-    headers = _game_cors_headers(request, 'POST, OPTIONS')
-    if request.method == 'OPTIONS':
-        return aiohttp_web.Response(headers=headers)
-    try:
-        data = await request.json()
-    except Exception:
-        return aiohttp_web.json_response({'ok': False, 'error': 'invalid json'}, headers=headers)
-
-    user_id = data.get('user_id')
-    init_data_raw = data.get('init_data', '')
-    if not user_id:
-        return aiohttp_web.json_response({'ok': False, 'error': 'no user_id'}, headers=headers)
-    try:
-        user_id = _to_int(user_id, 0)
-        if user_id <= 0:
-            return aiohttp_web.json_response({'ok': False, 'error': 'invalid user_id'}, status=400, headers=headers)
-        auth_ok, auth_reason = _authorize_game_request(user_id, init_data_raw)
-        if not auth_ok:
-            logger.warning(f"cyber_sync auth failed: user={user_id}, reason={auth_reason}")
-            return _unauthorized_game_response(headers, auth_reason)
-        if _is_game_rate_limited('cyber_sync', user_id, limit=50):
-            return aiohttp_web.json_response({'ok': False, 'error': 'rate_limited'}, status=429, headers=headers)
-        blocked, maint = await is_cyber_blocked_by_maintenance(user_id)
-        if blocked:
-            return aiohttp_web.json_response(
-                {'ok': False, 'error': 'maintenance', 'maintenance_until': maint.get('until')},
-                status=503, headers=headers
-            )
-
-        role = await asyncio.to_thread(db.get_cyber_role, user_id)
-        if role not in ('admin', 'tester', 'player'):
-            role = 'player'
-            await asyncio.to_thread(db.set_cyber_role, user_id, role)
-
-        current_result = await asyncio.to_thread(db.get_cyber_result, user_id)
-        db_reset_token_before = _cyber_reset_token(current_result)
-        client_reset_token = _clamp_int(data.get('reset_token', 0), 0, 2147483647)
-        if is_stale_sync_token(client_reset_token, db_reset_token_before):
-            return aiohttp_web.json_response(
-                {
-                    'ok': False,
-                    'stale': True,
-                    'reset_required': True,
-                    'db_reset_token': db_reset_token_before,
-                    'role': role,
-                },
-                status=409,
-                headers=headers,
-            )
-
-        user_name = _extract_user_name_from_init_data(init_data_raw) or data.get('user_name') or 'Игрок'
-        total_xp = _clamp_int(data.get('total_xp', 0), 0, 2000000)
-        solved_count = _clamp_int(data.get('solved_count', 0), 0, 10000)
-        streak = _clamp_int(data.get('streak', 0), 0, 10000)
-        progress_json = data.get('progress_json')
-        if not isinstance(progress_json, dict):
-            progress_json = {}
-
-        saved = await asyncio.to_thread(
-            db.save_cyber_sync_result,
-            user_id,
-            user_name,
-            total_xp,
-            solved_count,
-            streak,
-            progress_json,
-        )
-        if not saved:
-            return aiohttp_web.json_response({'ok': False, 'error': 'save_failed'}, status=500, headers=headers)
-
-        banned = bool(saved[6]) if len(saved) > 6 else False
-        db_reset_token = _cyber_reset_token(saved)
-        return aiohttp_web.json_response(
-            {
-                'ok': True,
-                'saved': {
-                    'xp': int(saved[2] or 0),
-                    'solved_count': int(saved[3] or 0),
-                    'streak': int(saved[4] or 0),
-                },
-                'banned': banned,
-                'db_reset_token': db_reset_token,
-                'role': role,
-                'stale': False,
-            },
-            headers=headers,
-        )
-    except Exception as e:
-        logger.error(f"handle_cyber_sync error: {e}")
-        return aiohttp_web.json_response({'ok': False, 'error': str(e)[:120]}, status=500, headers=headers)
-
-
 async def handle_game_media(request):
     """GET /game_media/{track_id} — проксирует CC0-треки для стабильного воспроизведения в WebApp."""
     headers = _game_cors_headers(request, 'GET, OPTIONS')
@@ -8433,7 +7333,6 @@ def start_http_server_thread():
     import pathlib
 
     GAME_DIR = pathlib.Path(__file__).parent / 'game'
-    CYBER_DIR = pathlib.Path(__file__).parent / 'cybershield-summer'
 
     async def serve_game_index(request):
         """Отдаёт index.html игры."""
@@ -8471,42 +7370,6 @@ def start_http_server_thread():
         logger.warning(f"serve_game_file not found: filename='{filename}', path='{request.path_qs}'")
         return aiohttp_web.Response(text='Not found', status=404)
 
-    async def serve_cyber_index(request):
-        """Отдаёт index.html Киберщита."""
-        fpath = CYBER_DIR / 'index.html'
-        if fpath.exists():
-            return aiohttp_web.FileResponse(fpath, headers={
-                'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-            })
-        return aiohttp_web.Response(text='CyberShield not found', status=404)
-
-    async def serve_cyber_file(request):
-        """Отдаёт статические файлы Киберщита."""
-        filename = request.match_info.get('filename', '')
-        safe_filename = pathlib.Path(filename).name
-        if safe_filename != filename or safe_filename.startswith('.'):
-            logger.warning(f"serve_cyber_file forbidden: filename='{filename}', path='{request.path_qs}'")
-            return aiohttp_web.Response(text='Forbidden', status=403)
-        fpath = CYBER_DIR / safe_filename
-        if fpath.exists() and fpath.is_file():
-            content_types = {
-                '.js': 'application/javascript; charset=utf-8',
-                '.css': 'text/css; charset=utf-8',
-                '.html': 'text/html; charset=utf-8',
-                '.png': 'image/png',
-                '.jpg': 'image/jpeg',
-                '.svg': 'image/svg+xml',
-                '.webp': 'image/webp',
-                '.woff2': 'font/woff2',
-            }
-            ct = content_types.get(fpath.suffix, 'application/octet-stream')
-            return aiohttp_web.FileResponse(fpath, headers={
-                'Content-Type': ct,
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-            })
-        logger.warning(f"serve_cyber_file not found: filename='{filename}', path='{request.path_qs}'")
-        return aiohttp_web.Response(text='Not found', status=404)
 
     async def _run():
         app_http = aiohttp_web.Application()
@@ -8521,15 +7384,6 @@ def start_http_server_thread():
         app_http.router.add_options('/game_sync', handle_game_sync)
         app_http.router.add_get('/game_media/{track_id}', handle_game_media)
         app_http.router.add_options('/game_media/{track_id}', handle_game_media)
-        # API: Киберщит
-        app_http.router.add_post('/cyber_reset', handle_cyber_reset)
-        app_http.router.add_options('/cyber_reset', handle_cyber_reset)
-        app_http.router.add_get('/cyber_state', handle_cyber_state)
-        app_http.router.add_options('/cyber_state', handle_cyber_state)
-        app_http.router.add_get('/cyber_leaderboard', handle_cyber_leaderboard)
-        app_http.router.add_options('/cyber_leaderboard', handle_cyber_leaderboard)
-        app_http.router.add_post('/cyber_sync', handle_cyber_sync)
-        app_http.router.add_options('/cyber_sync', handle_cyber_sync)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)
@@ -8537,10 +7391,6 @@ def start_http_server_thread():
         app_http.router.add_get('/game', serve_game_index)
         app_http.router.add_get('/game/', serve_game_index)
         app_http.router.add_get('/game/{filename}', serve_game_file)
-        # Файлы Киберщита
-        app_http.router.add_get('/cyber', serve_cyber_index)
-        app_http.router.add_get('/cyber/', serve_cyber_index)
-        app_http.router.add_get('/cyber/{filename}', serve_cyber_file)
         app_http.router.add_get('/{filename}', serve_game_file)
         runner = aiohttp_web.AppRunner(app_http)
         await runner.setup()
@@ -8548,7 +7398,6 @@ def start_http_server_thread():
         await site.start()
         logger.info(f"✅ HTTP server started on port {PORT}")
         logger.info(f"📁 Game dir: {GAME_DIR} (exists: {GAME_DIR.exists()})")
-        logger.info(f"📁 Cyber dir: {CYBER_DIR} (exists: {CYBER_DIR.exists()})")
         # Держим сервер запущенным
         await asyncio.Event().wait()
 
@@ -8629,13 +7478,11 @@ def main():
     print("🤖 Бот запущен!")
     print(f"🔖 Версия бота: {BOT_VERSION}")
     print(f"🎮 Версия Шифровальщика: {GAME_VERSION}")
-    print(f"🧨 Версия ZERO_DAY: {CYBER_VERSION}")
     print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
     print("👑 Администраторы: определяются через БД (role=admin)")
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
     print(f"👥 Пользователей: {db.get_user_count()}")
     print(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
-    print(f"🛡 CYBER_URL: {CYBER_URL or '❌ НЕ ЗАДАН'}")
     print(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
     print(f"🔌 HTTP-порт: {PORT}")
     if not BOT_PUBLIC_URL:
@@ -8662,7 +7509,6 @@ async def menu_games(query, context):
     """Подменю игр."""
     kb = [
         [btn("🎮 Шифровальщик", 'menu_game')],
-        [btn("🧨 ZERO_DAY", 'menu_cyber')],
         [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(
