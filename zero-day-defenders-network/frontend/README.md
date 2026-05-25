@@ -27,6 +27,16 @@ http://localhost:5173
 - Таб-бар.
 - Статические экраны инструментов, коллекции, демона, отряда, сюжета, магазина.
 - Прототип Packet Rain на Canvas.
+- Автоподключение к backend `http://localhost:8090`.
+- Fallback в mock-режим, если backend не запущен.
 
 Это не production frontend, а первый UX/interaction slice для проверки направления.
 
+## Подключение к другому API
+
+В консоли браузера:
+
+```js
+localStorage.setItem("ZDNET_API_BASE", "https://your-api.example.com")
+location.reload()
+```

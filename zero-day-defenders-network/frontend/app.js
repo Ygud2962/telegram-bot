@@ -1,4 +1,7 @@
 const tg = window.Telegram?.WebApp;
+const API_BASE = localStorage.getItem("ZDNET_API_BASE") || "http://localhost:8090";
+let sessionToken = null;
+let backendOnline = false;
 
 if (tg) {
   tg.ready();
@@ -24,6 +27,7 @@ const haptic = {
 
 const state = {
   activeTab: "map",
+  sync: "mock",
   credits: 12430,
   energy: 8,
   energyMax: 12,
@@ -70,6 +74,118 @@ const state = {
   ],
 };
 
+async function apiRequest(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (options.auth !== false && sessionToken) {
+    headers.Authorization = `Bearer ${sessionToken}`;
+  }
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: options.method || "GET",
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+async function connectBackend() {
+  try {
+    const auth = await apiRequest("/api/auth/telegram", {
+      method: "POST",
+      auth: false,
+      body: {
+        initData: tg?.initData || "",
+        devTelegramId: 1001,
+        devNickname: tg?.initDataUnsafe?.user?.username || "rookie",
+      },
+    });
+    sessionToken = auth.sessionToken;
+    backendOnline = true;
+    state.sync = "api";
+    const boot = await apiRequest("/api/bootstrap");
+    applyBootstrap(boot);
+    render();
+    toast("Backend API подключен");
+  } catch (error) {
+    backendOnline = false;
+    state.sync = "mock";
+    render();
+  }
+}
+
+function applyBootstrap(boot) {
+  state.credits = boot.wallet?.credits ?? state.credits;
+  state.energy = boot.energy?.current ?? state.energy;
+  state.energyMax = boot.energy?.dailyMax ?? state.energyMax;
+  state.socLevel = boot.progression?.socLevel ?? boot.player?.socLevel ?? state.socLevel;
+  state.keys = boot.wallet?.zeroKeys ?? state.keys;
+  state.map = (boot.map || state.map).map(item => ({
+    id: item.objectId || item.id,
+    name: item.name || item.objectId || item.id,
+    x: state.map.find(old => old.id === (item.objectId || item.id))?.x || 120,
+    y: state.map.find(old => old.id === (item.objectId || item.id))?.y || 120,
+    state: item.state,
+    level: item.protectionLevel,
+  }));
+  state.threats = (boot.activeThreats || []).map(threat => ({
+    id: threat.id,
+    title: threat.title,
+    objectId: threat.objectId,
+    type: threat.type,
+    gameType: threat.gameType,
+    game: gameLabel(threat.gameType),
+    timer: timerLabel(threat.expiresAt),
+    difficulty: threat.difficulty,
+  }));
+  if (Array.isArray(boot.cards) && boot.cards.length) {
+    state.cards = boot.cards.map(card => ({
+      id: card.cardId,
+      name: card.cardId,
+      rarity: "common",
+      level: card.level,
+    }));
+  }
+  if (Array.isArray(boot.tools) && boot.tools.length) {
+    state.tools = boot.tools.map(tool => ({
+      id: tool.toolId,
+      name: tool.toolId,
+      className: "Tool",
+      level: tool.level,
+      equipped: Boolean(tool.equipped),
+    }));
+  }
+}
+
+async function refreshBootstrap() {
+  if (!backendOnline) return;
+  const boot = await apiRequest("/api/bootstrap");
+  applyBootstrap(boot);
+}
+
+function gameLabel(gameType) {
+  return {
+    packet_rain: "Packet Rain",
+    phishing_stream: "Phishing Stream",
+    crypto_lock: "Crypto Lock",
+  }[gameType] || gameType;
+}
+
+function timerLabel(expiresAt) {
+  const end = Date.parse(expiresAt || "");
+  if (!Number.isFinite(end)) return "24:00:00";
+  const diff = Math.max(0, end - Date.now());
+  const hours = Math.floor(diff / 3_600_000);
+  const minutes = Math.floor((diff % 3_600_000) / 60_000);
+  const seconds = Math.floor((diff % 60_000) / 1000);
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 const tabs = [
   ["map", "🗺", "Карта"],
   ["tools", "🛠", "Инстр."],
@@ -105,7 +221,7 @@ function renderHud() {
       <div class="hud-top">
         <div class="brand">
           <strong>ZERO_DAY</strong>
-          <span>ЗАЩИТНИКИ СЕТИ</span>
+          <span>ЗАЩИТНИКИ СЕТИ · ${state.sync.toUpperCase()}</span>
         </div>
         <span class="pill">SOC Lv.${state.socLevel}</span>
       </div>
@@ -305,10 +421,10 @@ function bindEvents() {
   });
 
   document.querySelectorAll("[data-threat]").forEach(button => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const threat = state.threats.find(item => item.id === button.dataset.threat);
-      if (threat?.game === "Packet Rain") {
-        startPacketRain(threat);
+      if (threat?.gameType === "packet_rain" || threat?.game === "Packet Rain") {
+        await startPacketRain(threat);
       } else {
         toast("Эта мини-игра будет во втором прототипе");
         haptic.warn();
@@ -334,11 +450,26 @@ function toast(message) {
   setTimeout(() => element.remove(), 1800);
 }
 
-function startPacketRain(threat) {
+async function startPacketRain(threat) {
   if (state.energy <= 0) {
     toast("Энергия аналитика закончилась");
     haptic.error();
     return;
+  }
+
+  let backendAttempt = null;
+  if (backendOnline) {
+    try {
+      backendAttempt = await apiRequest(`/api/threats/${threat.id}/start`, {
+        method: "POST",
+        body: {},
+      });
+      state.energy = backendAttempt.energyLeft;
+    } catch (error) {
+      toast(`Не удалось начать: ${error.message}`);
+      haptic.error();
+      return;
+    }
   }
 
   const phone = document.querySelector(".phone");
@@ -366,6 +497,7 @@ function startPacketRain(threat) {
   let combo = 0;
   let mistakes = 0;
   let running = true;
+  let finishing = false;
   let lastSpawn = 0;
   let startedAt = performance.now();
   let pointerStart = null;
@@ -466,15 +598,50 @@ function startPacketRain(threat) {
     }
   }
 
-  function finish() {
+  async function finish() {
+    if (finishing) return;
+    finishing = true;
     running = false;
-    state.energy -= 1;
     const credits = Math.max(60, Math.floor(score / 16));
+    if (backendOnline && backendAttempt) {
+      try {
+        const response = await apiRequest(`/api/attempts/${backendAttempt.attemptId}/finish`, {
+          method: "POST",
+          body: {
+            gameType: "packet_rain",
+            durationMs: Math.floor(performance.now() - startedAt),
+            score,
+            accuracy: Math.max(0, 1 - mistakes / 10),
+            comboMax: combo,
+            inputSummary: { swipes: score > 0 ? Math.floor(score / 100) : 0, mistakes },
+          },
+        });
+        await refreshBootstrap();
+        overlay.remove();
+        render();
+        if (response.accepted) {
+          toast(`API: +${response.rewards.credits} кредитов`);
+          haptic.ok();
+        } else {
+          toast(`Сессия не засчитана: ${response.antiCheatFlags.join(", ")}`);
+          haptic.error();
+        }
+        return;
+      } catch (error) {
+        overlay.remove();
+        render();
+        toast(`Ошибка finish: ${error.message}`);
+        haptic.error();
+        return;
+      }
+    }
+
+    state.energy -= 1;
     state.credits += credits;
-    const wifi = state.map.find(item => item.id === threat.objectId);
-    if (wifi) {
-      wifi.state = mistakes >= 6 ? "infected" : "protected";
-      wifi.level = Math.min(10, wifi.level + (mistakes >= 6 ? 0 : 1));
+    const target = state.map.find(item => item.id === threat.objectId);
+    if (target) {
+      target.state = mistakes >= 6 ? "infected" : "protected";
+      target.level = Math.min(10, target.level + (mistakes >= 6 ? 0 : 1));
     }
     state.threats = state.threats.filter(item => item.id !== threat.id);
     overlay.remove();
@@ -518,4 +685,4 @@ function startPacketRain(threat) {
 }
 
 render();
-
+connectBackend();

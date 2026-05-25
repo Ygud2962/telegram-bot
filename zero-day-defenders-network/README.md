@@ -13,6 +13,7 @@
 - [OpenAPI](schemas/openapi.yaml) - черновой контракт API.
 - [SQL-схема](schemas/database.sql) - черновая PostgreSQL-схема.
 - [Frontend prototype](frontend/README.md) - статический прототип Mini App.
+- [Backend scaffold](backend/README.md) - dev API: auth, bootstrap, attempts, gacha, payments.
 
 ## Ключевые ограничения
 
@@ -23,6 +24,16 @@
 - Аудитория: 10-17 лет, без навыков программирования.
 
 ## Быстрый запуск прототипа
+
+Backend:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
+$env:ZDNET_DEV_AUTH='1'
+py -3 -m zdnet_backend.server
+```
+
+Frontend:
 
 ```powershell
 cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\frontend
