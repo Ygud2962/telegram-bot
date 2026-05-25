@@ -45,6 +45,17 @@ CREATE TABLE IF NOT EXISTS zdnet.player_progress (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Durable MVP snapshot.
+-- Normalized tables above/below remain the target structure for analytics and production queries.
+-- The first backend adapter stores authoritative player state here to avoid losing progress
+-- while the domain model is still changing quickly during MVP.
+CREATE TABLE IF NOT EXISTS zdnet.player_snapshots (
+    player_id BIGINT PRIMARY KEY REFERENCES zdnet.players(id) ON DELETE CASCADE,
+    state_json JSONB NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS zdnet.card_catalog (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -252,4 +263,4 @@ CREATE INDEX IF NOT EXISTS idx_zdnet_attempts_player_started ON zdnet.mini_game_
 CREATE INDEX IF NOT EXISTS idx_zdnet_cards_player ON zdnet.player_cards(player_id);
 CREATE INDEX IF NOT EXISTS idx_zdnet_payments_player ON zdnet.payments(player_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_zdnet_economy_player ON zdnet.economy_transactions(player_id, created_at DESC);
-
+CREATE INDEX IF NOT EXISTS idx_zdnet_snapshots_updated ON zdnet.player_snapshots(updated_at DESC);

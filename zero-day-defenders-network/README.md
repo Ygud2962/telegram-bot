@@ -33,6 +33,16 @@ $env:ZDNET_DEV_AUTH='1'
 py -3 -m zdnet_backend.server
 ```
 
+PostgreSQL режим:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
+$env:ZDNET_DEV_AUTH='1'
+$env:ZDNET_STORAGE='postgres'
+$env:ZDNET_DATABASE_URL='postgresql://user:pass@localhost:5432/dbname'
+py -3 -m zdnet_backend.server
+```
+
 Frontend:
 
 ```powershell

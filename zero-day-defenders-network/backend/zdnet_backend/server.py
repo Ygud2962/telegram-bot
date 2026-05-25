@@ -9,12 +9,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .content import load_content
-from .repository import GameError, InMemoryGameRepository
+from .repository import GameError
 from .security import validate_webapp_init_data
+from .storage import build_repository
 
 
 class JsonApiHandler(BaseHTTPRequestHandler):
-    repo: InMemoryGameRepository
+    repo: Any
 
     server_version = "ZDNetBackend/0.1"
 
@@ -153,7 +154,7 @@ class JsonApiHandler(BaseHTTPRequestHandler):
 
 def create_server(host: str = "0.0.0.0", port: int = 8090) -> ThreadingHTTPServer:
     content = load_content()
-    repo = InMemoryGameRepository(content)
+    repo = build_repository(content)
 
     class Handler(JsonApiHandler):
         pass
@@ -171,4 +172,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

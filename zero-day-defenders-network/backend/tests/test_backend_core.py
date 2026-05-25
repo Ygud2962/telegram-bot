@@ -12,6 +12,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 from zdnet_backend.content import load_content
 from zdnet_backend.economy import calculate_rewards, validate_attempt_summary
 from zdnet_backend.gacha import GachaState, open_zero_cache
+from zdnet_backend.postgres_repository import snapshot_to_state, state_to_snapshot
 from zdnet_backend.repository import InMemoryGameRepository
 
 
@@ -97,7 +98,15 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(result["zeroKeysLeft"], before_keys - 1)
         self.assertEqual(len(self.state.cards), 1)
 
+    def test_snapshot_round_trip_preserves_core_state(self):
+        self.repo.open_cache(self.state, 1, seed=7)
+        snapshot = state_to_snapshot(self.state)
+        restored = snapshot_to_state(snapshot)
+        self.assertEqual(restored.player["telegramId"], self.state.player["telegramId"])
+        self.assertEqual(restored.wallet["zeroKeys"], self.state.wallet["zeroKeys"])
+        self.assertEqual(restored.gacha.open_count, self.state.gacha.open_count)
+        self.assertEqual(set(restored.cards.keys()), set(self.state.cards.keys()))
+
 
 if __name__ == "__main__":
     unittest.main()
-

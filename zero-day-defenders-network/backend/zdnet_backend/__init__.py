@@ -4,8 +4,9 @@ __all__ = [
     "content",
     "economy",
     "gacha",
+    "postgres_repository",
     "repository",
     "security",
     "server",
+    "storage",
 ]
-
