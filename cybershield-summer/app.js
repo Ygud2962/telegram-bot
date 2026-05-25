@@ -588,6 +588,88 @@
       || Object.values(REAL_MONEY_ITEM_OFFERS).some((offer) => isDemoInvoiceUrl(offer.invoiceUrl));
   }
 
+  function closePaymentSheet() {
+    const sheet = frame.querySelector('.payment-sheet-overlay');
+    if (sheet) sheet.remove();
+  }
+
+  function paymentTitle(meta) {
+    if (meta.type === 'topup') return `${meta.stars} Stars`;
+    return meta.itemName || meta.itemId || 'Покупка';
+  }
+
+  function openPaymentSheet(meta) {
+    if (!meta) return;
+    closePaymentSheet();
+
+    const demo = shouldUseDemoInvoice(meta);
+    const overlay = document.createElement('div');
+    overlay.className = 'payment-sheet-overlay';
+    overlay.innerHTML = `
+      <div class="payment-dim" data-payment-close></div>
+      <div class="payment-sheet">
+        <div class="payment-handle"></div>
+        <div class="payment-provider">${demo ? 'Telegram Invoice · DEMO' : 'Telegram Invoice'}</div>
+        <div class="payment-title">${paymentTitle(meta)}</div>
+        <div class="payment-price">${meta.priceLabel || '—'}</div>
+        <div class="payment-note">
+          ${demo
+            ? 'Это демонстрационный счёт. Деньги не списываются; Stars будут начислены только после подтверждения.'
+            : 'После подтверждения откроется платёжное окно Telegram.'}
+        </div>
+        <div class="payment-status" id="paymentStatus">Ожидает подтверждения</div>
+        <div class="payment-actions">
+          <button class="payment-btn secondary" data-payment-close type="button">Отмена</button>
+          <button class="payment-btn primary" id="paymentConfirmBtn" type="button">${demo ? 'Подтвердить DEMO' : 'Открыть счёт'}</button>
+        </div>
+      </div>
+    `;
+
+    frame.appendChild(overlay);
+    overlay.querySelectorAll('[data-payment-close]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!overlay.classList.contains('processing')) closePaymentSheet();
+      });
+    });
+
+    overlay.querySelector('#paymentConfirmBtn').addEventListener('click', (event) => {
+      const btn = event.currentTarget;
+      overlay.classList.add('processing');
+      btn.disabled = true;
+      overlay.querySelectorAll('[data-payment-close]').forEach((cancel) => { cancel.disabled = true; });
+      const status = overlay.querySelector('#paymentStatus');
+      if (status) status.textContent = demo ? 'Проверяем демо-счёт...' : 'Открываем Telegram...';
+      startInvoice({ ...meta, demo });
+    });
+  }
+
+  function renderPaymentResult(session, status) {
+    const overlay = frame.querySelector('.payment-sheet-overlay');
+    if (!overlay) return false;
+
+    const paid = status === 'paid';
+    overlay.querySelector('.payment-sheet').innerHTML = `
+      <div class="payment-handle"></div>
+      <div class="payment-result ${paid ? 'ok' : 'bad'}">${paid ? 'Оплата подтверждена' : 'Оплата не прошла'}</div>
+      <div class="payment-title">${paymentTitle(session)}</div>
+      <div class="payment-note">${paid ? 'Баланс и история покупок обновлены.' : 'Баланс не изменился. Попробуй позже или проверь счёт у бота.'}</div>
+      <button class="payment-btn primary wide" id="paymentDoneBtn" type="button">Готово</button>
+    `;
+    overlay.querySelector('#paymentDoneBtn').addEventListener('click', () => {
+      closePaymentSheet();
+      if (currentScreen === 'shop') renderScreen('shop');
+      if (currentScreen === 'settings') renderScreen('settings');
+    });
+    return true;
+  }
+
+  function refreshAfterPayment(hasSheet) {
+    if (!hasSheet) {
+      if (currentScreen === 'shop') renderScreen('shop');
+      if (currentScreen === 'settings') renderScreen('settings');
+    }
+  }
+
   function startInvoice(meta) {
     if (!meta || !meta.invoiceUrl) {
       toast('Счёт недоступен', 'error');
@@ -609,9 +691,7 @@
       });
     } catch (err) {
       console.warn('[ZERO_DAY] openInvoice error', err);
-      paymentSessions.delete(session.key);
-      toast('Не удалось открыть счёт. Включён демо-платёж.', 'info');
-      setTimeout(() => finalizeInvoice(session, 'paid'), DEMO_INVOICE_DELAY_MS);
+      finalizeInvoice(session, 'failed');
     }
   }
 
@@ -669,8 +749,7 @@
       }
 
       updateProgress('payment');
-      if (currentScreen === 'shop') renderScreen('shop');
-      if (currentScreen === 'settings') renderScreen('settings');
+      refreshAfterPayment(renderPaymentResult(session, status));
       return;
     }
 
@@ -680,7 +759,9 @@
       amount: session.priceLabel || '',
       status: status
     });
+    const hadSheet = renderPaymentResult(session, status);
     toast('Платёж отменён', 'error');
+    refreshAfterPayment(hadSheet);
   }
 
   function buyStarsPack(packId) {
@@ -689,7 +770,7 @@
       toast('Пакет не найден', 'error');
       return;
     }
-    startInvoice({
+    openPaymentSheet({
       type: 'topup',
       stars: offer.stars,
       priceLabel: offer.priceLabel,
@@ -707,7 +788,7 @@
       toast('Товар уже куплен', 'info');
       return;
     }
-    startInvoice({
+    openPaymentSheet({
       type: 'item',
       itemId,
       itemName,
@@ -876,6 +957,7 @@
     const coreDone = CORE_MISSION_IDS.filter((id) => ZD.state.completedMissionIds.has(id)).length;
     const unread = getUnreadCount();
     const objectives = getCurrentObjectives(3);
+    const primaryObjective = objectives[0] || null;
 
     const objectiveRows = objectives.length ? objectives.map((mission) => `
       <button class="objective-row" data-objective-screen="${mission.screen}" type="button">
@@ -887,6 +969,21 @@
         <span class="objective-arrow">›</span>
       </button>
     `).join('') : '<div class="objective-empty">Активные цели закрыты. Проверь финальную ветку или журнал миссий.</div>';
+
+    const coachHtml = primaryObjective ? `
+      <section class="quest-coach">
+        <div class="quest-coach-kicker">Что делать сейчас</div>
+        <div class="quest-coach-title">${primaryObjective.title}</div>
+        <div class="quest-coach-text">${primaryObjective.objective}</div>
+        <button class="quest-coach-btn" data-objective-screen="${primaryObjective.screen}" type="button">Открыть</button>
+      </section>
+    ` : `
+      <section class="quest-coach done">
+        <div class="quest-coach-kicker">Кампания</div>
+        <div class="quest-coach-title">${ZD.state.campaignFinished ? 'Протокол закрыт' : 'Нет активных целей'}</div>
+        <div class="quest-coach-text">${ZD.state.campaignFinished ? 'Все основные миссии завершены.' : 'Проверь карту, чат или настройки администратора.'}</div>
+      </section>
+    `;
 
     const missionRows = ZD.missionCalendar.map((mission) => {
       const status = questStatus(mission.id);
@@ -929,6 +1026,8 @@
         </section>
 
         <div class="home-note">${unread > 0 ? `Непрочитанные сообщения: ${unread}` : 'Все уведомления обработаны. Продолжай кампанию.'}</div>
+
+        ${coachHtml}
 
         <div class="home-section-title">Текущие цели</div>
         <div class="objective-list">${objectiveRows}</div>
@@ -1554,14 +1653,14 @@
     `).join('');
 
     s.innerHTML = `
-      ${header('home', 'Магазин', paymentsAreDemo() ? 'DEMO_MODE: автоподтверждение платежа' : 'Telegram Invoice')}
+      ${header('home', 'Магазин', paymentsAreDemo() ? 'DEMO_MODE: подтверждение без списания денег' : 'Telegram Invoice')}
       <div class="shop-balance-bar">
         <span>⭐</span><span class="stars-val">${ZD.state.stars}</span>
       </div>
       <div class="shop-body scrollable">
         <section class="topup-box">
           <div class="topup-title">Пополнить Stars</div>
-          <div class="topup-sub">Платёж через Telegram. Баланс обновится автоматически.</div>
+          <div class="topup-sub">Сначала откроется платёжный лист. В демо-режиме деньги не списываются.</div>
           <div class="topup-grid">${topupRows}</div>
         </section>
 
