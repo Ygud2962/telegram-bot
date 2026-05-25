@@ -1,0 +1,442 @@
+openapi: 3.1.0
+info:
+  title: "ZERO_DAY: ЗАЩИТНИКИ СЕТИ API"
+  version: "0.1.0"
+  description: "Backend API contract for Telegram Mini App MVP."
+servers:
+  - url: https://api.example.com
+    description: production placeholder
+  - url: http://localhost:8080
+    description: local development
+security:
+  - bearerAuth: []
+paths:
+  /api/auth/telegram:
+    post:
+      security: []
+      summary: Validate Telegram WebApp initData and create session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [initData]
+              properties:
+                initData:
+                  type: string
+                startParam:
+                  type: string
+      responses:
+        "200":
+          description: Authenticated player.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /api/bootstrap:
+    get:
+      summary: Get full player bootstrap state.
+      parameters:
+        - in: query
+          name: contentVersion
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bootstrap state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapResponse"
+  /api/content:
+    get:
+      summary: Get game content catalog.
+      responses:
+        "200":
+          description: Versioned content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContentCatalog"
+  /api/threats/{threatId}/start:
+    post:
+      summary: Start a mini-game attempt for threat.
+      parameters:
+        - $ref: "#/components/parameters/ThreatId"
+      responses:
+        "200":
+          description: Attempt created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttemptStartResponse"
+  /api/attempts/{attemptId}/finish:
+    post:
+      summary: Finish mini-game attempt and receive rewards.
+      parameters:
+        - $ref: "#/components/parameters/AttemptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttemptFinishRequest"
+      responses:
+        "200":
+          description: Attempt result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttemptFinishResponse"
+  /api/cache/open:
+    post:
+      summary: Open Zero Cache.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+              required: [count]
+      responses:
+        "200":
+          description: Gacha results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GachaOpenResponse"
+  /api/cards/{cardId}/upgrade:
+    post:
+      summary: Upgrade card using duplicates.
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated card.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerCard"
+  /api/tools/equip:
+    post:
+      summary: Equip up to 3 tools.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toolIds]
+              properties:
+                toolIds:
+                  type: array
+                  maxItems: 3
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Equipped tool ids.
+  /api/squads:
+    post:
+      summary: Create a squad.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 32
+      responses:
+        "200":
+          description: Squad created.
+  /api/payments/invoice:
+    post:
+      summary: Create Telegram invoice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId]
+              properties:
+                productId:
+                  type: string
+      responses:
+        "200":
+          description: Invoice URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoiceUrl, payload]
+                properties:
+                  invoiceUrl:
+                    type: string
+                  payload:
+                    type: string
+  /api/payments/history:
+    get:
+      summary: Get player payment history.
+      responses:
+        "200":
+          description: Payment history.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    ThreatId:
+      in: path
+      name: threatId
+      required: true
+      schema:
+        type: string
+    AttemptId:
+      in: path
+      name: attemptId
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    AuthResponse:
+      type: object
+      required: [sessionToken, player, serverTime]
+      properties:
+        sessionToken:
+          type: string
+        player:
+          $ref: "#/components/schemas/Player"
+        serverTime:
+          type: string
+          format: date-time
+    BootstrapResponse:
+      type: object
+      required: [player, wallet, energy, map, activeThreats, contentVersion, serverTime]
+      properties:
+        player:
+          $ref: "#/components/schemas/Player"
+        wallet:
+          $ref: "#/components/schemas/Wallet"
+        energy:
+          $ref: "#/components/schemas/Energy"
+        map:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapObject"
+        activeThreats:
+          type: array
+          items:
+            $ref: "#/components/schemas/Threat"
+        contentVersion:
+          type: string
+        serverTime:
+          type: string
+          format: date-time
+    ContentCatalog:
+      type: object
+      required: [version, cards, tools, threats]
+      properties:
+        version:
+          type: string
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/CardCatalogItem"
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCatalogItem"
+        threats:
+          type: array
+          items:
+            $ref: "#/components/schemas/ThreatCatalogItem"
+    Player:
+      type: object
+      required: [id, telegramId, nickname, socLevel]
+      properties:
+        id:
+          type: string
+        telegramId:
+          type: integer
+        nickname:
+          type: string
+        socLevel:
+          type: integer
+    Wallet:
+      type: object
+      required: [credits, zeroKeys, cleanFragments]
+      properties:
+        credits:
+          type: integer
+        zeroKeys:
+          type: integer
+        cleanFragments:
+          type: integer
+    Energy:
+      type: object
+      required: [current, dailyMax]
+      properties:
+        current:
+          type: integer
+        dailyMax:
+          type: integer
+    MapObject:
+      type: object
+      required: [objectId, state, protectionLevel]
+      properties:
+        objectId:
+          type: string
+        state:
+          type: string
+          enum: [locked, protected, under_attack, infected, boss]
+        protectionLevel:
+          type: integer
+    Threat:
+      type: object
+      required: [id, objectId, type, gameType, expiresAt, difficulty]
+      properties:
+        id:
+          type: string
+        objectId:
+          type: string
+        type:
+          type: string
+        gameType:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        difficulty:
+          type: integer
+    AttemptStartResponse:
+      type: object
+      required: [attemptId, seed, energyLeft]
+      properties:
+        attemptId:
+          type: string
+          format: uuid
+        seed:
+          type: string
+        energyLeft:
+          type: integer
+    AttemptFinishRequest:
+      type: object
+      required: [gameType, durationMs, score, accuracy, comboMax, inputSummary]
+      properties:
+        gameType:
+          type: string
+        durationMs:
+          type: integer
+        score:
+          type: integer
+        accuracy:
+          type: number
+        comboMax:
+          type: integer
+        clientEventsHash:
+          type: string
+        inputSummary:
+          type: object
+    AttemptFinishResponse:
+      type: object
+      required: [accepted, rewards, fairScoreDelta]
+      properties:
+        accepted:
+          type: boolean
+        rewards:
+          $ref: "#/components/schemas/Rewards"
+        fairScoreDelta:
+          type: integer
+        mapDelta:
+          type: object
+    Rewards:
+      type: object
+      properties:
+        credits:
+          type: integer
+        socXp:
+          type: integer
+        cardDrops:
+          type: array
+          items:
+            type: string
+    GachaOpenResponse:
+      type: object
+      required: [results, pity]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [cardId, rarity]
+            properties:
+              cardId:
+                type: string
+              rarity:
+                type: string
+        pity:
+          type: object
+    PlayerCard:
+      type: object
+      required: [cardId, level, duplicates, isHolo]
+      properties:
+        cardId:
+          type: string
+        level:
+          type: integer
+        duplicates:
+          type: integer
+        isHolo:
+          type: boolean
+    CardCatalogItem:
+      type: object
+      required: [id, name, rarity, type, weakness]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        rarity:
+          type: string
+        type:
+          type: string
+        weakness:
+          type: string
+    ToolCatalogItem:
+      type: object
+      required: [id, name, class]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        class:
+          type: string
+    ThreatCatalogItem:
+      type: object
+      required: [id, name, gameType]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        gameType:
+          type: string
+

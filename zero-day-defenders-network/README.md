@@ -7,7 +7,12 @@
 - [GDD](docs/GDD.md) - полный Game Design Document.
 - [ТЗ](docs/TECH_SPEC.md) - техническое задание для разработки Telegram Mini App.
 - [Контент-пак](docs/CONTENT_PACK.md) - эпизод 1 на 30 дней, стартовые карточки, баланс, пуши, ачивки.
+- [Архитектура](docs/ARCHITECTURE.md) - разделение frontend/backend, server authority, payments, push.
+- [MVP backlog](docs/MVP_BACKLOG.md) - эпики, задачи, приоритеты, 6-недельный план.
 - [JSON-схема прогресса](schemas/player-progress.schema.json) - структура сохранения игрока.
+- [OpenAPI](schemas/openapi.yaml) - черновой контракт API.
+- [SQL-схема](schemas/database.sql) - черновая PostgreSQL-схема.
+- [Frontend prototype](frontend/README.md) - статический прототип Mini App.
 
 ## Ключевые ограничения
 
@@ -17,3 +22,11 @@
 - Все "взломы" являются безопасной симуляцией защиты.
 - Аудитория: 10-17 лет, без навыков программирования.
 
+## Быстрый запуск прототипа
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\frontend
+py -3 -m http.server 5173
+```
+
+Открыть `http://localhost:5173`.

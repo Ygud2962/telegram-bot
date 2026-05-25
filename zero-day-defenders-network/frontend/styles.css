@@ -1,0 +1,348 @@
+:root {
+  --bg: #050607;
+  --panel: rgba(16, 20, 28, 0.72);
+  --panel-strong: rgba(22, 28, 38, 0.92);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #f4f7fb;
+  --muted: #9ca9b8;
+  --safe: #00ff41;
+  --attack: #ff003c;
+  --warn: #ffee00;
+  --infected: #bd00ff;
+  --accent: #00d4ff;
+  --gold: #ffd36a;
+  --radius: 24px;
+  --shadow: 0 24px 90px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background:
+    radial-gradient(circle at 18% 4%, rgba(0, 212, 255, 0.28), transparent 32%),
+    radial-gradient(circle at 92% 10%, rgba(189, 0, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 50% 100%, rgba(0, 255, 65, 0.14), transparent 38%),
+    var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+}
+
+.app {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 12px);
+  display: grid;
+  place-items: center;
+}
+
+.phone {
+  width: min(100%, 460px);
+  height: min(100dvh - 24px, 920px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 34px;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.08), transparent 24%),
+    rgba(5, 6, 7, 0.72);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+  backdrop-filter: blur(28px);
+}
+
+.screen {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+}
+
+.hud {
+  padding: 16px 16px 10px;
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 6, 7, 0.42);
+  backdrop-filter: blur(20px);
+}
+
+.hud-top,
+.hud-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.brand {
+  line-height: 1;
+}
+
+.brand strong {
+  display: block;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+
+.brand span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pill.energy {
+  color: var(--gold);
+}
+
+.content {
+  overflow: auto;
+  padding: 14px;
+  overscroll-behavior: contain;
+}
+
+.map-card,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  backdrop-filter: blur(26px);
+  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.28);
+}
+
+.map-card {
+  padding: 12px;
+  position: relative;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 10px;
+}
+
+.section-title h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.section-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.city-map {
+  width: 100%;
+  min-height: 250px;
+  border-radius: 20px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, rgba(0, 212, 255, 0.12), transparent 45%);
+  background-size: 28px 28px, 28px 28px, auto;
+}
+
+.map-node {
+  cursor: pointer;
+  transition: transform 0.22s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.map-node:active {
+  transform: scale(0.96);
+}
+
+.daemon {
+  animation: floaty 2.4s ease-in-out infinite;
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
+.threat-feed {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.threat {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(255, 0, 60, 0.28);
+  border-radius: 18px;
+  padding: 12px;
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(255, 0, 60, 0.18), rgba(189, 0, 255, 0.12));
+  display: grid;
+  gap: 5px;
+}
+
+.threat strong {
+  font-size: 14px;
+}
+
+.threat span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tabbar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  padding: 8px 8px calc(env(safe-area-inset-bottom) + 8px);
+  border-top: 1px solid var(--line);
+  background: rgba(11, 14, 18, 0.82);
+  backdrop-filter: blur(28px);
+}
+
+.tab {
+  min-width: 0;
+  border: 0;
+  border-radius: 16px;
+  padding: 8px 2px;
+  color: var(--muted);
+  background: transparent;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  font-size: 10px;
+}
+
+.tab .ico {
+  font-size: 17px;
+}
+
+.tab.active {
+  color: var(--accent);
+  background: rgba(0, 212, 255, 0.1);
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.cards-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card-tile,
+.tool-tile {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rarity-common { color: #d8dee9; }
+.rarity-rare { color: #5bc0ff; }
+.rarity-epic { color: #d76dff; }
+.rarity-legendary { color: var(--gold); }
+
+.game-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(2, 3, 5, 0.94);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.game-header,
+.game-footer {
+  padding: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-color: var(--line);
+}
+
+.game-header {
+  border-bottom: 1px solid var(--line);
+}
+
+.game-footer {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.close-btn,
+.primary-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  color: white;
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, #007aff, #00d4ff);
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 92px);
+  transform: translateX(-50%);
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: white;
+  font-size: 13px;
+  z-index: 50;
+  backdrop-filter: blur(20px);
+}
+
+@media (max-width: 520px) {
+  .app {
+    padding: 0;
+    display: block;
+  }
+
+  .phone {
+    width: 100%;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .tabbar {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
