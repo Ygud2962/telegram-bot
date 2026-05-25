@@ -53,6 +53,7 @@
 
   const paymentSessions = new Map();
   const DEMO_MODE = !telegramApp || typeof telegramApp.openInvoice !== 'function';
+  const DEMO_INVOICE_DELAY_MS = 500;
 
   let currentScreen = 'home';
   let currentChat = null;
@@ -572,6 +573,21 @@
     }
   }
 
+  function isDemoInvoiceUrl(url) {
+    if (!url || typeof url !== 'string') return true;
+    return url.includes('/your_bot') || url.includes('start=invoice_');
+  }
+
+  function shouldUseDemoInvoice(meta) {
+    return DEMO_MODE || isDemoInvoiceUrl(meta.invoiceUrl) || meta.demo === true;
+  }
+
+  function paymentsAreDemo() {
+    return DEMO_MODE
+      || TOPUP_OFFERS.some((offer) => isDemoInvoiceUrl(offer.invoiceUrl))
+      || Object.values(REAL_MONEY_ITEM_OFFERS).some((offer) => isDemoInvoiceUrl(offer.invoiceUrl));
+  }
+
   function startInvoice(meta) {
     if (!meta || !meta.invoiceUrl) {
       toast('Счёт недоступен', 'error');
@@ -582,8 +598,8 @@
     const session = { ...meta, key, processed: false };
     paymentSessions.set(key, session);
 
-    if (DEMO_MODE) {
-      setTimeout(() => finalizeInvoice(session, 'paid'), 500);
+    if (shouldUseDemoInvoice(session)) {
+      setTimeout(() => finalizeInvoice(session, 'paid'), DEMO_INVOICE_DELAY_MS);
       return;
     }
 
@@ -592,8 +608,10 @@
         finalizeInvoice(session, status || 'cancelled');
       });
     } catch (err) {
-      toast('Не удалось открыть счёт', 'error');
       console.warn('[ZERO_DAY] openInvoice error', err);
+      paymentSessions.delete(session.key);
+      toast('Не удалось открыть счёт. Включён демо-платёж.', 'info');
+      setTimeout(() => finalizeInvoice(session, 'paid'), DEMO_INVOICE_DELAY_MS);
     }
   }
 
@@ -1536,7 +1554,7 @@
     `).join('');
 
     s.innerHTML = `
-      ${header('home', 'Магазин', DEMO_MODE ? 'DEMO_MODE: автоподтверждение платежа' : 'Telegram Invoice')}
+      ${header('home', 'Магазин', paymentsAreDemo() ? 'DEMO_MODE: автоподтверждение платежа' : 'Telegram Invoice')}
       <div class="shop-balance-bar">
         <span>⭐</span><span class="stars-val">${ZD.state.stars}</span>
       </div>
