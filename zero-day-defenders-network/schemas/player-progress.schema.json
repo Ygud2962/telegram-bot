@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zero-day-defenders.local/schemas/player-progress.schema.json",
+  "title": "ZERO_DAY: ЗАЩИТНИКИ СЕТИ - Player Progress",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "playerId",
+    "telegramId",
+    "profile",
+    "wallet",
+    "energy",
+    "progression",
+    "map",
+    "cards",
+    "tools",
+    "daemon",
+    "daily",
+    "gacha",
+    "squad",
+    "fairScore",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "playerId": {
+      "type": "string"
+    },
+    "telegramId": {
+      "type": "integer"
+    },
+    "profile": {
+      "type": "object",
+      "required": ["nickname", "avatarId", "createdAt"],
+      "properties": {
+        "nickname": { "type": "string", "maxLength": 32 },
+        "avatarId": { "type": "string" },
+        "schoolId": { "type": ["string", "null"] },
+        "hackerCardSkin": { "type": "string" },
+        "title": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "wallet": {
+      "type": "object",
+      "required": ["credits", "zeroKeys", "cleanFragments"],
+      "properties": {
+        "credits": { "type": "integer", "minimum": 0 },
+        "zeroKeys": { "type": "integer", "minimum": 0 },
+        "cleanFragments": { "type": "integer", "minimum": 0 },
+        "paidCreditsLifetime": { "type": "integer", "minimum": 0 },
+        "freeCreditsLifetime": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "energy": {
+      "type": "object",
+      "required": ["current", "dailyMax", "lastResetAt"],
+      "properties": {
+        "current": { "type": "integer", "minimum": 0 },
+        "dailyMax": { "type": "integer", "minimum": 1 },
+        "lastResetAt": { "type": "string", "format": "date-time" },
+        "eliteUnlimitedUntil": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "progression": {
+      "type": "object",
+      "required": ["socLevel", "socXp", "seasonDay", "episode", "storyMission"],
+      "properties": {
+        "socLevel": { "type": "integer", "minimum": 1 },
+        "socXp": { "type": "integer", "minimum": 0 },
+        "seasonDay": { "type": "integer", "minimum": 1, "maximum": 180 },
+        "episode": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "storyMission": { "type": "integer", "minimum": 0 },
+        "battlePassLevel": { "type": "integer", "minimum": 0 },
+        "battlePassXp": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "map": {
+      "type": "object",
+      "required": ["objects"],
+      "properties": {
+        "objects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["objectId", "districtId", "state", "protectionLevel"],
+            "properties": {
+              "objectId": { "type": "string" },
+              "districtId": { "type": "string" },
+              "state": {
+                "type": "string",
+                "enum": ["locked", "protected", "under_attack", "infected", "boss"]
+              },
+              "protectionLevel": { "type": "integer", "minimum": 1, "maximum": 10 },
+              "nodes": {
+                "type": "object",
+                "properties": {
+                  "firewall": { "type": "integer", "minimum": 0 },
+                  "ids": { "type": "integer", "minimum": 0 },
+                  "honeypot": { "type": "integer", "minimum": 0 }
+                },
+                "additionalProperties": false
+              },
+              "lastThreatAt": { "type": ["string", "null"], "format": "date-time" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "cards": {
+      "type": "object",
+      "required": ["owned"],
+      "properties": {
+        "owned": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["cardId", "level", "duplicates", "isHolo"],
+            "properties": {
+              "cardId": { "type": "string" },
+              "level": { "type": "integer", "minimum": 1, "maximum": 4 },
+              "duplicates": { "type": "integer", "minimum": 0 },
+              "isHolo": { "type": "boolean" },
+              "firstObtainedAt": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "customCreated": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "tools": {
+      "type": "object",
+      "required": ["owned", "equipped"],
+      "properties": {
+        "owned": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["toolId", "level", "count"],
+            "properties": {
+              "toolId": { "type": "string" },
+              "level": { "type": "integer", "minimum": 1 },
+              "count": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "equipped": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 3,
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "daemon": {
+      "type": "object",
+      "required": ["level", "xp", "skinId", "hungerState", "lastFedAt"],
+      "properties": {
+        "level": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "xp": { "type": "integer", "minimum": 0 },
+        "skinId": { "type": "string" },
+        "hungerState": { "type": "string", "enum": ["fed", "hungry", "tired"] },
+        "lastFedAt": { "type": "string", "format": "date-time" },
+        "autoFeedUntil": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "daily": {
+      "type": "object",
+      "required": ["streak", "lastLoginDate", "dailyThreatDone", "comboProgress"],
+      "properties": {
+        "streak": { "type": "integer", "minimum": 0 },
+        "lastLoginDate": { "type": "string" },
+        "dailyThreatDone": { "type": "boolean" },
+        "comboProgress": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "spinnerClaimedDate": { "type": ["string", "null"] },
+        "streakRescueDeadline": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "gacha": {
+      "type": "object",
+      "required": ["rarePity", "epicPity", "legendaryPity", "openCount"],
+      "properties": {
+        "rarePity": { "type": "integer", "minimum": 0 },
+        "epicPity": { "type": "integer", "minimum": 0 },
+        "legendaryPity": { "type": "integer", "minimum": 0 },
+        "openCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "squad": {
+      "type": "object",
+      "required": ["squadId", "role"],
+      "properties": {
+        "squadId": { "type": ["string", "null"] },
+        "role": { "type": "string", "enum": ["none", "member", "officer", "leader"] },
+        "dailyContribution": { "type": "integer", "minimum": 0 },
+        "tradesUsedToday": { "type": "integer", "minimum": 0, "maximum": 3 }
+      },
+      "additionalProperties": false
+    },
+    "fairScore": {
+      "type": "object",
+      "required": ["daily", "weekly", "season"],
+      "properties": {
+        "daily": { "type": "integer", "minimum": 0 },
+        "weekly": { "type": "integer", "minimum": 0 },
+        "season": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "haptics": { "type": "boolean" },
+        "reducedMotion": { "type": "boolean" },
+        "pushDailyThreat": { "type": "boolean" },
+        "pushSquad": { "type": "boolean" },
+        "pushMarket": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
+
