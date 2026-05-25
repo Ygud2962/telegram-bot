@@ -144,6 +144,12 @@ GPT_AVAILABLE = bool(GROQ_API_KEY)
 GAME_URL      = (os.environ.get('GAME_URL', '') or '').strip()
 if GAME_URL and not GAME_URL.startswith('http'):
     GAME_URL = 'https://' + GAME_URL
+ZDNET_URL = (os.environ.get('ZDNET_URL', '') or '').strip()
+if ZDNET_URL and not ZDNET_URL.startswith('http'):
+    ZDNET_URL = 'https://' + ZDNET_URL
+ZDNET_API_URL = (os.environ.get('ZDNET_API_URL', '') or '').strip()
+if ZDNET_API_URL and not ZDNET_API_URL.startswith('http'):
+    ZDNET_API_URL = 'https://' + ZDNET_API_URL
 # Public URL бота на Railway (для приёма sync запросов из игры)
 # Приоритет: BOT_PUBLIC_URL (ручная) > RAILWAY_PUBLIC_DOMAIN (авто)
 BOT_PUBLIC_URL = (
@@ -153,6 +159,10 @@ BOT_PUBLIC_URL = (
 )
 if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
+if not ZDNET_URL and BOT_PUBLIC_URL:
+    ZDNET_URL = BOT_PUBLIC_URL.rstrip('/') + '/zdnet/'
+if not ZDNET_API_URL and BOT_PUBLIC_URL:
+    ZDNET_API_URL = BOT_PUBLIC_URL.rstrip('/') + '/zdnet_api'
 def _origin_from_url(raw_url: str) -> str:
     if not raw_url:
         return ''
@@ -167,6 +177,8 @@ def _origin_from_url(raw_url: str) -> str:
 
 _ALLOWED_GAME_ORIGINS: tuple[str, ...] = tuple(dict.fromkeys(filter(None, (
     _origin_from_url(GAME_URL),
+    _origin_from_url(ZDNET_URL),
+    _origin_from_url(ZDNET_API_URL),
     _origin_from_url(BOT_PUBLIC_URL),
 ))))
 
@@ -192,6 +204,7 @@ if not (1 <= PORT <= 65535):
 # Принята "честная" схема по количеству деплоев: X.Y.Z ~= сотни/десятки/единицы.
 BOT_VERSION = os.environ.get('BOT_VERSION', '9.8.0').strip() or '9.8.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.7.78').strip() or '1.7.78'
+ZDNET_VERSION = os.environ.get('ZDNET_VERSION', '0.1.0').strip() or '0.1.0'
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 GAME_AUTH_REQUIRED = os.environ.get('GAME_AUTH_REQUIRED', '1').strip() != '0'
@@ -2475,11 +2488,16 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 async def cmd_version(update: Update, context: CallbackContext):
     """Показывает текущие версии бота и игры."""
     game_url_state = "настроен" if GAME_URL else "не задан"
+    zdnet_url_state = "настроен" if ZDNET_URL else "не задан"
+    zdnet_api_state = "настроен" if ZDNET_API_URL else "не задан"
     msg = (
         "🧩 <b>Версии системы</b>\n\n"
         f"🤖 Бот: <b>{BOT_VERSION}</b>\n"
         f"🎮 Игра: <b>{GAME_VERSION}</b>\n"
+        f"🛡 ZERO_DAY: <b>{ZDNET_VERSION}</b>\n"
         f"🌐 GAME_URL: <b>{game_url_state}</b>\n"
+        f"🌐 ZDNET_URL: <b>{zdnet_url_state}</b>\n"
+        f"🔌 ZDNET_API_URL: <b>{zdnet_api_state}</b>\n"
     )
     await update.message.reply_text(msg, parse_mode='HTML')
 
@@ -3553,6 +3571,52 @@ async def menu_game(query, context):
         "🏆 <b>Таблица лидеров</b> всей школы"
         + my_info + role_hint,
         parse_mode='HTML', reply_markup=kb
+    )
+
+
+async def menu_zdnet(query, context):
+    """Запуск ZERO_DAY: Защитники сети как Telegram Mini App."""
+    if not ZDNET_URL:
+        await safe_edit(
+            query,
+            "🛡 <b>ZERO_DAY: ЗАЩИТНИКИ СЕТИ</b>\n\n"
+            "⚠️ Mini App пока не настроен.\n\n"
+            "Нужно задать <code>BOT_PUBLIC_URL</code> или <code>ZDNET_URL</code>, "
+            "чтобы Telegram мог открыть игру по HTTPS.",
+            [[btn("↩️ Игры", 'menu_games')], [btn("🏠 Главное меню", 'back_to_main')]],
+        )
+        return
+
+    from telegram import InlineKeyboardButton, WebAppInfo
+
+    payload_data = {
+        'screen': 'map',
+        'api': ZDNET_API_URL,
+        'v': ZDNET_VERSION,
+    }
+    payload = urllib.parse.quote(json.dumps(payload_data, ensure_ascii=False))
+    zdnet_url = build_game_launch_url(ZDNET_URL, ZDNET_VERSION, payload)
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛡 ОТКРЫТЬ ZERO_DAY", web_app=WebAppInfo(url=zdnet_url))],
+        [InlineKeyboardButton("🎮 Другие игры", callback_data='menu_games')],
+        [InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')],
+    ])
+    await query.message.edit_text(
+        "🛡 <b>ZERO_DAY: ЗАЩИТНИКИ СЕТИ</b>\n"
+        "<i>Telegram Mini App · SOC-симулятор</i>\n\n"
+        "Ты — стажёр Центра оперативного реагирования Нового Сектора.\n"
+        "На карте появляются угрозы, а твоя задача — нейтрализовать их через "
+        "свайпы, графы, пазлы и мини-игры без скучных тестов.\n\n"
+        "⚡ Энергия аналитика: 12 действий в день\n"
+        "🃏 Коллекция: карточки угроз и редкости\n"
+        "🐉 Демон: кибер-питомец и помощник\n"
+        "🛡 Отряд: общий щит, рейды и школьная лига\n\n"
+        f"🌐 Frontend: <code>{ZDNET_URL}</code>\n"
+        f"🔌 API: <code>{ZDNET_API_URL or 'не настроен'}</code>",
+        parse_mode='HTML',
+        reply_markup=kb,
+        disable_web_page_preview=True,
     )
 
 
@@ -5938,6 +6002,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'menu_ai':                menu_ai,
         'menu_games':             menu_games,
         'menu_game':              menu_game,
+        'menu_zdnet':             menu_zdnet,
         'menu_help':              menu_help,
         'admin_panel':                show_admin_panel,
         'admin_content_panel':        admin_content_panel,
@@ -7331,8 +7396,31 @@ def start_http_server_thread():
     """Запускает aiohttp в отдельном потоке чтобы не конфликтовать с event loop бота."""
     import threading
     import pathlib
+    import sys
 
     GAME_DIR = pathlib.Path(__file__).parent / 'game'
+    ZDNET_FRONTEND_DIR = pathlib.Path(__file__).parent / 'zero-day-defenders-network' / 'frontend'
+    ZDNET_BACKEND_DIR = pathlib.Path(__file__).parent / 'zero-day-defenders-network' / 'backend'
+    zdnet_repo = None
+    zdnet_backend_error = None
+    ZDNetGameError = Exception
+    _zdnet_validate_init_data = None
+
+    try:
+        if ZDNET_BACKEND_DIR.exists() and str(ZDNET_BACKEND_DIR) not in sys.path:
+            sys.path.insert(0, str(ZDNET_BACKEND_DIR))
+        from zdnet_backend.content import load_content as _zdnet_load_content
+        from zdnet_backend.repository import GameError as _ZDNetGameError
+        from zdnet_backend.security import validate_webapp_init_data as _validate_zdnet_init_data
+        from zdnet_backend.storage import build_repository as _zdnet_build_repository
+
+        ZDNetGameError = _ZDNetGameError
+        _zdnet_validate_init_data = _validate_zdnet_init_data
+        zdnet_repo = _zdnet_build_repository(_zdnet_load_content())
+        logger.info("✅ ZDNET backend mounted in bot HTTP server")
+    except Exception as e:
+        zdnet_backend_error = str(e)
+        logger.warning(f"ZDNET backend is not mounted: {e}")
 
     async def serve_game_index(request):
         """Отдаёт index.html игры."""
@@ -7370,6 +7458,201 @@ def start_http_server_thread():
         logger.warning(f"serve_game_file not found: filename='{filename}', path='{request.path_qs}'")
         return aiohttp_web.Response(text='Not found', status=404)
 
+    def _zdnet_cors_headers(request, methods: str = 'GET, POST, OPTIONS') -> dict[str, str]:
+        return {
+            'Access-Control-Allow-Origin': _resolve_game_cors_origin(request),
+            'Access-Control-Allow-Methods': methods,
+            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+            'Vary': 'Origin',
+        }
+
+    def _zdnet_json(data: dict, request, status: int = 200, methods: str = 'GET, POST, OPTIONS'):
+        return aiohttp_web.json_response(
+            data,
+            status=status,
+            headers=_zdnet_cors_headers(request, methods),
+        )
+
+    def _zdnet_unavailable(request):
+        return _zdnet_json(
+            {
+                'error': 'zdnet_backend_unavailable',
+                'detail': zdnet_backend_error or 'backend not mounted',
+            },
+            request,
+            status=503,
+        )
+
+    async def _zdnet_body(request) -> dict:
+        try:
+            data = await request.json()
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _zdnet_require_state(request):
+        if not zdnet_repo:
+            raise RuntimeError('zdnet backend not mounted')
+        auth = request.headers.get('Authorization', '')
+        if not auth.startswith('Bearer '):
+            raise ZDNetGameError('missing_bearer_token', status=401)
+        return zdnet_repo.get_by_session(auth.removeprefix('Bearer ').strip())
+
+    async def handle_zdnet_options(request):
+        return aiohttp_web.Response(status=204, headers=_zdnet_cors_headers(request))
+
+    async def handle_zdnet_auth(request):
+        if request.method == 'OPTIONS':
+            return await handle_zdnet_options(request)
+        if not zdnet_repo or not _zdnet_validate_init_data:
+            return _zdnet_unavailable(request)
+        try:
+            body = await _zdnet_body(request)
+            if os.environ.get('ZDNET_DEV_AUTH', '0') == '1':
+                telegram_id = int(body.get('devTelegramId') or request.query.get('devTelegramId') or 1001)
+                nickname = str(body.get('devNickname') or f'rookie_{telegram_id}')
+            else:
+                ok, reason, telegram_id, user_obj = _zdnet_validate_init_data(
+                    str(body.get('initData') or ''),
+                    TOKEN,
+                )
+                if not ok or telegram_id is None:
+                    return _zdnet_json({'error': reason}, request, status=401, methods='POST, OPTIONS')
+                nickname = user_obj.get('username') or user_obj.get('first_name') or f'rookie_{telegram_id}'
+            state = zdnet_repo.get_or_create_player(telegram_id, nickname)
+            token = zdnet_repo.create_session(int(state.player['id']))
+            boot = zdnet_repo.bootstrap(state)
+            return _zdnet_json(
+                {
+                    'sessionToken': token,
+                    'player': state.player,
+                    'serverTime': boot.get('serverTime'),
+                },
+                request,
+                methods='POST, OPTIONS',
+            )
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
+        except Exception as e:
+            logger.exception(f"handle_zdnet_auth error: {e}")
+            return _zdnet_json({'error': 'internal_error'}, request, status=500)
+
+    async def handle_zdnet_bootstrap(request):
+        if not zdnet_repo:
+            return _zdnet_unavailable(request)
+        try:
+            return _zdnet_json(zdnet_repo.bootstrap(_zdnet_require_state(request)), request)
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
+
+    async def handle_zdnet_content(request):
+        if not zdnet_repo:
+            return _zdnet_unavailable(request)
+        try:
+            from zdnet_backend.content import load_content as _zdnet_load_content
+            return _zdnet_json(_zdnet_load_content(), request)
+        except Exception as e:
+            logger.exception(f"handle_zdnet_content error: {e}")
+            return _zdnet_json({'error': 'internal_error'}, request, status=500)
+
+    async def handle_zdnet_start_attempt(request):
+        if not zdnet_repo:
+            return _zdnet_unavailable(request)
+        try:
+            state = _zdnet_require_state(request)
+            return _zdnet_json(zdnet_repo.start_attempt(state, request.match_info['threatId']), request, methods='POST, OPTIONS')
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
+
+    async def handle_zdnet_finish_attempt(request):
+        if not zdnet_repo:
+            return _zdnet_unavailable(request)
+        try:
+            state = _zdnet_require_state(request)
+            body = await _zdnet_body(request)
+            return _zdnet_json(
+                zdnet_repo.finish_attempt(state, request.match_info['attemptId'], body),
+                request,
+                methods='POST, OPTIONS',
+            )
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
+
+    async def handle_zdnet_open_cache(request):
+        if not zdnet_repo:
+            return _zdnet_unavailable(request)
+        try:
+            state = _zdnet_require_state(request)
+            body = await _zdnet_body(request)
+            return _zdnet_json(zdnet_repo.open_cache(state, int(body.get('count') or 1)), request, methods='POST, OPTIONS')
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
+
+    async def handle_zdnet_invoice(request):
+        if not zdnet_repo:
+            return _zdnet_unavailable(request)
+        try:
+            state = _zdnet_require_state(request)
+            body = await _zdnet_body(request)
+            return _zdnet_json(zdnet_repo.create_invoice(state, str(body.get('productId') or '')), request, methods='POST, OPTIONS')
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
+
+    async def handle_zdnet_payment_history(request):
+        if not zdnet_repo:
+            return _zdnet_unavailable(request)
+        try:
+            return _zdnet_json(zdnet_repo.payment_history(_zdnet_require_state(request)), request)
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
+
+    async def serve_zdnet_index(request):
+        fpath = ZDNET_FRONTEND_DIR / 'index.html'
+        if fpath.exists():
+            html = fpath.read_text(encoding='utf-8')
+            config = json.dumps(
+                {
+                    'apiBase': ZDNET_API_URL,
+                    'version': ZDNET_VERSION,
+                    'botHosted': True,
+                },
+                ensure_ascii=False,
+            )
+            html = html.replace('</head>', f'<script>window.ZDNET_CONFIG={config};</script></head>')
+            return aiohttp_web.Response(
+                text=html,
+                headers={
+                    'Content-Type': 'text/html; charset=utf-8',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                },
+            )
+        return aiohttp_web.Response(text='ZDNET frontend not found', status=404)
+
+    async def serve_zdnet_file(request):
+        filename = request.match_info.get('filename', '')
+        safe_filename = pathlib.Path(filename).name
+        if safe_filename != filename or safe_filename.startswith('.'):
+            logger.warning(f"serve_zdnet_file forbidden: filename='{filename}', path='{request.path_qs}'")
+            return aiohttp_web.Response(text='Forbidden', status=403)
+        fpath = ZDNET_FRONTEND_DIR / safe_filename
+        if fpath.exists() and fpath.is_file():
+            content_types = {
+                '.js': 'application/javascript; charset=utf-8',
+                '.css': 'text/css; charset=utf-8',
+                '.html': 'text/html; charset=utf-8',
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.svg': 'image/svg+xml',
+                '.json': 'application/json; charset=utf-8',
+            }
+            ct = content_types.get(fpath.suffix, 'application/octet-stream')
+            return aiohttp_web.FileResponse(fpath, headers={
+                'Content-Type': ct,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            })
+        logger.warning(f"serve_zdnet_file not found: filename='{filename}', path='{request.path_qs}'")
+        return aiohttp_web.Response(text='Not found', status=404)
+
 
     async def _run():
         app_http = aiohttp_web.Application()
@@ -7385,12 +7668,26 @@ def start_http_server_thread():
         app_http.router.add_get('/game_media/{track_id}', handle_game_media)
         app_http.router.add_options('/game_media/{track_id}', handle_game_media)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
+        # API новой игры ZERO_DAY: Защитники сети
+        app_http.router.add_options('/zdnet_api/{tail:.*}', handle_zdnet_options)
+        app_http.router.add_post('/zdnet_api/auth/telegram', handle_zdnet_auth)
+        app_http.router.add_get('/zdnet_api/bootstrap', handle_zdnet_bootstrap)
+        app_http.router.add_get('/zdnet_api/content', handle_zdnet_content)
+        app_http.router.add_post('/zdnet_api/threats/{threatId}/start', handle_zdnet_start_attempt)
+        app_http.router.add_post('/zdnet_api/attempts/{attemptId}/finish', handle_zdnet_finish_attempt)
+        app_http.router.add_post('/zdnet_api/cache/open', handle_zdnet_open_cache)
+        app_http.router.add_post('/zdnet_api/payments/invoice', handle_zdnet_invoice)
+        app_http.router.add_get('/zdnet_api/payments/history', handle_zdnet_payment_history)
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)
         app_http.router.add_get('/index.html', serve_game_index)
         app_http.router.add_get('/game', serve_game_index)
         app_http.router.add_get('/game/', serve_game_index)
         app_http.router.add_get('/game/{filename}', serve_game_file)
+        # Файлы новой игры ZERO_DAY
+        app_http.router.add_get('/zdnet', serve_zdnet_index)
+        app_http.router.add_get('/zdnet/', serve_zdnet_index)
+        app_http.router.add_get('/zdnet/{filename}', serve_zdnet_file)
         app_http.router.add_get('/{filename}', serve_game_file)
         runner = aiohttp_web.AppRunner(app_http)
         await runner.setup()
@@ -7398,6 +7695,7 @@ def start_http_server_thread():
         await site.start()
         logger.info(f"✅ HTTP server started on port {PORT}")
         logger.info(f"📁 Game dir: {GAME_DIR} (exists: {GAME_DIR.exists()})")
+        logger.info(f"📁 ZDNET frontend dir: {ZDNET_FRONTEND_DIR} (exists: {ZDNET_FRONTEND_DIR.exists()})")
         # Держим сервер запущенным
         await asyncio.Event().wait()
 
@@ -7483,6 +7781,8 @@ def main():
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
     print(f"👥 Пользователей: {db.get_user_count()}")
     print(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
+    print(f"🛡 ZDNET_URL: {ZDNET_URL or '❌ НЕ ЗАДАН'}")
+    print(f"🔌 ZDNET_API_URL: {ZDNET_API_URL or '❌ НЕ ЗАДАН'}")
     print(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
     print(f"🔌 HTTP-порт: {PORT}")
     if not BOT_PUBLIC_URL:
@@ -7508,6 +7808,7 @@ def main():
 async def menu_games(query, context):
     """Подменю игр."""
     kb = [
+        [btn("🛡 ZERO_DAY: Защитники сети", 'menu_zdnet')],
         [btn("🎮 Шифровальщик", 'menu_game')],
         [btn("🏠 Главное меню", 'back_to_main')],
     ]

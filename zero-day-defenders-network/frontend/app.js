@@ -1,5 +1,5 @@
 const tg = window.Telegram?.WebApp;
-const API_BASE = localStorage.getItem("ZDNET_API_BASE") || "http://localhost:8090";
+const API_BASE = window.ZDNET_CONFIG?.apiBase || localStorage.getItem("ZDNET_API_BASE") || "http://localhost:8090";
 let sessionToken = null;
 let backendOnline = false;
 
