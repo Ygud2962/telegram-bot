@@ -5,55 +5,46 @@
 (function () {
   'use strict';
 
+  const STORAGE_KEY = 'zero_day_school_protocol_state_v3';
+
   const frame = document.getElementById('appFrame');
   const bottomNav = document.getElementById('bottomNav');
   const iosHomeBtn = document.getElementById('iosHomeBtn');
   const telegramApp = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 
   const TOPUP_OFFERS = [
-    {
-      id: 'stars_50',
-      stars: 50,
-      priceLabel: '49₽',
-      tgLabel: '50 Telegram Stars',
-      invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_50'
-    },
-    {
-      id: 'stars_120',
-      stars: 120,
-      priceLabel: '99₽',
-      tgLabel: '120 Telegram Stars',
-      invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_120'
-    },
-    {
-      id: 'stars_250',
-      stars: 250,
-      priceLabel: '189₽',
-      tgLabel: '250 Telegram Stars',
-      invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_250'
-    },
-    {
-      id: 'stars_600',
-      stars: 600,
-      priceLabel: '399₽',
-      tgLabel: '600 Telegram Stars',
-      invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_600'
-    }
+    { id: 'stars_50', stars: 50, priceLabel: '49₽', tgLabel: '50 Telegram Stars', invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_50' },
+    { id: 'stars_120', stars: 120, priceLabel: '99₽', tgLabel: '120 Telegram Stars', invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_120' },
+    { id: 'stars_250', stars: 250, priceLabel: '189₽', tgLabel: '250 Telegram Stars', invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_250' },
+    { id: 'stars_600', stars: 600, priceLabel: '399₽', tgLabel: '600 Telegram Stars', invoiceUrl: 'https://t.me/your_bot?start=invoice_stars_600' }
   ];
 
-  const REAL_MONEY_OFFERS = {
-    decryptor: {
-      label: '109₽',
-      invoiceUrl: 'https://t.me/your_bot?start=invoice_item_decryptor'
-    },
-    darknet_acc: {
-      label: '249₽',
-      invoiceUrl: 'https://t.me/your_bot?start=invoice_item_darknet'
-    },
-    early_access: {
-      label: '89₽',
-      invoiceUrl: 'https://t.me/your_bot?start=invoice_item_early_access'
-    }
+  const REAL_MONEY_ITEM_OFFERS = {
+    decryptor: { label: '109₽', invoiceUrl: 'https://t.me/your_bot?start=invoice_item_decryptor' },
+    darknet_acc: { label: '249₽', invoiceUrl: 'https://t.me/your_bot?start=invoice_item_darknet' },
+    rubber_duck: { label: '199₽', invoiceUrl: 'https://t.me/your_bot?start=invoice_item_rubber_duck' }
+  };
+
+  const LOCATION_REQUIREMENTS = {
+    library: ['decryptor'],
+    server: ['school_pass', 'rubber_duck'],
+    park: ['core_missions']
+  };
+
+  const LOCATION_REWARDS = {
+    school: { stars: 2, trust: 1, reputation: 1, missionId: null },
+    cafe: { stars: 2, trust: 1, reputation: 1, missionId: null },
+    library: { stars: 4, trust: 2, reputation: 2, missionId: 'm05' },
+    server: { stars: 6, trust: 2, reputation: 3, missionId: 'm06' },
+    park: { stars: 8, trust: 4, reputation: 5, missionId: 'm21' }
+  };
+
+  const CORE_MISSION_IDS = ['m01', 'm02', 'm03', 'm04', 'm05', 'm06'];
+
+  const CHOICE_OUT_TEXT = {
+    A: 'Предупреждаю класс: файл заражён, не открывайте.',
+    B: 'Открою и сам проверю, это быстрее.',
+    C: 'Проверяем личность Марины через второй канал.'
   };
 
   const paymentSessions = new Map();
@@ -63,172 +54,130 @@
   let currentChat = null;
   let transitionDirection = 'forward';
   let navHistory = ['home'];
-  const LOCATION_REQUIREMENTS = {
-    library: ['decryptor'],
-    server: ['school_pass', 'rubber_duck']
-  };
-  const LOCATION_REWARDS = {
-    school: 2,
-    cafe: 2,
-    library: 4,
-    server: 6,
-    park: 10
-  };
 
-  if (!(ZD.state.analyzed instanceof Set)) ZD.state.analyzed = new Set(ZD.state.analyzed || []);
-  if (!(ZD.state.foundFlags instanceof Set)) ZD.state.foundFlags = new Set(ZD.state.foundFlags || []);
-  if (!(ZD.state.inventory instanceof Array)) ZD.state.inventory = [];
-  if (!(ZD.state.visitedLocations instanceof Set)) ZD.state.visitedLocations = new Set(ZD.state.visitedLocations || []);
-  if (!(ZD.state.completedMissions instanceof Set)) ZD.state.completedMissions = new Set(ZD.state.completedMissions || []);
-  if (typeof ZD.state.finaleShown !== 'boolean') ZD.state.finaleShown = false;
+  const DEFAULT_STATE = normalizeState(ZD.state);
+  ZD.state = loadState(DEFAULT_STATE);
 
-  function unreadCount() {
-    return ZD.contacts.reduce((sum, c) => sum + (Number(c.unread) || 0), 0);
+  // ------------------------------------------------------------
+  // State helpers
+  // ------------------------------------------------------------
+  function asNumber(value, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
   }
 
-  function getGalleryMissionStatus() {
-    const flagged = ZD.gallery.filter((item) => item.flagged);
-    if (!flagged.length) return true;
-    return flagged.every((item) => ZD.state.analyzed.has(item.id));
+  function asSet(value) {
+    if (value instanceof Set) return new Set(value);
+    if (Array.isArray(value)) return new Set(value);
+    return new Set();
   }
 
-  function getMissionProgress() {
-    const chat = !!ZD.state.choiceMade;
-    const gallery = getGalleryMissionStatus();
-    const browser = ZD.state.foundFlags.size >= 4;
-    const terminal = !!ZD.state.termSolved;
-    const done = [chat, gallery, browser, terminal].filter(Boolean).length;
+  function uniqueArray(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value.filter(Boolean))];
+  }
+
+  function normalizeState(raw) {
+    const state = raw || {};
+
+    const normalized = {
+      stars: Math.max(0, Math.floor(asNumber(state.stars, 47))),
+      reputation: Math.max(0, Math.floor(asNumber(state.reputation, 12))),
+      trust: Math.min(100, Math.max(0, Math.floor(asNumber(state.trust, 78)))),
+      episode: Math.max(1, Math.floor(asNumber(state.episode, 3))),
+      act: Math.max(1, Math.floor(asNumber(state.act, 1))),
+      analyzed: asSet(state.analyzed),
+      foundFlags: asSet(state.foundFlags),
+      termAttempts: Math.max(0, Math.floor(asNumber(state.termAttempts, 0))),
+      termSolved: !!state.termSolved,
+      inventory: uniqueArray(state.inventory || []),
+      visitedLocations: asSet(state.visitedLocations),
+      completedMissionIds: asSet(state.completedMissionIds),
+      chatChoices: state.chatChoices && typeof state.chatChoices === 'object' ? { ...state.chatChoices } : {},
+      purchasedThemes: uniqueArray(state.purchasedThemes || ['obsidian_glass']),
+      activeTheme: typeof state.activeTheme === 'string' ? state.activeTheme : 'obsidian_glass',
+      purchaseHistory: Array.isArray(state.purchaseHistory) ? state.purchaseHistory.slice(0, 50) : [],
+      adminMode: !!state.adminMode,
+      finaleShown: !!state.finaleShown,
+      finaleInboxRead: !!state.finaleInboxRead
+    };
+
+    if (normalized.purchasedThemes.length === 0) normalized.purchasedThemes = ['obsidian_glass'];
+    if (!normalized.purchasedThemes.includes('obsidian_glass')) normalized.purchasedThemes.push('obsidian_glass');
+    if (!normalized.purchasedThemes.includes(normalized.activeTheme)) normalized.activeTheme = 'obsidian_glass';
+    if (!normalized.inventory.includes('school_pass')) normalized.inventory.push('school_pass');
+
+    // Legacy migration from old "choiceMade"
+    if (state.choiceMade && !normalized.chatChoices.dasha) {
+      normalized.chatChoices.dasha = 'A';
+    }
+
+    return normalized;
+  }
+
+  function stateToPlain(state) {
     return {
-      chat,
-      gallery,
-      browser,
-      terminal,
-      done,
-      total: 4,
-      allCoreDone: done >= 4
+      stars: state.stars,
+      reputation: state.reputation,
+      trust: state.trust,
+      episode: state.episode,
+      act: state.act,
+      analyzed: [...state.analyzed],
+      foundFlags: [...state.foundFlags],
+      termAttempts: state.termAttempts,
+      termSolved: state.termSolved,
+      inventory: [...state.inventory],
+      visitedLocations: [...state.visitedLocations],
+      completedMissionIds: [...state.completedMissionIds],
+      chatChoices: { ...state.chatChoices },
+      purchasedThemes: [...state.purchasedThemes],
+      activeTheme: state.activeTheme,
+      purchaseHistory: [...state.purchaseHistory],
+      adminMode: state.adminMode,
+      finaleShown: state.finaleShown,
+      finaleInboxRead: state.finaleInboxRead
     };
   }
 
-  function syncEpisodesWithProgress(progress) {
-    const ep3 = ZD.episodes.find((ep) => ep.id === 3);
-    const ep4 = ZD.episodes.find((ep) => ep.id === 4);
-    if (!progress) return;
-
-    if (ep3) {
-      ep3.done = progress.allCoreDone;
-      ep3.active = !progress.allCoreDone;
-    }
-
-    if (ep4) {
-      ep4.locked = !progress.allCoreDone;
-      ep4.active = progress.allCoreDone;
-    }
-
-    if (progress.allCoreDone) {
-      ZD.state.act = Math.max(ZD.state.act, 2);
-      ZD.state.episode = Math.max(ZD.state.episode, 4);
+  function loadState(defaultState) {
+    const base = normalizeState(defaultState);
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return base;
+      const parsed = JSON.parse(raw);
+      const merged = {
+        ...stateToPlain(base),
+        ...parsed,
+        chatChoices: { ...stateToPlain(base).chatChoices, ...(parsed.chatChoices || {}) }
+      };
+      return normalizeState(merged);
+    } catch (err) {
+      console.warn('[ZERO_DAY] loadState failed', err);
+      return base;
     }
   }
 
-  function refreshNav() {
-    buildNav();
-    setActiveNav(rootNav(currentScreen));
-  }
-
-  function updateStoryProgress(source) {
-    const progress = getMissionProgress();
-
-    if (progress.chat) ZD.state.completedMissions.add('chat');
-    if (progress.gallery) ZD.state.completedMissions.add('gallery');
-    if (progress.browser) ZD.state.completedMissions.add('browser');
-    if (progress.terminal) ZD.state.completedMissions.add('terminal');
-
-    syncEpisodesWithProgress(progress);
-
-    if (progress.allCoreDone && !ZD.state.finaleShown) {
-      ZD.state.finaleShown = true;
-
-      const unknownContact = ZD.contacts.find((c) => c.id === 'unknown');
-      if (unknownContact) {
-        unknownContact.preview = 'Фаза 1 закрыта. Сквер разблокирован.';
-      }
-
-      toast('Все ключевые миссии завершены. Локация «Сквер» разблокирована.');
+  function persistState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToPlain(ZD.state)));
+    } catch (err) {
+      console.warn('[ZERO_DAY] persistState failed', err);
     }
-
-    if (source !== 'silent') refreshNav();
   }
 
-  function hasRequiredItems(locId) {
-    const requirements = LOCATION_REQUIREMENTS[locId] || [];
-    return requirements.every((itemId) => ZD.state.inventory.includes(itemId));
+  function resetState() {
+    ZD.state = normalizeState(DEFAULT_STATE);
+    persistState();
+    applyTheme(ZD.state.activeTheme);
+    updateProgress('silent');
+    refreshStatusWidgets();
+    renderCurrentScreen();
+    toast('Прогресс сброшен', 'info');
   }
 
-  function canAccessLocation(loc) {
-    if (!loc) return false;
-    if (loc.id === 'park') return getMissionProgress().allCoreDone;
-    if (loc.type === 'open') return true;
-    if (loc.type === 'locked') return false;
-    if (loc.type === 'req') return hasRequiredItems(loc.id);
-    return false;
-  }
-
-  function locationLockReason(loc) {
-    if (!loc) return 'Недоступно';
-    if (loc.id === 'library') return 'Нужен Дешифратор';
-    if (loc.id === 'server') return 'Нужен Пропуск + USB-Руббердак';
-    if (loc.id === 'park') return 'Откроется после всех миссий';
-    return 'Локация заблокирована';
-  }
-
-  function locationStatus(loc, available) {
-    if (!loc) return { text: 'Недоступно', color: '#8e8e93' };
-    if (available) {
-      if (loc.id === 'library') return { text: 'ДОСТУП ОТКРЫТ', color: '#30d158' };
-      if (loc.id === 'server') return { text: 'ГОТОВО К РЕЙДУ', color: '#30d158' };
-      if (loc.id === 'park') return { text: 'ФИНАЛ', color: '#64d2ff' };
-      return { text: 'ДОСТУПНО', color: '#30d158' };
-    }
-    return { text: locationLockReason(loc), color: '#ff9f0a' };
-  }
-
-  function getLocationView(loc) {
-    const available = canAccessLocation(loc);
-    const status = locationStatus(loc, available);
-    let buttonText = loc.action;
-
-    if (!available) {
-      buttonText = locationLockReason(loc);
-    } else if (loc.id === 'park') {
-      buttonText = '▶ ВХОД В ФИНАЛЬНУЮ МИССИЮ';
-    }
-
-    return {
-      available,
-      statusText: status.text,
-      statusColor: status.color,
-      buttonText
-    };
-  }
-
-  function getGalleryMarker(item) {
-    if (!item || !item.name) return 'FILE';
-    const ext = item.name.split('.').pop().toUpperCase();
-    if (ext === 'JPG' || ext === 'JPEG') return 'PHOTO';
-    if (ext === 'PNG') return 'SCREEN';
-    if (ext === 'EXE') return 'RISK';
-    return ext.slice(0, 6);
-  }
-
-  function getGalleryToneClass(item) {
-    const marker = getGalleryMarker(item);
-    if (marker === 'PHOTO') return 'tone-photo';
-    if (marker === 'SCREEN') return 'tone-screen';
-    if (marker === 'RISK') return 'tone-risk';
-    return 'tone-file';
-  }
-
-  // ---- CLOCK ----
+  // ------------------------------------------------------------
+  // UI system helpers
+  // ------------------------------------------------------------
   function updateClock() {
     const now = new Date();
     const h = String(now.getHours()).padStart(2, '0');
@@ -241,236 +190,368 @@
     const fill = document.getElementById('sbBattFill');
     if (!fill) return;
 
-    const pseudoLevel = 72 + Math.floor(Math.abs(Math.sin(Date.now() / 600000)) * 23);
+    const pseudoLevel = 74 + Math.floor(Math.abs(Math.sin(Date.now() / 480000)) * 21);
     fill.style.width = pseudoLevel + '%';
+    if (pseudoLevel <= 20) fill.style.background = 'var(--red)';
+    else if (pseudoLevel <= 40) fill.style.background = 'var(--orange)';
+    else fill.style.background = 'var(--green)';
+  }
 
-    if (pseudoLevel <= 20) {
-      fill.style.background = 'var(--red)';
-    } else if (pseudoLevel <= 40) {
-      fill.style.background = 'var(--orange)';
-    } else {
-      fill.style.background = 'var(--green)';
+  function refreshStatusWidgets() {
+    const stars = ZD.state.stars;
+    const trust = ZD.state.trust;
+    const reputation = ZD.state.reputation;
+
+    document.querySelectorAll('.stars-val').forEach((el) => { el.textContent = stars; });
+    document.querySelectorAll('.trust-val').forEach((el) => { el.textContent = trust; });
+    document.querySelectorAll('.rep-val').forEach((el) => { el.textContent = reputation; });
+
+    const topStars = document.getElementById('topStars');
+    const topTrust = document.getElementById('topTrust');
+    const topRep = document.getElementById('topRep');
+    if (topStars) topStars.textContent = stars;
+    if (topTrust) topTrust.textContent = trust;
+    if (topRep) topRep.textContent = reputation;
+  }
+
+  function toast(message, type) {
+    if (!frame) return;
+    const existing = frame.querySelector('.toast');
+    if (existing) existing.remove();
+
+    const t = document.createElement('div');
+    t.className = 'toast' + (type ? ' toast-' + type : '');
+    t.textContent = message;
+    frame.appendChild(t);
+    setTimeout(() => t.remove(), 1850);
+  }
+
+  function addStars(amount, reason) {
+    if (amount <= 0) return;
+    ZD.state.stars += amount;
+    persistState();
+    refreshStatusWidgets();
+    toast('+' + amount + ' ⭐ ' + (reason || ''));
+  }
+
+  function bumpTrust(delta) {
+    if (!delta) return;
+    ZD.state.trust = Math.min(100, Math.max(0, ZD.state.trust + delta));
+  }
+
+  function bumpReputation(delta) {
+    if (!delta) return;
+    ZD.state.reputation = Math.max(0, ZD.state.reputation + delta);
+  }
+
+  function recordPurchase(entry) {
+    const now = new Date();
+    const stamp = now.toLocaleString('ru-RU', { hour12: false });
+    ZD.state.purchaseHistory.unshift({
+      id: 'h_' + now.getTime(),
+      time: stamp,
+      ...entry
+    });
+    if (ZD.state.purchaseHistory.length > 30) {
+      ZD.state.purchaseHistory = ZD.state.purchaseHistory.slice(0, 30);
+    }
+    persistState();
+  }
+
+  function getUnreadCount() {
+    return ZD.contacts.reduce((sum, c) => sum + (Number(c.unread) || 0), 0);
+  }
+
+  function syncContactsFromState() {
+    const dasha = ZD.contacts.find((c) => c.id === 'dasha');
+    const unknown = ZD.contacts.find((c) => c.id === 'unknown');
+    const marina = ZD.contacts.find((c) => c.id === 'marina');
+
+    if (dasha && ZD.state.chatChoices.dasha) {
+      const key = ZD.state.chatChoices.dasha;
+      const reply = ZD.choiceReplies[key];
+      dasha.unread = 0;
+      if (reply && reply.text) dasha.preview = reply.text;
+      dasha.time = '19:50';
+    }
+
+    if (unknown && ZD.state.finaleShown) {
+      unknown.unread = ZD.state.finaleInboxRead ? 0 : Math.max(unknown.unread || 0, 1);
+      unknown.preview = 'Фаза 1 закрыта. Сквер разблокирован.';
+      unknown.time = ZD.state.finaleInboxRead ? 'прочитано' : 'сейчас';
+    }
+
+    if (marina && ZD.state.chatChoices.dasha) {
+      marina.unread = 0;
     }
   }
 
-  // ---- TELEGRAM WEBAPP ----
+  function getThemeById(themeId) {
+    return ZD.themes.find((theme) => theme.id === themeId) || ZD.themes[0];
+  }
+
+  function applyTheme(themeId) {
+    const theme = getThemeById(themeId);
+    ZD.state.activeTheme = theme.id;
+    document.documentElement.setAttribute('data-theme', theme.id);
+    persistState();
+  }
+
+  // ------------------------------------------------------------
+  // Story progress and missions
+  // ------------------------------------------------------------
+  function allFlaggedAnalyzed() {
+    const flagged = ZD.gallery.filter((item) => item.flagged);
+    return flagged.length > 0 && flagged.every((item) => ZD.state.analyzed.has(item.id));
+  }
+
+  function coreMissionsDone() {
+    return CORE_MISSION_IDS.every((id) => ZD.state.completedMissionIds.has(id));
+  }
+
+  function markMissionDone(missionId) {
+    if (!missionId) return;
+    ZD.state.completedMissionIds.add(missionId);
+  }
+
+  function updateEpisodeStates() {
+    const missionDoneCount = ZD.state.completedMissionIds.size;
+    const nextEpisode = Math.min(24, Math.max(3, 3 + Math.floor(missionDoneCount / 2)));
+    ZD.state.episode = nextEpisode;
+    ZD.state.act = missionDoneCount >= 12 ? 2 : 1;
+
+    ZD.episodes.forEach((ep) => {
+      ep.done = ep.id < ZD.state.episode;
+      ep.active = ep.id === ZD.state.episode;
+      ep.locked = ep.id > ZD.state.episode + 1;
+    });
+  }
+
+  function updateProgress(source) {
+    syncContactsFromState();
+
+    if (ZD.state.chatChoices.dasha) markMissionDone('m01');
+    if (allFlaggedAnalyzed()) markMissionDone('m02');
+    if (ZD.state.foundFlags.size >= 4) markMissionDone('m03');
+    if (ZD.state.termSolved) markMissionDone('m04');
+    if (ZD.state.visitedLocations.has('library')) markMissionDone('m05');
+    if (ZD.state.visitedLocations.has('server')) markMissionDone('m06');
+    if (ZD.state.visitedLocations.has('park')) markMissionDone('m21');
+
+    if (ZD.state.adminMode) {
+      ZD.missionCalendar.forEach((m) => ZD.state.completedMissionIds.add(m.id));
+    }
+
+    if (coreMissionsDone() && !ZD.state.finaleShown) {
+      ZD.state.finaleShown = true;
+      ZD.state.finaleInboxRead = false;
+      const unknown = ZD.contacts.find((c) => c.id === 'unknown');
+      if (unknown) {
+        unknown.unread = Math.max(1, unknown.unread);
+        unknown.preview = 'Фаза 1 закрыта. Сквер разблокирован.';
+        unknown.time = 'сейчас';
+      }
+      toast('Ключевые миссии закрыты. Доступ в Сквер открыт.', 'success');
+    }
+
+    updateEpisodeStates();
+    persistState();
+    refreshStatusWidgets();
+    buildNav();
+    setActiveNav(rootNav(currentScreen));
+
+    if (source !== 'silent' && currentScreen === 'home') {
+      renderScreen('home');
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Telegram and billing
+  // ------------------------------------------------------------
   function initTelegram() {
     if (!telegramApp) return;
-
     try {
       telegramApp.ready();
       telegramApp.expand();
       if (typeof telegramApp.setBackgroundColor === 'function') telegramApp.setBackgroundColor('#000000');
       if (typeof telegramApp.setHeaderColor === 'function') telegramApp.setHeaderColor('#000000');
-    } catch (err) {
-      console.warn('[ZERO_DAY] Telegram init failed:', err);
-    }
-
-    try {
       telegramApp.onEvent('invoiceClosed', onInvoiceClosed);
     } catch (err) {
-      console.warn('[ZERO_DAY] invoiceClosed hook failed:', err);
+      console.warn('[ZERO_DAY] Telegram init error', err);
     }
   }
 
-  function extractSessionKey(url) {
-    if (!url) return '';
-
+  function extractInvoiceKey(url) {
     try {
       const parsed = new URL(url);
       const start = parsed.searchParams.get('start');
       if (start) return start;
       const slug = parsed.searchParams.get('slug');
       if (slug) return slug;
-      const parts = parsed.pathname.split('/').filter(Boolean);
-      return parts[parts.length - 1] || parsed.href;
+      return parsed.pathname.split('/').filter(Boolean).pop() || url;
     } catch (err) {
-      return String(url);
+      return url;
     }
   }
 
-  function startInvoicePayment(meta) {
+  function startInvoice(meta) {
     if (!meta || !meta.invoiceUrl) {
-      toast('Счёт недоступен');
+      toast('Счёт недоступен', 'error');
       return;
     }
 
-    const sessionKey = extractSessionKey(meta.invoiceUrl) || ('invoice_' + Date.now());
-    const payload = {
-      ...meta,
-      sessionKey,
-      processed: false
-    };
-
-    paymentSessions.set(sessionKey, payload);
+    const key = extractInvoiceKey(meta.invoiceUrl) || ('invoice_' + Date.now());
+    const session = { ...meta, key, processed: false };
+    paymentSessions.set(key, session);
 
     if (DEMO_MODE) {
-      setTimeout(() => {
-        finalizeInvoice(payload, 'paid'); // DEMO_MODE
-      }, 480);
+      setTimeout(() => finalizeInvoice(session, 'paid'), 500);
       return;
     }
 
     try {
-      telegramApp.openInvoice(payload.invoiceUrl, (status) => {
-        finalizeInvoice(payload, status || 'cancelled');
+      telegramApp.openInvoice(meta.invoiceUrl, (status) => {
+        finalizeInvoice(session, status || 'cancelled');
       });
     } catch (err) {
-      console.warn('[ZERO_DAY] openInvoice failed:', err);
-      toast('Ошибка при открытии счёта');
+      toast('Не удалось открыть счёт', 'error');
+      console.warn('[ZERO_DAY] openInvoice error', err);
     }
   }
 
-  function onInvoiceClosed(eventPayload) {
-    const status = typeof eventPayload === 'string'
-      ? eventPayload
-      : ((eventPayload && eventPayload.status) || 'cancelled');
+  function onInvoiceClosed(payload) {
+    const status = typeof payload === 'string' ? payload : ((payload && payload.status) || 'cancelled');
+    const slug = payload && (payload.slug || payload.invoiceSlug || payload.id);
 
-    const slug = eventPayload && (eventPayload.slug || eventPayload.invoiceSlug || eventPayload.id);
-
-    let payload = null;
-
+    let session = null;
     if (slug && paymentSessions.has(slug)) {
-      payload = paymentSessions.get(slug);
+      session = paymentSessions.get(slug);
     } else {
-      for (const session of paymentSessions.values()) {
-        if (!session.processed) {
-          payload = session;
+      for (const candidate of paymentSessions.values()) {
+        if (!candidate.processed) {
+          session = candidate;
           break;
         }
       }
     }
 
-    if (payload) finalizeInvoice(payload, status);
+    if (session) finalizeInvoice(session, status);
   }
 
-  function finalizeInvoice(payload, status) {
-    if (!payload || payload.processed) return;
-    payload.processed = true;
-    paymentSessions.delete(payload.sessionKey);
+  function finalizeInvoice(session, status) {
+    if (!session || session.processed) return;
+    session.processed = true;
+    paymentSessions.delete(session.key);
 
     if (status === 'paid') {
-      if (payload.type === 'topup') {
-        ZD.state.stars += payload.stars;
-        updateStarsDisplay();
-        toast('+' + payload.stars + ' Stars спасибо за поддержку!');
+      if (session.type === 'topup') {
+        ZD.state.stars += session.stars;
+        recordPurchase({
+          kind: 'topup',
+          title: `Пополнение ${session.stars} Stars`,
+          amount: session.priceLabel || '',
+          status: 'paid'
+        });
+        persistState();
+        refreshStatusWidgets();
+        toast('+' + session.stars + ' Stars. Спасибо за поддержку!', 'success');
       }
 
-      if (payload.type === 'item') {
-        if (!ZD.state.inventory.includes(payload.itemId)) {
-          ZD.state.inventory.push(payload.itemId);
+      if (session.type === 'item') {
+        if (!ZD.state.inventory.includes(session.itemId)) {
+          ZD.state.inventory.push(session.itemId);
         }
-        if (payload.itemId === 'decryptor') {
-          toast('Покупка подтверждена. Библиотека разблокирована.');
-        } else if (payload.itemId === 'rubber_duck') {
-          toast('Покупка подтверждена. Доступ к серверной обновлён.');
-        } else {
-          toast('Покупка подтверждена');
-        }
+        recordPurchase({
+          kind: 'item',
+          title: `Покупка: ${session.itemName || session.itemId}`,
+          amount: session.priceLabel || '',
+          status: 'paid'
+        });
+        persistState();
+        refreshStatusWidgets();
+        toast('Покупка подтверждена', 'success');
       }
 
-      if (currentScreen === 'shop') {
-        transitionDirection = 'forward';
-        renderScreen('shop');
-      }
-      updateStoryProgress('payment');
+      updateProgress('payment');
+      if (currentScreen === 'shop') renderScreen('shop');
+      if (currentScreen === 'settings') renderScreen('settings');
       return;
     }
 
-    if (status === 'cancelled' || status === 'failed') {
-      toast('Платёж отменён');
-    }
+    recordPurchase({
+      kind: session.type || 'invoice',
+      title: session.itemName ? `Платёж: ${session.itemName}` : 'Платёж',
+      amount: session.priceLabel || '',
+      status: status
+    });
+    toast('Платёж отменён', 'error');
   }
 
   function buyStarsPack(packId) {
-    const offer = TOPUP_OFFERS.find((p) => p.id === packId);
+    const offer = TOPUP_OFFERS.find((x) => x.id === packId);
     if (!offer) {
-      toast('Пакет не найден');
+      toast('Пакет не найден', 'error');
       return;
     }
-
-    startInvoicePayment({
+    startInvoice({
       type: 'topup',
       stars: offer.stars,
+      priceLabel: offer.priceLabel,
       invoiceUrl: offer.invoiceUrl
     });
   }
 
-  function buyItemForMoney(itemId) {
-    const offer = REAL_MONEY_OFFERS[itemId];
+  function buyItemForMoney(itemId, itemName) {
+    const offer = REAL_MONEY_ITEM_OFFERS[itemId];
     if (!offer) {
-      toast('Оплата недоступна');
+      toast('Оплата для этого товара не настроена', 'error');
       return;
     }
-
     if (ZD.state.inventory.includes(itemId)) {
-      toast('Уже куплено');
+      toast('Товар уже куплен', 'info');
       return;
     }
-
-    startInvoicePayment({
+    startInvoice({
       type: 'item',
       itemId,
+      itemName,
+      priceLabel: offer.label,
       invoiceUrl: offer.invoiceUrl
     });
   }
 
-  // ---- TOAST ----
-  function toast(msg) {
-    const existing = frame.querySelector('.toast');
-    if (existing) existing.remove();
-
-    const t = document.createElement('div');
-    t.className = 'toast';
-    t.textContent = msg;
-    frame.appendChild(t);
-    setTimeout(() => t.remove(), 1600);
-  }
-
-  function addStars(n) {
-    if (n <= 0) return;
-    ZD.state.stars += n;
-    updateStarsDisplay();
-    toast('+' + n + ' ⭐ Stars');
-  }
-
-  function updateStarsDisplay() {
-    document.querySelectorAll('.stars-val').forEach((el) => {
-      el.textContent = ZD.state.stars;
-    });
-  }
-
-  // ---- NAV ICONS ----
+  // ------------------------------------------------------------
+  // Navigation
+  // ------------------------------------------------------------
   function navIcon(name) {
     const icons = {
-      home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 10.2V21h6.6v-5.4h4.8V21H21V10.2L12 3z"></path></svg>',
-      messenger: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v14l4.8-3.6H20c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"></path></svg>',
-      map: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 2.5 8.5 5 2 2.5v18l6.5 2.5 7-2.5L22 23V5l-6.5-2.5zm-7 17.3-4-1.5V5.4l4 1.5v12.9zm6-1.3-4 1.4V6.4l4-1.4v13.5zm5.5-.3-4 1.5V5.8l4-1.5v13.9z"></path></svg>',
-      shop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10l1.2 4H5.8L7 4zm12 5H5l1.2 11h11.6L19 9zM9 12h6v2H9v-2z"></path></svg>'
+      home: '🏠',
+      messenger: '💬',
+      map: '🗺️',
+      shop: '🛒',
+      settings: '⚙️'
     };
-
-    return icons[name] || icons.home;
+    return icons[name] || '•';
   }
 
   function rootNav(id) {
-    if (id === 'messenger' || id === 'chat') return 'messenger';
-    if (id === 'map') return 'map';
-    if (id === 'shop') return 'shop';
+    if (id === 'chat') return 'messenger';
+    if (['home', 'messenger', 'map', 'shop', 'settings'].includes(id)) return id;
     return 'home';
   }
 
-  // ---- BOTTOM NAV ----
   function buildNav() {
-    const unread = unreadCount();
+    const unread = getUnreadCount();
     const items = [
       { id: 'home', label: 'Главная' },
       { id: 'messenger', label: 'Чаты', badge: unread },
       { id: 'map', label: 'Карта' },
-      { id: 'shop', label: 'Магазин' }
+      { id: 'shop', label: 'Магазин' },
+      { id: 'settings', label: 'Настройки' }
     ];
 
     bottomNav.innerHTML = items.map((it) => `
-      <button class="nav-item ${it.id === 'home' ? 'active' : ''}" data-nav="${it.id}" type="button">
+      <button class="nav-item ${it.id === rootNav(currentScreen) ? 'active' : ''}" data-nav="${it.id}" type="button">
         ${it.badge ? `<span class="nav-dot">${it.badge > 9 ? '9+' : it.badge}</span>` : ''}
         <span class="nav-ico">${navIcon(it.id)}</span>
         <span class="nav-lbl">${it.label}</span>
@@ -492,21 +573,14 @@
     });
   }
 
-  // ---- NAVIGATION ----
   function navigateTo(id, options) {
     const opts = options || {};
-    const previousChat = currentChat;
-
     if (opts.chatId) currentChat = opts.chatId;
 
     if (opts.historyMode === 'reset') {
       navHistory = [id];
     } else if (opts.historyMode === 'push') {
       navHistory.push(id);
-    } else if (opts.historyMode !== 'keep' && opts.direction !== 'back') {
-      const last = navHistory[navHistory.length - 1];
-      const sameChat = id === 'chat' && opts.chatId && opts.chatId === previousChat;
-      if (last !== id || !sameChat) navHistory.push(id);
     }
 
     currentScreen = id;
@@ -525,14 +599,45 @@
       renderScreen(prev);
       return;
     }
+    navigateTo(fallback || 'home', { direction: 'back', historyMode: 'reset' });
+  }
 
-    const fallbackScreen = fallback || 'home';
-    navigateTo(fallbackScreen, { direction: 'back', historyMode: 'reset' });
+  function renderCurrentScreen() {
+    renderScreen(currentScreen);
+  }
+
+  function screenDiv(id) {
+    const s = document.createElement('div');
+    s.className = 'screen ' + (transitionDirection === 'back' ? 'slide-back' : 'slide-forward');
+    s.id = id;
+    frame.appendChild(s);
+    return s;
+  }
+
+  function header(backTo, title, sub, extraRight) {
+    return `
+      <div class="screen-header">
+        <button class="back-btn" data-back="${backTo}" type="button">
+          <span class="chevron">‹</span>
+          <span>Назад</span>
+        </button>
+        <div>
+          <div class="hdr-title">${title}</div>
+          ${sub ? `<div class="hdr-sub">${sub}</div>` : ''}
+        </div>
+        <div class="hdr-extra">${extraRight || ''}</div>
+      </div>
+    `;
+  }
+
+  function bindBack(screen) {
+    screen.querySelectorAll('[data-back]').forEach((btn) => {
+      btn.addEventListener('click', () => navigateBack(btn.dataset.back));
+    });
   }
 
   function renderScreen(id) {
     frame.innerHTML = '';
-
     switch (id) {
       case 'home':
         buildHome();
@@ -541,7 +646,7 @@
         buildMessengerList();
         break;
       case 'chat':
-        buildChat(currentChat);
+        buildChat(currentChat || 'dasha');
         break;
       case 'gallery':
         buildGallery();
@@ -558,53 +663,33 @@
       case 'shop':
         buildShop();
         break;
+      case 'settings':
+        buildSettings();
+        break;
       default:
         buildHome();
     }
+    refreshStatusWidgets();
   }
 
-  function screenDiv(id) {
-    const s = document.createElement('div');
-    s.className = 'screen ' + (transitionDirection === 'back' ? 'slide-back' : 'slide-forward');
-    s.id = id;
-    frame.appendChild(s);
-    return s;
-  }
-
-  function header(backTo, title, sub, extra) {
-    return `
-      <div class="screen-header">
-        <button class="back-btn" data-back="${backTo}" type="button">
-          <span class="chevron">‹</span>
-          <span>Назад</span>
-        </button>
-        <div>
-          <div class="hdr-title">${title}</div>
-          ${sub ? `<div class="hdr-sub">${sub}</div>` : ''}
-        </div>
-        <div style="margin-left:auto">${extra || ''}</div>
-      </div>
-    `;
-  }
-
-  function bindBack(s) {
-    s.querySelectorAll('[data-back]').forEach((el) => {
-      el.addEventListener('click', () => navigateBack(el.dataset.back));
-    });
-  }
-
-  // ==================================================
-  // HOME
-  // ==================================================
+  // ------------------------------------------------------------
+  // Home
+  // ------------------------------------------------------------
   function buildHome() {
     const s = screenDiv('homeScreen');
-    const unread = unreadCount();
-    const progress = getMissionProgress();
-    const missionNote = unread > 0
-      ? 'Новое сообщение от Даши Ковы — открой мессенджер'
-      : (progress.allCoreDone
-        ? 'Фаза 1 завершена. Открыт финальный выезд в Сквер.'
-        : `Прогресс миссий: ${progress.done}/${progress.total}`);
+    const coreDone = CORE_MISSION_IDS.filter((id) => ZD.state.completedMissionIds.has(id)).length;
+    const unread = getUnreadCount();
+
+    const missionRows = ZD.missionCalendar.slice(0, 12).map((mission) => {
+      const done = ZD.state.completedMissionIds.has(mission.id);
+      return `
+        <div class="mission-row ${done ? 'done' : ''}">
+          <div class="mission-meta">${mission.month} · ${mission.week}</div>
+          <div class="mission-title">${mission.title}</div>
+          <div class="mission-reward">⭐ ${mission.reward}</div>
+        </div>
+      `;
+    }).join('');
 
     s.innerHTML = `
       <div class="scrollable home-scroll">
@@ -612,92 +697,63 @@
           <div class="home-greeting">
             <div class="greeting-meta">
               <div class="greeting-title">ZERO_DAY</div>
-              <div class="greeting-sub">Школьный Протокол • Отряд 404</div>
+              <div class="greeting-sub">Школьный Протокол • Кампания 6 месяцев</div>
             </div>
             <div class="avatar-wrap">
               <div class="avatar-badge">ZD</div>
               <div class="star-pill">⭐ <span class="stars-val">${ZD.state.stars}</span></div>
             </div>
           </div>
-
           <div class="act-chip">АКТ ${ZD.state.act} · ЭПИЗОД ${ZD.state.episode}</div>
-
           <article class="episode-card" data-goto="chat" data-chat="dasha">
             <div>
-              <div class="episode-kicker">Текущий эпизод</div>
-              <div class="episode-title">«Файл от Марины»</div>
-              <div class="episode-meta">Фишинг • Социальная инженерия</div>
+              <div class="episode-kicker">Ключевые миссии: ${coreDone}/${CORE_MISSION_IDS.length}</div>
+              <div class="episode-title">${coreMissionsDone() ? 'Фаза 1 закрыта' : 'Расследование продолжается'}</div>
+              <div class="episode-meta">${coreMissionsDone() ? 'Сквер доступен для финала' : 'Выполни чат, галерею, браузер, терминал, карту'}</div>
             </div>
             <div class="episode-arrow">›</div>
           </article>
         </section>
 
-        <div class="home-note">${missionNote}</div>
+        <div class="home-note">${unread > 0 ? `Непрочитанные сообщения: ${unread}` : 'Все уведомления обработаны. Продолжай кампанию.'}</div>
 
         <div class="home-section-title">Приложения</div>
         <div class="apps-grid">
-          <button class="app-tile ${unread > 0 ? 'has-badge' : ''}" data-goto="messenger" type="button">
-            <span class="app-tile-ico">💬</span>
-            <span class="app-tile-lbl">Мессенджер</span>
-          </button>
-          <button class="app-tile" data-goto="gallery" type="button">
-            <span class="app-tile-ico">🖼️</span>
-            <span class="app-tile-lbl">Галерея</span>
-          </button>
-          <button class="app-tile" data-goto="browser" type="button">
-            <span class="app-tile-ico">🌐</span>
-            <span class="app-tile-lbl">Браузер</span>
-          </button>
-          <button class="app-tile" data-goto="map" type="button">
-            <span class="app-tile-ico">🗺️</span>
-            <span class="app-tile-lbl">Карта</span>
-          </button>
-          <button class="app-tile" data-goto="terminal" type="button">
-            <span class="app-tile-ico">💻</span>
-            <span class="app-tile-lbl">Терминал</span>
-          </button>
-          <button class="app-tile" data-goto="shop" type="button">
-            <span class="app-tile-ico">🛒</span>
-            <span class="app-tile-lbl">Магазин</span>
-          </button>
+          <button class="app-tile ${unread > 0 ? 'has-badge' : ''}" data-goto="messenger" type="button"><span class="app-tile-ico">💬</span><span class="app-tile-lbl">Мессенджер</span></button>
+          <button class="app-tile" data-goto="gallery" type="button"><span class="app-tile-ico">🖼️</span><span class="app-tile-lbl">Галерея</span></button>
+          <button class="app-tile" data-goto="browser" type="button"><span class="app-tile-ico">🌐</span><span class="app-tile-lbl">Браузер</span></button>
+          <button class="app-tile" data-goto="map" type="button"><span class="app-tile-ico">🗺️</span><span class="app-tile-lbl">Карта</span></button>
+          <button class="app-tile" data-goto="terminal" type="button"><span class="app-tile-ico">💻</span><span class="app-tile-lbl">Терминал</span></button>
+          <button class="app-tile" data-goto="shop" type="button"><span class="app-tile-ico">🛒</span><span class="app-tile-lbl">Магазин</span></button>
         </div>
 
         <div class="stats-row">
-          <div class="stat-card">
-            <div class="stat-val stars-val">${ZD.state.stars}</div>
-            <div class="stat-lbl">Stars</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val">${ZD.state.trust}%</div>
-            <div class="stat-lbl">Доверие</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val">${ZD.state.reputation}</div>
-            <div class="stat-lbl">Репутация</div>
-          </div>
+          <div class="stat-card"><div class="stat-val stars-val">${ZD.state.stars}</div><div class="stat-lbl">Stars</div></div>
+          <div class="stat-card"><div class="stat-val trust-val">${ZD.state.trust}</div><div class="stat-lbl">Доверие</div></div>
+          <div class="stat-card"><div class="stat-val rep-val">${ZD.state.reputation}</div><div class="stat-lbl">Репутация</div></div>
         </div>
+
+        <div class="home-section-title">План миссий (6 месяцев)</div>
+        <div class="mission-list">${missionRows}</div>
       </div>
     `;
 
     s.querySelectorAll('[data-goto]').forEach((el) => {
       el.addEventListener('click', () => {
         const goto = el.dataset.goto;
-        const chat = el.dataset.chat;
-
-        if (chat) {
-          navigateTo('chat', { chatId: chat, historyMode: 'push', direction: 'forward' });
+        const chatId = el.dataset.chat;
+        if (chatId) {
+          navigateTo('chat', { chatId, historyMode: 'push', direction: 'forward' });
           return;
         }
-
-        if (!goto) return;
         navigateTo(goto, { historyMode: 'push', direction: 'forward' });
       });
     });
   }
 
-  // ==================================================
-  // MESSENGER LIST
-  // ==================================================
+  // ------------------------------------------------------------
+  // Messenger list
+  // ------------------------------------------------------------
   function buildMessengerList() {
     const s = screenDiv('messengerScreen');
 
@@ -716,7 +772,7 @@
     `).join('');
 
     s.innerHTML = `
-      ${header('home', 'Сообщения', null, '<span style="font-size:19px;color:var(--blue)">✎</span>')}
+      ${header('home', 'Сообщения', null, '<span class="hdr-pencil">✎</span>')}
       <div class="scrollable">${rows}</div>
     `;
 
@@ -724,75 +780,79 @@
 
     s.querySelectorAll('.chat-list-item').forEach((el) => {
       el.addEventListener('click', () => {
-        navigateTo('chat', {
-          chatId: el.dataset.chat,
-          historyMode: 'push',
-          direction: 'forward'
-        });
+        navigateTo('chat', { chatId: el.dataset.chat, historyMode: 'push', direction: 'forward' });
       });
     });
   }
 
-  // ==================================================
-  // CHAT DETAIL
-  // ==================================================
+  // ------------------------------------------------------------
+  // Chat
+  // ------------------------------------------------------------
   function buildChat(contactId) {
-    const contact = ZD.contacts.find((c) => c.id === contactId);
+    const contact = ZD.contacts.find((x) => x.id === contactId);
     if (!contact) {
       buildMessengerList();
       return;
     }
 
-    if (contact.unread) {
+    if (contact.unread > 0) {
       contact.unread = 0;
-      refreshNav();
+      persistState();
+      buildNav();
     }
 
-    const msgs = ZD.messages[contactId] || [];
-    const choices = ZD.choices[contactId];
+    if (contact.id === 'unknown' && ZD.state.finaleShown && !ZD.state.finaleInboxRead) {
+      ZD.state.finaleInboxRead = true;
+      persistState();
+      syncContactsFromState();
+      buildNav();
+    }
 
     const s = screenDiv('chatScreen');
+    const messages = ZD.messages[contactId] || [];
+    const choiceKey = ZD.state.chatChoices[contactId] || null;
 
-    const msgsHtml = msgs.map((m) => {
+    let messageHtml = messages.map((m) => {
       if (m.from === 'system') return `<div class="bubble bubble-system">${m.text}</div>`;
       if (m.from === 'in') return `<div class="bubble bubble-in">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
-      if (m.from === 'out') return `<div class="bubble bubble-out">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
-      return '';
+      return `<div class="bubble bubble-out">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
     }).join('');
 
-    const choicesHtml = choices && !ZD.state.choiceMade ? `
+    if (choiceKey && ZD.choiceReplies[choiceKey]) {
+      messageHtml += `<div class="bubble bubble-out">${CHOICE_OUT_TEXT[choiceKey]}<div class="bub-time">19:49</div></div>`;
+      messageHtml += `<div class="bubble bubble-in">${ZD.choiceReplies[choiceKey].text}<div class="bub-time">19:50</div></div>`;
+    }
+
+    const canChoose = ZD.choices[contactId] && !choiceKey;
+    const choices = ZD.choices[contactId] || [];
+
+    const choicesHtml = canChoose ? `
       <div class="choices-wrap" id="choicesWrap">
         <div class="choices-lbl">Твой выбор</div>
-        ${choices.map((c) => `
-          <button class="choice ${c.good ? '' : 'bad'}" data-key="${c.key}" type="button">
-            <span class="choice-key">[${c.key}]</span>${c.text}
+        ${choices.map((choice) => `
+          <button class="choice ${choice.good ? '' : 'bad'}" data-key="${choice.key}" type="button">
+            <span class="choice-key">[${choice.key}]</span>
+            ${choice.text}
           </button>
         `).join('')}
       </div>
-    ` : choices && ZD.state.choiceMade ? `
-      <div class="choices-wrap">
-        <div class="choices-lbl" style="color:#9ef4be">✓ Выбор сделан · последствия в Эпизоде 5</div>
-      </div>
+    ` : choiceKey ? `
+      <div class="choices-wrap"><div class="choices-lbl done">✓ Решение принято</div></div>
     ` : '';
 
     s.innerHTML = `
       <div class="screen-header">
-        <button class="back-btn" data-back="messenger" type="button">
-          <span class="chevron">‹</span>
-          <span>Чаты</span>
-        </button>
-        <div class="chat-avatar" style="background:${contact.color};width:32px;height:32px;font-size:12px">${contact.initials}</div>
+        <button class="back-btn" data-back="messenger" type="button"><span class="chevron">‹</span><span>Чаты</span></button>
+        <div class="chat-avatar mini" style="background:${contact.color}">${contact.initials}</div>
         <div>
           <div class="hdr-title">${contact.name}</div>
-          <div class="hdr-sub" style="color:${contact.online ? '#93f7b7' : 'var(--muted)'}">${contact.online ? '● онлайн' : '● был(а) недавно'}</div>
+          <div class="hdr-sub">${contact.online ? '● онлайн' : '● офлайн'}</div>
         </div>
       </div>
       <div class="chat-bg" id="chatBg">
         <div class="bubble bubble-system">Сегодня · 19:47</div>
-        ${msgsHtml}
-        <div class="typing-bub" id="typingBub">
-          <div class="td"></div><div class="td"></div><div class="td"></div>
-        </div>
+        ${messageHtml}
+        <div class="typing-bub" id="typingBub"><div class="td"></div><div class="td"></div><div class="td"></div></div>
       </div>
       ${choicesHtml}
     `;
@@ -802,78 +862,48 @@
     const chatBg = s.querySelector('#chatBg');
     if (chatBg) chatBg.scrollTop = 9999;
 
-    if (choices && !ZD.state.choiceMade) {
+    if (canChoose) {
       s.querySelectorAll('.choice').forEach((btn) => {
         btn.addEventListener('click', () => handleChoice(contactId, btn.dataset.key, s));
       });
     }
   }
 
-  function handleChoice(contactId, key, s) {
-    ZD.state.choiceMade = true;
+  function handleChoice(contactId, key, screen) {
     const reply = ZD.choiceReplies[key];
+    if (!reply) return;
 
-    s.querySelectorAll('.choice').forEach((b) => {
-      b.disabled = true;
-      b.style.opacity = b.dataset.key === key ? '1' : '0.35';
-      if (b.dataset.key === key) b.classList.add('selected');
-    });
+    ZD.state.chatChoices[contactId] = key;
+    bumpTrust(reply.trustDelta || 0);
+    bumpReputation(reply.repDelta || 0);
 
-    const chatBg = s.querySelector('#chatBg');
-    const typingBub = s.querySelector('#typingBub');
-    const choicesWrap = s.querySelector('#choicesWrap');
-
-    const outChoice = (ZD.choices[contactId] || []).find((c) => c.key === key);
-    if (outChoice) {
-      const outBub = document.createElement('div');
-      outBub.className = 'bubble bubble-out';
-      outBub.innerHTML = outChoice.text + '<div class="bub-time">19:49</div>';
-      chatBg.insertBefore(outBub, typingBub);
+    const contact = ZD.contacts.find((x) => x.id === contactId);
+    if (contact) {
+      contact.unread = 0;
+      contact.preview = reply.text;
+      contact.time = '19:50';
     }
 
-    if (typingBub) typingBub.style.display = 'flex';
-    chatBg.scrollTop = 9999;
-
-    setTimeout(() => {
-      if (typingBub) typingBub.style.display = 'none';
-
-      if (reply) {
-        const inBub = document.createElement('div');
-        inBub.className = 'bubble bubble-in';
-        inBub.innerHTML = reply.text + '<div class="bub-time">19:50</div>';
-        chatBg.insertBefore(inBub, typingBub);
-        chatBg.scrollTop = 9999;
-
-        const contact = ZD.contacts.find((c) => c.id === contactId);
-        if (contact) {
-          contact.unread = 0;
-          contact.preview = reply.text.replace(/\s+/g, ' ').slice(0, 72);
-          contact.time = '19:50';
-        }
-
-        if (choicesWrap) {
-          choicesWrap.innerHTML = '<div class="choices-lbl" style="color:#9ef4be">✓ Выбор сделан · последствия в Эпизоде 5</div>';
-        }
-
-        addStars(reply.stars);
-        updateStoryProgress('chat');
-      }
-    }, 1200);
+    persistState();
+    addStars(reply.stars || 0, 'за решение в чате');
+    markMissionDone('m01');
+    updateProgress('chat');
+    renderScreen('chat');
   }
 
-  // ==================================================
-  // GALLERY
-  // ==================================================
+  // ------------------------------------------------------------
+  // Gallery
+  // ------------------------------------------------------------
   function buildGallery() {
     const s = screenDiv('galleryScreen');
 
     const thumbs = ZD.gallery.map((item) => {
-      const cls = ZD.state.analyzed.has(item.id) ? 'analyzed' : (item.flagged ? 'flagged' : '');
-      const tone = getGalleryToneClass(item);
+      const analyzed = ZD.state.analyzed.has(item.id);
+      const cls = analyzed ? 'analyzed' : (item.flagged ? 'flagged' : '');
       return `
-        <button class="gal-thumb ${tone} ${cls}" data-item="${item.id}" type="button">
-          <span class="gal-thumb-type">${getGalleryMarker(item)}</span>
-          <span class="gal-thumb-name">${item.name}</span>
+        <button class="gal-thumb ${cls}" data-item="${item.id}" type="button">
+          <img src="${item.src}" alt="${item.name}" loading="lazy">
+          <span class="gal-thumb-label">${item.name}</span>
         </button>
       `;
     }).join('');
@@ -884,27 +914,18 @@
 
       <div id="galDetailOverlay">
         <div class="screen-header">
-          <button class="back-btn" id="galDetailBack" type="button">
-            <span class="chevron">‹</span>
-            <span>Назад</span>
-          </button>
+          <button class="back-btn" id="galDetailBack" type="button"><span class="chevron">‹</span><span>Назад</span></button>
           <div>
             <div class="hdr-title" id="galDetailName">—</div>
             <div class="hdr-sub" id="galDetailDesc">—</div>
           </div>
         </div>
-
-        <div class="gal-detail-img" id="galDetailImg">
+        <div class="gal-detail-img">
+          <img id="galDetailImage" alt="gallery item">
           <div class="gal-scan-overlay" id="galScanOverlay"></div>
           <div class="scan-anim" id="scanAnim"></div>
-          <div class="gal-detail-card">
-            <div class="gal-detail-type" id="galDetailType"></div>
-            <div class="gal-detail-name" id="galDetailFileName"></div>
-            <div class="gal-detail-hint">Preview secured</div>
-          </div>
         </div>
-
-        <button class="analyze-btn" id="analyzeBtn" type="button">▶ Анализировать метаданные</button>
+        <button class="analyze-btn" id="analyzeBtn" type="button">Анализировать EXIF</button>
         <div class="exif-panel scrollable" id="exifPanel"></div>
       </div>
     `;
@@ -915,38 +936,35 @@
       s.querySelector('#galDetailOverlay').classList.remove('open');
     });
 
-    s.querySelectorAll('.gal-thumb').forEach((el) => {
-      el.addEventListener('click', () => openGalDetail(el.dataset.item, s));
+    s.querySelectorAll('.gal-thumb').forEach((thumb) => {
+      thumb.addEventListener('click', () => openGalleryDetail(thumb.dataset.item, s));
     });
   }
 
-  function openGalDetail(itemId, s) {
-    const item = ZD.gallery.find((g) => g.id === itemId);
+  function openGalleryDetail(itemId, screen) {
+    const item = ZD.gallery.find((x) => x.id === itemId);
     if (!item) return;
 
-    const overlay = s.querySelector('#galDetailOverlay');
-    const analyzeBtn = s.querySelector('#analyzeBtn');
-    const exifPanel = s.querySelector('#exifPanel');
+    const overlay = screen.querySelector('#galDetailOverlay');
+    const analyzeBtn = screen.querySelector('#analyzeBtn');
+    const exifPanel = screen.querySelector('#exifPanel');
 
     overlay.classList.add('open');
-    s.querySelector('#galDetailName').textContent = item.name;
-    s.querySelector('#galDetailDesc').textContent = item.desc;
-    s.querySelector('#galDetailType').textContent = getGalleryMarker(item);
-    s.querySelector('#galDetailFileName').textContent = item.name;
-    const detailCard = s.querySelector('.gal-detail-card');
-    if (detailCard) detailCard.className = 'gal-detail-card ' + getGalleryToneClass(item);
+    screen.querySelector('#galDetailName').textContent = item.name;
+    screen.querySelector('#galDetailDesc').textContent = item.desc;
+    screen.querySelector('#galDetailImage').src = item.src;
 
-    if (ZD.state.analyzed.has(itemId)) {
+    if (ZD.state.analyzed.has(item.id)) {
       renderExif(item, exifPanel);
-      analyzeBtn.textContent = '✓ Проанализировано';
-      analyzeBtn.style.opacity = '0.85';
-      analyzeBtn.style.pointerEvents = 'none';
+      analyzeBtn.textContent = '✓ Уже проанализировано';
+      analyzeBtn.disabled = true;
+      analyzeBtn.classList.add('done');
     } else {
-      exifPanel.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:7px 0">Нажми «Анализировать», чтобы извлечь EXIF-данные</div>';
-      analyzeBtn.textContent = '▶ Анализировать метаданные';
-      analyzeBtn.style.opacity = '1';
-      analyzeBtn.style.pointerEvents = 'auto';
-      analyzeBtn.onclick = () => startAnalysis(itemId, item, s);
+      exifPanel.innerHTML = '<div class="exif-placeholder">Запусти анализ, чтобы получить EXIF-метаданные</div>';
+      analyzeBtn.textContent = 'Анализировать EXIF';
+      analyzeBtn.disabled = false;
+      analyzeBtn.classList.remove('done');
+      analyzeBtn.onclick = () => runGalleryAnalysis(item, screen);
     }
   }
 
@@ -959,85 +977,67 @@
     `).join('');
   }
 
-  function startAnalysis(itemId, item, s) {
-    if (ZD.state.analyzed.has(itemId)) return;
+  function runGalleryAnalysis(item, screen) {
+    if (ZD.state.analyzed.has(item.id)) return;
 
-    const btn = s.querySelector('#analyzeBtn');
-    const scanAnim = s.querySelector('#scanAnim');
-    const scanOverlay = s.querySelector('#galScanOverlay');
+    const scanLine = screen.querySelector('#scanAnim');
+    const scanOverlay = screen.querySelector('#galScanOverlay');
+    const btn = screen.querySelector('#analyzeBtn');
 
     btn.textContent = 'Сканирование...';
-    btn.style.opacity = '0.6';
-    btn.style.pointerEvents = 'none';
-
-    scanAnim.style.display = 'block';
+    btn.disabled = true;
+    scanLine.style.display = 'block';
     scanOverlay.style.display = 'block';
 
     setTimeout(() => {
-      ZD.state.analyzed.add(itemId);
-      scanAnim.style.display = 'none';
+      ZD.state.analyzed.add(item.id);
+      scanLine.style.display = 'none';
       scanOverlay.style.display = 'none';
-
+      renderExif(item, screen.querySelector('#exifPanel'));
       btn.textContent = '✓ Проанализировано';
-      btn.style.opacity = '0.85';
-      renderExif(item, s.querySelector('#exifPanel'));
+      btn.classList.add('done');
 
-      const thumb = s.querySelector(`.gal-thumb[data-item="${itemId}"]`);
-      if (thumb) {
-        thumb.classList.remove('flagged');
-        thumb.classList.add('analyzed');
-      }
-
-      if (item.flagged) addStars(3);
-      updateStoryProgress('gallery');
-    }, 1600);
+      if (item.flagged) addStars(3, 'за форензику');
+      markMissionDone('m02');
+      persistState();
+      updateProgress('gallery');
+      renderScreen('gallery');
+    }, 1500);
   }
 
-  // ==================================================
-  // BROWSER
-  // ==================================================
+  // ------------------------------------------------------------
+  // Browser (phishing simulation)
+  // ------------------------------------------------------------
   function buildBrowser() {
     const s = screenDiv('browserScreen');
 
     s.innerHTML = `
       <div class="browser-toolbar">
-        ${header('home', 'Safari', null, '<span style="font-size:12px;color:var(--muted)">🔒 Небезопасно</span>')}
+        ${header('home', 'Safari', null, '<span class="hdr-danger">Небезопасно</span>')}
         <div class="url-bar-wrap">
           <div class="url-bar">
-            <span class="url-lock http" id="urlLock">🔓</span>
-            <span class="url-txt" id="urlTxt">sekur-bank-online.ru</span>
+            <span class="url-lock http">🔓</span>
+            <span class="url-txt">sekur-bank-online.ru</span>
           </div>
         </div>
       </div>
-
       <div class="site-content scrollable">
         <div class="site-topbar">
-          <div class="site-logo">🏦 SekurBank Online</div>
-          <div class="site-tagline">Ваш надёжный партнёр 24/7</div>
-          <div class="site-nav-row">
-            <span class="site-nav-item">Вход</span>
-            <span class="site-nav-item">Кабинет</span>
-            <span class="site-nav-item">Поддержка</span>
-          </div>
+          <div class="site-logo">SekurBank Online</div>
+          <div class="site-tagline">Проверка безопасности аккаунта</div>
         </div>
-
         <div class="site-body">
           <div class="phish-warning">
             <div class="phish-w-title">⚠ Срочно: аккаунт заблокирован</div>
-            <div class="phish-w-txt">Введите данные карты в течение 24 часов для «разблокировки».</div>
+            <div class="phish-w-txt">Чтобы разблокировать доступ, введите данные карты в течение 24 часов.</div>
           </div>
-
-          <div class="site-headline">Подтвердите личность</div>
-          <div class="site-meta">Домен: sekur-bank-online.ru • HTTP</div>
-          <div class="site-para">Это симулятор. Отметь все признаки фишинга, чтобы защитить данные и получить награду.</div>
-
           <div class="flags-box">
-            <div class="flags-title">Найди 4 признака фишинга</div>
-            <div class="flag-row" data-flag="1"><div class="flag-chk" id="fc1"></div><span>Подозрительный домен, не официальный сайт банка</span></div>
-            <div class="flag-row" data-flag="2"><div class="flag-chk" id="fc2"></div><span>Нет защищённого HTTPS-соединения</span></div>
-            <div class="flag-row" data-flag="3"><div class="flag-chk" id="fc3"></div><span>Давление срочностью: «24 часа»</span></div>
-            <div class="flag-row" data-flag="4"><div class="flag-chk" id="fc4"></div><span>Запрос полных данных карты и CVV</span></div>
-            <div class="flags-success" id="flagsSuccess">✓ Все признаки фишинга найдены. Ты бы не попался. +5 ⭐</div>
+            <div class="flags-title">Найди все 4 признака фишинга</div>
+            <div class="flag-row" data-flag="1"><div class="flag-chk" id="fc1"></div><span>Подозрительный домен</span></div>
+            <div class="flag-row" data-flag="2"><div class="flag-chk" id="fc2"></div><span>HTTP вместо HTTPS</span></div>
+            <div class="flag-row" data-flag="3"><div class="flag-chk" id="fc3"></div><span>Давление срочностью</span></div>
+            <div class="flag-row" data-flag="4"><div class="flag-chk" id="fc4"></div><span>Запрос реквизитов карты</span></div>
+            <div class="flags-success" id="flagsSuccess">✓ Отлично! Все признаки найдены.</div>
           </div>
         </div>
       </div>
@@ -1045,72 +1045,88 @@
 
     bindBack(s);
 
-    s.querySelectorAll('.flag-row').forEach((el) => {
-      el.addEventListener('click', () => handleFlag(el.dataset.flag, s));
+    s.querySelectorAll('.flag-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        const flag = row.dataset.flag;
+        if (!flag || ZD.state.foundFlags.has(flag)) return;
+        ZD.state.foundFlags.add(flag);
+        row.classList.add('found');
+        const chk = s.querySelector('#fc' + flag);
+        if (chk) chk.textContent = '✓';
+
+        if (ZD.state.foundFlags.size >= 4) {
+          const success = s.querySelector('#flagsSuccess');
+          if (success) success.style.display = 'block';
+          if (!ZD.state.completedMissionIds.has('m03')) addStars(5, 'за антифишинг');
+          markMissionDone('m03');
+          persistState();
+          updateProgress('browser');
+        } else {
+          persistState();
+        }
+      });
     });
 
-    // Restore found flags on re-open
     ZD.state.foundFlags.forEach((flag) => {
       const row = s.querySelector(`[data-flag="${flag}"]`);
-      const chk = s.querySelector(`#fc${flag}`);
+      const chk = s.querySelector('#fc' + flag);
       if (row) row.classList.add('found');
       if (chk) chk.textContent = '✓';
     });
 
     if (ZD.state.foundFlags.size >= 4) {
-      const succ = s.querySelector('#flagsSuccess');
-      if (succ) succ.style.display = 'block';
+      const success = s.querySelector('#flagsSuccess');
+      if (success) success.style.display = 'block';
     }
   }
 
-  function handleFlag(n, s) {
-    if (!n || ZD.state.foundFlags.has(n)) return;
-
-    ZD.state.foundFlags.add(n);
-    const row = s.querySelector(`[data-flag="${n}"]`);
-    const chk = s.querySelector(`#fc${n}`);
-
-    if (row) row.classList.add('found');
-    if (chk) chk.textContent = '✓';
-
-    if (n === '2') {
-      const lock = s.querySelector('#urlLock');
-      if (lock) lock.textContent = '🔓';
-    }
-
-    if (ZD.state.foundFlags.size >= 4) {
-      const succ = s.querySelector('#flagsSuccess');
-      if (succ) succ.style.display = 'block';
-      addStars(5);
-      updateStoryProgress('browser');
-    }
+  // ------------------------------------------------------------
+  // Map
+  // ------------------------------------------------------------
+  function hasRequirements(locationId) {
+    if (ZD.state.adminMode) return true;
+    const req = LOCATION_REQUIREMENTS[locationId] || [];
+    return req.every((token) => {
+      if (token === 'core_missions') return coreMissionsDone();
+      return ZD.state.inventory.includes(token);
+    });
   }
 
-  // ==================================================
-  // MAP
-  // ==================================================
+  function locationAccess(location) {
+    const available = hasRequirements(location.id);
+    let reason = '';
+    if (!available) {
+      if (location.id === 'library') reason = 'Нужен Ключ дешифратора';
+      else if (location.id === 'server') reason = 'Нужен Пропуск + USB-Руббердак';
+      else if (location.id === 'park') reason = 'Закрой ключевые миссии';
+      else reason = 'Локация заблокирована';
+    }
+    return { available, reason };
+  }
+
   function buildMap() {
     const s = screenDiv('mapScreen');
 
-    const pinsHtml = ZD.locations.map((loc) => {
-      const view = getLocationView(loc);
-      const pulse = loc.pulse && view.available;
+    const pins = ZD.locations.map((loc) => {
+      const access = locationAccess(loc);
+      const visited = ZD.state.visitedLocations.has(loc.id);
+      const status = visited ? 'Исследовано' : (access.available ? 'Доступно' : access.reason);
+      const statusColor = visited ? '#8ef1b4' : (access.available ? '#64d2ff' : '#ff9f0a');
       return `
-        <button class="loc-pin ${view.available ? 'is-open' : 'is-locked'}" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}" type="button">
-          <div class="pin-circle ${pulse ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
+        <button class="loc-pin ${access.available ? 'is-open' : 'is-locked'}" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}" type="button">
+          <div class="pin-circle ${loc.pulse && access.available ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
           <div class="pin-lbl">${loc.emoji} ${loc.label}</div>
-          <div class="pin-status" style="color:${view.statusColor}">${view.statusText}</div>
+          <div class="pin-status" style="color:${statusColor}">${status}</div>
         </button>
       `;
     }).join('');
 
     s.innerHTML = `
-      ${header('home', 'Карта', 'АКТ I · Выбери точку')}
+      ${header('home', 'Карта', 'Выбери локацию операции')}
       <div class="map-canvas" id="mapCanvas">
         <div class="map-grid-lines"></div>
         <div class="map-glow"></div>
-        ${pinsHtml}
-
+        ${pins}
         <div class="map-panel" id="mapPanel">
           <div class="map-panel-name" id="mapPanelName">—</div>
           <div class="map-panel-desc" id="mapPanelDesc">—</div>
@@ -1121,14 +1137,14 @@
 
     bindBack(s);
 
-    s.querySelectorAll('.loc-pin').forEach((el) => {
-      el.addEventListener('click', () => openMapPanel(el.dataset.loc, s));
+    s.querySelectorAll('.loc-pin').forEach((pin) => {
+      pin.addEventListener('click', () => openLocationPanel(pin.dataset.loc, s));
     });
 
     s.querySelector('#mapGoBtn').addEventListener('click', () => {
       const locId = s.querySelector('#mapGoBtn').dataset.loc;
       if (!locId) return;
-      handleLocationAction(locId, s);
+      handleLocationAction(locId);
     });
 
     s.querySelector('#mapCanvas').addEventListener('click', (event) => {
@@ -1138,278 +1154,401 @@
     });
   }
 
-  function openMapPanel(locId, s) {
-    const loc = ZD.locations.find((l) => l.id === locId);
+  function openLocationPanel(locId, screen) {
+    const loc = ZD.locations.find((x) => x.id === locId);
     if (!loc) return;
 
-    const panel = s.querySelector('#mapPanel');
-    const nameEl = s.querySelector('#mapPanelName');
-    const descEl = s.querySelector('#mapPanelDesc');
-    const btn = s.querySelector('#mapGoBtn');
-    const view = getLocationView(loc);
+    const panel = screen.querySelector('#mapPanel');
+    const nameEl = screen.querySelector('#mapPanelName');
+    const descEl = screen.querySelector('#mapPanelDesc');
+    const btn = screen.querySelector('#mapGoBtn');
+
+    const access = locationAccess(loc);
     const visited = ZD.state.visitedLocations.has(loc.id);
-    const descSuffix = visited ? ' Локация уже исследована.' : '';
 
     nameEl.textContent = loc.emoji + ' ' + loc.label;
-    descEl.textContent = loc.desc + descSuffix;
+    descEl.textContent = loc.desc + (visited ? ' Локация уже исследована.' : '');
     btn.dataset.loc = loc.id;
-    btn.textContent = view.buttonText;
-    btn.disabled = !view.available;
-    const lockClass = view.available ? '' : ((loc.type === 'locked' || loc.id === 'park') ? 'locked' : 'req');
-    btn.className = 'map-go-btn ' + lockClass;
+
+    if (!access.available) {
+      btn.textContent = access.reason;
+      btn.disabled = true;
+      btn.className = 'map-go-btn req';
+    } else {
+      btn.textContent = visited ? 'Повторно осмотреть' : 'Исследовать';
+      btn.disabled = false;
+      btn.className = 'map-go-btn';
+    }
 
     panel.classList.add('open');
   }
 
-  function handleLocationAction(locId, s) {
-    const loc = ZD.locations.find((l) => l.id === locId);
+  function handleLocationAction(locId) {
+    const loc = ZD.locations.find((x) => x.id === locId);
     if (!loc) return;
 
-    const view = getLocationView(loc);
-    if (!view.available) {
-      toast(locationLockReason(loc));
+    const access = locationAccess(loc);
+    if (!access.available) {
+      toast(access.reason, 'error');
       return;
     }
 
     const alreadyVisited = ZD.state.visitedLocations.has(locId);
     if (!alreadyVisited) {
       ZD.state.visitedLocations.add(locId);
-
-      const reward = LOCATION_REWARDS[locId] || 0;
-      if (reward > 0) addStars(reward);
-
-      if (locId === 'park') {
-        toast('Финальная миссия активирована. Продолжение следует…');
-      } else {
-        toast('Локация исследована: ' + loc.label);
+      const reward = LOCATION_REWARDS[locId];
+      if (reward) {
+        if (reward.stars) addStars(reward.stars, 'за локацию');
+        bumpTrust(reward.trust || 0);
+        bumpReputation(reward.reputation || 0);
+        markMissionDone(reward.missionId);
       }
+      persistState();
+      refreshStatusWidgets();
+      if (locId === 'park') toast('Финальная миссия активирована.', 'success');
+      else toast('Локация исследована: ' + loc.label, 'success');
     } else {
-      toast('Локация уже исследована');
+      toast('Локация уже была исследована', 'info');
     }
 
-    s.querySelector('#mapPanel').classList.remove('open');
-    transitionDirection = 'forward';
+    updateProgress('map');
     renderScreen('map');
-    updateStoryProgress('map');
   }
 
-  // ==================================================
-  // TERMINAL
-  // ==================================================
+  // ------------------------------------------------------------
+  // Terminal
+  // ------------------------------------------------------------
+  function decryptCaesar(text, shift) {
+    const alphabet = ZD.cipher.alphabet;
+    return text.split('').map((char) => {
+      const upper = char.toUpperCase();
+      const index = alphabet.indexOf(upper);
+      if (index === -1) return char;
+      const decoded = alphabet[(index - shift + alphabet.length) % alphabet.length];
+      return char === upper ? decoded : decoded.toLowerCase();
+    }).join('');
+  }
+
   function buildTerminal() {
     const s = screenDiv('terminalScreen');
-    const c = ZD.cipher;
-
     s.innerHTML = `
       <div class="term-topbar">
-        <button class="back-btn" data-back="home" type="button">
-          <span class="chevron">‹</span>
-          <span>Назад</span>
-        </button>
-        <div class="term-dots">
-          <div class="tdot tdot-r"></div>
-          <div class="tdot tdot-y"></div>
-          <div class="tdot tdot-g"></div>
-        </div>
-        <div class="term-title-txt">TERMINAL · MISSION_03</div>
+        <button class="back-btn" data-back="home" type="button"><span class="chevron">‹</span><span>Назад</span></button>
+        <div class="term-dots"><div class="tdot tdot-r"></div><div class="tdot tdot-y"></div><div class="tdot tdot-g"></div></div>
+        <div class="term-title-txt">TERMINAL · DECRYPT</div>
       </div>
-
-      <div class="term-body scrollable" id="termBody">
-        <div class="t-g">otryad404@school:~$ ./decrypt_mission_03.sh</div>
-        <div class="t-d">Инициализация протоколов...</div>
-        <div class="t-d">Загрузка ключей безопасности...</div>
-        <div class="t-c">► Перехвачено зашифрованное сообщение</div>
-        <div class="t-d">Метод шифрования: <span class="t-y">Шифр Цезаря (ROT-N)</span></div>
-        <div class="t-w">Сдвиг ключа: <span class="t-r">неизвестен</span>. Диапазон: 1–25.</div>
+      <div class="term-body scrollable">
+        <div class="t-g">analyst@zero_day:~$ decrypt --caesar</div>
+        <div class="t-d">Получен зашифрованный текст разведки.</div>
+        <div class="t-d">Сдвиг неизвестен, диапазон: 0–25.</div>
         <div class="term-br"></div>
-        <div class="t-a">ЗАДАЧА: расшифруй сообщение</div>
-        <div class="term-br"></div>
-
         <div class="cipher-block">
-          <div class="cipher-enc" id="cipherEnc">${c.encrypted}</div>
+          <div class="cipher-enc">${ZD.cipher.encrypted}</div>
           <div class="slider-row">
-            <span class="slider-lbl">Сдвиг ROT:</span>
-            <input type="range" id="caesarSlider" min="1" max="25" value="3" step="1">
-            <span class="slider-val" id="caesarVal">3</span>
+            <span class="slider-lbl">ROT shift:</span>
+            <input type="range" id="caesarSlider" min="0" max="25" value="2" step="1">
+            <span class="slider-val" id="caesarVal">2</span>
           </div>
           <input class="cipher-out" id="cipherOut" readonly value="">
-          <div class="cipher-hint">Двигай слайдер — находи читаемый текст</div>
-          <div class="cipher-solved" id="cipherSolved">✓ Расшифровано! Попыток: <span id="solvedAttempts">0</span> · +8 ⭐</div>
+          <div class="cipher-hint">Найди читаемое сообщение для отчёта.</div>
+          <div class="cipher-solved" id="cipherSolved">✓ Сообщение расшифровано. +8 ⭐</div>
         </div>
-
         <div class="term-br"></div>
-        <div class="t-d">Попыток использовано: <span class="t-y" id="attemptsCount">0</span></div>
-        <div class="term-prompt">
-          <span class="t-g">agent@404:~$</span>
-          <span class="cursor"></span>
-        </div>
+        <div class="t-d">Попыток: <span class="t-y" id="attemptsCount">${ZD.state.termAttempts}</span></div>
       </div>
     `;
 
     bindBack(s);
 
     const slider = s.querySelector('#caesarSlider');
-    slider.addEventListener('input', () => handleCaesar(s));
-    handleCaesar(s);
-  }
+    const val = s.querySelector('#caesarVal');
+    const out = s.querySelector('#cipherOut');
+    const attempts = s.querySelector('#attemptsCount');
+    const solved = s.querySelector('#cipherSolved');
 
-  function caesarDecrypt(text, shift) {
-    const ru = ZD.cipher.ruAlphabet;
-    return text.split('').map((ch) => {
-      const i = ru.indexOf(ch);
-      if (i === -1) return ch;
-      return ru[((i - shift) % 33 + 33) % 33];
-    }).join('');
-  }
+    const redraw = () => {
+      const shift = Number(slider.value);
+      val.textContent = shift;
+      out.value = decryptCaesar(ZD.cipher.encrypted, shift);
+    };
 
-  function handleCaesar(s) {
-    const slider = s.querySelector('#caesarSlider');
-    const valEl = s.querySelector('#caesarVal');
-    const outEl = s.querySelector('#cipherOut');
-    const attEl = s.querySelector('#attemptsCount');
-    const solvedEl = s.querySelector('#cipherSolved');
-    const solvedAtt = s.querySelector('#solvedAttempts');
+    slider.addEventListener('input', () => {
+      ZD.state.termAttempts += 1;
+      attempts.textContent = ZD.state.termAttempts;
+      redraw();
 
-    const shift = parseInt(slider.value, 10);
-    valEl.textContent = shift;
+      const shift = Number(slider.value);
+      if (shift === ZD.cipher.answerShift && !ZD.state.termSolved) {
+        ZD.state.termSolved = true;
+        solved.style.display = 'block';
+        markMissionDone('m04');
+        addStars(8, 'за дешифровку');
+        persistState();
+        updateProgress('terminal');
+      }
+    });
 
-    ZD.state.termAttempts += 1;
-    if (attEl) attEl.textContent = ZD.state.termAttempts;
-
-    const decrypted = caesarDecrypt(ZD.cipher.encrypted, shift);
-    outEl.value = decrypted;
-
-    if (shift === ZD.cipher.answerShift && !ZD.state.termSolved) {
-      ZD.state.termSolved = true;
-      outEl.style.color = '#b6ffca';
-      solvedEl.style.display = 'block';
-      if (solvedAtt) solvedAtt.textContent = ZD.state.termAttempts;
-      addStars(8);
-      updateStoryProgress('terminal');
-    } else if (shift !== ZD.cipher.answerShift && !ZD.state.termSolved) {
-      outEl.style.color = '#8ff1af';
-      solvedEl.style.display = 'none';
+    redraw();
+    if (ZD.state.termSolved) {
+      solved.style.display = 'block';
+      slider.value = String(ZD.cipher.answerShift);
+      redraw();
     }
   }
 
-  // ==================================================
-  // SHOP
-  // ==================================================
+  // ------------------------------------------------------------
+  // Shop
+  // ------------------------------------------------------------
   function buildShop() {
     const s = screenDiv('shopScreen');
 
-    const topupHtml = TOPUP_OFFERS.map((offer) => `
+    const topupRows = TOPUP_OFFERS.map((offer) => `
       <button class="topup-btn" data-topup="${offer.id}" type="button">
         <span class="topup-stars">⭐ ${offer.stars} Stars</span>
         <span class="topup-price">${offer.priceLabel} · ${offer.tgLabel}</span>
       </button>
     `).join('');
 
-    const rows = ZD.shopItems.map((cat) => {
-      const items = cat.items.map((item) => {
-        const isOwned = item.owned || ZD.state.inventory.includes(item.id);
-        const realOffer = REAL_MONEY_OFFERS[item.id];
-
-        const starsBtn = isOwned
-          ? '<button class="buy-btn owned" type="button">✓ Куплено</button>'
-          : `<button class="buy-btn" data-price="${item.price}" data-id="${item.id}" type="button">Купить за ⭐ ${item.price}</button>`;
-
-        const realBtn = !isOwned && realOffer
-          ? `<button class="buy-btn buy-btn-real" data-real-id="${item.id}" type="button">Купить за 💎 ${realOffer.label}</button>`
-          : '';
-
+    const shopRows = ZD.shopItems.map((cat) => {
+      const rows = cat.items.map((item) => {
+        const owned = item.owned || ZD.state.inventory.includes(item.id);
+        const real = REAL_MONEY_ITEM_OFFERS[item.id];
         return `
           <div class="shop-row">
             <div class="shop-ico">${item.ico}</div>
             <div class="shop-info">
               <div class="shop-name">${item.name}</div>
               <div class="shop-desc">${item.desc}</div>
-              <div class="shop-tags">${item.tags.map((t) => `<span class="stag ${t.cls}">${t.label}</span>`).join('')}</div>
+              <div class="shop-tags">${item.tags.map((tag) => `<span class="stag ${tag.cls}">${tag.label}</span>`).join('')}</div>
             </div>
             <div class="shop-actions">
-              ${starsBtn}
-              ${realBtn}
+              ${owned
+                ? '<button class="buy-btn owned" type="button">✓ Куплено</button>'
+                : `<button class="buy-btn" data-id="${item.id}" data-price="${item.price}" type="button">Купить за ⭐ ${item.price}</button>`
+              }
+              ${(!owned && real) ? `<button class="buy-btn buy-btn-real" data-real-id="${item.id}" data-real-name="${item.name}" type="button">Купить за 💎 ${real.label}</button>` : ''}
             </div>
           </div>
         `;
       }).join('');
-
-      return `<div class="shop-cat">${cat.cat}</div>${items}`;
+      return `<div class="shop-cat">${cat.cat}</div>${rows}`;
     }).join('');
 
-    s.innerHTML = `
-      ${header('home', 'Магазин', DEMO_MODE ? 'Платежи работают в DEMO_MODE' : 'Оплата через Telegram Invoices')}
+    const historyRows = ZD.state.purchaseHistory.slice(0, 8).map((entry) => `
+      <div class="history-row">
+        <div>
+          <div class="history-title">${entry.title || 'Покупка'}</div>
+          <div class="history-time">${entry.time}</div>
+        </div>
+        <div class="history-status ${entry.status === 'paid' ? 'ok' : 'bad'}">${entry.status}</div>
+      </div>
+    `).join('');
 
+    s.innerHTML = `
+      ${header('home', 'Магазин', DEMO_MODE ? 'DEMO_MODE: автоподтверждение платежа' : 'Telegram Invoice')}
       <div class="shop-balance-bar">
         <span>⭐</span><span class="stars-val">${ZD.state.stars}</span>
       </div>
-
       <div class="shop-body scrollable">
         <section class="topup-box">
           <div class="topup-title">Пополнить Stars</div>
-          <div class="topup-sub">Через Telegram Invoice. После оплаты баланс обновится автоматически.</div>
-          <div class="topup-grid">${topupHtml}</div>
+          <div class="topup-sub">Платёж через Telegram. Баланс обновится автоматически.</div>
+          <div class="topup-grid">${topupRows}</div>
         </section>
 
-        ${rows}
+        ${shopRows}
+
+        <div class="shop-cat">История покупок</div>
+        <div class="history-box">
+          ${historyRows || '<div class="history-empty">История пока пустая</div>'}
+        </div>
       </div>
     `;
 
     bindBack(s);
 
     s.querySelectorAll('.topup-btn[data-topup]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        buyStarsPack(btn.dataset.topup);
-      });
+      btn.addEventListener('click', () => buyStarsPack(btn.dataset.topup));
     });
 
-    s.querySelectorAll('.buy-btn[data-price]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        handleBuy(btn, parseInt(btn.dataset.price, 10), btn.dataset.id);
-      });
+    s.querySelectorAll('.buy-btn[data-id]').forEach((btn) => {
+      btn.addEventListener('click', () => handleStarsPurchase(btn.dataset.id, Number(btn.dataset.price)));
     });
 
     s.querySelectorAll('.buy-btn[data-real-id]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        buyItemForMoney(btn.dataset.realId);
-      });
+      btn.addEventListener('click', () => buyItemForMoney(btn.dataset.realId, btn.dataset.realName));
     });
   }
 
-  function handleBuy(btn, price, itemId) {
+  function handleStarsPurchase(itemId, price) {
+    const item = ZD.shopItems.flatMap((c) => c.items).find((x) => x.id === itemId);
+    if (!item) {
+      toast('Товар не найден', 'error');
+      return;
+    }
+    if (ZD.state.inventory.includes(itemId) || item.owned) {
+      toast('Товар уже куплен', 'info');
+      return;
+    }
     if (ZD.state.stars < price) {
-      btn.classList.add('no-stars');
-      btn.textContent = 'Недостаточно ⭐';
-      setTimeout(() => {
-        btn.classList.remove('no-stars');
-        btn.textContent = 'Купить за ⭐ ' + price;
-      }, 1200);
+      const missing = price - ZD.state.stars;
+      toast(`Недостаточно Stars. Не хватает: ${missing}`, 'error');
+      recordPurchase({ kind: 'item', title: `Неуспешно: ${item.name}`, amount: `⭐ ${price}`, status: 'denied' });
       return;
     }
 
     ZD.state.stars -= price;
-    if (!ZD.state.inventory.includes(itemId)) {
-      ZD.state.inventory.push(itemId);
-    }
+    ZD.state.inventory.push(itemId);
+    if (itemId === 'energy') bumpTrust(3);
+    if (itemId === 'antivirus') bumpReputation(2);
 
-    updateStarsDisplay();
+    recordPurchase({ kind: 'item', title: `Куплено: ${item.name}`, amount: `⭐ ${price}`, status: 'paid' });
+    persistState();
+    refreshStatusWidgets();
+    updateProgress('shop');
 
-    if (itemId === 'decryptor') {
-      toast('Куплено! Библиотека теперь доступна.');
-    } else if (itemId === 'rubber_duck') {
-      toast('Куплено! Проверь доступ к серверной.');
-    } else {
-      toast('Куплено! ⭐ осталось: ' + ZD.state.stars);
-    }
+    if (itemId === 'decryptor') toast('Ключ дешифратора куплен. Библиотека открыта.', 'success');
+    else if (itemId === 'rubber_duck') toast('USB-Руббердак куплен. Доступ к серверной обновлён.', 'success');
+    else toast('Покупка успешна', 'success');
 
-    updateStoryProgress('shop');
-    if (currentScreen === 'shop') {
-      transitionDirection = 'forward';
-      renderScreen('shop');
-    }
+    renderScreen('shop');
   }
 
-  // ---- EDGE SWIPE BACK (bonus) ----
+  // ------------------------------------------------------------
+  // Settings + themes + admin
+  // ------------------------------------------------------------
+  function buildSettings() {
+    const s = screenDiv('settingsScreen');
+
+    const themeRows = ZD.themes.map((theme) => {
+      const owned = ZD.state.purchasedThemes.includes(theme.id);
+      const active = ZD.state.activeTheme === theme.id;
+
+      return `
+        <div class="theme-row">
+          <div class="theme-info">
+            <div class="theme-name">${theme.name}</div>
+            <div class="theme-desc">${theme.desc}</div>
+          </div>
+          <div class="theme-actions">
+            ${active ? '<button class="theme-btn active" type="button">Активна</button>' : ''}
+            ${!active && owned ? `<button class="theme-btn" data-apply-theme="${theme.id}" type="button">Применить</button>` : ''}
+            ${!owned ? `<button class="theme-btn buy" data-buy-theme="${theme.id}" data-price="${theme.price}" type="button">Купить за ⭐ ${theme.price}</button>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const campaignPreview = ZD.missionCalendar.slice(0, 24).map((mission) => {
+      const done = ZD.state.completedMissionIds.has(mission.id);
+      return `<div class="settings-mission ${done ? 'done' : ''}">${mission.id.toUpperCase()} · ${mission.title}</div>`;
+    }).join('');
+
+    s.innerHTML = `
+      ${header('home', 'Настройки', ZD.state.adminMode ? 'Админ-режим включён' : 'Пользовательский режим')}
+      <div class="scrollable settings-body">
+        <div class="settings-card">
+          <div class="settings-title">Темы интерфейса</div>
+          ${themeRows}
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-title">Управление прогрессом</div>
+          <button class="settings-btn" id="toggleAdminBtn" type="button">${ZD.state.adminMode ? 'Выключить админ-режим' : 'Включить админ-режим'}</button>
+          <button class="settings-btn" id="unlockAllBtn" type="button">Открыть все миссии и квесты</button>
+          <button class="settings-btn danger" id="resetProgressBtn" type="button">Сбросить прогресс</button>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-title">Кампания на 6 месяцев</div>
+          <div class="settings-mission-list">${campaignPreview}</div>
+        </div>
+      </div>
+    `;
+
+    bindBack(s);
+
+    s.querySelectorAll('[data-apply-theme]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.applyTheme;
+        applyTheme(id);
+        toast('Тема применена', 'success');
+        renderScreen('settings');
+      });
+    });
+
+    s.querySelectorAll('[data-buy-theme]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.buyTheme;
+        const price = Number(btn.dataset.price || 0);
+        buyTheme(id, price);
+      });
+    });
+
+    s.querySelector('#toggleAdminBtn').addEventListener('click', () => {
+      ZD.state.adminMode = !ZD.state.adminMode;
+      persistState();
+      updateProgress('settings');
+      renderScreen('settings');
+    });
+
+    s.querySelector('#unlockAllBtn').addEventListener('click', () => {
+      unlockAllMissionsAndQuests();
+      renderScreen('settings');
+    });
+
+    s.querySelector('#resetProgressBtn').addEventListener('click', () => {
+      resetState();
+    });
+  }
+
+  function buyTheme(themeId, price) {
+    const theme = getThemeById(themeId);
+    if (!theme) return;
+    if (ZD.state.purchasedThemes.includes(themeId)) {
+      applyTheme(themeId);
+      renderScreen('settings');
+      return;
+    }
+    if (ZD.state.stars < price) {
+      toast('Недостаточно Stars для покупки темы', 'error');
+      return;
+    }
+
+    ZD.state.stars -= price;
+    ZD.state.purchasedThemes.push(themeId);
+    ZD.state.purchasedThemes = uniqueArray(ZD.state.purchasedThemes);
+    applyTheme(themeId);
+    recordPurchase({ kind: 'theme', title: `Тема: ${theme.name}`, amount: `⭐ ${price}`, status: 'paid' });
+    persistState();
+    refreshStatusWidgets();
+    toast(`Тема ${theme.name} куплена и применена`, 'success');
+    renderScreen('settings');
+  }
+
+  function unlockAllMissionsAndQuests() {
+    ZD.missionCalendar.forEach((mission) => ZD.state.completedMissionIds.add(mission.id));
+    ZD.locations.forEach((loc) => ZD.state.visitedLocations.add(loc.id));
+    ZD.gallery.forEach((item) => {
+      if (item.flagged) ZD.state.analyzed.add(item.id);
+    });
+    ZD.state.foundFlags = new Set(['1', '2', '3', '4']);
+    ZD.state.termSolved = true;
+    ZD.state.chatChoices.dasha = ZD.state.chatChoices.dasha || 'A';
+    ['decryptor', 'rubber_duck', 'wifi_antenna', 'darknet_acc', 'energy', 'antivirus', 'hint'].forEach((item) => {
+      if (!ZD.state.inventory.includes(item)) ZD.state.inventory.push(item);
+    });
+    ZD.state.finaleShown = true;
+    ZD.state.finaleInboxRead = true;
+    ZD.state.adminMode = true;
+    persistState();
+    updateProgress('settings');
+    toast('Все миссии и квесты открыты.', 'success');
+  }
+
+  // ------------------------------------------------------------
+  // Gestures
+  // ------------------------------------------------------------
   function bindEdgeSwipeBack() {
     if (!frame) return;
 
@@ -1423,7 +1562,6 @@
 
       const touch = event.touches[0];
       if (touch.clientX > 26) return;
-
       tracking = true;
       startX = touch.clientX;
       startY = touch.clientY;
@@ -1431,45 +1569,38 @@
 
     frame.addEventListener('touchmove', (event) => {
       if (!tracking || !event.touches || !event.touches[0]) return;
-
       const touch = event.touches[0];
       const dx = touch.clientX - startX;
       const dy = Math.abs(touch.clientY - startY);
-
       if (dx > 88 && dy < 42) {
         tracking = false;
         navigateBack();
       }
     }, { passive: true });
 
-    frame.addEventListener('touchend', () => {
-      tracking = false;
-    }, { passive: true });
-
-    frame.addEventListener('touchcancel', () => {
-      tracking = false;
-    }, { passive: true });
+    frame.addEventListener('touchend', () => { tracking = false; }, { passive: true });
+    frame.addEventListener('touchcancel', () => { tracking = false; }, { passive: true });
   }
 
-  // ==================================================
-  // INIT
-  // ==================================================
+  // ------------------------------------------------------------
+  // Boot
+  // ------------------------------------------------------------
   if (iosHomeBtn) {
     iosHomeBtn.addEventListener('click', () => {
       navigateTo('home', { historyMode: 'reset', direction: 'back' });
     });
   }
 
+  applyTheme(ZD.state.activeTheme);
   initTelegram();
-
   updateClock();
   updateBatteryVisual();
   setInterval(updateClock, 15000);
   setInterval(updateBatteryVisual, 60000);
 
-  updateStoryProgress('silent');
   buildNav();
+  updateProgress('silent');
+  refreshStatusWidgets();
   bindEdgeSwipeBack();
-
   navigateTo('home', { historyMode: 'reset', direction: 'forward' });
 })();
