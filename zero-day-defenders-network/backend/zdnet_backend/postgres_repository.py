@@ -173,6 +173,45 @@ class PostgresGameRepository:
     def payment_history(self, state: PlayerState) -> dict[str, Any]:
         return self.logic.payment_history(state)
 
+    def validate_payment(self, payload: str, amount: int | None = None, currency: str | None = None) -> tuple[bool, str]:
+        loaded = self._load_state_by_payment_payload(payload)
+        if not loaded:
+            return False, "payment_not_found"
+        _, state = loaded
+        return self.logic.validate_payment(payload, amount, currency)
+
+    def grant_payment(
+        self,
+        payload: str,
+        *,
+        telegram_payment_charge_id: str | None = None,
+        provider_payment_charge_id: str | None = None,
+        raw: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        loaded = self._load_state_by_payment_payload(payload)
+        if not loaded:
+            raise GameError("payment_not_found", status=404)
+        player_id, state = loaded
+        result = self.logic.grant_payment(
+            payload,
+            telegram_payment_charge_id=telegram_payment_charge_id,
+            provider_payment_charge_id=provider_payment_charge_id,
+            raw=raw,
+        )
+        self._save_state(player_id, state)
+        self._upsert_payment_row(player_id, result["payment"])
+        return result
+
+    def fail_payment(self, payload: str, reason: str) -> dict[str, Any]:
+        loaded = self._load_state_by_payment_payload(payload)
+        if not loaded:
+            raise GameError("payment_not_found", status=404)
+        player_id, state = loaded
+        result = self.logic.fail_payment(payload, reason)
+        self._save_state(player_id, state)
+        self._upsert_payment_row(player_id, result["payment"])
+        return result
+
     def _load_state(self, player_id: int) -> PlayerState | None:
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -188,6 +227,20 @@ class PostgresGameRepository:
                 state = snapshot_to_state(snapshot)
                 state.player["id"] = str(player_id)
                 return state
+
+    def _load_state_by_payment_payload(self, payload: str) -> tuple[int, PlayerState] | None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT player_id, state_json FROM zdnet.player_snapshots")
+                for player_id, raw_snapshot in cur.fetchall():
+                    snapshot = raw_snapshot if isinstance(raw_snapshot, dict) else json.loads(raw_snapshot)
+                    state = snapshot_to_state(snapshot)
+                    state.player["id"] = str(player_id)
+                    self.logic.players[int(player_id)] = state
+                    for payment in state.payments:
+                        if payment.get("invoicePayload") == payload:
+                            return int(player_id), state
+        return None
 
     def _save_state(self, player_id: int, state: PlayerState) -> None:
         with self._connect() as conn:
@@ -273,3 +326,48 @@ class PostgresGameRepository:
             ),
         )
 
+        for payment in state.payments:
+            self._upsert_payment_row(int(player_id), payment, cur=cur)
+
+    def _upsert_payment_row(self, player_id: int, payment: dict[str, Any], cur=None) -> None:
+        own_conn = None
+        if cur is None:
+            own_conn = self._connect()
+            cur = own_conn.cursor()
+        try:
+            raw_payload = {
+                "payment": payment,
+                "grant": payment.get("grant"),
+                "appliedGrant": payment.get("appliedGrant"),
+                "raw": payment.get("raw"),
+            }
+            cur.execute(
+                """
+                INSERT INTO zdnet.payments
+                    (id, player_id, provider, invoice_payload, product_id, amount_minor, currency, status, granted_at, raw_payload, created_at, updated_at)
+                VALUES (%s, %s, 'telegram', %s, %s, %s, %s, %s, %s, %s, COALESCE(%s::timestamptz, NOW()), NOW())
+                ON CONFLICT (invoice_payload) DO UPDATE
+                SET status = EXCLUDED.status,
+                    granted_at = EXCLUDED.granted_at,
+                    raw_payload = EXCLUDED.raw_payload,
+                    updated_at = NOW()
+                """,
+                (
+                    payment["id"],
+                    int(player_id),
+                    payment["invoicePayload"],
+                    payment["productId"],
+                    int(payment.get("amount") or payment.get("amountMinor") or 0),
+                    payment["currency"],
+                    payment["status"],
+                    payment.get("grantedAt"),
+                    self._json_adapter(raw_payload),
+                    payment.get("createdAt"),
+                ),
+            )
+            if own_conn is not None:
+                own_conn.commit()
+        finally:
+            if own_conn is not None:
+                cur.close()
+                own_conn.close()

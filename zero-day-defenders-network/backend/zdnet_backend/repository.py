@@ -10,6 +10,7 @@ from typing import Any
 
 from .economy import calculate_rewards, validate_attempt_summary
 from .gacha import GachaState, open_zero_cache
+from .payments import apply_product_grant, get_product, public_catalog
 from .security import create_session_token
 
 
@@ -166,6 +167,7 @@ class InMemoryGameRepository:
             "gacha": state.gacha.to_dict(),
             "fairScore": deepcopy(state.fair_score),
             "contentVersion": self.content["version"],
+            "shopProducts": public_catalog(),
             "serverTime": iso(utc_now()),
         }
 
@@ -279,12 +281,7 @@ class InMemoryGameRepository:
         return {"results": results, "pity": state.gacha.to_dict(), "zeroKeysLeft": state.wallet["zeroKeys"]}
 
     def create_invoice(self, state: PlayerState, product_id: str) -> dict[str, Any]:
-        products = {
-            "zero_keys_10": {"title": "10 Ключей Зеро", "amountMinor": 9900, "currency": "RUB"},
-            "soc_elite_monthly": {"title": "SOC ELITE", "amountMinor": 29900, "currency": "RUB"},
-            "spinner_extra": {"title": "Дополнительный спин", "amountMinor": 5000, "currency": "RUB"},
-        }
-        product = products.get(product_id)
+        product = get_product(product_id)
         if not product:
             raise GameError("unknown_product", status=404)
         payload = f"zdnet:{state.player['id']}:{product_id}:{uuid.uuid4().hex}"
@@ -292,22 +289,96 @@ class InMemoryGameRepository:
             "id": str(uuid.uuid4()),
             "productId": product_id,
             "title": product["title"],
-            "amountMinor": product["amountMinor"],
+            "description": product["description"],
+            "amount": product["amount"],
+            "amountMinor": product["amount"],
             "currency": product["currency"],
             "status": "created",
             "invoicePayload": payload,
+            "grant": product["grant"],
             "createdAt": iso(utc_now()),
+            "grantedAt": None,
+            "telegramPaymentChargeId": None,
+            "providerPaymentChargeId": None,
         }
         state.payments.append(payment)
         return {
-            "invoiceUrl": f"https://t.me/your_bot?start=invoice_{payload}",
+            "invoiceUrl": None,
             "payload": payload,
             "payment": payment,
-            "demoMode": True,
+            "demoMode": False,
         }
 
     def payment_history(self, state: PlayerState) -> dict[str, Any]:
         return {"payments": deepcopy(state.payments)}
+
+    def validate_payment(self, payload: str, amount: int | None = None, currency: str | None = None) -> tuple[bool, str]:
+        found = self._find_payment_by_payload(payload)
+        if not found:
+            return False, "payment_not_found"
+        _, payment = found
+        if payment.get("status") not in {"created", "paid"}:
+            return False, f"bad_payment_status:{payment.get('status')}"
+        if amount is not None and int(payment.get("amount") or payment.get("amountMinor") or 0) != int(amount):
+            return False, "amount_mismatch"
+        if currency is not None and str(payment.get("currency") or "") != str(currency):
+            return False, "currency_mismatch"
+        return True, "ok"
+
+    def grant_payment(
+        self,
+        payload: str,
+        *,
+        telegram_payment_charge_id: str | None = None,
+        provider_payment_charge_id: str | None = None,
+        raw: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        found = self._find_payment_by_payload(payload)
+        if not found:
+            raise GameError("payment_not_found", status=404)
+        state, payment = found
+        if payment.get("status") == "paid" and payment.get("grantedAt"):
+            return {
+                "granted": False,
+                "idempotent": True,
+                "payment": deepcopy(payment),
+                "wallet": deepcopy(state.wallet),
+                "fairScore": deepcopy(state.fair_score),
+            }
+
+        grant = apply_product_grant(state, str(payment["productId"]))
+        payment["status"] = "paid"
+        payment["grantedAt"] = iso(utc_now())
+        payment["telegramPaymentChargeId"] = telegram_payment_charge_id
+        payment["providerPaymentChargeId"] = provider_payment_charge_id
+        payment["raw"] = raw or {}
+        payment["appliedGrant"] = grant
+        return {
+            "granted": True,
+            "idempotent": False,
+            "payment": deepcopy(payment),
+            "wallet": deepcopy(state.wallet),
+            "fairScore": deepcopy(state.fair_score),
+        }
+
+    def fail_payment(self, payload: str, reason: str) -> dict[str, Any]:
+        found = self._find_payment_by_payload(payload)
+        if not found:
+            raise GameError("payment_not_found", status=404)
+        state, payment = found
+        if payment.get("status") == "paid" and payment.get("grantedAt"):
+            return {"changed": False, "payment": deepcopy(payment)}
+        payment["status"] = "failed"
+        payment["failedAt"] = iso(utc_now())
+        payment["failReason"] = reason
+        return {"changed": True, "payment": deepcopy(payment), "wallet": deepcopy(state.wallet)}
+
+    def _find_payment_by_payload(self, payload: str) -> tuple[PlayerState, dict[str, Any]] | None:
+        for state in self.players.values():
+            for payment in state.payments:
+                if payment.get("invoicePayload") == payload:
+                    return state, payment
+        return None
 
     def _spawn_initial_threats(self, state: PlayerState) -> None:
         if state.threats:
@@ -402,4 +473,3 @@ class InMemoryGameRepository:
             state.energy["lastResetAt"] = iso(utc_now())
             state.daily["dailyThreatDone"] = False
             state.daily["comboProgress"] = 0
-

@@ -59,6 +59,29 @@ py -3 -m zdnet_backend.server
 
 Текущий PostgreSQL adapter сохраняет authoritative snapshot в `zdnet.player_snapshots` и зеркалит базовые поля в `players`, `player_wallet`, `player_energy`, `player_progress`. Это осознанный MVP-подход: быстро получить надежную персистентность, пока доменная модель еще меняется.
 
+## Платежи
+
+Контур платежей не начисляет награды при создании счета.
+
+Порядок:
+
+1. Frontend вызывает `POST /api/payments/invoice`.
+2. Backend создает pending payment с уникальным `invoicePayload`.
+3. Telegram подтверждает оплату через `successful_payment` в боте или webhook.
+4. Backend вызывает `grant_payment(payload)`.
+5. Повторный grant по тому же payload не выдает награду второй раз.
+6. `fairScore` не меняется от покупок.
+
+Продукты используют `XTR` Telegram Stars. Для локального режима без Telegram можно проверить выдачу через:
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8090/api/payments/webhook/telegram `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"payload":"zdnet:...","telegramPaymentChargeId":"test"}'
+```
+
 ## Тесты
 
 ```powershell

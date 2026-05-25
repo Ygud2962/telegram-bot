@@ -107,6 +107,30 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(restored.gacha.open_count, self.state.gacha.open_count)
         self.assertEqual(set(restored.cards.keys()), set(self.state.cards.keys()))
 
+    def test_invoice_creation_does_not_grant_reward(self):
+        before_keys = self.state.wallet["zeroKeys"]
+        invoice = self.repo.create_invoice(self.state, "zero_keys_10")
+        self.assertEqual(self.state.wallet["zeroKeys"], before_keys)
+        self.assertEqual(invoice["payment"]["status"], "created")
+        self.assertIsNone(invoice["payment"]["grantedAt"])
+
+    def test_payment_grant_is_idempotent_and_fair_score_neutral(self):
+        before_keys = self.state.wallet["zeroKeys"]
+        before_fair = dict(self.state.fair_score)
+        invoice = self.repo.create_invoice(self.state, "zero_keys_10")
+        payload = invoice["payload"]
+        ok, reason = self.repo.validate_payment(payload, invoice["payment"]["amount"], invoice["payment"]["currency"])
+        self.assertTrue(ok, reason)
+
+        result1 = self.repo.grant_payment(payload, telegram_payment_charge_id="tg_1")
+        result2 = self.repo.grant_payment(payload, telegram_payment_charge_id="tg_1")
+
+        self.assertTrue(result1["granted"])
+        self.assertFalse(result2["granted"])
+        self.assertTrue(result2["idempotent"])
+        self.assertEqual(self.state.wallet["zeroKeys"], before_keys + 10)
+        self.assertEqual(self.state.fair_score, before_fair)
+
 
 if __name__ == "__main__":
     unittest.main()

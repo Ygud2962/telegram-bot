@@ -189,6 +189,33 @@ paths:
                     type: string
                   payload:
                     type: string
+  /api/payments/products:
+    get:
+      summary: Get public payment product catalog.
+      responses:
+        "200":
+          description: Product catalog.
+  /api/payments/webhook/telegram:
+    post:
+      security: []
+      summary: Confirm successful Telegram payment and grant product idempotently.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload]
+              properties:
+                payload:
+                  type: string
+                telegramPaymentChargeId:
+                  type: string
+                providerPaymentChargeId:
+                  type: string
+      responses:
+        "200":
+          description: Grant result.
   /api/payments/history:
     get:
       summary: Get player payment history.
@@ -439,4 +466,3 @@ components:
           type: string
         gameType:
           type: string
-

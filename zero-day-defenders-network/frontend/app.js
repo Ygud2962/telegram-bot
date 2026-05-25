@@ -34,6 +34,9 @@ const state = {
   socLevel: 4,
   rank: 128,
   keys: 2,
+  cleanFragments: 0,
+  shopProducts: [],
+  payments: [],
   map: [
     { id: "school", name: "Школа", x: 82, y: 72, state: "protected", level: 4 },
     { id: "wifi", name: "Wi-Fi узел", x: 238, y: 72, state: "under_attack", level: 2 },
@@ -82,7 +85,7 @@ async function apiRequest(path, options = {}) {
   if (options.auth !== false && sessionToken) {
     headers.Authorization = `Bearer ${sessionToken}`;
   }
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(apiUrl(path), {
     method: options.method || "GET",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -92,6 +95,14 @@ async function apiRequest(path, options = {}) {
     throw new Error(data.error || `HTTP ${response.status}`);
   }
   return data;
+}
+
+function apiUrl(path) {
+  const base = API_BASE.replace(/\/$/, "");
+  if (base.endsWith("/zdnet_api") && path.startsWith("/api/")) {
+    return `${base}${path.slice(4)}`;
+  }
+  return `${base}${path}`;
 }
 
 async function connectBackend() {
@@ -110,6 +121,7 @@ async function connectBackend() {
     state.sync = "api";
     const boot = await apiRequest("/api/bootstrap");
     applyBootstrap(boot);
+    await refreshPaymentHistory();
     render();
     toast("Backend API подключен");
   } catch (error) {
@@ -125,6 +137,8 @@ function applyBootstrap(boot) {
   state.energyMax = boot.energy?.dailyMax ?? state.energyMax;
   state.socLevel = boot.progression?.socLevel ?? boot.player?.socLevel ?? state.socLevel;
   state.keys = boot.wallet?.zeroKeys ?? state.keys;
+  state.cleanFragments = boot.wallet?.cleanFragments ?? state.cleanFragments;
+  state.shopProducts = boot.shopProducts || state.shopProducts;
   state.map = (boot.map || state.map).map(item => ({
     id: item.objectId || item.id,
     name: item.name || item.objectId || item.id,
@@ -166,6 +180,17 @@ async function refreshBootstrap() {
   if (!backendOnline) return;
   const boot = await apiRequest("/api/bootstrap");
   applyBootstrap(boot);
+  await refreshPaymentHistory();
+}
+
+async function refreshPaymentHistory() {
+  if (!backendOnline) return;
+  try {
+    const history = await apiRequest("/api/payments/history");
+    state.payments = history.payments || [];
+  } catch (error) {
+    state.payments = [];
+  }
 }
 
 function gameLabel(gameType) {
@@ -230,6 +255,7 @@ function renderHud() {
         <span class="pill energy">⚡ ${state.energy}/${state.energyMax}</span>
         <span class="pill">#${state.rank}</span>
         <span class="pill">◇ ${state.keys}</span>
+        <span class="pill">✦ ${state.cleanFragments}</span>
       </div>
     </header>
   `;
@@ -397,15 +423,51 @@ function renderStory() {
 }
 
 function renderShop() {
+  const products = state.shopProducts.length ? state.shopProducts : [
+    {
+      productId: "zero_keys_10",
+      title: "10 Ключей Зеро",
+      description: "Открытия тайников. Не влияет на рейтинг.",
+      currency: "XTR",
+      amount: 99,
+    },
+    {
+      productId: "soc_elite_monthly",
+      title: "SOC ELITE на 30 дней",
+      description: "Удобство и косметика. Fair score честный.",
+      currency: "XTR",
+      amount: 299,
+    },
+  ];
+  const lastPayments = state.payments.slice(-4).reverse();
   return html`
     <section class="panel" style="padding:18px">
       <div class="section-title">
         <h2>Магазин</h2>
-        <span>честный донат</span>
+        <span>Telegram Stars · честно</span>
       </div>
       <div class="grid">
-        <div class="tool-tile"><strong>10 Ключей Зеро</strong><p>99 руб · не влияет на рейтинг</p></div>
-        <div class="tool-tile"><strong>SOC ELITE</strong><p>299 руб/мес · прогресс быстрее, fair score честный</p></div>
+        ${products.map(product => `
+          <div class="tool-tile">
+            <strong>${product.title}</strong>
+            <p>${product.description}</p>
+            <button class="primary-btn" data-buy-product="${product.productId}">
+              Купить за ${product.amount} ${product.currency === "XTR" ? "⭐" : product.currency}
+            </button>
+          </div>
+        `).join("")}
+      </div>
+      <div class="section-title" style="margin-top:18px">
+        <h2>История</h2>
+        <span>${state.payments.length} платежей</span>
+      </div>
+      <div class="grid">
+        ${lastPayments.length ? lastPayments.map(payment => `
+          <div class="tool-tile">
+            <strong>${payment.title || payment.productId}</strong>
+            <p>${payment.status} · ${payment.amount || payment.amountMinor} ${payment.currency}</p>
+          </div>
+        `).join("") : `<div class="tool-tile"><strong>Пока пусто</strong><p>Покупки появятся здесь только после создания счета.</p></div>`}
       </div>
     </section>
   `;
@@ -439,6 +501,54 @@ function bindEvents() {
       haptic.light();
     });
   });
+
+  document.querySelectorAll("[data-buy-product]").forEach(button => {
+    button.addEventListener("click", async () => {
+      await buyProduct(button.dataset.buyProduct);
+    });
+  });
+}
+
+async function buyProduct(productId) {
+  if (!backendOnline) {
+    toast("Покупки доступны только в API-режиме");
+    haptic.warn();
+    return;
+  }
+  try {
+    const invoice = await apiRequest("/api/payments/invoice", {
+      method: "POST",
+      body: { productId },
+    });
+    await refreshPaymentHistory();
+    render();
+    if (!invoice.invoiceUrl) {
+      toast(invoice.demoMode ? "Счет создан в demo-режиме, награда не выдана" : "Не удалось получить ссылку счета");
+      haptic.warn();
+      return;
+    }
+    if (!tg?.openInvoice) {
+      toast("Откройте игру в Telegram, чтобы оплатить счет");
+      window.open(invoice.invoiceUrl, "_blank", "noopener");
+      return;
+    }
+    tg.openInvoice(invoice.invoiceUrl, async status => {
+      if (status === "paid") {
+        toast("Платеж подтверждается Telegram...");
+        setTimeout(async () => {
+          await refreshBootstrap();
+          render();
+        }, 1500);
+        haptic.ok();
+      } else {
+        toast(status === "cancelled" ? "Платеж отменен" : `Статус платежа: ${status}`);
+        haptic.warn();
+      }
+    });
+  } catch (error) {
+    toast(`Счет не создан: ${error.message}`);
+    haptic.error();
+  }
 }
 
 function toast(message) {

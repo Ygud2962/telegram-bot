@@ -40,6 +40,12 @@ class JsonApiHandler(BaseHTTPRequestHandler):
                 state = self._require_auth()
                 self._send_json(self.repo.payment_history(state))
                 return
+            if path == "/api/payments/products":
+                from .payments import public_catalog
+
+                self._require_auth()
+                self._send_json({"products": public_catalog()})
+                return
             self._send_json({"error": "not_found"}, status=HTTPStatus.NOT_FOUND)
         except GameError as exc:
             self._send_json({"error": exc.code}, status=exc.status)
@@ -54,6 +60,19 @@ class JsonApiHandler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             if path == "/api/auth/telegram":
                 self._handle_auth()
+                return
+
+            if path == "/api/payments/webhook/telegram":
+                self._check_webhook_secret()
+                body = self._read_json()
+                self._send_json(
+                    self.repo.grant_payment(
+                        str(body.get("payload") or ""),
+                        telegram_payment_charge_id=body.get("telegramPaymentChargeId"),
+                        provider_payment_charge_id=body.get("providerPaymentChargeId"),
+                        raw=body,
+                    )
+                )
                 return
 
             state = self._require_auth()
@@ -124,6 +143,11 @@ class JsonApiHandler(BaseHTTPRequestHandler):
             raise GameError("missing_bearer_token", status=HTTPStatus.UNAUTHORIZED)
         token = auth.removeprefix("Bearer ").strip()
         return self.repo.get_by_session(token)
+
+    def _check_webhook_secret(self) -> None:
+        expected = os.environ.get("ZDNET_PAYMENT_WEBHOOK_SECRET", "")
+        if expected and self.headers.get("X-ZDNET-Webhook-Secret") != expected:
+            raise GameError("bad_webhook_secret", status=HTTPStatus.UNAUTHORIZED)
 
     def _read_json(self) -> dict[str, Any]:
         raw_len = int(self.headers.get("Content-Length") or 0)

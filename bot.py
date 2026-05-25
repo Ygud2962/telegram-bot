@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 from aiohttp import web as aiohttp_web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
-                           MessageHandler, filters, CallbackContext)
+                           MessageHandler, filters, CallbackContext,
+                           PreCheckoutQueryHandler)
 from telegram.error import TimedOut, BadRequest, Forbidden
 import database as db
 import os
@@ -150,6 +151,8 @@ if ZDNET_URL and not ZDNET_URL.startswith('http'):
 ZDNET_API_URL = (os.environ.get('ZDNET_API_URL', '') or '').strip()
 if ZDNET_API_URL and not ZDNET_API_URL.startswith('http'):
     ZDNET_API_URL = 'https://' + ZDNET_API_URL
+ZDNET_REPO = None
+ZDNET_BACKEND_ERROR: str | None = None
 # Public URL бота на Railway (для приёма sync запросов из игры)
 # Приоритет: BOT_PUBLIC_URL (ручная) > RAILWAY_PUBLIC_DOMAIN (авто)
 BOT_PUBLIC_URL = (
@@ -7394,6 +7397,7 @@ async def handle_game_media(request):
 
 def start_http_server_thread():
     """Запускает aiohttp в отдельном потоке чтобы не конфликтовать с event loop бота."""
+    global ZDNET_REPO, ZDNET_BACKEND_ERROR
     import threading
     import pathlib
     import sys
@@ -7401,8 +7405,6 @@ def start_http_server_thread():
     GAME_DIR = pathlib.Path(__file__).parent / 'game'
     ZDNET_FRONTEND_DIR = pathlib.Path(__file__).parent / 'zero-day-defenders-network' / 'frontend'
     ZDNET_BACKEND_DIR = pathlib.Path(__file__).parent / 'zero-day-defenders-network' / 'backend'
-    zdnet_repo = None
-    zdnet_backend_error = None
     ZDNetGameError = Exception
     _zdnet_validate_init_data = None
 
@@ -7416,10 +7418,11 @@ def start_http_server_thread():
 
         ZDNetGameError = _ZDNetGameError
         _zdnet_validate_init_data = _validate_zdnet_init_data
-        zdnet_repo = _zdnet_build_repository(_zdnet_load_content())
+        ZDNET_REPO = _zdnet_build_repository(_zdnet_load_content())
+        ZDNET_BACKEND_ERROR = None
         logger.info("✅ ZDNET backend mounted in bot HTTP server")
     except Exception as e:
-        zdnet_backend_error = str(e)
+        ZDNET_BACKEND_ERROR = str(e)
         logger.warning(f"ZDNET backend is not mounted: {e}")
 
     async def serve_game_index(request):
@@ -7477,7 +7480,7 @@ def start_http_server_thread():
         return _zdnet_json(
             {
                 'error': 'zdnet_backend_unavailable',
-                'detail': zdnet_backend_error or 'backend not mounted',
+                'detail': ZDNET_BACKEND_ERROR or 'backend not mounted',
             },
             request,
             status=503,
@@ -7491,12 +7494,40 @@ def start_http_server_thread():
         return data if isinstance(data, dict) else {}
 
     def _zdnet_require_state(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             raise RuntimeError('zdnet backend not mounted')
         auth = request.headers.get('Authorization', '')
         if not auth.startswith('Bearer '):
             raise ZDNetGameError('missing_bearer_token', status=401)
-        return zdnet_repo.get_by_session(auth.removeprefix('Bearer ').strip())
+        return ZDNET_REPO.get_by_session(auth.removeprefix('Bearer ').strip())
+
+    async def _create_zdnet_invoice_link(payment: dict) -> str:
+        currency = str(payment.get('currency') or 'XTR')
+        provider_token = '' if currency == 'XTR' else os.environ.get('TELEGRAM_PAYMENT_PROVIDER_TOKEN', '')
+        if currency != 'XTR' and not provider_token:
+            raise RuntimeError('TELEGRAM_PAYMENT_PROVIDER_TOKEN is required for non-XTR payments')
+        payload = {
+            'title': str(payment.get('title') or 'ZERO_DAY'),
+            'description': str(payment.get('description') or 'ZERO_DAY purchase'),
+            'payload': str(payment.get('invoicePayload') or ''),
+            'provider_token': provider_token,
+            'currency': currency,
+            'prices': [
+                {
+                    'label': str(payment.get('title') or 'ZERO_DAY'),
+                    'amount': int(payment.get('amount') or payment.get('amountMinor') or 0),
+                }
+            ],
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f'https://api.telegram.org/bot{TOKEN}/createInvoiceLink',
+                json=payload,
+            )
+        data = resp.json()
+        if not data.get('ok') or not data.get('result'):
+            raise RuntimeError(str(data.get('description') or 'createInvoiceLink failed'))
+        return str(data['result'])
 
     async def handle_zdnet_options(request):
         return aiohttp_web.Response(status=204, headers=_zdnet_cors_headers(request))
@@ -7504,7 +7535,7 @@ def start_http_server_thread():
     async def handle_zdnet_auth(request):
         if request.method == 'OPTIONS':
             return await handle_zdnet_options(request)
-        if not zdnet_repo or not _zdnet_validate_init_data:
+        if not ZDNET_REPO or not _zdnet_validate_init_data:
             return _zdnet_unavailable(request)
         try:
             body = await _zdnet_body(request)
@@ -7519,9 +7550,9 @@ def start_http_server_thread():
                 if not ok or telegram_id is None:
                     return _zdnet_json({'error': reason}, request, status=401, methods='POST, OPTIONS')
                 nickname = user_obj.get('username') or user_obj.get('first_name') or f'rookie_{telegram_id}'
-            state = zdnet_repo.get_or_create_player(telegram_id, nickname)
-            token = zdnet_repo.create_session(int(state.player['id']))
-            boot = zdnet_repo.bootstrap(state)
+            state = ZDNET_REPO.get_or_create_player(telegram_id, nickname)
+            token = ZDNET_REPO.create_session(int(state.player['id']))
+            boot = ZDNET_REPO.bootstrap(state)
             return _zdnet_json(
                 {
                     'sessionToken': token,
@@ -7538,15 +7569,15 @@ def start_http_server_thread():
             return _zdnet_json({'error': 'internal_error'}, request, status=500)
 
     async def handle_zdnet_bootstrap(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             return _zdnet_unavailable(request)
         try:
-            return _zdnet_json(zdnet_repo.bootstrap(_zdnet_require_state(request)), request)
+            return _zdnet_json(ZDNET_REPO.bootstrap(_zdnet_require_state(request)), request)
         except ZDNetGameError as e:
             return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
 
     async def handle_zdnet_content(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             return _zdnet_unavailable(request)
         try:
             from zdnet_backend.content import load_content as _zdnet_load_content
@@ -7556,22 +7587,22 @@ def start_http_server_thread():
             return _zdnet_json({'error': 'internal_error'}, request, status=500)
 
     async def handle_zdnet_start_attempt(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             return _zdnet_unavailable(request)
         try:
             state = _zdnet_require_state(request)
-            return _zdnet_json(zdnet_repo.start_attempt(state, request.match_info['threatId']), request, methods='POST, OPTIONS')
+            return _zdnet_json(ZDNET_REPO.start_attempt(state, request.match_info['threatId']), request, methods='POST, OPTIONS')
         except ZDNetGameError as e:
             return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
 
     async def handle_zdnet_finish_attempt(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             return _zdnet_unavailable(request)
         try:
             state = _zdnet_require_state(request)
             body = await _zdnet_body(request)
             return _zdnet_json(
-                zdnet_repo.finish_attempt(state, request.match_info['attemptId'], body),
+                ZDNET_REPO.finish_attempt(state, request.match_info['attemptId'], body),
                 request,
                 methods='POST, OPTIONS',
             )
@@ -7579,32 +7610,87 @@ def start_http_server_thread():
             return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
 
     async def handle_zdnet_open_cache(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             return _zdnet_unavailable(request)
         try:
             state = _zdnet_require_state(request)
             body = await _zdnet_body(request)
-            return _zdnet_json(zdnet_repo.open_cache(state, int(body.get('count') or 1)), request, methods='POST, OPTIONS')
+            return _zdnet_json(ZDNET_REPO.open_cache(state, int(body.get('count') or 1)), request, methods='POST, OPTIONS')
         except ZDNetGameError as e:
             return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
 
     async def handle_zdnet_invoice(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             return _zdnet_unavailable(request)
         try:
             state = _zdnet_require_state(request)
             body = await _zdnet_body(request)
-            return _zdnet_json(zdnet_repo.create_invoice(state, str(body.get('productId') or '')), request, methods='POST, OPTIONS')
+            invoice = ZDNET_REPO.create_invoice(state, str(body.get('productId') or ''))
+            if os.environ.get('ZDNET_PAYMENTS_DEMO', '0') == '1':
+                invoice['demoMode'] = True
+                invoice['message'] = 'Demo mode: invoice is created, but rewards are not granted without payment confirmation.'
+                return _zdnet_json(invoice, request, methods='POST, OPTIONS')
+            try:
+                invoice_url = await _create_zdnet_invoice_link(invoice['payment'])
+            except Exception as e:
+                try:
+                    ZDNET_REPO.fail_payment(invoice['payload'], f'invoice_link_failed:{e}')
+                except Exception:
+                    pass
+                logger.warning(f"ZDNET invoice link failed: {e}")
+                return _zdnet_json(
+                    {'error': 'invoice_link_failed', 'detail': str(e), 'payload': invoice.get('payload')},
+                    request,
+                    status=502,
+                    methods='POST, OPTIONS',
+                )
+            invoice['invoiceUrl'] = invoice_url
+            invoice['payment']['invoiceUrl'] = invoice_url
+            return _zdnet_json(invoice, request, methods='POST, OPTIONS')
         except ZDNetGameError as e:
             return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
 
     async def handle_zdnet_payment_history(request):
-        if not zdnet_repo:
+        if not ZDNET_REPO:
             return _zdnet_unavailable(request)
         try:
-            return _zdnet_json(zdnet_repo.payment_history(_zdnet_require_state(request)), request)
+            return _zdnet_json(ZDNET_REPO.payment_history(_zdnet_require_state(request)), request)
         except ZDNetGameError as e:
             return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
+
+    async def handle_zdnet_payment_products(request):
+        if not ZDNET_REPO:
+            return _zdnet_unavailable(request)
+        try:
+            from zdnet_backend.payments import public_catalog
+            return _zdnet_json({'products': public_catalog()}, request)
+        except Exception as e:
+            logger.exception(f"handle_zdnet_payment_products error: {e}")
+            return _zdnet_json({'error': 'internal_error'}, request, status=500)
+
+    async def handle_zdnet_payment_webhook(request):
+        if not ZDNET_REPO:
+            return _zdnet_unavailable(request)
+        try:
+            expected = os.environ.get('ZDNET_PAYMENT_WEBHOOK_SECRET', '')
+            if expected and request.headers.get('X-ZDNET-Webhook-Secret') != expected:
+                return _zdnet_json({'error': 'bad_webhook_secret'}, request, status=401, methods='POST, OPTIONS')
+            body = await _zdnet_body(request)
+            return _zdnet_json(
+                ZDNET_REPO.grant_payment(
+                    str(body.get('payload') or ''),
+                    telegram_payment_charge_id=body.get('telegramPaymentChargeId'),
+                    provider_payment_charge_id=body.get('providerPaymentChargeId'),
+                    raw=body,
+                ),
+                request,
+                methods='POST, OPTIONS',
+            )
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
+        except Exception as e:
+            logger.exception(f"handle_zdnet_payment_webhook error: {e}")
+            return _zdnet_json({'error': 'internal_error'}, request, status=500, methods='POST, OPTIONS')
 
     async def serve_zdnet_index(request):
         fpath = ZDNET_FRONTEND_DIR / 'index.html'
@@ -7678,6 +7764,8 @@ def start_http_server_thread():
         app_http.router.add_post('/zdnet_api/cache/open', handle_zdnet_open_cache)
         app_http.router.add_post('/zdnet_api/payments/invoice', handle_zdnet_invoice)
         app_http.router.add_get('/zdnet_api/payments/history', handle_zdnet_payment_history)
+        app_http.router.add_get('/zdnet_api/payments/products', handle_zdnet_payment_products)
+        app_http.router.add_post('/zdnet_api/payments/webhook/telegram', handle_zdnet_payment_webhook)
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)
         app_http.router.add_get('/index.html', serve_game_index)
@@ -7710,6 +7798,92 @@ def start_http_server_thread():
     t = threading.Thread(target=_thread, daemon=True)
     t.start()
     logger.info(f"HTTP server thread started (port {PORT})")
+
+
+async def handle_zdnet_precheckout(update: Update, context: CallbackContext):
+    """Telegram payment pre-checkout for ZERO_DAY products."""
+    query = update.pre_checkout_query
+    if not query:
+        return
+    payload = query.invoice_payload or ''
+    if not payload.startswith('zdnet:'):
+        await query.answer(ok=False, error_message='Неизвестный платеж.')
+        return
+    if not ZDNET_REPO:
+        logger.error("ZDNET precheckout failed: repository is not mounted")
+        await query.answer(ok=False, error_message='Платежи временно недоступны. Попробуйте позже.')
+        return
+    try:
+        ok, reason = ZDNET_REPO.validate_payment(payload, query.total_amount, query.currency)
+        if not ok:
+            logger.warning(f"ZDNET precheckout rejected payload={payload}: {reason}")
+            await query.answer(ok=False, error_message='Счет устарел. Откройте магазин и создайте новый счет.')
+            return
+        await query.answer(ok=True)
+    except Exception as e:
+        logger.exception(f"ZDNET precheckout error: {e}")
+        await query.answer(ok=False, error_message='Не удалось проверить счет. Попробуйте позже.')
+
+
+async def handle_zdnet_successful_payment(update: Update, context: CallbackContext):
+    """Grants ZERO_DAY products after Telegram confirms successful payment."""
+    message = update.message
+    payment = getattr(message, 'successful_payment', None) if message else None
+    if not payment:
+        return
+    payload = payment.invoice_payload or ''
+    if not payload.startswith('zdnet:'):
+        return
+    if not ZDNET_REPO:
+        logger.critical(f"ZDNET paid but repository unavailable. payload={payload}")
+        await message.reply_text(
+            "⚠️ Платёж получен, но выдача временно недоступна. "
+            "Напишите администратору, мы восстановим покупку по чеку."
+        )
+        return
+    try:
+        raw = payment.to_dict() if hasattr(payment, 'to_dict') else {}
+        ok, reason = ZDNET_REPO.validate_payment(payload, payment.total_amount, payment.currency)
+        if not ok and not reason.startswith('bad_payment_status:paid'):
+            logger.error(f"ZDNET successful payment validation failed payload={payload}: {reason}")
+            await message.reply_text(
+                "⚠️ Платёж получен, но данные счета не совпали. "
+                "Покупка отправлена на ручную проверку."
+            )
+            return
+        result = ZDNET_REPO.grant_payment(
+            payload,
+            telegram_payment_charge_id=getattr(payment, 'telegram_payment_charge_id', None),
+            provider_payment_charge_id=getattr(payment, 'provider_payment_charge_id', None),
+            raw=raw,
+        )
+        grant = result.get('payment', {}).get('appliedGrant') or result.get('payment', {}).get('grant') or {}
+        if result.get('idempotent'):
+            await message.reply_text("✅ Эта покупка уже была выдана ранее. Повторно награда не начислялась.")
+            return
+        grant_bits = []
+        if grant.get('zeroKeys'):
+            grant_bits.append(f"+{grant['zeroKeys']} Ключей Зеро")
+        if grant.get('cleanFragments'):
+            grant_bits.append(f"+{grant['cleanFragments']} Чистых фрагментов")
+        if grant.get('extraSpins'):
+            grant_bits.append(f"+{grant['extraSpins']} спин")
+        if grant.get('socEliteDays'):
+            grant_bits.append(f"SOC ELITE на {grant['socEliteDays']} дней")
+        grant_text = ', '.join(grant_bits) if grant_bits else 'покупка активирована'
+        await message.reply_text(
+            "✅ <b>Покупка ZERO_DAY подтверждена</b>\n\n"
+            f"Выдано: <b>{grant_text}</b>\n"
+            "Fair score и рейтинги не изменены.",
+            parse_mode='HTML',
+        )
+    except Exception as e:
+        logger.exception(f"ZDNET successful payment grant error: {e}")
+        await message.reply_text(
+            "⚠️ Платёж получен, но выдача не завершилась. "
+            "Покупка сохранена для ручной проверки."
+        )
+
 
 def main():
     # Ждём БД при старте (Railway PostgreSQL стартует чуть позже бота)
@@ -7767,6 +7941,8 @@ def main():
     app.add_handler(CommandHandler("version",     cmd_version))
     app.add_handler(CommandHandler("teacher",     cmd_teacher))
     app.add_handler(CommandHandler("claim_admin", cmd_claim_admin))
+    app.add_handler(PreCheckoutQueryHandler(handle_zdnet_precheckout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, handle_zdnet_successful_payment))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
