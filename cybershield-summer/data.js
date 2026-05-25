@@ -4,6 +4,7 @@
 
 const ZD = {
   state: {
+    stateVersion: 4,
     stars: 47,
     reputation: 12,
     trust: 78,
@@ -16,13 +17,16 @@ const ZD = {
     inventory: ['school_pass'],
     visitedLocations: new Set(),
     completedMissionIds: new Set(),
+    claimedQuestRewards: new Set(),
+    missionLog: {},
     chatChoices: {},
     purchasedThemes: ['obsidian_glass'],
     activeTheme: 'obsidian_glass',
     purchaseHistory: [],
     adminMode: false,
     finaleShown: false,
-    finaleInboxRead: false
+    finaleInboxRead: false,
+    campaignFinished: false
   },
 
   episodes: Array.from({ length: 24 }, (_, index) => {
@@ -63,6 +67,33 @@ const ZD = {
     { id: 'm23', month: 'Месяц 6', week: 'Неделя 3', title: 'Контратака 404', reward: 16, type: 'finale' },
     { id: 'm24', month: 'Месяц 6', week: 'Неделя 4', title: 'ZERO_DAY: Протокол закрыт', reward: 20, type: 'finale' }
   ],
+
+  questRules: {
+    m01: { requires: [], screen: 'messenger', objective: 'Открой чат с Дашей и прими первое решение.' },
+    m02: { requires: ['m01'], screen: 'gallery', objective: 'Проанализируй все опасные улики в Галерее.' },
+    m03: { requires: ['m01'], screen: 'browser', objective: 'Найди четыре признака фишинга на странице банка.' },
+    m04: { requires: ['m01'], screen: 'terminal', objective: 'Подбери правильный сдвиг Caesar и расшифруй сообщение.' },
+    m05: { requires: ['m02'], screen: 'map', objective: 'Купи дешифратор и исследуй Библиотеку.' },
+    m06: { requires: ['m03'], screen: 'map', objective: 'Купи USB-Руббердак и исследуй Серверную.' },
+    m07: { requires: ['m04'], screen: 'gallery', objective: 'Проанализируй минимум четыре файла с уликами.' },
+    m08: { requires: ['m05'], screen: 'shop', objective: 'Подготовь инвентарь или накопи 70 Stars.' },
+    m09: { requires: ['m06'], screen: 'home', objective: 'Подними доверие команды до 82.' },
+    m10: { requires: ['m07'], screen: 'home', objective: 'Подними репутацию аналитика до 14.' },
+    m11: { requires: ['m08'], screen: 'map', objective: 'Исследуй Школу и Кафе на карте.' },
+    m12: { requires: ['m09'], screen: 'terminal', objective: 'Сделай серию из восьми попыток в Терминале.' },
+    m13: { requires: ['m10'], screen: 'shop', objective: 'Проведи минимум одну успешную покупку.' },
+    m14: { requires: ['m11'], screen: 'shop', objective: 'Получи VIP-доступ или накопи 120 Stars.' },
+    m15: { requires: ['m12'], screen: 'shop', objective: 'Накопи оперативный резерв 95 Stars.' },
+    m16: { requires: ['m13'], screen: 'home', objective: 'Доведи доверие команды до 86.' },
+    m17: { requires: ['m14'], screen: 'home', objective: 'Доведи репутацию до 20.' },
+    m18: { requires: ['m15'], screen: 'map', objective: 'Исследуй минимум четыре локации.' },
+    m19: { requires: ['m16', 'm17'], screen: 'shop', objective: 'Накопи финальный резерв 140 Stars.' },
+    m20: { requires: ['m18', 'm19'], screen: 'home', objective: 'Закрой весь основной цикл расследования.' },
+    m21: { requires: ['m20'], screen: 'map', objective: 'Исследуй Сквер и активируй финал.' },
+    m22: { requires: ['m21'], screen: 'messenger', objective: 'Прочитай финальное сообщение от Неизвестного.' },
+    m23: { requires: ['m22'], screen: 'home', objective: 'Доведи доверие до 90 и репутацию до 24.' },
+    m24: { requires: ['m23'], screen: 'home', objective: 'Закрой все миссии кампании.' }
+  },
 
   contacts: [
     {

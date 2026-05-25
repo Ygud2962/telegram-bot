@@ -5,7 +5,9 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'zero_day_school_protocol_state_v3';
+  const STORAGE_VERSION = 4;
+  const STORAGE_KEY = 'zero_day_school_protocol_state_v4';
+  const LEGACY_STORAGE_KEYS = ['zero_day_school_protocol_state_v3'];
 
   const frame = document.getElementById('appFrame');
   const bottomNav = document.getElementById('bottomNav');
@@ -28,7 +30,7 @@
   const LOCATION_REQUIREMENTS = {
     library: ['decryptor'],
     server: ['school_pass', 'rubber_duck'],
-    park: ['core_missions']
+    park: ['mission:m20']
   };
 
   const LOCATION_REWARDS = {
@@ -40,6 +42,8 @@
   };
 
   const CORE_MISSION_IDS = ['m01', 'm02', 'm03', 'm04', 'm05', 'm06'];
+  const FINAL_MISSION_ID = 'm24';
+  const ADVANCED_MISSION_IDS = ['m07', 'm08', 'm09', 'm10', 'm11', 'm12', 'm13', 'm14', 'm15', 'm16', 'm17', 'm18', 'm19'];
 
   const CHOICE_OUT_TEXT = {
     A: 'Предупреждаю класс: файл заражён, не открывайте.',
@@ -81,6 +85,7 @@
     const state = raw || {};
 
     const normalized = {
+      stateVersion: Math.max(1, Math.floor(asNumber(state.stateVersion, STORAGE_VERSION))),
       stars: Math.max(0, Math.floor(asNumber(state.stars, 47))),
       reputation: Math.max(0, Math.floor(asNumber(state.reputation, 12))),
       trust: Math.min(100, Math.max(0, Math.floor(asNumber(state.trust, 78)))),
@@ -93,14 +98,19 @@
       inventory: uniqueArray(state.inventory || []),
       visitedLocations: asSet(state.visitedLocations),
       completedMissionIds: asSet(state.completedMissionIds),
+      claimedQuestRewards: asSet(state.claimedQuestRewards),
+      missionLog: state.missionLog && typeof state.missionLog === 'object' ? { ...state.missionLog } : {},
       chatChoices: state.chatChoices && typeof state.chatChoices === 'object' ? { ...state.chatChoices } : {},
       purchasedThemes: uniqueArray(state.purchasedThemes || ['obsidian_glass']),
       activeTheme: typeof state.activeTheme === 'string' ? state.activeTheme : 'obsidian_glass',
       purchaseHistory: Array.isArray(state.purchaseHistory) ? state.purchaseHistory.slice(0, 50) : [],
       adminMode: !!state.adminMode,
       finaleShown: !!state.finaleShown,
-      finaleInboxRead: !!state.finaleInboxRead
+      finaleInboxRead: !!state.finaleInboxRead,
+      campaignFinished: !!state.campaignFinished
     };
+
+    normalized.stateVersion = STORAGE_VERSION;
 
     if (normalized.purchasedThemes.length === 0) normalized.purchasedThemes = ['obsidian_glass'];
     if (!normalized.purchasedThemes.includes('obsidian_glass')) normalized.purchasedThemes.push('obsidian_glass');
@@ -117,6 +127,7 @@
 
   function stateToPlain(state) {
     return {
+      stateVersion: STORAGE_VERSION,
       stars: state.stars,
       reputation: state.reputation,
       trust: state.trust,
@@ -129,26 +140,34 @@
       inventory: [...state.inventory],
       visitedLocations: [...state.visitedLocations],
       completedMissionIds: [...state.completedMissionIds],
+      claimedQuestRewards: [...state.claimedQuestRewards],
+      missionLog: { ...state.missionLog },
       chatChoices: { ...state.chatChoices },
       purchasedThemes: [...state.purchasedThemes],
       activeTheme: state.activeTheme,
       purchaseHistory: [...state.purchaseHistory],
       adminMode: state.adminMode,
       finaleShown: state.finaleShown,
-      finaleInboxRead: state.finaleInboxRead
+      finaleInboxRead: state.finaleInboxRead,
+      campaignFinished: state.campaignFinished
     };
   }
 
   function loadState(defaultState) {
     const base = normalizeState(defaultState);
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      let raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        const legacyKey = LEGACY_STORAGE_KEYS.find((key) => localStorage.getItem(key));
+        if (legacyKey) raw = localStorage.getItem(legacyKey);
+      }
       if (!raw) return base;
       const parsed = JSON.parse(raw);
       const merged = {
         ...stateToPlain(base),
         ...parsed,
-        chatChoices: { ...stateToPlain(base).chatChoices, ...(parsed.chatChoices || {}) }
+        chatChoices: { ...stateToPlain(base).chatChoices, ...(parsed.chatChoices || {}) },
+        missionLog: { ...stateToPlain(base).missionLog, ...(parsed.missionLog || {}) }
       };
       return normalizeState(merged);
     } catch (err) {
@@ -305,13 +324,192 @@
     return flagged.length > 0 && flagged.every((item) => ZD.state.analyzed.has(item.id));
   }
 
+  function getQuestRule(missionId) {
+    return (ZD.questRules && ZD.questRules[missionId]) || { requires: [], screen: 'home', objective: 'Продолжай расследование.' };
+  }
+
+  function getMission(missionId) {
+    return ZD.missionCalendar.find((mission) => mission.id === missionId) || null;
+  }
+
   function coreMissionsDone() {
     return CORE_MISSION_IDS.every((id) => ZD.state.completedMissionIds.has(id));
   }
 
-  function markMissionDone(missionId) {
-    if (!missionId) return;
+  function paidPurchaseCount() {
+    return ZD.state.purchaseHistory.filter((entry) => entry && entry.status === 'paid').length;
+  }
+
+  function questUnlocked(missionId) {
+    if (ZD.state.adminMode) return true;
+    const rule = getQuestRule(missionId);
+    return (rule.requires || []).every((id) => ZD.state.completedMissionIds.has(id));
+  }
+
+  function questConditionMet(missionId) {
+    switch (missionId) {
+      case 'm01':
+        return !!ZD.state.chatChoices.dasha;
+      case 'm02':
+        return allFlaggedAnalyzed();
+      case 'm03':
+        return ZD.state.foundFlags.size >= 4;
+      case 'm04':
+        return ZD.state.termSolved;
+      case 'm05':
+        return ZD.state.visitedLocations.has('library');
+      case 'm06':
+        return ZD.state.visitedLocations.has('server');
+      case 'm07':
+        return ZD.state.analyzed.size >= 4;
+      case 'm08':
+        return ZD.state.stars >= 70 || ZD.state.inventory.includes('wifi_antenna');
+      case 'm09':
+        return ZD.state.trust >= 82;
+      case 'm10':
+        return ZD.state.reputation >= 14;
+      case 'm11':
+        return ZD.state.visitedLocations.has('school') && ZD.state.visitedLocations.has('cafe');
+      case 'm12':
+        return ZD.state.termAttempts >= 8;
+      case 'm13':
+        return paidPurchaseCount() >= 1;
+      case 'm14':
+        return ZD.state.inventory.includes('darknet_acc') || ZD.state.stars >= 120;
+      case 'm15':
+        return ZD.state.stars >= 95;
+      case 'm16':
+        return ZD.state.trust >= 86;
+      case 'm17':
+        return ZD.state.reputation >= 20;
+      case 'm18':
+        return ZD.state.visitedLocations.size >= 4;
+      case 'm19':
+        return ZD.state.stars >= 140;
+      case 'm20':
+        return ADVANCED_MISSION_IDS.every((id) => ZD.state.completedMissionIds.has(id));
+      case 'm21':
+        return ZD.state.visitedLocations.has('park');
+      case 'm22':
+        return !!ZD.state.finaleInboxRead;
+      case 'm23':
+        return ZD.state.trust >= 90 && ZD.state.reputation >= 24;
+      case 'm24':
+        return ZD.missionCalendar
+          .filter((mission) => mission.id !== FINAL_MISSION_ID)
+          .every((mission) => ZD.state.completedMissionIds.has(mission.id));
+      default:
+        return false;
+    }
+  }
+
+  function questStatus(missionId) {
+    if (ZD.state.completedMissionIds.has(missionId)) return 'done';
+    return questUnlocked(missionId) ? 'active' : 'locked';
+  }
+
+  function questRewardAmount(missionId) {
+    if (missionId === 'm01') {
+      const key = ZD.state.chatChoices.dasha;
+      return Math.max(0, Number((ZD.choiceReplies[key] || {}).stars) || 0);
+    }
+    const mission = getMission(missionId);
+    return Math.max(0, Number((mission || {}).reward) || 0);
+  }
+
+  function completeQuest(missionId, options) {
+    if (!missionId || ZD.state.completedMissionIds.has(missionId)) return false;
+
+    const opts = options || {};
+    const mission = getMission(missionId);
     ZD.state.completedMissionIds.add(missionId);
+    ZD.state.missionLog[missionId] = {
+      title: mission ? mission.title : missionId,
+      source: opts.source || 'progress',
+      completedAt: new Date().toISOString()
+    };
+
+    if (opts.claimReward !== false && !ZD.state.claimedQuestRewards.has(missionId)) {
+      const reward = questRewardAmount(missionId);
+      ZD.state.claimedQuestRewards.add(missionId);
+      if (reward > 0) {
+        ZD.state.stars += reward;
+        if (!opts.silent) toast(`Миссия ${missionId.toUpperCase()} закрыта: +${reward} ⭐`, 'success');
+      }
+    }
+
+    return true;
+  }
+
+  function markMissionDone(missionId, source) {
+    return completeQuest(missionId, { source: source || 'manual', silent: true });
+  }
+
+  function recomputeProgress(source) {
+    const silent = source === 'silent';
+    let changed = false;
+    let pass = 0;
+
+    if (ZD.state.adminMode) {
+      ZD.missionCalendar.forEach((mission) => {
+        changed = completeQuest(mission.id, { source: 'admin', claimReward: false, silent: true }) || changed;
+      });
+      return changed;
+    }
+
+    let keepScanning = true;
+    while (keepScanning && pass < 8) {
+      pass += 1;
+      keepScanning = false;
+
+      ZD.missionCalendar.forEach((mission) => {
+        if (ZD.state.completedMissionIds.has(mission.id)) return;
+        if (!questUnlocked(mission.id)) return;
+        if (!questConditionMet(mission.id)) return;
+
+        const completed = completeQuest(mission.id, {
+          source: source || 'progress',
+          claimReward: !silent,
+          silent
+        });
+        changed = completed || changed;
+        keepScanning = completed || keepScanning;
+      });
+    }
+
+    return changed;
+  }
+
+  function getCurrentObjectives(limit) {
+    const max = Number(limit) > 0 ? Number(limit) : 3;
+    return ZD.missionCalendar
+      .filter((mission) => questStatus(mission.id) === 'active')
+      .slice(0, max)
+      .map((mission) => ({
+        ...mission,
+        objective: getQuestRule(mission.id).objective,
+        screen: getQuestRule(mission.id).screen
+      }));
+  }
+
+  function checkStoryMilestones(source) {
+    const silent = source === 'silent';
+    if (ZD.state.completedMissionIds.has('m20') && !ZD.state.finaleShown) {
+      ZD.state.finaleShown = true;
+      ZD.state.finaleInboxRead = false;
+      const unknown = ZD.contacts.find((c) => c.id === 'unknown');
+      if (unknown) {
+        unknown.unread = Math.max(1, Number(unknown.unread) || 0);
+        unknown.preview = 'Финальная ветка открыта. Проверь Сквер.';
+        unknown.time = 'сейчас';
+      }
+      if (!silent) toast('Основной цикл закрыт. Сквер открыт для финала.', 'success');
+    }
+
+    if (ZD.state.completedMissionIds.has(FINAL_MISSION_ID) && !ZD.state.campaignFinished) {
+      ZD.state.campaignFinished = true;
+      if (!silent) toast('Кампания завершена. Протокол закрыт.', 'success');
+    }
   }
 
   function updateEpisodeStates() {
@@ -328,31 +526,11 @@
   }
 
   function updateProgress(source) {
+    const src = source || 'progress';
     syncContactsFromState();
-
-    if (ZD.state.chatChoices.dasha) markMissionDone('m01');
-    if (allFlaggedAnalyzed()) markMissionDone('m02');
-    if (ZD.state.foundFlags.size >= 4) markMissionDone('m03');
-    if (ZD.state.termSolved) markMissionDone('m04');
-    if (ZD.state.visitedLocations.has('library')) markMissionDone('m05');
-    if (ZD.state.visitedLocations.has('server')) markMissionDone('m06');
-    if (ZD.state.visitedLocations.has('park')) markMissionDone('m21');
-
-    if (ZD.state.adminMode) {
-      ZD.missionCalendar.forEach((m) => ZD.state.completedMissionIds.add(m.id));
-    }
-
-    if (coreMissionsDone() && !ZD.state.finaleShown) {
-      ZD.state.finaleShown = true;
-      ZD.state.finaleInboxRead = false;
-      const unknown = ZD.contacts.find((c) => c.id === 'unknown');
-      if (unknown) {
-        unknown.unread = Math.max(1, unknown.unread);
-        unknown.preview = 'Фаза 1 закрыта. Сквер разблокирован.';
-        unknown.time = 'сейчас';
-      }
-      toast('Ключевые миссии закрыты. Доступ в Сквер открыт.', 'success');
-    }
+    recomputeProgress(src);
+    checkStoryMilestones(src);
+    syncContactsFromState();
 
     updateEpisodeStates();
     persistState();
@@ -360,7 +538,7 @@
     buildNav();
     setActiveNav(rootNav(currentScreen));
 
-    if (source !== 'silent' && currentScreen === 'home') {
+    if (src !== 'silent' && currentScreen === 'home') {
       renderScreen('home');
     }
   }
@@ -679,14 +857,31 @@
     const s = screenDiv('homeScreen');
     const coreDone = CORE_MISSION_IDS.filter((id) => ZD.state.completedMissionIds.has(id)).length;
     const unread = getUnreadCount();
+    const objectives = getCurrentObjectives(3);
 
-    const missionRows = ZD.missionCalendar.slice(0, 12).map((mission) => {
-      const done = ZD.state.completedMissionIds.has(mission.id);
+    const objectiveRows = objectives.length ? objectives.map((mission) => `
+      <button class="objective-row" data-objective-screen="${mission.screen}" type="button">
+        <span class="objective-id">${mission.id.toUpperCase()}</span>
+        <span class="objective-copy">
+          <span class="objective-title">${mission.title}</span>
+          <span class="objective-text">${mission.objective}</span>
+        </span>
+        <span class="objective-arrow">›</span>
+      </button>
+    `).join('') : '<div class="objective-empty">Активные цели закрыты. Проверь финальную ветку или журнал миссий.</div>';
+
+    const missionRows = ZD.missionCalendar.map((mission) => {
+      const status = questStatus(mission.id);
+      const statusText = status === 'done' ? 'Готово' : (status === 'active' ? 'Активна' : 'Заблокирована');
       return `
-        <div class="mission-row ${done ? 'done' : ''}">
-          <div class="mission-meta">${mission.month} · ${mission.week}</div>
+        <div class="mission-row ${status}">
+          <div class="mission-meta">${mission.id.toUpperCase()} · ${mission.month} · ${mission.week}</div>
           <div class="mission-title">${mission.title}</div>
-          <div class="mission-reward">⭐ ${mission.reward}</div>
+          <div class="mission-extra">
+            <span class="mission-state mission-${status}">${statusText}</span>
+            <span class="mission-reward">⭐ ${mission.reward}</span>
+          </div>
+          <div class="mission-objective">${getQuestRule(mission.id).objective}</div>
         </div>
       `;
     }).join('');
@@ -716,6 +911,9 @@
         </section>
 
         <div class="home-note">${unread > 0 ? `Непрочитанные сообщения: ${unread}` : 'Все уведомления обработаны. Продолжай кампанию.'}</div>
+
+        <div class="home-section-title">Текущие цели</div>
+        <div class="objective-list">${objectiveRows}</div>
 
         <div class="home-section-title">Приложения</div>
         <div class="apps-grid">
@@ -747,6 +945,12 @@
           return;
         }
         navigateTo(goto, { historyMode: 'push', direction: 'forward' });
+      });
+    });
+
+    s.querySelectorAll('[data-objective-screen]').forEach((el) => {
+      el.addEventListener('click', () => {
+        navigateTo(el.dataset.objectiveScreen, { historyMode: 'push', direction: 'forward' });
       });
     });
   }
@@ -803,9 +1007,7 @@
 
     if (contact.id === 'unknown' && ZD.state.finaleShown && !ZD.state.finaleInboxRead) {
       ZD.state.finaleInboxRead = true;
-      persistState();
-      syncContactsFromState();
-      buildNav();
+      updateProgress('chat');
     }
 
     const s = screenDiv('chatScreen');
@@ -817,6 +1019,11 @@
       if (m.from === 'in') return `<div class="bubble bubble-in">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
       return `<div class="bubble bubble-out">${m.text}<div class="bub-time">${m.time || ''}</div></div>`;
     }).join('');
+
+    if (contactId === 'unknown' && ZD.state.finaleShown) {
+      messageHtml += '<div class="bubble bubble-system">Финальная ветка · протокол 404</div>';
+      messageHtml += '<div class="bubble bubble-in">Основной цикл закрыт. Сквер открыт. Финальная встреча покажет, кто запустил ZERO_DAY.</div>';
+    }
 
     if (choiceKey && ZD.choiceReplies[choiceKey]) {
       messageHtml += `<div class="bubble bubble-out">${CHOICE_OUT_TEXT[choiceKey]}<div class="bub-time">19:49</div></div>`;
@@ -884,9 +1091,6 @@
       contact.time = '19:50';
     }
 
-    persistState();
-    addStars(reply.stars || 0, 'за решение в чате');
-    markMissionDone('m01');
     updateProgress('chat');
     renderScreen('chat');
   }
@@ -997,9 +1201,6 @@
       btn.textContent = '✓ Проанализировано';
       btn.classList.add('done');
 
-      if (item.flagged) addStars(3, 'за форензику');
-      markMissionDone('m02');
-      persistState();
       updateProgress('gallery');
       renderScreen('gallery');
     }, 1500);
@@ -1057,9 +1258,6 @@
         if (ZD.state.foundFlags.size >= 4) {
           const success = s.querySelector('#flagsSuccess');
           if (success) success.style.display = 'block';
-          if (!ZD.state.completedMissionIds.has('m03')) addStars(5, 'за антифишинг');
-          markMissionDone('m03');
-          persistState();
           updateProgress('browser');
         } else {
           persistState();
@@ -1088,6 +1286,7 @@
     const req = LOCATION_REQUIREMENTS[locationId] || [];
     return req.every((token) => {
       if (token === 'core_missions') return coreMissionsDone();
+      if (token.startsWith('mission:')) return ZD.state.completedMissionIds.has(token.slice('mission:'.length));
       return ZD.state.inventory.includes(token);
     });
   }
@@ -1098,7 +1297,7 @@
     if (!available) {
       if (location.id === 'library') reason = 'Нужен Ключ дешифратора';
       else if (location.id === 'server') reason = 'Нужен Пропуск + USB-Руббердак';
-      else if (location.id === 'park') reason = 'Закрой ключевые миссии';
+      else if (location.id === 'park') reason = 'Закрой этап m20 перед финалом';
       else reason = 'Локация заблокирована';
     }
     return { available, reason };
@@ -1109,14 +1308,10 @@
 
     const pins = ZD.locations.map((loc) => {
       const access = locationAccess(loc);
-      const visited = ZD.state.visitedLocations.has(loc.id);
-      const status = visited ? 'Исследовано' : (access.available ? 'Доступно' : access.reason);
-      const statusColor = visited ? '#8ef1b4' : (access.available ? '#64d2ff' : '#ff9f0a');
       return `
-        <button class="loc-pin ${access.available ? 'is-open' : 'is-locked'}" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}" type="button">
+        <button class="loc-pin ${access.available ? 'is-open' : 'is-locked'}" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}" type="button" aria-label="${loc.label}">
           <div class="pin-circle ${loc.pulse && access.available ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
-          <div class="pin-lbl">${loc.emoji} ${loc.label}</div>
-          <div class="pin-status" style="color:${statusColor}">${status}</div>
+          <div class="pin-emoji">${loc.emoji}</div>
         </button>
       `;
     }).join('');
@@ -1198,10 +1393,9 @@
       ZD.state.visitedLocations.add(locId);
       const reward = LOCATION_REWARDS[locId];
       if (reward) {
-        if (reward.stars) addStars(reward.stars, 'за локацию');
+        if (!reward.missionId && reward.stars) addStars(reward.stars, 'за локацию');
         bumpTrust(reward.trust || 0);
         bumpReputation(reward.reputation || 0);
-        markMissionDone(reward.missionId);
       }
       persistState();
       refreshStatusWidgets();
@@ -1281,9 +1475,6 @@
       if (shift === ZD.cipher.answerShift && !ZD.state.termSolved) {
         ZD.state.termSolved = true;
         solved.style.display = 'block';
-        markMissionDone('m04');
-        addStars(8, 'за дешифровку');
-        persistState();
         updateProgress('terminal');
       }
     });
@@ -1440,8 +1631,14 @@
     }).join('');
 
     const campaignPreview = ZD.missionCalendar.slice(0, 24).map((mission) => {
-      const done = ZD.state.completedMissionIds.has(mission.id);
-      return `<div class="settings-mission ${done ? 'done' : ''}">${mission.id.toUpperCase()} · ${mission.title}</div>`;
+      const status = questStatus(mission.id);
+      const statusText = status === 'done' ? 'ГОТОВО' : (status === 'active' ? 'АКТИВНА' : 'LOCKED');
+      return `
+        <div class="settings-mission ${status}">
+          <span>${mission.id.toUpperCase()} · ${mission.title}</span>
+          <strong>${statusText}</strong>
+        </div>
+      `;
     }).join('');
 
     s.innerHTML = `
@@ -1527,19 +1724,23 @@
   }
 
   function unlockAllMissionsAndQuests() {
-    ZD.missionCalendar.forEach((mission) => ZD.state.completedMissionIds.add(mission.id));
+    ZD.missionCalendar.forEach((mission) => {
+      completeQuest(mission.id, { source: 'admin', claimReward: false, silent: true });
+    });
     ZD.locations.forEach((loc) => ZD.state.visitedLocations.add(loc.id));
     ZD.gallery.forEach((item) => {
-      if (item.flagged) ZD.state.analyzed.add(item.id);
+      ZD.state.analyzed.add(item.id);
     });
     ZD.state.foundFlags = new Set(['1', '2', '3', '4']);
     ZD.state.termSolved = true;
+    ZD.state.termAttempts = Math.max(ZD.state.termAttempts, 8);
     ZD.state.chatChoices.dasha = ZD.state.chatChoices.dasha || 'A';
     ['decryptor', 'rubber_duck', 'wifi_antenna', 'darknet_acc', 'energy', 'antivirus', 'hint'].forEach((item) => {
       if (!ZD.state.inventory.includes(item)) ZD.state.inventory.push(item);
     });
     ZD.state.finaleShown = true;
     ZD.state.finaleInboxRead = true;
+    ZD.state.campaignFinished = true;
     ZD.state.adminMode = true;
     persistState();
     updateProgress('settings');
