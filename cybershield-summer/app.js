@@ -63,6 +63,170 @@
   let currentChat = null;
   let transitionDirection = 'forward';
   let navHistory = ['home'];
+  const LOCATION_REQUIREMENTS = {
+    library: ['decryptor'],
+    server: ['school_pass', 'rubber_duck']
+  };
+  const LOCATION_REWARDS = {
+    school: 2,
+    cafe: 2,
+    library: 4,
+    server: 6,
+    park: 10
+  };
+
+  if (!(ZD.state.analyzed instanceof Set)) ZD.state.analyzed = new Set(ZD.state.analyzed || []);
+  if (!(ZD.state.foundFlags instanceof Set)) ZD.state.foundFlags = new Set(ZD.state.foundFlags || []);
+  if (!(ZD.state.inventory instanceof Array)) ZD.state.inventory = [];
+  if (!(ZD.state.visitedLocations instanceof Set)) ZD.state.visitedLocations = new Set(ZD.state.visitedLocations || []);
+  if (!(ZD.state.completedMissions instanceof Set)) ZD.state.completedMissions = new Set(ZD.state.completedMissions || []);
+  if (typeof ZD.state.finaleShown !== 'boolean') ZD.state.finaleShown = false;
+
+  function unreadCount() {
+    return ZD.contacts.reduce((sum, c) => sum + (Number(c.unread) || 0), 0);
+  }
+
+  function getGalleryMissionStatus() {
+    const flagged = ZD.gallery.filter((item) => item.flagged);
+    if (!flagged.length) return true;
+    return flagged.every((item) => ZD.state.analyzed.has(item.id));
+  }
+
+  function getMissionProgress() {
+    const chat = !!ZD.state.choiceMade;
+    const gallery = getGalleryMissionStatus();
+    const browser = ZD.state.foundFlags.size >= 4;
+    const terminal = !!ZD.state.termSolved;
+    const done = [chat, gallery, browser, terminal].filter(Boolean).length;
+    return {
+      chat,
+      gallery,
+      browser,
+      terminal,
+      done,
+      total: 4,
+      allCoreDone: done >= 4
+    };
+  }
+
+  function syncEpisodesWithProgress(progress) {
+    const ep3 = ZD.episodes.find((ep) => ep.id === 3);
+    const ep4 = ZD.episodes.find((ep) => ep.id === 4);
+    if (!progress) return;
+
+    if (ep3) {
+      ep3.done = progress.allCoreDone;
+      ep3.active = !progress.allCoreDone;
+    }
+
+    if (ep4) {
+      ep4.locked = !progress.allCoreDone;
+      ep4.active = progress.allCoreDone;
+    }
+
+    if (progress.allCoreDone) {
+      ZD.state.act = Math.max(ZD.state.act, 2);
+      ZD.state.episode = Math.max(ZD.state.episode, 4);
+    }
+  }
+
+  function refreshNav() {
+    buildNav();
+    setActiveNav(rootNav(currentScreen));
+  }
+
+  function updateStoryProgress(source) {
+    const progress = getMissionProgress();
+
+    if (progress.chat) ZD.state.completedMissions.add('chat');
+    if (progress.gallery) ZD.state.completedMissions.add('gallery');
+    if (progress.browser) ZD.state.completedMissions.add('browser');
+    if (progress.terminal) ZD.state.completedMissions.add('terminal');
+
+    syncEpisodesWithProgress(progress);
+
+    if (progress.allCoreDone && !ZD.state.finaleShown) {
+      ZD.state.finaleShown = true;
+
+      const unknownContact = ZD.contacts.find((c) => c.id === 'unknown');
+      if (unknownContact) {
+        unknownContact.preview = 'Фаза 1 закрыта. Сквер разблокирован.';
+      }
+
+      toast('Все ключевые миссии завершены. Локация «Сквер» разблокирована.');
+    }
+
+    if (source !== 'silent') refreshNav();
+  }
+
+  function hasRequiredItems(locId) {
+    const requirements = LOCATION_REQUIREMENTS[locId] || [];
+    return requirements.every((itemId) => ZD.state.inventory.includes(itemId));
+  }
+
+  function canAccessLocation(loc) {
+    if (!loc) return false;
+    if (loc.id === 'park') return getMissionProgress().allCoreDone;
+    if (loc.type === 'open') return true;
+    if (loc.type === 'locked') return false;
+    if (loc.type === 'req') return hasRequiredItems(loc.id);
+    return false;
+  }
+
+  function locationLockReason(loc) {
+    if (!loc) return 'Недоступно';
+    if (loc.id === 'library') return 'Нужен Дешифратор';
+    if (loc.id === 'server') return 'Нужен Пропуск + USB-Руббердак';
+    if (loc.id === 'park') return 'Откроется после всех миссий';
+    return 'Локация заблокирована';
+  }
+
+  function locationStatus(loc, available) {
+    if (!loc) return { text: 'Недоступно', color: '#8e8e93' };
+    if (available) {
+      if (loc.id === 'library') return { text: 'ДОСТУП ОТКРЫТ', color: '#30d158' };
+      if (loc.id === 'server') return { text: 'ГОТОВО К РЕЙДУ', color: '#30d158' };
+      if (loc.id === 'park') return { text: 'ФИНАЛ', color: '#64d2ff' };
+      return { text: 'ДОСТУПНО', color: '#30d158' };
+    }
+    return { text: locationLockReason(loc), color: '#ff9f0a' };
+  }
+
+  function getLocationView(loc) {
+    const available = canAccessLocation(loc);
+    const status = locationStatus(loc, available);
+    let buttonText = loc.action;
+
+    if (!available) {
+      buttonText = locationLockReason(loc);
+    } else if (loc.id === 'park') {
+      buttonText = '▶ ВХОД В ФИНАЛЬНУЮ МИССИЮ';
+    }
+
+    return {
+      available,
+      statusText: status.text,
+      statusColor: status.color,
+      buttonText
+    };
+  }
+
+  function getGalleryMarker(item) {
+    if (!item || !item.name) return 'FILE';
+    const ext = item.name.split('.').pop().toUpperCase();
+    if (ext === 'JPG' || ext === 'JPEG') return 'PHOTO';
+    if (ext === 'PNG') return 'SCREEN';
+    if (ext === 'EXE') return 'RISK';
+    return ext.slice(0, 6);
+  }
+
+  function getGalleryToneClass(item) {
+    const marker = getGalleryMarker(item);
+    if (marker === 'PHOTO') return 'tone-photo';
+    if (marker === 'SCREEN') return 'tone-screen';
+    if (marker === 'RISK') return 'tone-risk';
+    return 'tone-file';
+  }
 
   // ---- CLOCK ----
   function updateClock() {
@@ -196,10 +360,20 @@
         if (!ZD.state.inventory.includes(payload.itemId)) {
           ZD.state.inventory.push(payload.itemId);
         }
-        toast('Покупка подтверждена');
+        if (payload.itemId === 'decryptor') {
+          toast('Покупка подтверждена. Библиотека разблокирована.');
+        } else if (payload.itemId === 'rubber_duck') {
+          toast('Покупка подтверждена. Доступ к серверной обновлён.');
+        } else {
+          toast('Покупка подтверждена');
+        }
       }
 
-      if (currentScreen === 'shop') buildShop();
+      if (currentScreen === 'shop') {
+        transitionDirection = 'forward';
+        renderScreen('shop');
+      }
+      updateStoryProgress('payment');
       return;
     }
 
@@ -287,16 +461,17 @@
 
   // ---- BOTTOM NAV ----
   function buildNav() {
+    const unread = unreadCount();
     const items = [
       { id: 'home', label: 'Главная' },
-      { id: 'messenger', label: 'Чаты', badge: 2 },
+      { id: 'messenger', label: 'Чаты', badge: unread },
       { id: 'map', label: 'Карта' },
       { id: 'shop', label: 'Магазин' }
     ];
 
     bottomNav.innerHTML = items.map((it) => `
       <button class="nav-item ${it.id === 'home' ? 'active' : ''}" data-nav="${it.id}" type="button">
-        ${it.badge ? '<span class="nav-dot"></span>' : ''}
+        ${it.badge ? `<span class="nav-dot">${it.badge > 9 ? '9+' : it.badge}</span>` : ''}
         <span class="nav-ico">${navIcon(it.id)}</span>
         <span class="nav-lbl">${it.label}</span>
       </button>
@@ -423,6 +598,13 @@
   // ==================================================
   function buildHome() {
     const s = screenDiv('homeScreen');
+    const unread = unreadCount();
+    const progress = getMissionProgress();
+    const missionNote = unread > 0
+      ? 'Новое сообщение от Даши Ковы — открой мессенджер'
+      : (progress.allCoreDone
+        ? 'Фаза 1 завершена. Открыт финальный выезд в Сквер.'
+        : `Прогресс миссий: ${progress.done}/${progress.total}`);
 
     s.innerHTML = `
       <div class="scrollable home-scroll">
@@ -450,11 +632,11 @@
           </article>
         </section>
 
-        <div class="home-note">Новое сообщение от Даши Ковы — открой мессенджер</div>
+        <div class="home-note">${missionNote}</div>
 
         <div class="home-section-title">Приложения</div>
         <div class="apps-grid">
-          <button class="app-tile has-badge" data-goto="messenger" type="button">
+          <button class="app-tile ${unread > 0 ? 'has-badge' : ''}" data-goto="messenger" type="button">
             <span class="app-tile-ico">💬</span>
             <span class="app-tile-lbl">Мессенджер</span>
           </button>
@@ -561,6 +743,11 @@
       return;
     }
 
+    if (contact.unread) {
+      contact.unread = 0;
+      refreshNav();
+    }
+
     const msgs = ZD.messages[contactId] || [];
     const choices = ZD.choices[contactId];
 
@@ -657,11 +844,19 @@
         chatBg.insertBefore(inBub, typingBub);
         chatBg.scrollTop = 9999;
 
+        const contact = ZD.contacts.find((c) => c.id === contactId);
+        if (contact) {
+          contact.unread = 0;
+          contact.preview = reply.text.replace(/\s+/g, ' ').slice(0, 72);
+          contact.time = '19:50';
+        }
+
         if (choicesWrap) {
           choicesWrap.innerHTML = '<div class="choices-lbl" style="color:#9ef4be">✓ Выбор сделан · последствия в Эпизоде 5</div>';
         }
 
         addStars(reply.stars);
+        updateStoryProgress('chat');
       }
     }, 1200);
   }
@@ -674,7 +869,13 @@
 
     const thumbs = ZD.gallery.map((item) => {
       const cls = ZD.state.analyzed.has(item.id) ? 'analyzed' : (item.flagged ? 'flagged' : '');
-      return `<button class="gal-thumb ${cls}" data-item="${item.id}" type="button">${item.emoji}</button>`;
+      const tone = getGalleryToneClass(item);
+      return `
+        <button class="gal-thumb ${tone} ${cls}" data-item="${item.id}" type="button">
+          <span class="gal-thumb-type">${getGalleryMarker(item)}</span>
+          <span class="gal-thumb-name">${item.name}</span>
+        </button>
+      `;
     }).join('');
 
     s.innerHTML = `
@@ -696,7 +897,11 @@
         <div class="gal-detail-img" id="galDetailImg">
           <div class="gal-scan-overlay" id="galScanOverlay"></div>
           <div class="scan-anim" id="scanAnim"></div>
-          <span id="galDetailEmoji" style="font-size:80px"></span>
+          <div class="gal-detail-card">
+            <div class="gal-detail-type" id="galDetailType"></div>
+            <div class="gal-detail-name" id="galDetailFileName"></div>
+            <div class="gal-detail-hint">Preview secured</div>
+          </div>
         </div>
 
         <button class="analyze-btn" id="analyzeBtn" type="button">▶ Анализировать метаданные</button>
@@ -726,7 +931,10 @@
     overlay.classList.add('open');
     s.querySelector('#galDetailName').textContent = item.name;
     s.querySelector('#galDetailDesc').textContent = item.desc;
-    s.querySelector('#galDetailEmoji').textContent = item.emoji;
+    s.querySelector('#galDetailType').textContent = getGalleryMarker(item);
+    s.querySelector('#galDetailFileName').textContent = item.name;
+    const detailCard = s.querySelector('.gal-detail-card');
+    if (detailCard) detailCard.className = 'gal-detail-card ' + getGalleryToneClass(item);
 
     if (ZD.state.analyzed.has(itemId)) {
       renderExif(item, exifPanel);
@@ -781,6 +989,7 @@
       }
 
       if (item.flagged) addStars(3);
+      updateStoryProgress('gallery');
     }, 1600);
   }
 
@@ -873,6 +1082,7 @@
       const succ = s.querySelector('#flagsSuccess');
       if (succ) succ.style.display = 'block';
       addStars(5);
+      updateStoryProgress('browser');
     }
   }
 
@@ -882,13 +1092,17 @@
   function buildMap() {
     const s = screenDiv('mapScreen');
 
-    const pinsHtml = ZD.locations.map((loc) => `
-      <button class="loc-pin" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}" type="button">
-        <div class="pin-circle ${loc.pulse ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
-        <div class="pin-lbl">${loc.emoji} ${loc.label}</div>
-        <div class="pin-status" style="color:${loc.statusColor}">${loc.status}</div>
-      </button>
-    `).join('');
+    const pinsHtml = ZD.locations.map((loc) => {
+      const view = getLocationView(loc);
+      const pulse = loc.pulse && view.available;
+      return `
+        <button class="loc-pin ${view.available ? 'is-open' : 'is-locked'}" data-loc="${loc.id}" style="left:${loc.x};top:${loc.y}" type="button">
+          <div class="pin-circle ${pulse ? 'pin-pulse' : ''}" style="color:${loc.color};border-color:${loc.color}"></div>
+          <div class="pin-lbl">${loc.emoji} ${loc.label}</div>
+          <div class="pin-status" style="color:${view.statusColor}">${view.statusText}</div>
+        </button>
+      `;
+    }).join('');
 
     s.innerHTML = `
       ${header('home', 'Карта', 'АКТ I · Выбери точку')}
@@ -912,7 +1126,9 @@
     });
 
     s.querySelector('#mapGoBtn').addEventListener('click', () => {
-      s.querySelector('#mapPanel').classList.remove('open');
+      const locId = s.querySelector('#mapGoBtn').dataset.loc;
+      if (!locId) return;
+      handleLocationAction(locId, s);
     });
 
     s.querySelector('#mapCanvas').addEventListener('click', (event) => {
@@ -930,14 +1146,51 @@
     const nameEl = s.querySelector('#mapPanelName');
     const descEl = s.querySelector('#mapPanelDesc');
     const btn = s.querySelector('#mapGoBtn');
+    const view = getLocationView(loc);
+    const visited = ZD.state.visitedLocations.has(loc.id);
+    const descSuffix = visited ? ' Локация уже исследована.' : '';
 
     nameEl.textContent = loc.emoji + ' ' + loc.label;
-    descEl.textContent = loc.desc;
-    btn.textContent = loc.type === 'locked' ? 'Заблокировано' : loc.action;
-    btn.disabled = loc.type === 'locked' || loc.type === 'req';
-    btn.className = 'map-go-btn ' + (loc.type === 'locked' ? 'locked' : loc.type === 'req' ? 'req' : '');
+    descEl.textContent = loc.desc + descSuffix;
+    btn.dataset.loc = loc.id;
+    btn.textContent = view.buttonText;
+    btn.disabled = !view.available;
+    const lockClass = view.available ? '' : ((loc.type === 'locked' || loc.id === 'park') ? 'locked' : 'req');
+    btn.className = 'map-go-btn ' + lockClass;
 
     panel.classList.add('open');
+  }
+
+  function handleLocationAction(locId, s) {
+    const loc = ZD.locations.find((l) => l.id === locId);
+    if (!loc) return;
+
+    const view = getLocationView(loc);
+    if (!view.available) {
+      toast(locationLockReason(loc));
+      return;
+    }
+
+    const alreadyVisited = ZD.state.visitedLocations.has(locId);
+    if (!alreadyVisited) {
+      ZD.state.visitedLocations.add(locId);
+
+      const reward = LOCATION_REWARDS[locId] || 0;
+      if (reward > 0) addStars(reward);
+
+      if (locId === 'park') {
+        toast('Финальная миссия активирована. Продолжение следует…');
+      } else {
+        toast('Локация исследована: ' + loc.label);
+      }
+    } else {
+      toast('Локация уже исследована');
+    }
+
+    s.querySelector('#mapPanel').classList.remove('open');
+    transitionDirection = 'forward';
+    renderScreen('map');
+    updateStoryProgress('map');
   }
 
   // ==================================================
@@ -1032,6 +1285,7 @@
       solvedEl.style.display = 'block';
       if (solvedAtt) solvedAtt.textContent = ZD.state.termAttempts;
       addStars(8);
+      updateStoryProgress('terminal');
     } else if (shift !== ZD.cipher.answerShift && !ZD.state.termSolved) {
       outEl.style.color = '#8ff1af';
       solvedEl.style.display = 'none';
@@ -1140,8 +1394,19 @@
 
     updateStarsDisplay();
 
-    if (currentScreen === 'shop') buildShop();
-    toast('Куплено! ⭐ осталось: ' + ZD.state.stars);
+    if (itemId === 'decryptor') {
+      toast('Куплено! Библиотека теперь доступна.');
+    } else if (itemId === 'rubber_duck') {
+      toast('Куплено! Проверь доступ к серверной.');
+    } else {
+      toast('Куплено! ⭐ осталось: ' + ZD.state.stars);
+    }
+
+    updateStoryProgress('shop');
+    if (currentScreen === 'shop') {
+      transitionDirection = 'forward';
+      renderScreen('shop');
+    }
   }
 
   // ---- EDGE SWIPE BACK (bonus) ----
@@ -1202,6 +1467,7 @@
   setInterval(updateClock, 15000);
   setInterval(updateBatteryVisual, 60000);
 
+  updateStoryProgress('silent');
   buildNav();
   bindEdgeSwipeBack();
 
