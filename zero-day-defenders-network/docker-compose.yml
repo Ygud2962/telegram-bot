@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zdnet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zdnet
+      POSTGRES_USER: zdnet
+      POSTGRES_PASSWORD: zdnet_dev_password
+    ports:
+      - "55432:5432"
+    volumes:
+      - zdnet_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zdnet -d zdnet"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  zdnet_postgres_data:

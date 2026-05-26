@@ -125,3 +125,25 @@ cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
 $env:ZDNET_DATABASE_URL='postgresql://user:pass@localhost:5432/dbname'
 py -3 tools\check_postgres_persistence.py
 ```
+
+## Local PostgreSQL with Docker
+
+From the project root:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network
+docker compose up -d postgres
+```
+
+Dev DSN:
+
+```text
+postgresql://zdnet:zdnet_dev_password@127.0.0.1:55432/zdnet
+```
+
+Full backend gate:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network
+.\scripts\dev_check.ps1 -WithPostgres
+```

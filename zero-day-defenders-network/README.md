@@ -51,3 +51,26 @@ py -3 -m http.server 5173
 ```
 
 Открыть `http://localhost:5173`.
+
+## Dev quality gate
+
+Run the backend quality gate before changing gameplay, payments, or persistence:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network
+.\scripts\dev_check.ps1
+```
+
+With local PostgreSQL through Docker:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network
+docker compose up -d postgres
+.\scripts\dev_check.ps1 -WithPostgres
+```
+
+The PostgreSQL DSN used by the dev setup is:
+
+```text
+postgresql://zdnet:zdnet_dev_password@127.0.0.1:55432/zdnet
+```
