@@ -12,6 +12,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 from zdnet_backend.content import load_content
 from zdnet_backend.economy import calculate_rewards, validate_attempt_summary
 from zdnet_backend.gacha import GachaState, open_zero_cache
+from zdnet_backend.payments import public_catalog
 from zdnet_backend.postgres_repository import snapshot_to_state, state_to_snapshot
 from zdnet_backend.repository import InMemoryGameRepository
 
@@ -60,6 +61,18 @@ class GachaTests(unittest.TestCase):
     def test_bad_cache_count_rejected(self):
         with self.assertRaises(ValueError):
             open_zero_cache(load_content(), GachaState(), 0, random.Random(1))
+
+
+class PaymentCatalogTests(unittest.TestCase):
+    def test_public_catalog_uses_frontend_product_id_contract(self):
+        catalog = public_catalog()
+        self.assertGreater(len(catalog), 0)
+        product = catalog[0]
+        self.assertIn("productId", product)
+        self.assertNotIn("id", product)
+        self.assertIn("amount", product)
+        self.assertIn("currency", product)
+        self.assertEqual(product["fairScoreImpact"], 0)
 
 
 class RepositoryTests(unittest.TestCase):

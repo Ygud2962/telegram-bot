@@ -115,3 +115,13 @@ Bot-mounted API:
 cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
 py -3 tools\smoke_mvp.py --base-url https://your-domain.example/zdnet_api
 ```
+
+## PostgreSQL persistence gate
+
+Run this when `ZDNET_DATABASE_URL` points to a real PostgreSQL database. It creates a temporary player, writes gameplay, gacha and payment state, recreates the repository three times, and verifies that progress and paid grants survive restart without duplicate rewards.
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
+$env:ZDNET_DATABASE_URL='postgresql://user:pass@localhost:5432/dbname'
+py -3 tools\check_postgres_persistence.py
+```
