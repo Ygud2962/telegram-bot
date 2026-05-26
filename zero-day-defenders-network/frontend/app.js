@@ -37,6 +37,11 @@ const state = {
   cleanFragments: 0,
   shopProducts: [],
   payments: [],
+  content: {
+    cardsById: {},
+    toolsById: {},
+    mapById: {},
+  },
   map: [
     { id: "school", name: "Школа", x: 82, y: 72, state: "protected", level: 4 },
     { id: "wifi", name: "Wi-Fi узел", x: 238, y: 72, state: "under_attack", level: 2 },
@@ -119,6 +124,7 @@ async function connectBackend() {
     sessionToken = auth.sessionToken;
     backendOnline = true;
     state.sync = "api";
+    await loadContent();
     const boot = await apiRequest("/api/bootstrap");
     applyBootstrap(boot);
     await refreshPaymentHistory();
@@ -131,6 +137,54 @@ async function connectBackend() {
   }
 }
 
+async function loadContent() {
+  if (!backendOnline) return;
+  try {
+    const content = await apiRequest("/api/content");
+    applyContent(content);
+  } catch (error) {
+    console.warn("ZDNET content unavailable", error);
+  }
+}
+
+function applyContent(content) {
+  state.content.cardsById = Object.fromEntries((content.cards || []).map(card => [card.id, card]));
+  state.content.toolsById = Object.fromEntries((content.tools || []).map(tool => [tool.id, tool]));
+  state.content.mapById = Object.fromEntries((content.mapObjects || []).map(object => [object.id, object]));
+
+  state.map = state.map.map(node => {
+    const meta = state.content.mapById[node.id];
+    return meta ? { ...node, name: meta.name, x: meta.x, y: meta.y } : node;
+  });
+  state.cards = state.cards.map(card => enrichCard(card));
+  state.tools = state.tools.map(tool => enrichTool(tool));
+}
+
+function enrichCard(card) {
+  const meta = state.content.cardsById[card.cardId || card.id] || {};
+  return {
+    id: card.cardId || card.id,
+    name: meta.name || card.name || card.cardId || card.id,
+    rarity: meta.rarity || card.rarity || "common",
+    level: card.level || 1,
+    fact: meta.fact || "",
+    weakness: meta.weakness || "",
+  };
+}
+
+function enrichTool(tool) {
+  const id = tool.toolId || tool.id;
+  const meta = state.content.toolsById[id] || {};
+  return {
+    id,
+    name: meta.name || tool.name || id,
+    className: meta.class || tool.className || "Tool",
+    level: tool.level || 1,
+    equipped: Boolean(tool.equipped),
+    description: meta.description || tool.description || "",
+  };
+}
+
 function applyBootstrap(boot) {
   state.credits = boot.wallet?.credits ?? state.credits;
   state.energy = boot.energy?.current ?? state.energy;
@@ -141,9 +195,9 @@ function applyBootstrap(boot) {
   state.shopProducts = boot.shopProducts || state.shopProducts;
   state.map = (boot.map || state.map).map(item => ({
     id: item.objectId || item.id,
-    name: item.name || item.objectId || item.id,
-    x: state.map.find(old => old.id === (item.objectId || item.id))?.x || 120,
-    y: state.map.find(old => old.id === (item.objectId || item.id))?.y || 120,
+    name: state.content.mapById[item.objectId || item.id]?.name || item.name || item.objectId || item.id,
+    x: state.content.mapById[item.objectId || item.id]?.x || state.map.find(old => old.id === (item.objectId || item.id))?.x || 120,
+    y: state.content.mapById[item.objectId || item.id]?.y || state.map.find(old => old.id === (item.objectId || item.id))?.y || 120,
     state: item.state,
     level: item.protectionLevel,
   }));
@@ -154,25 +208,15 @@ function applyBootstrap(boot) {
     type: threat.type,
     gameType: threat.gameType,
     game: gameLabel(threat.gameType),
+    expiresAt: threat.expiresAt,
     timer: timerLabel(threat.expiresAt),
     difficulty: threat.difficulty,
   }));
   if (Array.isArray(boot.cards) && boot.cards.length) {
-    state.cards = boot.cards.map(card => ({
-      id: card.cardId,
-      name: card.cardId,
-      rarity: "common",
-      level: card.level,
-    }));
+    state.cards = boot.cards.map(card => enrichCard(card));
   }
   if (Array.isArray(boot.tools) && boot.tools.length) {
-    state.tools = boot.tools.map(tool => ({
-      id: tool.toolId,
-      name: tool.toolId,
-      className: "Tool",
-      level: tool.level,
-      equipped: Boolean(tool.equipped),
-    }));
+    state.tools = boot.tools.map(tool => enrichTool(tool));
   }
 }
 
@@ -211,6 +255,23 @@ function timerLabel(expiresAt) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function refreshThreatTimers() {
+  let changed = false;
+  state.threats = state.threats.map(threat => {
+    if (!threat.expiresAt) return threat;
+    const nextTimer = timerLabel(threat.expiresAt);
+    if (nextTimer === threat.timer) return threat;
+    changed = true;
+    return { ...threat, timer: nextTimer };
+  });
+  if (changed && state.activeTab === "map") {
+    state.threats.forEach(threat => {
+      const element = document.querySelector(`[data-threat-timer="${threat.id}"]`);
+      if (element) element.textContent = threat.timer;
+    });
+  }
+}
+
 const tabs = [
   ["map", "🗺", "Карта"],
   ["tools", "🛠", "Инстр."],
@@ -231,6 +292,8 @@ function render() {
   app.innerHTML = html`
     <main class="phone">
       <section class="screen">
+        <div class="ambient ambient-a"></div>
+        <div class="ambient ambient-b"></div>
         ${renderHud()}
         <section class="content" id="content">${renderTab()}</section>
         ${renderTabs()}
@@ -245,17 +308,17 @@ function renderHud() {
     <header class="hud">
       <div class="hud-top">
         <div class="brand">
+          <span class="eyebrow">SOC Новый Сектор · ${state.sync.toUpperCase()}</span>
           <strong>ZERO_DAY</strong>
-          <span>ЗАЩИТНИКИ СЕТИ · ${state.sync.toUpperCase()}</span>
         </div>
-        <span class="pill">SOC Lv.${state.socLevel}</span>
+        <span class="status-chip">Lv.${state.socLevel}</span>
       </div>
       <div class="hud-stats">
-        <span class="pill">₵ ${state.credits.toLocaleString("ru-RU")}</span>
-        <span class="pill energy">⚡ ${state.energy}/${state.energyMax}</span>
-        <span class="pill">#${state.rank}</span>
-        <span class="pill">◇ ${state.keys}</span>
-        <span class="pill">✦ ${state.cleanFragments}</span>
+        <span class="metric"><b>₵</b>${state.credits.toLocaleString("ru-RU")}</span>
+        <span class="metric energy"><b>⚡</b>${state.energy}/${state.energyMax}</span>
+        <span class="metric"><b>#</b>${state.rank}</span>
+        <span class="metric"><b>◇</b>${state.keys}</span>
+        <span class="metric"><b>✦</b>${state.cleanFragments}</span>
       </div>
     </header>
   `;
@@ -304,25 +367,53 @@ function nodeColor(nodeState) {
 }
 
 function renderMap() {
+  const activeCount = state.threats.length;
+  const protectedCount = state.map.filter(node => node.state === "protected").length;
+  const cityIntegrity = Math.round((protectedCount / Math.max(1, state.map.length)) * 100);
   return html`
+    <section class="hero-card">
+      <div class="hero-copy">
+        <span class="eyebrow">дежурство активно</span>
+        <h1>Город держится на твоем SOC</h1>
+        <p>${activeCount ? `На карте ${activeCount} активные угрозы. Закрой Packet Rain до таймера.` : "Сектор чистый. Поддерживай стрик и готовься к легендарному спавну."}</p>
+      </div>
+      <div class="daemon-orb" aria-label="Кибер-демон">
+        <span>🐉</span>
+      </div>
+    </section>
+
     <article class="map-card">
       <div class="section-title">
-        <h2>Новый Сектор</h2>
-        <span>5 объектов MVP</span>
+        <div>
+          <span class="eyebrow">SVG city map</span>
+          <h2>Новый Сектор</h2>
+        </div>
+        <span>${cityIntegrity}% защищено</span>
       </div>
       <svg class="city-map" viewBox="0 0 380 300" role="img" aria-label="Карта города">
+        <defs>
+          <filter id="nodeGlow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="5" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <path d="M54 104 C94 36 186 34 238 72 C304 78 336 125 322 184 C310 248 250 270 190 250 C128 254 74 224 66 166 C42 146 39 126 54 104Z" fill="rgba(255,255,255,.035)" stroke="rgba(255,255,255,.12)" stroke-width="1.5"/>
         <path d="M82 72 L238 72 L300 176 L224 238 L145 160 L82 72" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3" stroke-dasharray="8 10"/>
         <path d="M238 72 L145 160 L224 238" fill="none" stroke="rgba(0,212,255,.22)" stroke-width="2"/>
         ${state.map.map(node => `
           <g class="map-node" data-object="${node.id}">
-            <circle cx="${node.x}" cy="${node.y}" r="25" fill="rgba(255,255,255,.06)" stroke="${nodeColor(node.state)}" stroke-width="3"/>
+            <circle cx="${node.x}" cy="${node.y}" r="31" fill="${nodeColor(node.state)}" opacity=".08"/>
+            <circle cx="${node.x}" cy="${node.y}" r="24" fill="rgba(6,10,18,.78)" stroke="${nodeColor(node.state)}" stroke-width="2.5" filter="url(#nodeGlow)"/>
             <circle cx="${node.x}" cy="${node.y}" r="7" fill="${nodeColor(node.state)}"/>
             <text x="${node.x}" y="${node.y + 42}" fill="#f4f7fb" font-size="12" text-anchor="middle">${node.name}</text>
-            <text x="${node.x}" y="${node.y - 34}" fill="#9ca9b8" font-size="10" text-anchor="middle">DEF ${node.level}</text>
+            <text x="${node.x}" y="${node.y - 36}" fill="#9ca9b8" font-size="10" text-anchor="middle">${nodeStatusLabel(node.state)} · DEF ${node.level}</text>
           </g>
         `).join("")}
         <g class="daemon">
-          <circle cx="224" cy="202" r="18" fill="rgba(0,212,255,.22)" stroke="var(--accent)"/>
+          <circle cx="224" cy="202" r="18" fill="rgba(0,212,255,.22)" stroke="var(--accent)" filter="url(#nodeGlow)"/>
           <text x="224" y="208" text-anchor="middle" font-size="22">🐉</text>
         </g>
       </svg>
@@ -330,17 +421,34 @@ function renderMap() {
 
     <section class="threat-feed">
       <div class="section-title">
-        <h2>Активные угрозы</h2>
-        <span>таймер идет</span>
+        <div>
+          <span class="eyebrow">FOMO feed</span>
+          <h2>Активные угрозы</h2>
+        </div>
+        <span>${activeCount ? "таймер идет" : "нет атак"}</span>
       </div>
-      ${state.threats.map(threat => `
+      ${state.threats.length ? state.threats.map(threat => `
         <button class="threat" data-threat="${threat.id}">
-          <strong>${threat.title}</strong>
-          <span>${threat.game} · сложность ${threat.difficulty} · осталось ${threat.timer}</span>
+          <span class="threat-severity">D${threat.difficulty}</span>
+          <span class="threat-body">
+            <strong>${threat.title}</strong>
+            <span>${threat.game} · ${threat.type} · осталось <b data-threat-timer="${threat.id}">${threat.timer}</b></span>
+          </span>
+          <span class="threat-cta">Открыть</span>
         </button>
-      `).join("")}
+      `).join("") : `<div class="empty-card"><strong>Сектор чистый</strong><p>Нет активных угроз. Можно открыть тайник или проверить коллекцию.</p></div>`}
     </section>
   `;
+}
+
+function nodeStatusLabel(status) {
+  return {
+    protected: "OK",
+    under_attack: "ALERT",
+    infected: "VIRUS",
+    locked: "LOCK",
+    boss: "BOSS",
+  }[status] || "SCAN";
 }
 
 function renderTools() {
@@ -355,6 +463,7 @@ function renderTools() {
           <div class="tool-tile">
             <strong>${tool.name}</strong>
             <p>${tool.className} · Lv.${tool.level} ${tool.equipped ? "· экипирован" : ""}</p>
+            ${tool.description ? `<p>${tool.description}</p>` : ""}
           </div>
         `).join("")}
       </div>
@@ -375,6 +484,7 @@ function renderCollection() {
             <small class="rarity-${card.rarity}">${card.rarity.toUpperCase()}</small>
             <h3>${card.name}</h3>
             <p>Уровень ${card.level}</p>
+            ${card.fact ? `<p>${card.fact}</p>` : ""}
           </div>
         `).join("")}
       </div>
@@ -796,3 +906,4 @@ async function startPacketRain(threat) {
 
 render();
 connectBackend();
+setInterval(refreshThreatTimers, 1000);
