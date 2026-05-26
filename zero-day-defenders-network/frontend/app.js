@@ -35,9 +35,11 @@ const state = {
   rank: 128,
   keys: 2,
   cleanFragments: 0,
+  gacha: { rarePity: 0, epicPity: 0, legendaryPity: 0, openCount: 0 },
   shopProducts: [],
   payments: [],
   busyProducts: new Set(),
+  busyTools: new Set(),
   content: {
     cardsById: {},
     toolsById: {},
@@ -77,9 +79,9 @@ const state = {
     { id: "card_010", name: "Wi-Fi Phantom", rarity: "legendary", level: 1 },
   ],
   tools: [
-    { id: "scanner", name: "Pulse Scanner", className: "Scanner", level: 2, equipped: true },
-    { id: "firewall", name: "Glass Firewall", className: "Firewall", level: 1, equipped: true },
-    { id: "crypto", name: "Shift Dial", className: "Crypto", level: 1, equipped: false },
+    { id: "tool_scanner", name: "Pulse Scanner", className: "Scanner", level: 2, equipped: true, slotIndex: 1 },
+    { id: "tool_firewall", name: "Glass Firewall", className: "Firewall", level: 1, equipped: true, slotIndex: 2 },
+    { id: "tool_crypto", name: "Shift Dial", className: "Crypto", level: 1, equipped: false, slotIndex: null },
   ],
 };
 
@@ -173,6 +175,9 @@ function enrichCard(card) {
     name: meta.name || card.name || cardId,
     rarity: meta.rarity || card.rarity || "common",
     level: card.level || 1,
+    duplicates: Number(card.duplicates || 0),
+    isHolo: Boolean(card.isHolo),
+    firstObtainedAt: card.firstObtainedAt || null,
     fact: meta.fact || "",
     weakness: meta.weakness || "",
   };
@@ -187,6 +192,7 @@ function enrichTool(tool) {
     className: meta.class || tool.className || "Tool",
     level: tool.level || 1,
     equipped: Boolean(tool.equipped),
+    slotIndex: tool.slotIndex ?? null,
     description: meta.description || tool.description || "",
   };
 }
@@ -198,6 +204,7 @@ function applyBootstrap(boot) {
   state.socLevel = boot.progression?.socLevel ?? boot.player?.socLevel ?? state.socLevel;
   state.keys = boot.wallet?.zeroKeys ?? state.keys;
   state.cleanFragments = boot.wallet?.cleanFragments ?? state.cleanFragments;
+  state.gacha = boot.gacha || state.gacha;
   state.shopProducts = boot.shopProducts || state.shopProducts;
   state.map = (boot.map || state.map).map(item => ({
     id: item.objectId || item.id,
@@ -458,67 +465,242 @@ function nodeStatusLabel(status) {
 }
 
 function renderTools() {
+  const inventory = getToolInventory();
+  const slots = [1, 2, 3].map(slot => inventory.find(tool => tool.equipped && Number(tool.slotIndex) === slot));
   return html`
-    <section class="panel" style="padding:14px">
-      <div class="section-title">
-        <h2>Инструменты</h2>
-        <span>3 активных слота</span>
-      </div>
-      <div class="grid">
-        ${state.tools.map(tool => `
-          <div class="tool-tile">
-            <strong>${tool.name}</strong>
-            <p>${tool.className} · Lv.${tool.level} ${tool.equipped ? "· экипирован" : ""}</p>
-            ${tool.description ? `<p>${tool.description}</p>` : ""}
+    <section class="tools-hero">
+      <span class="eyebrow">loadout</span>
+      <h2>Инструменты SOC</h2>
+      <p>Три активных слота влияют на прохождение мини-игр. Улучшения покупаются за кредиты и не меняют fairScore.</p>
+      <div class="tool-slots">
+        ${slots.map((tool, index) => `
+          <div class="tool-slot ${tool ? "filled" : ""}">
+            <span>Слот ${index + 1}</span>
+            <strong>${tool ? tool.name : "пусто"}</strong>
+            <small>${tool ? `Lv.${tool.level} · ${toolEffect(tool)}` : "выбери инструмент"}</small>
           </div>
         `).join("")}
+      </div>
+    </section>
+
+    <section class="panel tools-panel">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">inventory</span>
+          <h2>Арсенал</h2>
+        </div>
+        <span>${inventory.filter(tool => tool.owned).length}/${inventory.length} открыто</span>
+      </div>
+      <div class="tool-list">
+        ${inventory.map(tool => renderToolCard(tool)).join("")}
       </div>
     </section>
   `;
 }
 
+function getToolInventory() {
+  const ownedById = Object.fromEntries(state.tools.map(tool => [tool.id, tool]));
+  const contentTools = Object.values(state.content.toolsById);
+  const base = contentTools.length
+    ? contentTools.map(meta => enrichTool({ ...(ownedById[meta.id] || {}), id: meta.id, owned: Boolean(ownedById[meta.id]) }))
+    : state.tools.map(tool => ({ ...tool, owned: true }));
+  return base.map(tool => ({ ...tool, owned: tool.owned ?? Boolean(ownedById[tool.id] || !contentTools.length) }));
+}
+
+function renderToolCard(tool) {
+  const busy = state.busyTools.has(tool.id);
+  const upgradeCost = toolUpgradeCost(tool.level);
+  const maxed = tool.level >= 10;
+  return `
+    <article class="tool-card ${tool.owned ? "" : "locked"} ${tool.equipped ? "equipped" : ""}">
+      <div class="tool-card-icon">${toolIcon(tool)}</div>
+      <div class="tool-card-main">
+        <div class="product-topline">
+          <strong>${tool.name}</strong>
+          <span class="price-chip">${tool.owned ? `Lv.${tool.level}` : "LOCK"}</span>
+        </div>
+        <p>${tool.description || toolEffect(tool)}</p>
+        <div class="product-meta">
+          <span>${tool.className}</span>
+          <span>${toolEffect(tool)}</span>
+          ${tool.equipped ? `<span>слот ${tool.slotIndex}</span>` : ""}
+        </div>
+        ${tool.owned ? `
+          <div class="tool-actions">
+            <button class="secondary-btn" data-upgrade-tool="${tool.id}" ${busy || maxed || state.credits < upgradeCost ? "disabled" : ""}>
+              ${busy ? "..." : maxed ? "MAX" : `Улучшить · ₵ ${upgradeCost}`}
+            </button>
+            ${[1, 2, 3].map(slot => `
+              <button class="slot-btn ${Number(tool.slotIndex) === slot ? "active" : ""}" data-equip-tool="${tool.id}" data-slot="${slot}" ${busy ? "disabled" : ""}>${slot}</button>
+            `).join("")}
+          </div>
+        ` : `<div class="tool-actions"><button class="secondary-btn" disabled>Откроется в миссиях</button></div>`}
+      </div>
+    </article>
+  `;
+}
+
+function toolUpgradeCost(level) {
+  return 120 * Number(level || 1) * Number(level || 1);
+}
+
+function toolEffect(tool) {
+  const level = Number(tool.level || 1);
+  const cls = String(tool.className || "").toLowerCase();
+  if (cls.includes("scanner")) return `подсветка +${level}`;
+  if (cls.includes("firewall")) return `ошибка forgiven ${Math.min(3, level)}`;
+  if (cls.includes("analyzer")) return `время +${level * 2}с`;
+  if (cls.includes("crypto")) return `сдвиг hint ${level}`;
+  if (cls.includes("deceptor")) return `drop +${level}%`;
+  return `эффект +${level}`;
+}
+
+function toolIcon(tool) {
+  const cls = String(tool.className || "").toLowerCase();
+  if (cls.includes("scanner")) return "⌖";
+  if (cls.includes("firewall")) return "▣";
+  if (cls.includes("analyzer")) return "⌬";
+  if (cls.includes("crypto")) return "⟳";
+  if (cls.includes("deceptor")) return "◆";
+  return "⚙";
+}
+
+function equippedToolByClass(className) {
+  return state.tools.find(tool => tool.equipped && String(tool.className || "").toLowerCase().includes(className));
+}
+
+function getPacketRainToolEffects() {
+  const scanner = equippedToolByClass("scanner");
+  const firewall = equippedToolByClass("firewall");
+  const analyzer = equippedToolByClass("analyzer");
+  return {
+    scannerLevel: scanner ? Number(scanner.level || 1) : 0,
+    firewallCharges: firewall ? Math.min(3, Number(firewall.level || 1)) : 0,
+    timeBonusMs: analyzer ? Number(analyzer.level || 1) * 2000 : 0,
+    labels: [
+      scanner ? `Scanner L${scanner.level}` : "",
+      firewall ? `Firewall ${Math.min(3, Number(firewall.level || 1))}x` : "",
+      analyzer ? `Analyzer +${Number(analyzer.level || 1) * 2}s` : "",
+    ].filter(Boolean),
+  };
+}
+
+function packetActionLabel(type) {
+  return { pass: "PASS →", block: "BLOCK ←", quarantine: "QUAR ↑" }[type] || type;
+}
+
 function renderCollection() {
+  const cards = getCollectionCards();
+  const holoCount = cards.filter(card => card.isHolo).length;
   return html`
     <section class="cache-card">
       <div>
         <span class="eyebrow">Zero Cache</span>
         <h2>Тайники Зеро</h2>
         <p>Открывай за ключи, собирай угрозы и прокачивай дубли. Pity защищает от бесконечной невезухи.</p>
+        <div class="cache-pity">
+          <span>Rare pity ${state.gacha.rarePity || 0}/10</span>
+          <span>Epic ${state.gacha.epicPity || 0}/50</span>
+          <span>Legendary ${state.gacha.legendaryPity || 0}/100</span>
+        </div>
       </div>
-      <button class="primary-btn" data-open-cache ${state.keys <= 0 ? "disabled" : ""}>
-        Открыть · ◇ ${state.keys}
-      </button>
+      <div class="cache-actions">
+        <button class="primary-btn" data-open-cache="1" ${state.keys <= 0 ? "disabled" : ""}>
+          Открыть · ◇ 1
+        </button>
+        <button class="secondary-btn" data-open-cache="10" ${state.keys < 10 ? "disabled" : ""}>
+          x10 · ◇ 10
+        </button>
+        <small>Ключей: ${state.keys}</small>
+      </div>
     </section>
 
-    <section class="panel" style="padding:14px">
+    <section class="panel collection-panel">
       <div class="section-title">
-        <h2>Коллекция</h2>
-        <span>${state.cards.length}/120</span>
+        <div>
+          <span class="eyebrow">threat deck</span>
+          <h2>Коллекция</h2>
+        </div>
+        <span>${cards.length}/120 · Holo ${holoCount}</span>
       </div>
-      <div class="grid cards-grid">
-        ${state.cards.map(card => `
-          <div class="card-tile">
-            <small class="rarity-${card.rarity}">${card.rarity.toUpperCase()}</small>
-            <h3>${card.name}</h3>
-            <p>Уровень ${card.level}</p>
-            ${card.fact ? `<p>${card.fact}</p>` : ""}
-          </div>
+      <div class="cards-grid">
+        ${cards.map(card => `
+          <article class="card-tile rarity-${card.rarity} ${card.isHolo ? "holo" : ""}">
+            <div class="card-art">${cardArtGlyph(card)}</div>
+            <div class="card-info">
+              <div class="product-topline">
+                <small>${card.rarity.toUpperCase()}</small>
+                <span class="price-chip">Lv.${card.level}${card.isHolo ? " · HOLO" : ""}</span>
+              </div>
+              <h3>${card.name}</h3>
+              <p>${card.fact || "Факт появится после синхронизации контента."}</p>
+              <div class="card-progress">
+                <span style="width:${duplicateProgress(card)}%"></span>
+              </div>
+              <div class="product-meta">
+                <span>${card.weakness || "unknown"} weakness</span>
+                <span>${duplicateLabel(card)}</span>
+              </div>
+            </div>
+          </article>
         `).join("")}
       </div>
     </section>
   `;
 }
 
+function getCollectionCards() {
+  return [...state.cards].sort((left, right) => {
+    const rarityDelta = rarityRank(right.rarity) - rarityRank(left.rarity);
+    if (rarityDelta) return rarityDelta;
+    return String(left.name).localeCompare(String(right.name), "ru");
+  });
+}
+
+function rarityRank(rarity) {
+  return { common: 1, rare: 2, epic: 3, legendary: 4 }[rarity] || 0;
+}
+
+function duplicateTarget(level) {
+  return { 1: 1, 2: 3, 3: 7 }[Number(level || 1)] || 0;
+}
+
+function duplicateProgress(card) {
+  const target = duplicateTarget(card.level);
+  if (!target) return 100;
+  return Math.min(100, Math.round((Number(card.duplicates || 0) / target) * 100));
+}
+
+function duplicateLabel(card) {
+  const target = duplicateTarget(card.level);
+  if (!target) return "MAX · holographic";
+  return `дубли ${card.duplicates || 0}/${target}`;
+}
+
+function cardArtGlyph(card) {
+  const type = String(card.weakness || card.rarity || "").toLowerCase();
+  if (type.includes("firewall")) return "▣";
+  if (type.includes("scanner")) return "⌖";
+  if (type.includes("crypto")) return "⟳";
+  if (type.includes("analyzer")) return "⌬";
+  if (type.includes("deceptor")) return "◆";
+  return "◇";
+}
+
 function normalizeRewardCard(drop) {
   if (!drop) return null;
   if (typeof drop === "string") {
-    return enrichCard({ id: drop });
+    const owned = state.cards.find(card => card.id === drop);
+    return enrichCard({ id: drop, ...(owned || {}) });
   }
   return enrichCard({
     id: drop.cardId || drop.id,
     name: drop.name,
     rarity: drop.rarity,
     level: drop.level || 1,
+    duplicates: drop.duplicates || 0,
+    isHolo: drop.isHolo || false,
+    firstObtainedAt: drop.firstObtainedAt || null,
   });
 }
 
@@ -747,14 +929,119 @@ function bindEvents() {
 
   document.querySelectorAll("[data-open-cache]").forEach(button => {
     button.addEventListener("click", async () => {
-      await openZeroCache();
+      await openZeroCache(Number(button.dataset.openCache || 1));
+    });
+  });
+
+  document.querySelectorAll("[data-upgrade-tool]").forEach(button => {
+    button.addEventListener("click", async () => {
+      await upgradeTool(button.dataset.upgradeTool);
+    });
+  });
+
+  document.querySelectorAll("[data-equip-tool]").forEach(button => {
+    button.addEventListener("click", async () => {
+      await equipTool(button.dataset.equipTool, Number(button.dataset.slot));
     });
   });
 }
 
-async function openZeroCache() {
-  if (state.keys <= 0) {
-    toast("Нужен хотя бы один Ключ Зеро");
+async function upgradeTool(toolId) {
+  if (state.busyTools.has(toolId)) return;
+  const tool = state.tools.find(item => item.id === toolId);
+  if (!tool) {
+    toast("Инструмент еще не открыт");
+    haptic.warn();
+    return;
+  }
+  const cost = toolUpgradeCost(tool.level);
+  if (state.credits < cost) {
+    toast(`Не хватает кредитов: нужно ₵ ${cost}`);
+    haptic.warn();
+    return;
+  }
+
+  state.busyTools.add(toolId);
+  render();
+  try {
+    if (backendOnline) {
+      const result = await apiRequest(`/api/tools/${toolId}/upgrade`, { method: "POST", body: {} });
+      state.credits = result.wallet?.credits ?? state.credits;
+      state.tools = state.tools.map(item => item.id === toolId ? enrichTool(result.tool) : item);
+      await refreshBootstrap();
+    } else {
+      tool.level = Math.min(10, Number(tool.level || 1) + 1);
+      state.credits -= cost;
+    }
+    render();
+    toast(`${tool.name} улучшен`);
+    haptic.ok();
+  } catch (error) {
+    toast(toolErrorMessage(error));
+    haptic.error();
+  } finally {
+    if (state.busyTools.has(toolId)) {
+      state.busyTools.delete(toolId);
+      render();
+    }
+  }
+}
+
+async function equipTool(toolId, slotIndex) {
+  if (state.busyTools.has(toolId)) return;
+  const tool = state.tools.find(item => item.id === toolId);
+  if (!tool) {
+    toast("Инструмент еще не открыт");
+    haptic.warn();
+    return;
+  }
+
+  state.busyTools.add(toolId);
+  render();
+  try {
+    if (backendOnline) {
+      const result = await apiRequest(`/api/tools/${toolId}/equip`, {
+        method: "POST",
+        body: { slotIndex },
+      });
+      state.tools = (result.tools || state.tools).map(item => enrichTool(item));
+      await refreshBootstrap();
+    } else {
+      state.tools.forEach(item => {
+        if (Number(item.slotIndex) === slotIndex || item.id === toolId) {
+          item.equipped = false;
+          item.slotIndex = null;
+        }
+      });
+      tool.equipped = true;
+      tool.slotIndex = slotIndex;
+    }
+    render();
+    toast(`${tool.name} установлен в слот ${slotIndex}`);
+    haptic.ok();
+  } catch (error) {
+    toast(toolErrorMessage(error));
+    haptic.error();
+  } finally {
+    if (state.busyTools.has(toolId)) {
+      state.busyTools.delete(toolId);
+      render();
+    }
+  }
+}
+
+function toolErrorMessage(error) {
+  if (error.code === "not_enough_credits") return "Не хватает кредитов для улучшения.";
+  if (error.code === "tool_max_level") return "Инструмент уже на максимальном уровне.";
+  if (error.code === "tool_not_owned") return "Инструмент еще не открыт.";
+  if (error.code === "bad_tool_slot") return "Некорректный слот инструмента.";
+  return `Ошибка инструмента: ${error.message}`;
+}
+
+async function openZeroCache(count = 1) {
+  const safeCount = Math.max(1, Math.min(10, Number(count || 1)));
+  if (state.keys < safeCount) {
+    toast(safeCount === 1 ? "Нужен хотя бы один Ключ Зеро" : "Для x10 нужно 10 Ключей Зеро");
     haptic.warn();
     return;
   }
@@ -763,14 +1050,18 @@ async function openZeroCache() {
     try {
       const result = await apiRequest("/api/cache/open", {
         method: "POST",
-        body: { count: 1 },
+        body: { count: safeCount },
       });
       await refreshBootstrap();
+      const rewardCards = (result.results || []).map(drop => {
+        const owned = state.cards.find(card => card.id === drop.cardId);
+        return normalizeRewardCard({ ...drop, ...(owned || {}) });
+      });
       render();
       showRewardSheet({
-        title: "Тайник открыт",
+        title: safeCount > 1 ? "Тайники открыты" : "Тайник открыт",
         subtitle: `Осталось ключей: ${result.zeroKeysLeft}`,
-        cards: result.results || [],
+        cards: rewardCards,
       });
       haptic.ok();
     } catch (error) {
@@ -783,14 +1074,18 @@ async function openZeroCache() {
   const pool = state.cards.length ? state.cards : [
     { id: "card_001", name: "Фишинговая Маска", rarity: "common", level: 1 },
   ];
-  const card = normalizeRewardCard(pool[Math.floor(Math.random() * pool.length)]);
-  state.keys -= 1;
-  grantMockCard(card);
+  const cards = Array.from({ length: safeCount }, () => normalizeRewardCard(pool[Math.floor(Math.random() * pool.length)]));
+  state.keys -= safeCount;
+  cards.forEach(card => grantMockCard(card));
+  state.gacha.openCount = Number(state.gacha.openCount || 0) + safeCount;
+  state.gacha.rarePity = Number(state.gacha.rarePity || 0) + safeCount;
+  state.gacha.epicPity = Number(state.gacha.epicPity || 0) + safeCount;
+  state.gacha.legendaryPity = Number(state.gacha.legendaryPity || 0) + safeCount;
   render();
   showRewardSheet({
-    title: "Тайник открыт",
+    title: safeCount > 1 ? "Тайники открыты" : "Тайник открыт",
     subtitle: "Mock-режим: награда живет только до перезагрузки",
-    cards: [card],
+    cards,
   });
   haptic.ok();
 }
@@ -799,7 +1094,13 @@ function grantMockCard(card) {
   if (!card) return;
   const owned = state.cards.find(item => item.id === card.id);
   if (owned) {
-    owned.level = Math.min(4, (owned.level || 1) + 1);
+    owned.duplicates = Number(owned.duplicates || 0) + 1;
+    const target = duplicateTarget(owned.level);
+    if (target && owned.duplicates >= target) {
+      owned.level = Math.min(4, Number(owned.level || 1) + 1);
+      owned.duplicates = 0;
+      owned.isHolo = owned.level >= 4;
+    }
     return;
   }
   state.cards.unshift(card);
@@ -901,7 +1202,7 @@ function showRewardSheet({ title, subtitle = "", credits = 0, cards = [] }) {
             <article class="reward-card rarity-${card.rarity}">
               <small>${card.rarity.toUpperCase()}</small>
               <strong>${card.name}</strong>
-              <span>Lv.${card.level}</span>
+              <span>Lv.${card.level}${card.isHolo ? " · HOLO" : ""} · ${duplicateLabel(card)}</span>
             </article>
           `).join("")}
         </div>
@@ -938,33 +1239,47 @@ async function startPacketRain(threat) {
   }
 
   const phone = document.querySelector(".phone");
+  const toolEffects = getPacketRainToolEffects();
+  const activeToolLabel = toolEffects.labels.length ? toolEffects.labels.join(" · ") : "basic mode";
   const overlay = document.createElement("div");
   overlay.className = "game-overlay";
   overlay.innerHTML = `
     <header class="game-header">
-      <strong>Packet Rain</strong>
+      <div class="game-title">
+        <strong>Packet Rain</strong>
+        <small>${activeToolLabel}</small>
+      </div>
       <button class="close-btn" id="closeGame">Закрыть</button>
     </header>
     <canvas id="gameCanvas"></canvas>
     <footer class="game-footer">
-      <span>← BLOCK · → PASS · ↑ QUARANTINE</span>
-      <span id="gameScore">0</span>
+      <span id="gameHint">← BLOCK · → PASS · ↑ QUARANTINE</span>
+      <span id="gameShield"></span>
+      <span id="gameScore">0 pts</span>
     </footer>
   `;
   phone.appendChild(overlay);
 
   const canvas = overlay.querySelector("#gameCanvas");
   const scoreEl = overlay.querySelector("#gameScore");
+  const hintEl = overlay.querySelector("#gameHint");
+  const shieldEl = overlay.querySelector("#gameShield");
   const ctx = canvas.getContext("2d");
   const packets = [];
   const types = ["pass", "block", "quarantine"];
   let score = 0;
   let combo = 0;
+  let comboMax = 0;
   let mistakes = 0;
+  let swipes = 0;
+  let firewallCharges = toolEffects.firewallCharges;
+  let firewallAbsorbed = 0;
+  let furyUntil = 0;
   let running = true;
   let finishing = false;
   let lastSpawn = 0;
   let startedAt = performance.now();
+  const durationLimitMs = 45000 + toolEffects.timeBonusMs;
   let pointerStart = null;
 
   function resize() {
@@ -994,13 +1309,27 @@ async function startPacketRain(threat) {
     return { pass: "PASS", block: "BAD", quarantine: "SUS" }[type];
   }
 
+  function getPriorityPacket() {
+    if (!packets.length) return null;
+    return packets.reduce((best, item) => item.y > best.y ? item : best, packets[0]);
+  }
+
   function draw() {
     ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
     ctx.fillStyle = "rgba(255,255,255,.04)";
     for (let x = 0; x < canvas.clientWidth; x += 28) {
       ctx.fillRect(x, 0, 1, canvas.clientHeight);
     }
+    const priorityPacket = toolEffects.scannerLevel ? getPriorityPacket() : null;
     for (const packet of packets) {
+      const isPriority = packet === priorityPacket;
+      if (isPriority) {
+        ctx.beginPath();
+        ctx.arc(packet.x, packet.y, packet.size + 8 + toolEffects.scannerLevel, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(56,216,255,.72)";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
       ctx.beginPath();
       ctx.arc(packet.x, packet.y, packet.size, 0, Math.PI * 2);
       ctx.fillStyle = `${color(packet.type)}33`;
@@ -1012,30 +1341,50 @@ async function startPacketRain(threat) {
       ctx.font = "11px ui-monospace, monospace";
       ctx.textAlign = "center";
       ctx.fillText(label(packet.type), packet.x, packet.y + 4);
+      if (isPriority && toolEffects.scannerLevel >= 2) {
+        ctx.font = "10px ui-monospace, monospace";
+        ctx.fillStyle = "#38d8ff";
+        ctx.fillText(packetActionLabel(packet.type), packet.x, packet.y - packet.size - 10);
+      }
     }
     ctx.fillStyle = "rgba(255,255,255,.72)";
     ctx.font = "13px ui-monospace, monospace";
     ctx.textAlign = "left";
-    ctx.fillText(`combo ${combo} · mistakes ${mistakes}`, 14, 24);
+    ctx.fillText(`combo ${combo} · max ${comboMax} · mistakes ${mistakes}`, 14, 24);
+  }
+
+  function registerMistake(source) {
+    combo = 0;
+    if (firewallCharges > 0) {
+      firewallCharges -= 1;
+      firewallAbsorbed += 1;
+      toast(source === "miss" ? "Glass Firewall поймал пропущенный пакет" : "Glass Firewall поглотил ошибку");
+      haptic.warn();
+      return;
+    }
+    mistakes += 1;
+    haptic.error();
   }
 
   function loop(now) {
     if (!running) return;
     spawn(now);
     packets.forEach(packet => {
-      packet.y += packet.speed;
+      const furyMultiplier = now < furyUntil ? 0.58 : 1;
+      packet.y += packet.speed * furyMultiplier;
     });
     for (let i = packets.length - 1; i >= 0; i -= 1) {
       if (packets[i].y > canvas.clientHeight + 40) {
         packets.splice(i, 1);
-        mistakes += 1;
-        combo = 0;
-        haptic.warn();
+        registerMistake("miss");
       }
     }
     draw();
     scoreEl.textContent = `${score} pts`;
-    if (performance.now() - startedAt > 45000 || mistakes >= 6) {
+    const priorityPacket = toolEffects.scannerLevel ? getPriorityPacket() : null;
+    hintEl.textContent = priorityPacket ? `Scanner: ${packetActionLabel(priorityPacket.type)}` : "← BLOCK · → PASS · ↑ QUARANTINE";
+    shieldEl.textContent = firewallCharges > 0 ? `Firewall ${firewallCharges}` : `Ошибки ${mistakes}/6`;
+    if (performance.now() - startedAt > durationLimitMs || mistakes >= 6) {
       finish();
       return;
     }
@@ -1044,22 +1393,23 @@ async function startPacketRain(threat) {
 
   function classify(direction) {
     if (!packets.length) return;
+    swipes += 1;
     const packet = packets.reduce((best, item) => item.y > best.y ? item : best, packets[0]);
     const expected = packet.type;
     const ok = direction === expected;
     packets.splice(packets.indexOf(packet), 1);
     if (ok) {
       combo += 1;
+      comboMax = Math.max(comboMax, combo);
       score += 100 + combo * 12;
       haptic.light();
-      if (combo === 10) {
+      if (combo > 0 && combo % 10 === 0) {
+        furyUntil = performance.now() + 6000;
         toast("Fury Analyst: время будто замедлилось");
         haptic.ok();
       }
     } else {
-      combo = 0;
-      mistakes += 1;
-      haptic.error();
+      registerMistake("wrong");
     }
   }
 
@@ -1077,8 +1427,13 @@ async function startPacketRain(threat) {
             durationMs: Math.floor(performance.now() - startedAt),
             score,
             accuracy: Math.max(0, 1 - mistakes / 10),
-            comboMax: combo,
-            inputSummary: { swipes: score > 0 ? Math.floor(score / 100) : 0, mistakes },
+            comboMax,
+            inputSummary: {
+              swipes,
+              mistakes,
+              firewallAbsorbed,
+              tools: toolEffects.labels,
+            },
           },
         });
         await refreshBootstrap();

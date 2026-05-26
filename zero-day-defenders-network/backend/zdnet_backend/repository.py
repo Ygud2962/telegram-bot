@@ -109,8 +109,8 @@ class InMemoryGameRepository:
             map=map_state,
             cards={},
             tools={
-                "tool_scanner": {"toolId": "tool_scanner", "level": 1, "count": 1, "equipped": True},
-                "tool_firewall": {"toolId": "tool_firewall", "level": 1, "count": 1, "equipped": True},
+                "tool_scanner": {"toolId": "tool_scanner", "level": 1, "count": 1, "equipped": True, "slotIndex": 1},
+                "tool_firewall": {"toolId": "tool_firewall", "level": 1, "count": 1, "equipped": True, "slotIndex": 2},
             },
             daemon={
                 "level": 1,
@@ -280,6 +280,54 @@ class InMemoryGameRepository:
             self._grant_card(state, item["cardId"])
         return {"results": results, "pity": state.gacha.to_dict(), "zeroKeysLeft": state.wallet["zeroKeys"]}
 
+    def upgrade_tool(self, state: PlayerState, tool_id: str) -> dict[str, Any]:
+        if not self._tool_exists(tool_id):
+            raise GameError("unknown_tool", status=404)
+        tool = state.tools.get(tool_id)
+        if not tool:
+            raise GameError("tool_not_owned", status=404)
+        current_level = int(tool.get("level") or 1)
+        if current_level >= 10:
+            raise GameError("tool_max_level", status=409)
+        cost = self.tool_upgrade_cost(current_level)
+        if int(state.wallet.get("credits", 0)) < cost:
+            raise GameError("not_enough_credits", status=409)
+        state.wallet["credits"] = int(state.wallet["credits"]) - cost
+        tool["level"] = current_level + 1
+        return {
+            "tool": deepcopy(tool),
+            "wallet": deepcopy(state.wallet),
+            "nextUpgradeCost": self.tool_upgrade_cost(int(tool["level"])) if int(tool["level"]) < 10 else None,
+            "fairScore": deepcopy(state.fair_score),
+        }
+
+    def equip_tool(self, state: PlayerState, tool_id: str, slot_index: int) -> dict[str, Any]:
+        if slot_index < 1 or slot_index > 3:
+            raise GameError("bad_tool_slot")
+        if not self._tool_exists(tool_id):
+            raise GameError("unknown_tool", status=404)
+        tool = state.tools.get(tool_id)
+        if not tool:
+            raise GameError("tool_not_owned", status=404)
+
+        for owned in state.tools.values():
+            if int(owned.get("slotIndex") or 0) == slot_index:
+                owned["equipped"] = False
+                owned["slotIndex"] = None
+            if owned.get("toolId") == tool_id:
+                owned["equipped"] = False
+                owned["slotIndex"] = None
+
+        tool["equipped"] = True
+        tool["slotIndex"] = slot_index
+        return {
+            "tool": deepcopy(tool),
+            "tools": list(deepcopy(state.tools).values()),
+        }
+
+    def tool_upgrade_cost(self, current_level: int) -> int:
+        return 120 * int(current_level) * int(current_level)
+
     def create_invoice(self, state: PlayerState, product_id: str) -> dict[str, Any]:
         product = get_product(product_id)
         if not product:
@@ -311,6 +359,9 @@ class InMemoryGameRepository:
 
     def payment_history(self, state: PlayerState) -> dict[str, Any]:
         return {"payments": deepcopy(state.payments)}
+
+    def _tool_exists(self, tool_id: str) -> bool:
+        return any(tool.get("id") == tool_id for tool in self.content.get("tools", []))
 
     def validate_payment(self, payload: str, amount: int | None = None, currency: str | None = None) -> tuple[bool, str]:
         found = self._find_payment_by_payload(payload)

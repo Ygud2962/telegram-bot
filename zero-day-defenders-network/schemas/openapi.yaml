@@ -127,25 +127,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayerCard"
-  /api/tools/equip:
+  /api/tools/{toolId}/upgrade:
     post:
-      summary: Equip up to 3 tools.
+      summary: Upgrade owned tool with credits.
+      parameters:
+        - $ref: "#/components/parameters/ToolId"
+      responses:
+        "200":
+          description: Updated tool and wallet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolUpgradeResponse"
+  /api/tools/{toolId}/equip:
+    post:
+      summary: Equip owned tool into one of three active slots.
+      parameters:
+        - $ref: "#/components/parameters/ToolId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [toolIds]
+              required: [slotIndex]
               properties:
-                toolIds:
-                  type: array
-                  maxItems: 3
-                  items:
-                    type: string
+                slotIndex:
+                  type: integer
+                  minimum: 1
+                  maximum: 3
       responses:
         "200":
-          description: Equipped tool ids.
+          description: Updated tools.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolEquipResponse"
   /api/squads:
     post:
       summary: Create a squad.
@@ -241,6 +258,12 @@ components:
       schema:
         type: string
         format: uuid
+    ToolId:
+      in: path
+      name: toolId
+      required: true
+      schema:
+        type: string
   schemas:
     AuthResponse:
       type: object
@@ -432,6 +455,46 @@ components:
           type: integer
         isHolo:
           type: boolean
+    PlayerTool:
+      type: object
+      required: [toolId, level, count, equipped]
+      properties:
+        toolId:
+          type: string
+        level:
+          type: integer
+        count:
+          type: integer
+        equipped:
+          type: boolean
+        slotIndex:
+          type:
+            - integer
+            - "null"
+    ToolUpgradeResponse:
+      type: object
+      required: [tool, wallet, fairScore]
+      properties:
+        tool:
+          $ref: "#/components/schemas/PlayerTool"
+        wallet:
+          $ref: "#/components/schemas/Wallet"
+        nextUpgradeCost:
+          type:
+            - integer
+            - "null"
+        fairScore:
+          type: object
+    ToolEquipResponse:
+      type: object
+      required: [tool, tools]
+      properties:
+        tool:
+          $ref: "#/components/schemas/PlayerTool"
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlayerTool"
     CardCatalogItem:
       type: object
       required: [id, name, rarity, type, weakness]

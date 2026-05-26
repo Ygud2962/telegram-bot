@@ -7619,6 +7619,29 @@ def start_http_server_thread():
         except ZDNetGameError as e:
             return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
 
+    async def handle_zdnet_tool_upgrade(request):
+        if not ZDNET_REPO:
+            return _zdnet_unavailable(request)
+        try:
+            state = _zdnet_require_state(request)
+            return _zdnet_json(ZDNET_REPO.upgrade_tool(state, request.match_info['toolId']), request, methods='POST, OPTIONS')
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
+
+    async def handle_zdnet_tool_equip(request):
+        if not ZDNET_REPO:
+            return _zdnet_unavailable(request)
+        try:
+            state = _zdnet_require_state(request)
+            body = await _zdnet_body(request)
+            return _zdnet_json(
+                ZDNET_REPO.equip_tool(state, request.match_info['toolId'], int(body.get('slotIndex') or 0)),
+                request,
+                methods='POST, OPTIONS',
+            )
+        except ZDNetGameError as e:
+            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
+
     async def handle_zdnet_invoice(request):
         if not ZDNET_REPO:
             return _zdnet_unavailable(request)
@@ -7762,6 +7785,8 @@ def start_http_server_thread():
         app_http.router.add_post('/zdnet_api/threats/{threatId}/start', handle_zdnet_start_attempt)
         app_http.router.add_post('/zdnet_api/attempts/{attemptId}/finish', handle_zdnet_finish_attempt)
         app_http.router.add_post('/zdnet_api/cache/open', handle_zdnet_open_cache)
+        app_http.router.add_post('/zdnet_api/tools/{toolId}/upgrade', handle_zdnet_tool_upgrade)
+        app_http.router.add_post('/zdnet_api/tools/{toolId}/equip', handle_zdnet_tool_equip)
         app_http.router.add_post('/zdnet_api/payments/invoice', handle_zdnet_invoice)
         app_http.router.add_get('/zdnet_api/payments/history', handle_zdnet_payment_history)
         app_http.router.add_get('/zdnet_api/payments/products', handle_zdnet_payment_products)

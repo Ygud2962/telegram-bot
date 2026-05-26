@@ -111,6 +111,24 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(result["zeroKeysLeft"], before_keys - 1)
         self.assertEqual(len(self.state.cards), 1)
 
+    def test_tool_upgrade_spends_credits_without_fair_score_change(self):
+        before_credits = self.state.wallet["credits"]
+        before_fair = dict(self.state.fair_score)
+        result = self.repo.upgrade_tool(self.state, "tool_scanner")
+        self.assertEqual(result["tool"]["level"], 2)
+        self.assertEqual(self.state.wallet["credits"], before_credits - 120)
+        self.assertEqual(self.state.fair_score, before_fair)
+
+    def test_tool_equip_uses_three_slots_and_replaces_existing_slot(self):
+        self.state.tools["tool_crypto"] = {"toolId": "tool_crypto", "level": 1, "count": 1, "equipped": False}
+        result = self.repo.equip_tool(self.state, "tool_crypto", 1)
+        crypto = next(tool for tool in result["tools"] if tool["toolId"] == "tool_crypto")
+        scanner = next(tool for tool in result["tools"] if tool["toolId"] == "tool_scanner")
+        self.assertTrue(crypto["equipped"])
+        self.assertEqual(crypto["slotIndex"], 1)
+        self.assertFalse(scanner["equipped"])
+        self.assertIsNone(scanner["slotIndex"])
+
     def test_snapshot_round_trip_preserves_core_state(self):
         self.repo.open_cache(self.state, 1, seed=7)
         snapshot = state_to_snapshot(self.state)

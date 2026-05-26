@@ -165,6 +165,16 @@ class PostgresGameRepository:
         self._save_state(int(state.player["id"]), state)
         return result
 
+    def upgrade_tool(self, state: PlayerState, tool_id: str) -> dict[str, Any]:
+        result = self.logic.upgrade_tool(state, tool_id)
+        self._save_state(int(state.player["id"]), state)
+        return result
+
+    def equip_tool(self, state: PlayerState, tool_id: str, slot_index: int) -> dict[str, Any]:
+        result = self.logic.equip_tool(state, tool_id, slot_index)
+        self._save_state(int(state.player["id"]), state)
+        return result
+
     def create_invoice(self, state: PlayerState, product_id: str) -> dict[str, Any]:
         result = self.logic.create_invoice(state, product_id)
         self._save_state(int(state.player["id"]), state)

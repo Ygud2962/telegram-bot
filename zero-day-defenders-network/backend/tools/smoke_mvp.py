@@ -113,6 +113,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         int((boot_after_attempt.get("wallet") or {}).get("credits") or 0) > int(wallet_before.get("credits") or 0),
         "credits did not increase after accepted attempt",
     )
+    fair_before_tool = dict(boot_after_attempt.get("fairScore") or {})
+
+    upgraded = request_json(base_url, "POST", "/api/tools/tool_scanner/upgrade", token=token, body={})
+    assert_true((upgraded.get("tool") or {}).get("level") == 2, "tool upgrade did not increase level")
+    assert_true(dict(upgraded.get("fairScore") or {}) == fair_before_tool, "tool upgrade changed fairScore")
+
+    equipped = request_json(base_url, "POST", "/api/tools/tool_firewall/equip", token=token, body={"slotIndex": 1})
+    equipped_tools = equipped.get("tools") or []
+    assert_true(
+        any(tool.get("toolId") == "tool_firewall" and tool.get("equipped") and int(tool.get("slotIndex") or 0) == 1 for tool in equipped_tools),
+        "tool equip did not place firewall into slot 1",
+    )
 
     cache = request_json(base_url, "POST", "/api/cache/open", token=token, body={"count": 1})
     assert_true(len(cache.get("results") or []) == 1, "cache did not return one card result")

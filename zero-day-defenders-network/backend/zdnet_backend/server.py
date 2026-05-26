@@ -92,6 +92,17 @@ class JsonApiHandler(BaseHTTPRequestHandler):
                 self._send_json(self.repo.open_cache(state, int(body.get("count") or 1)))
                 return
 
+            match = re.fullmatch(r"/api/tools/([^/]+)/upgrade", path)
+            if match:
+                self._send_json(self.repo.upgrade_tool(state, match.group(1)))
+                return
+
+            match = re.fullmatch(r"/api/tools/([^/]+)/equip", path)
+            if match:
+                body = self._read_json()
+                self._send_json(self.repo.equip_tool(state, match.group(1), int(body.get("slotIndex") or 0)))
+                return
+
             if path == "/api/payments/invoice":
                 body = self._read_json()
                 self._send_json(self.repo.create_invoice(state, str(body.get("productId") or "")))
