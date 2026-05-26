@@ -161,10 +161,11 @@ function applyContent(content) {
 }
 
 function enrichCard(card) {
-  const meta = state.content.cardsById[card.cardId || card.id] || {};
+  const cardId = card.cardId || card.id;
+  const meta = state.content.cardsById[cardId] || {};
   return {
-    id: card.cardId || card.id,
-    name: meta.name || card.name || card.cardId || card.id,
+    id: cardId,
+    name: meta.name || card.name || cardId,
     rarity: meta.rarity || card.rarity || "common",
     level: card.level || 1,
     fact: meta.fact || "",
@@ -473,6 +474,17 @@ function renderTools() {
 
 function renderCollection() {
   return html`
+    <section class="cache-card">
+      <div>
+        <span class="eyebrow">Zero Cache</span>
+        <h2>Тайники Зеро</h2>
+        <p>Открывай за ключи, собирай угрозы и прокачивай дубли. Pity защищает от бесконечной невезухи.</p>
+      </div>
+      <button class="primary-btn" data-open-cache ${state.keys <= 0 ? "disabled" : ""}>
+        Открыть · ◇ ${state.keys}
+      </button>
+    </section>
+
     <section class="panel" style="padding:14px">
       <div class="section-title">
         <h2>Коллекция</h2>
@@ -490,6 +502,19 @@ function renderCollection() {
       </div>
     </section>
   `;
+}
+
+function normalizeRewardCard(drop) {
+  if (!drop) return null;
+  if (typeof drop === "string") {
+    return enrichCard({ id: drop });
+  }
+  return enrichCard({
+    id: drop.cardId || drop.id,
+    name: drop.name,
+    rarity: drop.rarity,
+    level: drop.level || 1,
+  });
 }
 
 function renderDaemon() {
@@ -617,6 +642,65 @@ function bindEvents() {
       await buyProduct(button.dataset.buyProduct);
     });
   });
+
+  document.querySelectorAll("[data-open-cache]").forEach(button => {
+    button.addEventListener("click", async () => {
+      await openZeroCache();
+    });
+  });
+}
+
+async function openZeroCache() {
+  if (state.keys <= 0) {
+    toast("Нужен хотя бы один Ключ Зеро");
+    haptic.warn();
+    return;
+  }
+
+  if (backendOnline) {
+    try {
+      const result = await apiRequest("/api/cache/open", {
+        method: "POST",
+        body: { count: 1 },
+      });
+      await refreshBootstrap();
+      render();
+      showRewardSheet({
+        title: "Тайник открыт",
+        subtitle: `Осталось ключей: ${result.zeroKeysLeft}`,
+        cards: result.results || [],
+      });
+      haptic.ok();
+    } catch (error) {
+      toast(`Тайник не открылся: ${error.message}`);
+      haptic.error();
+    }
+    return;
+  }
+
+  const pool = state.cards.length ? state.cards : [
+    { id: "card_001", name: "Фишинговая Маска", rarity: "common", level: 1 },
+  ];
+  const card = normalizeRewardCard(pool[Math.floor(Math.random() * pool.length)]);
+  state.keys -= 1;
+  grantMockCard(card);
+  render();
+  showRewardSheet({
+    title: "Тайник открыт",
+    subtitle: "Mock-режим: награда живет только до перезагрузки",
+    cards: [card],
+  });
+  haptic.ok();
+}
+
+function grantMockCard(card) {
+  if (!card) return;
+  const owned = state.cards.find(item => item.id === card.id);
+  if (owned) {
+    owned.level = Math.min(4, (owned.level || 1) + 1);
+    return;
+  }
+  state.cards.unshift(card);
 }
 
 async function buyProduct(productId) {
@@ -668,6 +752,42 @@ function toast(message) {
   element.textContent = message;
   document.querySelector(".phone").appendChild(element);
   setTimeout(() => element.remove(), 1800);
+}
+
+function showRewardSheet({ title, subtitle = "", credits = 0, cards = [] }) {
+  document.querySelector(".reward-layer")?.remove();
+  const phone = document.querySelector(".phone");
+  if (!phone) return;
+
+  const normalizedCards = cards.map(normalizeRewardCard).filter(Boolean);
+  const layer = document.createElement("div");
+  layer.className = "reward-layer";
+  layer.innerHTML = `
+    <div class="reward-sheet">
+      <div class="reward-burst"></div>
+      <button class="close-btn reward-close" data-close-reward>Закрыть</button>
+      <span class="eyebrow">награда получена</span>
+      <h2>${title}</h2>
+      ${subtitle ? `<p>${subtitle}</p>` : ""}
+      ${credits ? `<div class="reward-currency"><span>₵</span><strong>+${credits.toLocaleString("ru-RU")}</strong><small>кредиты SOC</small></div>` : ""}
+      ${normalizedCards.length ? `
+        <div class="reward-cards">
+          ${normalizedCards.map(card => `
+            <article class="reward-card rarity-${card.rarity}">
+              <small>${card.rarity.toUpperCase()}</small>
+              <strong>${card.name}</strong>
+              <span>Lv.${card.level}</span>
+            </article>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+  phone.appendChild(layer);
+  layer.querySelector("[data-close-reward]").addEventListener("click", () => layer.remove());
+  layer.addEventListener("click", event => {
+    if (event.target === layer) layer.remove();
+  });
 }
 
 async function startPacketRain(threat) {
@@ -841,6 +961,12 @@ async function startPacketRain(threat) {
         render();
         if (response.accepted) {
           toast(`API: +${response.rewards.credits} кредитов`);
+          showRewardSheet({
+            title: "Угроза нейтрализована",
+            subtitle: `Fair score +${response.fairScoreDelta}. Объект защищен.`,
+            credits: response.rewards.credits,
+            cards: response.rewards.cardDrops || [],
+          });
           haptic.ok();
         } else {
           toast(`Сессия не засчитана: ${response.antiCheatFlags.join(", ")}`);
@@ -866,8 +992,18 @@ async function startPacketRain(threat) {
     state.threats = state.threats.filter(item => item.id !== threat.id);
     overlay.remove();
     render();
-    toast(mistakes >= 6 ? "Угроза сорвалась. Объект заражен." : `Нейтрализация: +${credits} кредитов`);
-    mistakes >= 6 ? haptic.error() : haptic.ok();
+    if (mistakes >= 6) {
+      toast("Угроза сорвалась. Объект заражен.");
+      haptic.error();
+    } else {
+      toast(`Нейтрализация: +${credits} кредитов`);
+      showRewardSheet({
+        title: "Угроза нейтрализована",
+        subtitle: "Mock-режим: прогресс не сохранится после перезагрузки",
+        credits,
+      });
+      haptic.ok();
+    }
   }
 
   canvas.addEventListener("pointerdown", event => {
