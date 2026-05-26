@@ -37,6 +37,7 @@ const state = {
   cleanFragments: 0,
   shopProducts: [],
   payments: [],
+  busyProducts: new Set(),
   content: {
     cardsById: {},
     toolsById: {},
@@ -97,7 +98,11 @@ async function apiRequest(path, options = {}) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || `HTTP ${response.status}`);
+    const message = data.detail ? `${data.error || `HTTP ${response.status}`}: ${data.detail}` : (data.error || `HTTP ${response.status}`);
+    const error = new Error(message);
+    error.code = data.error;
+    error.payload = data.payload;
+    throw error;
   }
   return data;
 }
@@ -575,37 +580,134 @@ function renderShop() {
     },
   ];
   const lastPayments = state.payments.slice(-4).reverse();
+  const paidCount = state.payments.filter(payment => payment.status === "paid").length;
+  const pendingCount = state.payments.filter(payment => payment.status === "created").length;
   return html`
-    <section class="panel" style="padding:18px">
-      <div class="section-title">
-        <h2>Магазин</h2>
-        <span>Telegram Stars · честно</span>
+    <section class="shop-hero">
+      <span class="eyebrow">Telegram Stars · fair monetization</span>
+      <h2>Магазин без pay-to-win</h2>
+      <p>Покупки ускоряют коллекционирование и удобство, но не добавляют очки рейтинга. fairScoreImpact всегда равен 0.</p>
+      <div class="shop-ledger">
+        <span><b>${paidCount}</b> оплачено</span>
+        <span><b>${pendingCount}</b> ожидает</span>
+        <span><b>${state.payments.length}</b> всего</span>
       </div>
-      <div class="grid">
-        ${products.map(product => `
-          <div class="tool-tile">
-            <strong>${product.title}</strong>
-            <p>${product.description}</p>
-            <button class="primary-btn" data-buy-product="${product.productId}">
-              Купить за ${product.amount} ${product.currency === "XTR" ? "⭐" : product.currency}
-            </button>
-          </div>
-        `).join("")}
+    </section>
+
+    <section class="panel shop-panel">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">products</span>
+          <h2>Пополнения и бустеры</h2>
+        </div>
+        <span>${backendOnline ? "API online" : "mock mode"}</span>
+      </div>
+      <div class="shop-products">
+        ${products.map(product => renderProduct(product)).join("")}
       </div>
       <div class="section-title" style="margin-top:18px">
-        <h2>История</h2>
+        <div>
+          <span class="eyebrow">receipts</span>
+          <h2>История покупок</h2>
+        </div>
         <span>${state.payments.length} платежей</span>
       </div>
-      <div class="grid">
-        ${lastPayments.length ? lastPayments.map(payment => `
-          <div class="tool-tile">
-            <strong>${payment.title || payment.productId}</strong>
-            <p>${payment.status} · ${payment.amount || payment.amountMinor} ${payment.currency}</p>
-          </div>
-        `).join("") : `<div class="tool-tile"><strong>Пока пусто</strong><p>Покупки появятся здесь только после создания счета.</p></div>`}
+      <div class="receipt-list">
+        ${lastPayments.length ? lastPayments.map(payment => renderPayment(payment)).join("") : `<div class="empty-card"><strong>Пока пусто</strong><p>Покупки появятся здесь только после создания счета.</p></div>`}
       </div>
     </section>
   `;
+}
+
+function renderProduct(product) {
+  const productId = product.productId;
+  const busy = state.busyProducts.has(productId);
+  const status = productPaymentSummary(productId);
+  const disabled = busy || !backendOnline;
+  const grant = formatProductGrant(product.grant);
+  return `
+    <article class="shop-product">
+      <div class="product-icon">${productIcon(product)}</div>
+      <div class="product-copy">
+        <div class="product-topline">
+          <strong>${product.title}</strong>
+          <span class="price-chip">${formatAmount(product)}</span>
+        </div>
+        <p>${product.description}</p>
+        <div class="product-meta">
+          <span>${grant}</span>
+          <span>fairScore +0</span>
+          ${status ? `<span>${status}</span>` : ""}
+        </div>
+      </div>
+      <button class="primary-btn shop-buy" data-buy-product="${productId}" ${disabled ? "disabled" : ""}>
+        ${busy ? "Создаем..." : backendOnline ? "Купить" : "Только API"}
+      </button>
+    </article>
+  `;
+}
+
+function renderPayment(payment) {
+  const status = paymentStatusMeta(payment.status);
+  const createdAt = payment.createdAt ? new Date(payment.createdAt) : null;
+  const createdLabel = createdAt && Number.isFinite(createdAt.getTime())
+    ? createdAt.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "только что";
+  return `
+    <article class="receipt-row status-${payment.status || "unknown"}">
+      <span class="receipt-status">${status.icon}</span>
+      <div>
+        <strong>${payment.title || payment.productId}</strong>
+        <p>${status.label} · ${formatAmount(payment)} · ${createdLabel}</p>
+        ${payment.failReason ? `<small>${payment.failReason}</small>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function paymentStatusMeta(status) {
+  return {
+    created: { icon: "…", label: "счет создан, ждет оплаты" },
+    paid: { icon: "✓", label: "оплачено, награда выдана" },
+    failed: { icon: "!", label: "ошибка счета" },
+    cancelled: { icon: "×", label: "отменено" },
+    refunded: { icon: "↩", label: "возврат" },
+  }[status] || { icon: "?", label: status || "неизвестно" };
+}
+
+function productPaymentSummary(productId) {
+  const related = state.payments.filter(payment => payment.productId === productId);
+  if (!related.length) return "";
+  const paid = related.filter(payment => payment.status === "paid").length;
+  const pending = related.filter(payment => payment.status === "created").length;
+  if (paid && pending) return `${paid} оплачено · ${pending} ожидает`;
+  if (paid) return `${paid} оплачено`;
+  if (pending) return `${pending} ожидает`;
+  return `${related.length} попыток`;
+}
+
+function formatAmount(item) {
+  const amount = item.amount ?? item.amountMinor ?? 0;
+  const currency = item.currency === "XTR" ? "⭐" : item.currency;
+  return `${amount} ${currency}`;
+}
+
+function formatProductGrant(grant = {}) {
+  const parts = [];
+  if (grant.zeroKeys) parts.push(`+${grant.zeroKeys} ключей`);
+  if (grant.cleanFragments) parts.push(`+${grant.cleanFragments} фрагментов`);
+  if (grant.extraSpins) parts.push(`+${grant.extraSpins} спин`);
+  if (grant.socEliteDays) parts.push(`ELITE ${grant.socEliteDays}д`);
+  return parts.join(" · ") || "косметика";
+}
+
+function productIcon(product) {
+  const grant = product.grant || {};
+  if (grant.zeroKeys) return "◇";
+  if (grant.cleanFragments) return "✦";
+  if (grant.extraSpins) return "↻";
+  if (grant.socEliteDays) return "E";
+  return "⭐";
 }
 
 function bindEvents() {
@@ -709,15 +811,19 @@ async function buyProduct(productId) {
     haptic.warn();
     return;
   }
+  if (state.busyProducts.has(productId)) return;
+  state.busyProducts.add(productId);
+  render();
   try {
     const invoice = await apiRequest("/api/payments/invoice", {
       method: "POST",
       body: { productId },
     });
     await refreshPaymentHistory();
+    state.busyProducts.delete(productId);
     render();
     if (!invoice.invoiceUrl) {
-      toast(invoice.demoMode ? "Счет создан в demo-режиме, награда не выдана" : "Не удалось получить ссылку счета");
+      toast(invoice.demoMode ? "Счет создан в demo-режиме. Награда не выдана без оплаты." : "Счет создан, но Telegram-ссылка недоступна. Награда не выдана.");
       haptic.warn();
       return;
     }
@@ -740,9 +846,28 @@ async function buyProduct(productId) {
       }
     });
   } catch (error) {
-    toast(`Счет не создан: ${error.message}`);
+    await refreshPaymentHistory().catch(() => {});
+    toast(paymentErrorMessage(error));
     haptic.error();
+  } finally {
+    if (state.busyProducts.has(productId)) {
+      state.busyProducts.delete(productId);
+      render();
+    }
   }
+}
+
+function paymentErrorMessage(error) {
+  if (error.code === "invoice_link_failed") {
+    return "Telegram не открыл счет. Проверь BOT_TOKEN, Stars payments и Mini App запуск из Telegram.";
+  }
+  if (error.code === "unknown_product") {
+    return "Товар не найден в платежном каталоге.";
+  }
+  if (error.code === "unauthorized" || error.code === "missing_bearer_token") {
+    return "Сессия устарела. Перезапусти Mini App.";
+  }
+  return `Счет не создан: ${error.message}`;
 }
 
 function toast(message) {
