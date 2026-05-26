@@ -88,3 +88,30 @@ Invoke-RestMethod `
 cd C:\Users\uragu\telegram-bot
 py -3 -m unittest discover zero-day-defenders-network\backend\tests -q
 ```
+
+## MVP smoke test
+
+Run this after starting the API with `ZDNET_DEV_AUTH=1`. It validates the full MVP loop:
+dev auth -> bootstrap -> threat attempt -> rewards -> cache opening -> invoice creation -> Telegram payment grant -> idempotent duplicate payment.
+
+Standalone backend:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
+$env:ZDNET_DEV_AUTH='1'
+py -3 -m zdnet_backend.server
+```
+
+In another terminal:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
+py -3 tools\smoke_mvp.py --base-url http://127.0.0.1:8090
+```
+
+Bot-mounted API:
+
+```powershell
+cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
+py -3 tools\smoke_mvp.py --base-url https://your-domain.example/zdnet_api
+```
