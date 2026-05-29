@@ -8620,11 +8620,27 @@ def start_http_server_thread():
 
     async def serve_zdnet_file(request):
         filename = request.match_info.get('filename', '')
-        safe_filename = pathlib.Path(filename).name
-        if safe_filename != filename or safe_filename.startswith('.'):
+        normalized = filename.replace('\\', '/').strip('/')
+        relative_path = pathlib.PurePosixPath(normalized)
+        parts = relative_path.parts
+        if (
+            not normalized
+            or any(part in ('', '.', '..') or part.startswith('.') for part in parts)
+        ):
             logger.warning(f"serve_zdnet_file forbidden: filename='{filename}', path='{request.path_qs}'")
             return aiohttp_web.Response(text='Forbidden', status=403)
-        fpath = ZDNET_FRONTEND_DIR / safe_filename
+
+        try:
+            frontend_root = ZDNET_FRONTEND_DIR.resolve()
+            fpath = (frontend_root / pathlib.Path(*parts)).resolve()
+        except Exception:
+            logger.warning(f"serve_zdnet_file bad path: filename='{filename}', path='{request.path_qs}'")
+            return aiohttp_web.Response(text='Forbidden', status=403)
+
+        if fpath != frontend_root and frontend_root not in fpath.parents:
+            logger.warning(f"serve_zdnet_file escaped root: filename='{filename}', path='{request.path_qs}'")
+            return aiohttp_web.Response(text='Forbidden', status=403)
+
         if fpath.exists() and fpath.is_file():
             content_types = {
                 '.js': 'application/javascript; charset=utf-8',
@@ -8681,7 +8697,7 @@ def start_http_server_thread():
         # Файлы новой игры ZERO_DAY
         app_http.router.add_get('/zdnet', serve_zdnet_index)
         app_http.router.add_get('/zdnet/', serve_zdnet_index)
-        app_http.router.add_get('/zdnet/{filename}', serve_zdnet_file)
+        app_http.router.add_get('/zdnet/{filename:.*}', serve_zdnet_file)
         app_http.router.add_get('/{filename}', serve_game_file)
         runner = aiohttp_web.AppRunner(app_http)
         await runner.setup()
