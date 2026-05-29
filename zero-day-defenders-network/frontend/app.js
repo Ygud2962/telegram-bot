@@ -1075,12 +1075,22 @@ function daemonMood(context = "default") {
   return "idle";
 }
 
-function daemonAssetMood(mood = "idle") {
-  return ["idle", "alert", "happy", "hungry", "sad", "levelup"].includes(mood) ? mood : "idle";
+function daemonEmoji(level = getDaemonState().level) {
+  const safeLevel = clampDaemonLevel(level);
+  if (safeLevel >= 8) return "🐉";
+  if (safeLevel >= 4) return "🐲";
+  if (safeLevel >= 2) return "😈";
+  return "👾";
 }
 
-function daemonAssetSrc(level = getDaemonState().level, mood = "idle") {
-  return `assets/daemon/level-${String(clampDaemonLevel(level)).padStart(2, "0")}/${daemonAssetMood(mood)}.png`;
+function daemonMoodBadge(mood = "idle") {
+  return {
+    alert: "⚠️",
+    happy: "✨",
+    hungry: "🍖",
+    levelup: "🌟",
+    sad: "💧",
+  }[mood] || "";
 }
 
 function daemonLine(context = "map") {
@@ -1125,55 +1135,13 @@ function renderDaemonCompanion(context = "map") {
 function renderDaemonAvatar(level = getDaemonState().level, variant = "card", mood = daemonMood()) {
   const safeLevel = clampDaemonLevel(level);
   const evo = getDaemonEvolution(safeLevel);
-  const hasSegments = safeLevel >= 2;
-  const hasLegs = safeLevel >= 3;
-  const hasArmor = safeLevel >= 4;
-  const hasWings = safeLevel >= 5;
-  const hasTail = safeLevel >= 6;
-  const hasClaws = safeLevel >= 7;
-  const hasHorns = safeLevel >= 8;
-  const hasHalo = safeLevel >= 9;
-  const hasHolo = safeLevel >= 10;
-  const mouthPath = {
-    happy: "M88 102 C94 114 106 114 112 102",
-    levelup: "M88 102 C94 114 106 114 112 102",
-    hungry: "M91 109 C96 104 104 104 109 109",
-    sad: "M91 109 C96 104 104 104 109 109",
-    alert: "M91 105 L109 105",
-  }[mood] || "M91 105 C96 110 104 110 109 105";
-  const assetSrc = daemonAssetSrc(safeLevel, mood);
+  const badge = daemonMoodBadge(mood);
   return `
     <span class="daemon-avatar daemon-avatar-${variant} daemon-level-${safeLevel} daemon-mood-${mood}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-hidden="true">
-      <img class="daemon-art" src="${assetSrc}" alt="" loading="lazy" draggable="false" onerror="this.hidden=true;this.nextElementSibling.classList.add('is-visible')">
-      <svg class="daemon-avatar-svg daemon-svg-fallback" viewBox="0 0 200 200" role="img">
-        <defs>
-          <radialGradient id="daemonGlow${safeLevel}${variant}" cx="50%" cy="38%" r="62%">
-            <stop offset="0%" stop-color="var(--daemon-primary)" stop-opacity=".96"/>
-            <stop offset="56%" stop-color="var(--daemon-secondary)" stop-opacity=".42"/>
-            <stop offset="100%" stop-color="transparent" stop-opacity="0"/>
-          </radialGradient>
-        </defs>
-        <circle class="daemon-aura" cx="100" cy="104" r="${64 + safeLevel * 3}" fill="url(#daemonGlow${safeLevel}${variant})"/>
-        ${hasHolo ? `<path class="daemon-holo-shard shard-a" d="M49 32 L72 18 L84 48 Z"/><path class="daemon-holo-shard shard-b" d="M145 28 L171 45 L142 58 Z"/>` : ""}
-        ${hasHalo ? `<ellipse class="daemon-halo" cx="100" cy="38" rx="45" ry="13"/>` : ""}
-        ${hasTail ? `<path class="daemon-tail" d="M133 126 C176 122 184 83 153 76 C179 101 156 113 134 110"/>` : ""}
-        ${hasWings ? `<path class="daemon-wing left" d="M73 92 C35 63 24 98 44 134 C50 113 61 105 80 110 Z"/><path class="daemon-wing right" d="M127 92 C165 63 176 98 156 134 C150 113 139 105 120 110 Z"/>` : ""}
-        ${hasSegments ? `<g class="daemon-segments"><circle cx="74" cy="128" r="20"/><circle cx="100" cy="136" r="24"/><circle cx="126" cy="128" r="20"/></g>` : ""}
-        <path class="daemon-body" d="M58 112 C58 75 82 55 100 55 C118 55 142 75 142 112 C142 146 124 163 100 163 C76 163 58 146 58 112Z"/>
-        ${hasArmor ? `<path class="daemon-armor" d="M72 110 C82 96 118 96 128 110 L121 142 C110 150 90 150 79 142 Z"/>` : ""}
-        ${hasLegs ? `<path class="daemon-leg left" d="M73 151 L58 171 L84 166 Z"/><path class="daemon-leg right" d="M127 151 L142 171 L116 166 Z"/>` : ""}
-        ${hasClaws ? `<path class="daemon-claw left" d="M58 171 L50 183 L68 174"/><path class="daemon-claw right" d="M142 171 L150 183 L132 174"/>` : ""}
-        ${hasHorns ? `<path class="daemon-horn left" d="M76 59 L64 30 L91 51"/><path class="daemon-horn right" d="M124 59 L136 30 L109 51"/>` : ""}
-        ${safeLevel >= 3 ? `<path class="daemon-ear left" d="M76 67 L55 45 L62 82"/><path class="daemon-ear right" d="M124 67 L145 45 L138 82"/>` : ""}
-        <path class="daemon-head" d="M62 82 C68 54 87 42 100 42 C113 42 132 54 138 82 C142 109 124 126 100 126 C76 126 58 109 62 82Z"/>
-        <path class="daemon-face-plate" d="M75 84 C80 70 91 64 100 64 C109 64 120 70 125 84 C127 101 116 112 100 112 C84 112 73 101 75 84Z"/>
-        <circle class="daemon-eye left" cx="88" cy="88" r="${safeLevel >= 8 ? 6 : 5}"/>
-        <circle class="daemon-eye right" cx="112" cy="88" r="${safeLevel >= 8 ? 6 : 5}"/>
-        <path class="daemon-mouth" d="${mouthPath}"/>
-        <circle class="daemon-core" cx="100" cy="${hasArmor ? 126 : 132}" r="${8 + Math.min(6, safeLevel)}"/>
-        ${safeLevel >= 2 ? `<path class="daemon-antenna left" d="M86 49 C76 32 66 28 57 24"/><path class="daemon-antenna right" d="M114 49 C124 32 134 28 143 24"/><circle class="daemon-antenna-dot" cx="57" cy="24" r="4"/><circle class="daemon-antenna-dot" cx="143" cy="24" r="4"/>` : ""}
-        ${hasHolo ? `<path class="daemon-holo-line" d="M45 150 C75 177 126 177 155 150"/><path class="daemon-holo-line second" d="M54 164 C82 190 119 190 147 164"/>` : ""}
-      </svg>
+      <span class="daemon-glow"></span>
+      <span class="daemon-emoji">${daemonEmoji(safeLevel)}</span>
+      ${badge ? `<span class="daemon-mood-badge">${badge}</span>` : ""}
+      ${safeLevel >= 9 ? `<span class="daemon-crown">✦</span>` : ""}
     </span>
   `;
 }
@@ -1182,9 +1150,12 @@ function renderMapDaemonMarker() {
   const daemon = getDaemonState();
   const evo = getDaemonEvolution(daemon.level);
   const mood = daemonMood("map");
+  const badge = daemonMoodBadge(mood);
   return `
-    <g class="daemon map-daemon daemon-mood-${mood}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-label="Кибер-демон ${evo.name}">
-      <image class="map-daemon-art" href="${daemonAssetSrc(daemon.level, mood)}" x="184" y="156" width="80" height="80" preserveAspectRatio="xMidYMid meet"/>
+    <g class="daemon map-daemon daemon-mood-${mood}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-label="Cyber-daemon ${evo.name}">
+      <circle class="map-daemon-aura" cx="224" cy="202" r="${20 + daemon.level}"/>
+      <text class="map-daemon-emoji" x="224" y="213" text-anchor="middle">${daemonEmoji(daemon.level)}</text>
+      ${badge ? `<text class="map-daemon-badge" x="248" y="185" text-anchor="middle">${badge}</text>` : ""}
     </g>
   `;
 }
