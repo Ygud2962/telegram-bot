@@ -208,6 +208,12 @@ if not (1 <= PORT <= 65535):
 BOT_VERSION = os.environ.get('BOT_VERSION', '9.8.0').strip() or '9.8.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.7.78').strip() or '1.7.78'
 ZDNET_VERSION = os.environ.get('ZDNET_VERSION', '0.1.0').strip() or '0.1.0'
+PROJECT_AUTHOR_LABEL = os.environ.get('PROJECT_AUTHOR_LABEL', 'Автор проекта').strip() or 'Автор проекта'
+PROJECT_AUTHOR_URL = os.environ.get('PROJECT_AUTHOR_URL', 'https://t.me/Yury_hud').strip()
+if PROJECT_AUTHOR_URL.startswith('@'):
+    PROJECT_AUTHOR_URL = 'https://t.me/' + PROJECT_AUTHOR_URL[1:]
+elif PROJECT_AUTHOR_URL and not PROJECT_AUTHOR_URL.startswith('http'):
+    PROJECT_AUTHOR_URL = 'https://t.me/' + PROJECT_AUTHOR_URL.lstrip('/')
 # Бета-режим: если GAME_BETA=1 — игра только для белого списка. 0/пусто — для всех.
 GAME_BETA = os.environ.get('GAME_BETA', '0').strip() == '1'
 GAME_AUTH_REQUIRED = os.environ.get('GAME_AUTH_REQUIRED', '1').strip() != '0'
@@ -218,6 +224,10 @@ _beta_cache_ts: float = 0
 # Кэш режима доступа к игре
 _game_mode_cache: str = 'beta'
 _game_mode_cache_ts: float = 0
+_zdnet_beta_cache: set = set()
+_zdnet_beta_cache_ts: float = 0
+_zdnet_mode_cache: str = 'beta'
+_zdnet_mode_cache_ts: float = 0
 
 
 # ══════════════════════════════════════════════════════════
@@ -1084,6 +1094,30 @@ def btn(text: str, data: str) -> InlineKeyboardButton:
 
 BACK_TO_MAIN = [[btn("🏠 Главное меню", 'back_to_main')]]
 
+
+def author_contact_rows(back_callback: str = 'menu_games') -> list[list[InlineKeyboardButton]]:
+    rows: list[list[InlineKeyboardButton]] = []
+    if PROJECT_AUTHOR_URL:
+        rows.append([InlineKeyboardButton(f"💬 {PROJECT_AUTHOR_LABEL}", url=PROJECT_AUTHOR_URL)])
+    rows.append([btn("↩️ Игры", back_callback), btn("🏠 Главное меню", 'back_to_main')])
+    return rows
+
+
+def game_access_notice(game_title: str, mode: str) -> str:
+    if mode == 'closed':
+        return (
+            f"🔒 <b>{game_title} временно закрыта</b>\n\n"
+            "Игра сейчас недоступна для обычных пользователей.\n"
+            "Вероятно, идут технические работы или подготовка обновления.\n\n"
+            "Все вопросы по доступу и срокам открытия — к автору проекта."
+        )
+    return (
+        f"🧪 <b>{game_title} находится в бета-режиме</b>\n\n"
+        "Сейчас игра доступна только администраторам, тестировщикам "
+        "и пользователям из бета-списка.\n\n"
+        "Если вы хотите получить доступ или сообщить об ошибке — напишите автору проекта."
+    )
+
 # Ключи, которые относятся к текущему «флоу» и могут быть безопасно сброшены
 _FLOW_KEYS = (
     'adding_sub', 'sub_step', 'sub_data', 'sub_date', 'sub_day',
@@ -1100,6 +1134,7 @@ _FLOW_KEYS = (
     'deleting_sub', 'searching_teacher', 'found_teachers',
     'awaiting_ai', 'registering_teacher',
     'schedule_chapter', 'beta_action',
+    'zdnet_beta_action', 'zdnet_role_action',
 )
 
 
@@ -3284,6 +3319,60 @@ async def is_game_allowed(user_id: int) -> bool:
     return user_id in _beta_cache
 
 
+async def _get_cached_zdnet_mode() -> str:
+    import time
+    global _zdnet_mode_cache, _zdnet_mode_cache_ts
+    if time.time() - _zdnet_mode_cache_ts > 30:
+        _zdnet_mode_cache = await asyncio.to_thread(db.get_zdnet_access_mode)
+        _zdnet_mode_cache_ts = time.time()
+    if _zdnet_mode_cache not in ('beta', 'open', 'closed'):
+        _zdnet_mode_cache = 'beta'
+    return _zdnet_mode_cache
+
+
+async def is_zdnet_privileged_async(user_id: int, *, bot_admin: bool | None = None,
+                                    zdnet_role: str | None = None) -> bool:
+    if bot_admin is None:
+        bot_admin = await is_bot_admin_async(user_id)
+    if bot_admin:
+        return True
+    if zdnet_role is None:
+        try:
+            zdnet_role = await asyncio.to_thread(db.get_zdnet_role, user_id)
+        except Exception:
+            zdnet_role = None
+    return zdnet_role == 'admin'
+
+
+async def is_zdnet_allowed(user_id: int) -> bool:
+    """Доступ к ZERO_DAY по режимам closed / beta / open."""
+    import time
+    global _zdnet_beta_cache, _zdnet_beta_cache_ts
+
+    bot_admin = await is_bot_admin_async(user_id)
+    try:
+        role = await asyncio.to_thread(db.get_zdnet_role, user_id)
+    except Exception:
+        role = 'player'
+
+    if bot_admin or role == 'admin':
+        return True
+
+    mode = await _get_cached_zdnet_mode()
+    if mode == 'closed':
+        return False
+    if role == 'tester':
+        return mode in ('beta', 'open')
+    if mode == 'open':
+        return True
+
+    if time.time() - _zdnet_beta_cache_ts > 60:
+        rows = await asyncio.to_thread(db.get_zdnet_beta_users)
+        _zdnet_beta_cache = {r[0] for r in rows}
+        _zdnet_beta_cache_ts = time.time()
+    return user_id in _zdnet_beta_cache
+
+
 async def menu_game(query, context):
     """Запуск игры Шифровальщик с учётом роли (admin/tester/player)."""
     await query.answer()
@@ -3292,29 +3381,16 @@ async def menu_game(query, context):
     # Проверка доступа (бета-режим)
     if not await is_game_allowed(user.id):
         mode = await _get_cached_game_mode()
-        if mode == 'closed':
-            denied_text = (
-                "🔧 <b>Игра в техническом режиме</b>\n\n"
-                "Сейчас вход в игру ограничен.\n"
-                "Доступ есть только у администраторов игры.\n\n"
-                "<i>Дождитесь завершения техработ или обратитесь к администратору.</i>"
-            )
-        else:
-            denied_text = (
-                "🔒 <b>Нет доступа</b>\n\n"
-                "Вы пока не добавлены в активный режим игры.\n"
-                "Попросите администратора выдать доступ.\n\n"
-                "<i>После выдачи доступа кнопка игры станет активной.</i>"
-            )
-        await safe_edit(query, denied_text, [BACK_TO_MAIN[0]])
+        await safe_edit(query, game_access_notice("Шифровальщик", mode), author_contact_rows())
         return
 
     if not GAME_URL:
         await safe_edit(query,
             "🔐 <b>ШИФРОВАЛЬЩИК</b>\n\n"
             "⚠️ Игра временно недоступна.\n"
-            "<i>Администратор ещё не добавил GAME_URL в Railway.</i>",
-            [BACK_TO_MAIN[0]])
+            "<i>Администратор ещё не добавил GAME_URL в Railway.</i>\n\n"
+            "Все вопросы по доступу — к автору проекта.",
+            author_contact_rows())
         return
 
     from telegram import InlineKeyboardButton, WebAppInfo
@@ -3579,18 +3655,30 @@ async def menu_game(query, context):
 
 async def menu_zdnet(query, context):
     """Запуск ZERO_DAY: Защитники сети как Telegram Mini App."""
+    user = query.from_user
+    if not await is_zdnet_allowed(user.id):
+        mode = await _get_cached_zdnet_mode()
+        await safe_edit(query, game_access_notice("ZERO_DAY", mode), author_contact_rows())
+        return
+
     if not ZDNET_URL:
         await safe_edit(
             query,
             "🛡 <b>ZERO_DAY: ЗАЩИТНИКИ СЕТИ</b>\n\n"
             "⚠️ Mini App пока не настроен.\n\n"
             "Нужно задать <code>BOT_PUBLIC_URL</code> или <code>ZDNET_URL</code>, "
-            "чтобы Telegram мог открыть игру по HTTPS.",
-            [[btn("↩️ Игры", 'menu_games')], [btn("🏠 Главное меню", 'back_to_main')]],
+            "чтобы Telegram мог открыть игру по HTTPS.\n\n"
+            "Все вопросы по доступу — к автору проекта.",
+            author_contact_rows(),
         )
         return
 
     from telegram import InlineKeyboardButton, WebAppInfo
+    try:
+        access_mode = await _get_cached_zdnet_mode()
+        zdnet_role = await asyncio.to_thread(db.get_zdnet_role, user.id)
+    except Exception:
+        access_mode, zdnet_role = 'beta', 'player'
 
     payload_data = {
         'screen': 'map',
@@ -3608,6 +3696,8 @@ async def menu_zdnet(query, context):
     await query.message.edit_text(
         "🛡 <b>ZERO_DAY: ЗАЩИТНИКИ СЕТИ</b>\n"
         "<i>Telegram Mini App · SOC-симулятор</i>\n\n"
+        f"🔐 Режим доступа: <b>{ {'beta': 'бета', 'open': 'открыта', 'closed': 'закрыта'}.get(access_mode, access_mode) }</b>"
+        f" · роль: <b>{zdnet_role}</b>\n\n"
         "Ты — стажёр Центра оперативного реагирования Нового Сектора.\n"
         "На карте появляются угрозы, а твоя задача — нейтрализовать их через "
         "свайпы, графы, пазлы и мини-игры без скучных тестов.\n\n"
@@ -5062,6 +5152,239 @@ async def admin_game_reset_all_confirm(query, context, drop_referrals: bool = Fa
 
 
 # ══════════════════════════════════════════════════════════
+#  АДМИН: ZERO_DAY
+# ══════════════════════════════════════════════════════════
+
+async def admin_zdnet_panel(query, context):
+    """Панель управления доступом ZERO_DAY."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+
+    access_mode, beta_users, roles, stats = await asyncio.gather(
+        asyncio.to_thread(db.get_zdnet_access_mode),
+        asyncio.to_thread(db.get_zdnet_beta_users),
+        asyncio.to_thread(db.get_zdnet_roles, 50),
+        asyncio.to_thread(db.get_zdnet_admin_stats),
+    )
+    beta_count = len(beta_users)
+    role_count = len(roles)
+    mode_labels = {
+        'beta': f"🧪 Бета-режим ({beta_count})",
+        'open': "🟢 Игра открыта",
+        'closed': "🔒 Игра закрыта",
+    }
+    mode_btns = {
+        'beta': btn("🧪 Бета", 'zdnet_mode_beta'),
+        'open': btn("🟢 Открыта", 'zdnet_mode_open'),
+        'closed': btn("🔒 Закрыта", 'zdnet_mode_closed'),
+    }
+    if access_mode in mode_btns:
+        current = mode_btns.pop(access_mode)
+        mode_row = [btn(f"✅ {current.text}", 'noop')]
+    else:
+        mode_row = [btn(f"✅ {mode_labels.get(access_mode, access_mode)}", 'noop')]
+
+    text = (
+        "🛡 <b>Управление ZERO_DAY</b>\n\n"
+        f"🔐 Режим: <b>{mode_labels.get(access_mode, access_mode)}</b>\n"
+        f"👥 Игроков в ZDNET БД: <b>{int(stats.get('players', 0) or 0)}</b>\n"
+        f"🧪 Бета-доступ: <b>{beta_count}</b>\n"
+        f"🎭 Ролей выдано: <b>{role_count}</b>\n"
+        f"👑 Админов ZERO_DAY: <b>{int(stats.get('admins', 0) or 0)}</b>\n"
+        f"🧪 Тестировщиков ZERO_DAY: <b>{int(stats.get('testers', 0) or 0)}</b>\n\n"
+        f"🌐 Frontend: <code>{ZDNET_URL or 'не настроен'}</code>\n"
+        f"🔌 API: <code>{ZDNET_API_URL or 'не настроен'}</code>\n"
+        f"🔖 Версия: <b>{ZDNET_VERSION}</b>\n\n"
+        "В beta/closed обычные пользователи видят уведомление и кнопку связи с автором."
+    )
+
+    kb = [
+        mode_row,
+        list(mode_btns.values()),
+        [btn("🧪 Бета-список", 'admin_zdnet_beta_panel'), btn("🎭 Роли", 'admin_zdnet_roles')],
+        [btn("👑 Сделать меня admin", 'admin_zdnet_make_me_admin')],
+        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_set_zdnet_mode(query, context, mode: str):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    ok = await asyncio.to_thread(db.set_zdnet_access_mode, mode)
+    global _zdnet_mode_cache, _zdnet_mode_cache_ts, _zdnet_beta_cache, _zdnet_beta_cache_ts
+    _zdnet_mode_cache = mode if ok else _zdnet_mode_cache
+    _zdnet_mode_cache_ts = 0
+    _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
+    mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
+    txt = f"✅ Режим ZERO_DAY: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
+    await safe_edit(query, txt, [[btn("◀️ ZERO_DAY", 'admin_zdnet_panel')]])
+
+
+async def admin_zdnet_beta_panel(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    users = await asyncio.to_thread(db.get_zdnet_beta_users)
+    lines = [f"🧪 <b>БЕТА-СПИСОК ZERO_DAY</b>\n\nДоступ имеют <b>{len(users)}</b> чел. + роли admin/tester."]
+    if users:
+        lines.append("\n<b>Пользователи:</b>")
+        for uid, name, added, note in users[:20]:
+            lines.append(f"• <b>{name or 'Игрок'}</b> <code>{uid}</code>" + (f" — {note}" if note else ""))
+    kb = [
+        [btn("➕ Добавить", 'admin_zdnet_beta_add'), btn("➖ Убрать", 'admin_zdnet_beta_remove')],
+        [btn("🧹 Очистить список", 'admin_zdnet_beta_clear_confirm')],
+        [btn("↩️ ZERO_DAY", 'admin_zdnet_panel'), btn("🏠 Меню", 'back_to_main')],
+    ]
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_zdnet_beta_add(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    context.user_data['zdnet_beta_action'] = 'add'
+    await safe_edit(
+        query,
+        "➕ <b>Добавить бета-тестера ZERO_DAY</b>\n\n"
+        "Введи Telegram ID. Можно несколько через запятую:\n"
+        "<code>123456789, 987654321</code>",
+        [[btn("❌ Отмена", 'admin_zdnet_beta_panel')]],
+    )
+
+
+async def admin_zdnet_beta_remove(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    users = await asyncio.to_thread(db.get_zdnet_beta_users)
+    if not users:
+        await safe_edit(query, "ℹ️ Бета-список ZERO_DAY пуст.", [[btn("↩️ Бета-панель", 'admin_zdnet_beta_panel')]])
+        return
+    kb = [[btn(f"✖ {r[1] or r[0]} ({r[0]})", f'azbeta_rm_{r[0]}')] for r in users]
+    kb.append([btn("❌ Отмена", 'admin_zdnet_beta_panel')])
+    await safe_edit(query, "➖ <b>Убрать из бета-списка ZERO_DAY</b>", kb)
+
+
+async def admin_zdnet_beta_clear_confirm(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    await safe_edit(
+        query,
+        "⚠️ Очистить бета-список ZERO_DAY?\n\n"
+        "Режим доступа не изменится автоматически. Если нужно открыть игру всем — переключите режим на «Открыта».",
+        [[btn("✅ Очистить", 'azbeta_clear_do')], [btn("❌ Отмена", 'admin_zdnet_beta_panel')]],
+    )
+
+
+async def admin_zdnet_beta_clear_do(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    global _zdnet_beta_cache, _zdnet_beta_cache_ts
+    _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
+    deleted = await asyncio.to_thread(db.clear_zdnet_beta_list)
+    await safe_edit(query, f"✅ Бета-список ZERO_DAY очищен. Удалено: <b>{deleted}</b>.",
+                    [[btn("↩️ ZERO_DAY", 'admin_zdnet_panel')]])
+
+
+async def handle_zdnet_beta_add_input(update, context, text):
+    global _zdnet_beta_cache, _zdnet_beta_cache_ts
+    parts = [p.strip() for p in text.replace(',', ' ').split()]
+    added, failed = [], []
+    for part in parts:
+        try:
+            uid = int(part)
+            uinfo = await asyncio.to_thread(db.get_user_info, uid) if hasattr(db, 'get_user_info') else None
+            uname = None
+            if uinfo and isinstance(uinfo, dict):
+                uname = uinfo.get('first_name') or uinfo.get('username')
+            ok = await asyncio.to_thread(db.add_zdnet_beta_user, uid, uname)
+            if ok: added.append(str(uid))
+            else: failed.append(str(uid))
+        except ValueError:
+            failed.append(part)
+    _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
+    context.user_data.pop('zdnet_beta_action', None)
+    lines = []
+    if added: lines.append(f"✅ Добавлено: {', '.join(added)}")
+    if failed: lines.append(f"❌ Ошибка: {', '.join(failed)}")
+    lines.append("\n<i>Теперь эти пользователи смогут открыть ZERO_DAY в beta-режиме.</i>")
+    await update.message.reply_text("\n".join(lines), parse_mode='HTML',
+                                    reply_markup=InlineKeyboardMarkup([[btn("↩️ Бета-панель", 'admin_zdnet_beta_panel')]]))
+
+
+async def admin_zdnet_roles(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    rows = await asyncio.to_thread(db.get_zdnet_roles, 50)
+    lines = ["🎭 <b>РОЛИ ZERO_DAY</b>\n"]
+    if rows:
+        role_names = {'admin': '👑 admin', 'tester': '🧪 tester', 'player': '🎮 player'}
+        for uid, name, role, updated in rows[:25]:
+            lines.append(f"• <b>{name or 'Игрок'}</b> <code>{uid}</code> — {role_names.get(role, role)}")
+    else:
+        lines.append("<i>Отдельные роли ещё не назначены.</i>")
+    kb = [
+        [btn("➕ Назначить роль", 'admin_zdnet_role_add')],
+        [btn("↩️ ZERO_DAY", 'admin_zdnet_panel'), btn("🏠 Меню", 'back_to_main')],
+    ]
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_zdnet_role_add(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    context.user_data['zdnet_role_action'] = 'set'
+    await safe_edit(
+        query,
+        "➕ <b>Назначить роль ZERO_DAY</b>\n\n"
+        "Формат:\n"
+        "<code>123456789 admin</code>\n"
+        "<code>123456789 tester</code>\n"
+        "<code>123456789 player</code>",
+        [[btn("❌ Отмена", 'admin_zdnet_roles')]],
+    )
+
+
+async def handle_zdnet_role_input(update, context, text):
+    parts = text.replace(',', ' ').split()
+    if len(parts) < 2:
+        await update.message.reply_text("❌ Нужен формат: <code>user_id role</code>", parse_mode='HTML')
+        return
+    try:
+        uid = int(parts[0])
+    except ValueError:
+        await update.message.reply_text("❌ user_id должен быть числом.")
+        return
+    role = parts[1].strip().lower()
+    ok = await asyncio.to_thread(db.set_zdnet_role, uid, role)
+    context.user_data.pop('zdnet_role_action', None)
+    role_name = {'admin': 'Администратор 👑', 'tester': 'Тестировщик 🧪', 'player': 'Игрок 🎮'}.get(role, role)
+    await update.message.reply_text(
+        f"{'✅ Роль ZERO_DAY изменена' if ok else '❌ Не удалось изменить роль'}\n"
+        f"ID: <code>{uid}</code>\nРоль: <b>{role_name}</b>",
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup([[btn("↩️ Роли ZERO_DAY", 'admin_zdnet_roles')]]),
+    )
+
+
+async def admin_zdnet_make_me_admin(query, context):
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔"); return
+    await query.answer()
+    ok = await asyncio.to_thread(db.set_zdnet_role, query.from_user.id, 'admin')
+    await safe_edit(query,
+                    "✅ Вам выдана роль <b>admin</b> в ZERO_DAY." if ok else "❌ Не удалось выдать роль.",
+                    [[btn("↩️ ZERO_DAY", 'admin_zdnet_panel')]])
+
+
+# ══════════════════════════════════════════════════════════
 #  МОЙ ИГРОВОЙ РЕЖИМ (для администратора)
 # ══════════════════════════════════════════════════════════
 async def admin_manage_bot_admins(query, context):
@@ -5280,6 +5603,7 @@ async def show_admin_panel(query):
 
     kb = [
         [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Шифровальщик", 'admin_game_panel')],
+        [btn("🛡 ZERO_DAY", 'admin_zdnet_panel')],
         [btn("👤 Мой игровой режим", 'admin_my_game_role')],
         [btn("⚙️ Система", 'admin_system_panel')],
         [btn("🏠 Главное меню",  'back_to_main')],
@@ -5563,6 +5887,12 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             user.id,
             bot_admin=user_is_admin,
         )
+    elif d == 'menu_zdnet':
+        maintenance_scope = 'game'
+        maintenance_bypass = await is_zdnet_privileged_async(
+            user.id,
+            bot_admin=user_is_admin,
+        )
     if await check_maintenance(
         update,
         context,
@@ -5773,6 +6103,15 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             await safe_edit(query,
                 f"{'✅ Тестер удалён из списка.' if ok else '❌ Не найден.'}",
                 [[btn("↩️ Бета-панель", 'admin_beta_panel')]])
+            return
+        if d.startswith('azbeta_rm_'):
+            uid = int(d.replace('azbeta_rm_', ''))
+            global _zdnet_beta_cache, _zdnet_beta_cache_ts
+            _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
+            ok = await asyncio.to_thread(db.remove_zdnet_beta_user, uid)
+            await safe_edit(query,
+                f"{'✅ Пользователь удалён из бета-списка ZERO_DAY.' if ok else '❌ Не найден.'}",
+                [[btn("↩️ Бета-панель ZERO_DAY", 'admin_zdnet_beta_panel')]])
             return
         if d.startswith('apc_player_'):
             target_uid = int(d.replace('apc_player_', ''))
@@ -6039,6 +6378,18 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'game_mode_beta':         lambda q, c: admin_set_game_mode(q, c, 'beta'),
         'game_mode_open':         lambda q, c: admin_set_game_mode(q, c, 'open'),
         'game_mode_closed':       lambda q, c: admin_set_game_mode(q, c, 'closed'),
+        'admin_zdnet_panel':      admin_zdnet_panel,
+        'zdnet_mode_beta':        lambda q, c: admin_set_zdnet_mode(q, c, 'beta'),
+        'zdnet_mode_open':        lambda q, c: admin_set_zdnet_mode(q, c, 'open'),
+        'zdnet_mode_closed':      lambda q, c: admin_set_zdnet_mode(q, c, 'closed'),
+        'admin_zdnet_beta_panel': admin_zdnet_beta_panel,
+        'admin_zdnet_beta_add':   admin_zdnet_beta_add,
+        'admin_zdnet_beta_remove': admin_zdnet_beta_remove,
+        'admin_zdnet_beta_clear_confirm': admin_zdnet_beta_clear_confirm,
+        'azbeta_clear_do':        admin_zdnet_beta_clear_do,
+        'admin_zdnet_roles':      admin_zdnet_roles,
+        'admin_zdnet_role_add':   admin_zdnet_role_add,
+        'admin_zdnet_make_me_admin': admin_zdnet_make_me_admin,
         'admin_game_roles':       admin_game_roles,
         'admin_beta_panel':       admin_beta_panel,
         'admin_chapters_panel':   admin_chapters_panel,
@@ -6136,6 +6487,14 @@ async def handle_message(update: Update, context: CallbackContext):
 
     if context.user_data.get('beta_action') == 'add' and await is_bot_admin_async(user.id):
         await handle_beta_add_input(update, context, text)
+        return
+
+    if context.user_data.get('zdnet_beta_action') == 'add' and await is_bot_admin_async(user.id):
+        await handle_zdnet_beta_add_input(update, context, text)
+        return
+
+    if context.user_data.get('zdnet_role_action') == 'set' and await is_bot_admin_async(user.id):
+        await handle_zdnet_role_input(update, context, text)
         return
 
     # ── Удаление замены по ID ──
@@ -7550,6 +7909,19 @@ def start_http_server_thread():
                 if not ok or telegram_id is None:
                     return _zdnet_json({'error': reason}, request, status=401, methods='POST, OPTIONS')
                 nickname = user_obj.get('username') or user_obj.get('first_name') or f'rookie_{telegram_id}'
+            if os.environ.get('ZDNET_DEV_AUTH', '0') != '1' and not await is_zdnet_allowed(int(telegram_id)):
+                mode = await _get_cached_zdnet_mode()
+                return _zdnet_json(
+                    {
+                        'error': 'zdnet_access_denied',
+                        'mode': mode,
+                        'authorUrl': PROJECT_AUTHOR_URL,
+                        'detail': 'ZERO_DAY is not available for this user in current access mode.',
+                    },
+                    request,
+                    status=403,
+                    methods='POST, OPTIONS',
+                )
             state = ZDNET_REPO.get_or_create_player(telegram_id, nickname)
             token = ZDNET_REPO.create_session(int(state.player['id']))
             boot = ZDNET_REPO.bootstrap(state)
