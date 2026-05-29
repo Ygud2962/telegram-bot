@@ -747,6 +747,32 @@ def init_db():
         cur.execute("ALTER TABLE news ALTER COLUMN category SET DEFAULT 'bot'")
         cur.execute("ALTER TABLE news ALTER COLUMN category SET NOT NULL")
 
+        # Журнал изменений проекта для автогенерации новостей без git-коммитов.
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS project_change_log (
+                id           SERIAL PRIMARY KEY,
+                scope        TEXT NOT NULL DEFAULT 'bot',
+                change_type  TEXT NOT NULL DEFAULT 'feature',
+                title        TEXT NOT NULL,
+                details      TEXT,
+                source       TEXT NOT NULL DEFAULT 'bot',
+                actor_id     BIGINT,
+                dedupe_key   TEXT,
+                used_in_news BOOLEAN DEFAULT FALSE,
+                created_at   TIMESTAMPTZ DEFAULT NOW()
+            )
+        ''')
+        cur.execute("ALTER TABLE project_change_log ADD COLUMN IF NOT EXISTS dedupe_key TEXT")
+        cur.execute("ALTER TABLE project_change_log ADD COLUMN IF NOT EXISTS used_in_news BOOLEAN DEFAULT FALSE")
+        cur.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_project_change_log_dedupe
+            ON project_change_log (dedupe_key)
+        ''')
+        cur.execute('''
+            CREATE INDEX IF NOT EXISTS idx_project_change_log_news
+            ON project_change_log (used_in_news, created_at DESC)
+        ''')
+
         # Просмотры новостей
         cur.execute('''
             CREATE TABLE IF NOT EXISTS news_views (
@@ -1441,6 +1467,156 @@ def get_recent_news(limit=15, scope=None):
 
 def get_news_page_asc(offset=0, limit=5, scope=None):
     return get_news(offset=offset, limit=limit, order='ASC', scope=scope)
+
+
+_PROJECT_CHANGE_SCOPES = {'bot', 'school', 'cipher', 'zdnet', 'games'}
+
+
+def _normalize_project_change_scope(scope):
+    raw = str(scope or 'bot').strip().lower()
+    aliases = {
+        'бот': 'bot',
+        'шифровальщик': 'cipher',
+        'zero_day': 'zdnet',
+        'zero-day': 'zdnet',
+        'zero day': 'zdnet',
+        'zero_day: защитники сети': 'zdnet',
+        'zero_day: школьный протокол': 'zdnet',
+        'zero_day': 'zdnet',
+        'zero': 'zdnet',
+        'игры': 'games',
+    }
+    raw = aliases.get(raw, raw)
+    return raw if raw in _PROJECT_CHANGE_SCOPES else 'bot'
+
+
+def _ensure_project_change_log_table(cur):
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS project_change_log (
+            id           SERIAL PRIMARY KEY,
+            scope        TEXT NOT NULL DEFAULT 'bot',
+            change_type  TEXT NOT NULL DEFAULT 'feature',
+            title        TEXT NOT NULL,
+            details      TEXT,
+            source       TEXT NOT NULL DEFAULT 'bot',
+            actor_id     BIGINT,
+            dedupe_key   TEXT,
+            used_in_news BOOLEAN DEFAULT FALSE,
+            created_at   TIMESTAMPTZ DEFAULT NOW()
+        )
+    ''')
+    cur.execute("ALTER TABLE project_change_log ADD COLUMN IF NOT EXISTS dedupe_key TEXT")
+    cur.execute("ALTER TABLE project_change_log ADD COLUMN IF NOT EXISTS used_in_news BOOLEAN DEFAULT FALSE")
+    cur.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_project_change_log_dedupe
+        ON project_change_log (dedupe_key)
+    ''')
+    cur.execute('''
+        CREATE INDEX IF NOT EXISTS idx_project_change_log_news
+        ON project_change_log (used_in_news, created_at DESC)
+    ''')
+
+
+def add_project_change(scope, title, details=None, change_type='feature',
+                       actor_id=None, source='bot', dedupe_key=None):
+    '''Добавляет запись в журнал изменений проекта. dedupe_key защищает от дублей.'''
+    title = str(title or '').strip()
+    if not title:
+        return None
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _ensure_project_change_log_table(cur)
+        scope_norm = _normalize_project_change_scope(scope)
+        change_type = str(change_type or 'feature').strip().lower()[:40] or 'feature'
+        source = str(source or 'bot').strip().lower()[:40] or 'bot'
+        if dedupe_key:
+            cur.execute('''
+                INSERT INTO project_change_log
+                    (scope, change_type, title, details, source, actor_id, dedupe_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (dedupe_key) DO UPDATE
+                SET title = EXCLUDED.title,
+                    details = EXCLUDED.details,
+                    scope = EXCLUDED.scope,
+                    change_type = EXCLUDED.change_type
+                RETURNING id
+            ''', (scope_norm, change_type, title[:180], details, source, actor_id, dedupe_key))
+        else:
+            cur.execute('''
+                INSERT INTO project_change_log
+                    (scope, change_type, title, details, source, actor_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (scope_norm, change_type, title[:180], details, source, actor_id))
+        row = cur.fetchone()
+        conn.commit()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"add_project_change error: {e}")
+        _safe_rollback(conn)
+        return None
+    finally:
+        release_connection(conn)
+
+
+def get_project_changes(limit=30, unused_only=True):
+    '''Возвращает изменения для автоновости: id, scope, type, title, details, source, created_at.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _ensure_project_change_log_table(cur)
+        if unused_only:
+            cur.execute('''
+                SELECT id, scope, change_type, title, details, source, created_at
+                FROM project_change_log
+                WHERE used_in_news = FALSE
+                ORDER BY created_at ASC, id ASC
+                LIMIT %s
+            ''', (int(limit or 30),))
+        else:
+            cur.execute('''
+                SELECT id, scope, change_type, title, details, source, created_at
+                FROM project_change_log
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+            ''', (int(limit or 30),))
+        rows = cur.fetchall()
+        conn.commit()
+        return rows
+    except Exception as e:
+        logger.error(f"get_project_changes error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def mark_project_changes_used(change_ids):
+    '''Помечает изменения использованными в опубликованной новости.'''
+    ids = [int(x) for x in (change_ids or []) if str(x).isdigit()]
+    if not ids:
+        return 0
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _ensure_project_change_log_table(cur)
+        cur.execute('''
+            UPDATE project_change_log
+            SET used_in_news = TRUE
+            WHERE id = ANY(%s)
+        ''', (ids,))
+        updated = cur.rowcount
+        conn.commit()
+        return updated
+    except Exception as e:
+        logger.error(f"mark_project_changes_used error: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
 
 
 

@@ -1131,6 +1131,12 @@ PROJECT_UPDATES = [
     {
         'date': '29.05.2026',
         'scope': 'Бот',
+        'title': 'Автогенерация новостей',
+        'text': 'Добавлен журнал изменений и кнопка автоновости: бот сам собирает черновик из последних изменений без git-коммитов.',
+    },
+    {
+        'date': '29.05.2026',
+        'scope': 'Бот',
         'title': 'Раздел игр и статусы доступа',
         'text': 'Игры вынесены в отдельное меню. Теперь видно, открыта игра, закрыта или работает в beta-режиме.',
     },
@@ -1252,6 +1258,7 @@ _FLOW_KEYS = (
     'reg_role', 'reg_name', 'awaiting_reg_name', 'reg_teacher_page',
     'reg_teacher_names',
     'pub_news', 'pub_step', 'pub_scope', 'pub_title', 'pub_content',
+    'auto_news_change_ids',
     'edit_news_id', 'edit_step', 'edit_old_title', 'edit_old_content',
     'edit_old_scope', 'edit_new_title',
     'photo_subs_pending', 'pending_subs', 'pending_subs_saved',
@@ -3237,6 +3244,7 @@ async def move_news_scope(query, context, news_id: int, target_scope: str):
 # ══════════════════════════════════════════════════════════
 async def start_publish_news(query, context, scope: str | None = None):
     news_scope = normalize_news_scope(scope, default='')
+    context.user_data.pop('auto_news_change_ids', None)
     context.user_data.update({'pub_news': True})
     if news_scope:
         context.user_data.update({'pub_step': 'title', 'pub_scope': news_scope})
@@ -3261,6 +3269,135 @@ async def start_publish_news(query, context, scope: str | None = None):
         "📣 <b>ПУБЛИКАЦИЯ НОВОСТИ</b>\n\nВыберите раздел публикации:",
         kb
     )
+
+
+def project_update_dedupe_key(item: dict) -> str:
+    raw = f"{item.get('date', '')}|{item.get('scope', '')}|{item.get('title', '')}"
+    return "static:" + hashlib.sha1(raw.encode('utf-8')).hexdigest()
+
+
+async def seed_project_update_log():
+    """Записывает встроенные изменения в БД один раз, чтобы автоновость не зависела от git."""
+    for item in PROJECT_UPDATES:
+        await asyncio.to_thread(
+            db.add_project_change,
+            item.get('scope') or 'bot',
+            item.get('title') or 'Обновление',
+            item.get('text') or '',
+            'feature',
+            None,
+            'codex',
+            project_update_dedupe_key(item),
+        )
+
+
+def infer_next_bot_news_number(recent_news) -> int:
+    max_num = 0
+    for _nid, title, *_rest in recent_news or []:
+        match = re.search(r'(?:новость|обновление)\s*№?\s*(\d+)', str(title or ''), re.IGNORECASE)
+        if match:
+            max_num = max(max_num, int(match.group(1)))
+    return max_num + 1 if max_num else 1
+
+
+def project_scope_label(scope: str) -> str:
+    return {
+        'bot': 'Бот',
+        'cipher': 'Шифровальщик',
+        'zdnet': 'ZERO_DAY',
+        'games': 'Игры',
+        'school': 'Школа',
+    }.get(str(scope or 'bot').lower(), 'Бот')
+
+
+async def build_auto_news_draft():
+    """Собирает заголовок, текст и id изменений для автоматического черновика новости."""
+    await seed_project_update_log()
+    changes, recent_news = await asyncio.gather(
+        asyncio.to_thread(db.get_project_changes, 20, True),
+        asyncio.to_thread(db.get_recent_news, 50, NEWS_SCOPE_BOT),
+    )
+    if not changes:
+        return None, None, []
+
+    news_num = infer_next_bot_news_number(recent_news)
+    title = f"Новость №{news_num}: обновления бота и игр"
+
+    grouped: dict[str, list[tuple]] = {}
+    change_ids: list[int] = []
+    for change_id, scope, change_type, change_title, details, source, created_at in changes:
+        grouped.setdefault(scope, []).append((change_title, details))
+        change_ids.append(int(change_id))
+
+    lines = [
+        f"🆕 <b>Новость №{news_num}</b>",
+        "",
+        "За последнее время в проекте появились важные изменения. Коротко и по делу:",
+    ]
+    for scope, items in grouped.items():
+        lines.append("")
+        lines.append(f"<b>{project_scope_label(scope)}</b>")
+        for change_title, details in items:
+            point = f"• {change_title}"
+            if details:
+                point += f" — {details}"
+            lines.append(point)
+
+    lines.extend([
+        "",
+        "Обновления будут выходить дальше. Если что-то работает странно — пишите автору проекта.",
+    ])
+    content = "\n".join(lines)
+    if len(content) > 2000:
+        content = content[:1940].rstrip() + "\n\n<i>Часть мелких изменений скрыта, чтобы новость была короче.</i>"
+    return title[:100], content, change_ids
+
+
+async def admin_generate_news_draft(query, context):
+    """Генерирует готовый черновик новости из журнала изменений."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔", show_alert=True)
+        return
+
+    title, content, change_ids = await build_auto_news_draft()
+    if not title or not content:
+        await safe_edit(
+            query,
+            "🧠 <b>АВТОНОВОСТЬ</b>\n\n"
+            "Новых неиспользованных изменений пока нет.\n\n"
+            "Если нужно выпустить новость вручную — используйте обычную публикацию.",
+            [
+                [btn("📣 Написать вручную", f'admin_publish_news_{NEWS_SCOPE_BOT}')],
+                [btn("↩️ Контент", 'admin_content_panel')],
+            ],
+        )
+        return
+
+    context.user_data.update({
+        'pub_news': True,
+        'pub_step': 'preview',
+        'pub_scope': NEWS_SCOPE_BOT,
+        'pub_title': title,
+        'pub_content': content,
+        'auto_news_change_ids': change_ids,
+    })
+    tz_str = datetime.now(TZ_MINSK).strftime('%d.%m.%Y %H:%M')
+    preview = (
+        "🧠 <b>АВТОНОВОСТЬ: ПРЕДПРОСМОТР</b>\n\n"
+        f"<b>{title}</b>\n"
+        f"<i>Раздел: {NEWS_SCOPE_LABELS[NEWS_SCOPE_BOT]}</i>\n"
+        f"<i>Изменений в черновике: {len(change_ids)}</i>\n\n"
+        f"{content}\n\n"
+        f"<i>📅 {tz_str}</i>"
+    )
+    kb = [
+        [btn("✅ Опубликовать + рассылка", 'pub_news_all')],
+        [btn("📤 Только в ленту", 'pub_news_only')],
+        [btn("🔄 Пересобрать", 'admin_generate_news_draft')],
+        [btn("✏️ Написать вручную", f'admin_publish_news_{NEWS_SCOPE_BOT}')],
+        [btn("❌ Отмена", 'cancel_pub_news')],
+    ]
+    await safe_edit(query, preview, kb)
 
 
 async def handle_publish_news_input(update: Update, context: CallbackContext):
@@ -3314,18 +3451,23 @@ async def do_publish_news(query, context, send_to_all: bool):
     title   = context.user_data.get('pub_title', '').strip()
     content = context.user_data.get('pub_content', '').strip()
     news_scope = normalize_news_scope(context.user_data.get('pub_scope'))
+    auto_change_ids = list(context.user_data.get('auto_news_change_ids') or [])
     if not title or not content:
         await safe_edit(query, "❌ Нет данных для публикации.", BACK_TO_MAIN)
         _clear_flow(context)
         return
 
     news_id = await asyncio.to_thread(db.add_news, title, content, news_scope)
+    if auto_change_ids and news_scope == NEWS_SCOPE_BOT:
+        await asyncio.to_thread(db.mark_project_changes_used, auto_change_ids)
     _clear_flow(context)
 
     result_text = (
         f"✅ <b>Новость опубликована (ID {news_id})</b>\n"
         f"<i>Раздел: {NEWS_SCOPE_LABELS[news_scope]}</i>"
     )
+    if auto_change_ids and news_scope == NEWS_SCOPE_BOT:
+        result_text += f"\n🧠 Использовано изменений: <b>{len(auto_change_ids)}</b>"
     if send_to_all:
         sent, failed = await notify_new_news(context, title, news_scope)
         result_text += f"\n📤 Рассылка: ✅{sent}  ❌{failed}"
@@ -5662,7 +5804,8 @@ async def admin_content_panel(query, context):
         await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
         return
     kb = [
-        [btn("📣 Опубликовать новость", 'admin_publish_news'), btn("📰 Новости", 'admin_manage_news')],
+        [btn("🧠 Автоновость", 'admin_generate_news_draft'), btn("📣 Вручную", 'admin_publish_news')],
+        [btn("📰 Новости", 'admin_manage_news')],
         [btn("➕ Замена вручную", 'admin_add_sub'), btn("📸 Замены из фото", 'admin_photo_subs')],
         [btn("📋 Все замены", 'admin_view_subs'), btn("📢 Рассылка", 'admin_broadcast')],
         [btn("🗑 Удалить замену (ID)", 'admin_del_sub'), btn("🧹 Очистить замены", 'admin_clear_subs')],
@@ -6701,6 +6844,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'admin_remove_bot_admin_input': admin_remove_bot_admin_input,
         'admin_enable_maintenance': admin_enable_maintenance,
         'admin_disable_maintenance': admin_disable_maintenance,
+        'admin_generate_news_draft': admin_generate_news_draft,
         'admin_publish_news':     start_publish_news,
         'admin_manage_news':      admin_manage_news,
         'admin_add_sub':          admin_add_sub_start,
@@ -8752,10 +8896,13 @@ async def menu_updates(query, context):
             f"  <b>{html.escape(item['title'])}</b>\n"
             f"  {html.escape(item['text'])}"
         )
-    kb = [
+    kb = []
+    if await is_bot_admin_async(query.from_user.id):
+        kb.append([btn("🧠 Сгенерировать новость", 'admin_generate_news_draft')])
+    kb.extend([
         [btn("🎮 Игры", 'menu_games')],
         [btn("🏠 Главное меню", 'back_to_main')],
-    ]
+    ])
     await safe_edit(query, "\n\n".join(lines), kb)
 
 
