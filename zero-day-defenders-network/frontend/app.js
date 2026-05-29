@@ -211,8 +211,9 @@ function refreshThreatTimers() {
   });
   if (changed && state.activeTab === "map") {
     state.threats.forEach(threat => {
-      const element = document.querySelector(`[data-threat-timer="${threat.id}"]`);
-      if (element) element.textContent = threat.timer;
+      document.querySelectorAll(`[data-threat-timer="${threat.id}"]`).forEach(element => {
+        element.textContent = threat.timer;
+      });
     });
   }
 }
@@ -310,6 +311,80 @@ function nodeColor(nodeState) {
   }[nodeState] || "var(--muted)";
 }
 
+function clampMapCoord(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || min));
+}
+
+function mapObjectName(objectId) {
+  return state.content.mapById[objectId]?.name || state.map.find(node => node.id === objectId)?.name || objectId;
+}
+
+function threatForObject(objectId) {
+  return state.threats.find(threat => threat.objectId === objectId);
+}
+
+function getMapLayoutNodes() {
+  const nodes = state.map.map((node, index) => ({
+    ...node,
+    x: clampMapCoord(node.x, 50, 330),
+    y: clampMapCoord(node.y, 54, 246),
+    index,
+  }));
+
+  for (let pass = 0; pass < 34; pass += 1) {
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        const left = nodes[i];
+        const right = nodes[j];
+        const dx = right.x - left.x;
+        const dy = right.y - left.y;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const minDistance = 78;
+        if (distance >= minDistance) continue;
+        const push = (minDistance - distance) / 2;
+        const ux = dx / distance;
+        const uy = dy / distance;
+        left.x = clampMapCoord(left.x - ux * push, 50, 330);
+        left.y = clampMapCoord(left.y - uy * push, 54, 246);
+        right.x = clampMapCoord(right.x + ux * push, 50, 330);
+        right.y = clampMapCoord(right.y + uy * push, 54, 246);
+      }
+    }
+  }
+
+  return nodes.map(node => ({
+    ...node,
+    x: Math.round(node.x),
+    y: Math.round(node.y),
+    threat: threatForObject(node.id),
+  }));
+}
+
+function mapRoutePath(nodes) {
+  if (!nodes.length) return "";
+  return nodes.map((node, index) => `${index === 0 ? "M" : "L"}${node.x} ${node.y}`).join(" ");
+}
+
+function nodeStatusLabel(status) {
+  return {
+    protected: "OK",
+    under_attack: "ALERT",
+    infected: "VIRUS",
+    locked: "LOCK",
+    boss: "BOSS",
+  }[status] || "SCAN";
+}
+
+function nodeStatusText(status) {
+  return {
+    protected: "Защищено",
+    under_attack: "Под атакой",
+    infected: "Заражено",
+    locked: "Закрыто",
+    boss: "Босс-угроза",
+  }[status] || "Сканирование";
+}
+
 function renderMap() {
   const activeCount = state.threats.length;
   const protectedCount = state.map.filter(node => node.state === "protected").length;
@@ -317,12 +392,14 @@ function renderMap() {
   const attackCount = state.map.filter(node => node.state === "under_attack").length;
   const cityIntegrity = Math.round((protectedCount / Math.max(1, state.map.length)) * 100);
   const energyPct = Math.round((state.energy / Math.max(1, state.energyMax)) * 100);
+  const mapNodes = getMapLayoutNodes();
+  const routePath = mapRoutePath(mapNodes);
   return html`
     <section class="hero-card command-hero">
       <div class="hero-copy">
         <span class="eyebrow">дежурство активно</span>
-        <h1>Город держится на твоем SOC</h1>
-        <p>${activeCount ? `На карте ${activeCount} активные угрозы. Закрой Packet Rain до таймера и удержи защиту района.` : "Сектор чистый. Поддерживай стрик и готовься к легендарному спавну."}</p>
+        <h1>Город держится на твоём SOC</h1>
+        <p>${activeCount ? `На карте ${activeCount} активные угрозы. Выбери объект на карте или открой очередь угроз.` : "Сектор чистый. Поддерживай стрик и готовься к легендарному спавну."}</p>
         <div class="hero-actions" aria-label="Краткая сводка">
           <span>🛡 ${protectedCount}/${state.map.length} объектов защищено</span>
           <span>⚡ ${energyPct}% энергии</span>
@@ -370,15 +447,15 @@ function renderMap() {
           </linearGradient>
         </defs>
         <path d="M54 104 C94 36 186 34 238 72 C304 78 336 125 322 184 C310 248 250 270 190 250 C128 254 74 224 66 166 C42 146 39 126 54 104Z" fill="rgba(255,255,255,.035)" stroke="rgba(255,255,255,.12)" stroke-width="1.5"/>
-        <path class="city-route primary" d="M82 72 L238 72 L300 176 L224 238 L145 160 L82 72" fill="none" stroke="url(#routeGradient)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-        <path class="city-route secondary" d="M238 72 L145 160 L224 238" fill="none" stroke="rgba(56,216,255,.30)" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 10"/>
-        ${state.map.map(node => `
-          <g class="map-node map-node-${node.state}" data-object="${node.id}">
-            <circle class="node-pulse" cx="${node.x}" cy="${node.y}" r="36" fill="${nodeColor(node.state)}" opacity=".08"/>
-            <circle cx="${node.x}" cy="${node.y}" r="24" fill="rgba(6,10,18,.82)" stroke="${nodeColor(node.state)}" stroke-width="2.5" filter="url(#nodeGlow)"/>
+        <path class="city-route primary" d="${routePath}" fill="none" stroke="url(#routeGradient)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="city-route secondary" d="${routePath}" fill="none" stroke="rgba(56,216,255,.24)" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 10"/>
+        ${mapNodes.map(node => `
+          <g class="map-node map-node-${node.state} ${node.threat ? "has-threat" : ""}" data-object="${node.id}" tabindex="0" role="button" aria-label="${node.name}: ${nodeStatusText(node.state)}">
+            <circle class="node-pulse" cx="${node.x}" cy="${node.y}" r="34" fill="${nodeColor(node.state)}" opacity=".08"/>
+            <circle class="node-pin" cx="${node.x}" cy="${node.y}" r="24" fill="rgba(6,10,18,.86)" stroke="${nodeColor(node.state)}" stroke-width="2.5" filter="url(#nodeGlow)"/>
             <circle cx="${node.x}" cy="${node.y}" r="7" fill="${nodeColor(node.state)}"/>
-            <text x="${node.x}" y="${node.y + 43}" fill="#f4f7fb" font-size="12" text-anchor="middle">${node.name}</text>
-            <text x="${node.x}" y="${node.y - 38}" fill="#9ca9b8" font-size="10" text-anchor="middle">${nodeStatusLabel(node.state)} · DEF ${node.level}</text>
+            <text class="map-node-index" x="${node.x}" y="${node.y + 4}" fill="#fff" font-size="10" text-anchor="middle">${node.index + 1}</text>
+            ${node.threat ? `<text class="map-node-alert" x="${node.x + 18}" y="${node.y - 18}" fill="#ff453a" font-size="16" text-anchor="middle">!</text>` : ""}
           </g>
         `).join("")}
         <g class="daemon">
@@ -386,6 +463,15 @@ function renderMap() {
           <text x="224" y="208" text-anchor="middle" font-size="22">🐉</text>
         </g>
       </svg>
+      <div class="map-object-strip" aria-label="Объекты города">
+        ${mapNodes.map(node => `
+          <button class="map-object-chip map-node-${node.state} ${node.threat ? "has-threat" : ""}" data-object="${node.id}">
+            <b>${node.index + 1}</b>
+            <span>${node.name}</span>
+            <small>${node.threat ? "угроза" : nodeStatusText(node.state)}</small>
+          </button>
+        `).join("")}
+      </div>
       <div class="map-legend">
         <span><i class="safe"></i> защита</span>
         <span><i class="attack"></i> атака</span>
@@ -399,7 +485,7 @@ function renderMap() {
           <span class="eyebrow">daily threat queue</span>
           <h2>Активные угрозы</h2>
         </div>
-        <span>${activeCount ? "таймер идет" : "нет атак"}</span>
+        <span>${activeCount ? "таймер идёт" : "нет атак"}</span>
       </div>
       ${state.threats.length ? state.threats.map(threat => `
         <button class="threat" data-threat="${threat.id}">
@@ -407,7 +493,7 @@ function renderMap() {
           <span class="threat-body">
             <strong>${threat.title}</strong>
             <span>${threat.game} · ${threat.type}</span>
-            <small>${state.content.mapById[threat.objectId]?.name || state.map.find(node => node.id === threat.objectId)?.name || "Объект"}</small>
+            <small>${mapObjectName(threat.objectId)}</small>
           </span>
           <span class="threat-meta">
             <b data-threat-timer="${threat.id}">${threat.timer}</b>
@@ -418,14 +504,65 @@ function renderMap() {
     </section>
   `;
 }
-function nodeStatusLabel(status) {
-  return {
-    protected: "OK",
-    under_attack: "ALERT",
-    infected: "VIRUS",
-    locked: "LOCK",
-    boss: "BOSS",
-  }[status] || "SCAN";
+
+function showLocationSheet(objectId) {
+  document.querySelector(".location-layer")?.remove();
+  const phone = document.querySelector(".phone");
+  const node = state.map.find(item => item.id === objectId);
+  if (!phone || !node) return;
+  const threat = threatForObject(objectId);
+  const canLaunch = threat && (threat.gameType === "packet_rain" || threat.game === "Packet Rain");
+  const layer = document.createElement("div");
+  layer.className = "location-layer";
+  layer.innerHTML = `
+    <section class="location-sheet map-node-${node.state}" role="dialog" aria-modal="true" aria-label="${node.name}">
+      <button class="close-btn location-close" data-close-location type="button" aria-label="Закрыть">×</button>
+      <div class="location-handle"></div>
+      <div class="location-head">
+        <span class="location-status">${nodeStatusText(node.state)}</span>
+        <h2>${node.name}</h2>
+        <p>${threat ? `Активная угроза: ${threat.title}. Таймер уже идёт.` : "Объект под наблюдением. Проверь инструменты или дождись новой угрозы."}</p>
+      </div>
+      <div class="location-metrics">
+        <div><span>Защита</span><strong>${node.level}/10</strong></div>
+        <div><span>Статус</span><strong>${nodeStatusLabel(node.state)}</strong></div>
+        <div><span>Угроза</span><strong>${threat ? `D${threat.difficulty}` : "нет"}</strong></div>
+      </div>
+      ${threat ? `
+        <article class="location-threat-card">
+          <span>${threat.game} · ${threat.type}</span>
+          <strong>${threat.title}</strong>
+          <small data-threat-timer="${threat.id}">${threat.timer}</small>
+        </article>
+      ` : ""}
+      <div class="location-actions">
+        ${threat ? `<button class="primary-btn" data-location-threat="${threat.id}" ${canLaunch ? "" : "disabled"}>${canLaunch ? "Начать нейтрализацию" : "Мини-игра скоро"}</button>` : `<button class="primary-btn" data-location-tab="tools">Усилить защиту</button>`}
+        <button class="secondary-btn" data-location-tab="collection">Коллекция</button>
+      </div>
+    </section>
+  `;
+  phone.appendChild(layer);
+
+  function close() {
+    layer.remove();
+  }
+
+  layer.querySelector("[data-close-location]")?.addEventListener("click", close);
+  layer.querySelectorAll("[data-location-tab]").forEach(button => {
+    button.addEventListener("click", () => {
+      state.activeTab = button.dataset.locationTab;
+      close();
+      render();
+    });
+  });
+  layer.querySelector("[data-location-threat]")?.addEventListener("click", async buttonEvent => {
+    const selectedThreat = state.threats.find(item => item.id === buttonEvent.currentTarget.dataset.locationThreat);
+    close();
+    await launchThreat(selectedThreat);
+  });
+  layer.addEventListener("click", event => {
+    if (event.target === layer) close();
+  });
 }
 
 function renderTools() {
@@ -856,6 +993,15 @@ function productIcon(product) {
   return "⭐";
 }
 
+async function launchThreat(threat) {
+  if (!threat) return;
+  if (threat.gameType === "packet_rain" || threat.game === "Packet Rain") {
+    await startPacketRain(threat);
+    return;
+  }
+  toast("Эта мини-игра будет во втором прототипе");
+  haptic.warn();
+}
 function bindEvents() {
   document.querySelectorAll("[data-tab]").forEach(button => {
     button.addEventListener("click", () => {
@@ -868,23 +1014,21 @@ function bindEvents() {
   document.querySelectorAll("[data-threat]").forEach(button => {
     button.addEventListener("click", async () => {
       const threat = state.threats.find(item => item.id === button.dataset.threat);
-      if (threat?.gameType === "packet_rain" || threat?.game === "Packet Rain") {
-        await startPacketRain(threat);
-      } else {
-        toast("Эта мини-игра будет во втором прототипе");
-        haptic.warn();
-      }
+      await launchThreat(threat);
     });
   });
-
   document.querySelectorAll("[data-object]").forEach(node => {
-    node.addEventListener("click", () => {
-      const item = state.map.find(obj => obj.id === node.dataset.object);
-      toast(`${item.name}: ${item.state}, защита ${item.level}/10`);
+    const open = () => {
+      showLocationSheet(node.dataset.object);
       haptic.light();
+    };
+    node.addEventListener("click", open);
+    node.addEventListener("keydown", event => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      open();
     });
   });
-
   document.querySelectorAll("[data-buy-product]").forEach(button => {
     button.addEventListener("click", async () => {
       await buyProduct(button.dataset.buyProduct);

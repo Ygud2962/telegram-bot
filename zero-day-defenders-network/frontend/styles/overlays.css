@@ -338,6 +338,173 @@
   box-shadow: 0 16px 48px rgba(0,0,0,.36);
 }
 
+.location-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 58;
+  display: grid;
+  align-items: end;
+  padding: 14px;
+  background: rgba(0,0,0,.36);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  animation: fadeIn .2s var(--ease-ios);
+}
+
+.location-sheet {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.17);
+  border-radius: 34px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(100, 210, 255, .18), transparent 34%),
+    linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.055)),
+    rgba(10, 14, 22, .94);
+  box-shadow: 0 34px 110px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.18);
+  backdrop-filter: blur(34px) saturate(165%);
+  -webkit-backdrop-filter: blur(34px) saturate(165%);
+  animation: sheetUp .28s var(--ease-ios);
+}
+
+.location-sheet.map-node-under_attack {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 69, 58, .24), transparent 36%),
+    linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.055)),
+    rgba(16, 9, 14, .94);
+}
+
+.location-sheet.map-node-infected {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(191, 90, 242, .24), transparent 36%),
+    linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.055)),
+    rgba(13, 9, 18, .94);
+}
+
+.location-close {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+
+.location-handle {
+  width: 44px;
+  height: 5px;
+  margin: 0 auto 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.24);
+}
+
+.location-head {
+  padding-right: 42px;
+}
+
+.location-status {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #64d2ff;
+  background: rgba(100, 210, 255, .1);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.location-sheet.map-node-under_attack .location-status {
+  color: #ff453a;
+  background: rgba(255, 69, 58, .12);
+}
+
+.location-sheet.map-node-infected .location-status {
+  color: #bf5af2;
+  background: rgba(191, 90, 242, .12);
+}
+
+.location-head h2 {
+  margin: 0;
+  font-size: 30px;
+  line-height: .96;
+  letter-spacing: -0.06em;
+}
+
+.location-head p {
+  margin: 8px 0 0;
+  color: rgba(255,255,255,.66);
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.location-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.location-metrics div {
+  padding: 11px 10px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  background: rgba(255,255,255,.065);
+}
+
+.location-metrics span {
+  display: block;
+  color: rgba(255,255,255,.48);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.location-metrics strong {
+  display: block;
+  margin-top: 5px;
+  color: white;
+  font-size: 16px;
+  letter-spacing: -0.04em;
+}
+
+.location-threat-card {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(255, 69, 58, .24);
+  border-radius: 22px;
+  background: rgba(255, 69, 58, .08);
+}
+
+.location-threat-card span,
+.location-threat-card small {
+  display: block;
+  color: rgba(255,255,255,.56);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.location-threat-card strong {
+  display: block;
+  margin: 5px 0;
+  color: white;
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.location-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.location-actions button {
+  min-height: 46px;
+}
+
 .reward-layer {
   position: absolute;
   inset: 0;
