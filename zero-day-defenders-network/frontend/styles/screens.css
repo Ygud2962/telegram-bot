@@ -415,6 +415,50 @@
     linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
 }
 
+.mission-coach.guided-coach {
+  border-color: rgba(0, 122, 255, .34);
+  box-shadow:
+    0 18px 54px rgba(0,0,0,.24),
+    0 0 0 1px rgba(56,216,255,.10),
+    inset 0 1px 0 rgba(255,255,255,.16);
+}
+
+.coach-next-step {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(100, 210, 255, .22);
+  border-radius: 20px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 3px;
+  align-items: center;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(100,210,255,.20), transparent 34%),
+    rgba(0,122,255,.08);
+}
+
+.coach-next-step b {
+  grid-row: span 2;
+  padding: 7px 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--blue);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.coach-next-step strong {
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+
+.coach-next-step span {
+  color: rgba(255,255,255,.62);
+  font-size: 12px;
+  line-height: 1.32;
+}
+
 .coach-copy h2 {
   margin: 4px 0 6px;
   font-size: 24px;
@@ -598,6 +642,49 @@
   animation: routeFlow 7s linear infinite;
 }
 
+.map-node.is-guide .node-pin {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 18px rgba(100, 210, 255, .72));
+}
+
+.map-node.is-guide .node-pulse {
+  opacity: .22;
+  animation: guidePulse 1.35s var(--ease-ios) infinite;
+}
+
+.map-guide-callout {
+  pointer-events: none;
+}
+
+.guide-arrow {
+  fill: none;
+  stroke: #64d2ff;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 8 8;
+  filter: drop-shadow(0 0 8px rgba(100, 210, 255, .8));
+  animation: routeFlow 1.8s linear infinite;
+}
+
+.guide-bubble {
+  fill: rgba(0, 122, 255, .78);
+  stroke: rgba(255,255,255,.28);
+  stroke-width: 1;
+  filter: drop-shadow(0 12px 24px rgba(0,0,0,.34));
+}
+
+.guide-bubble-title {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.guide-bubble-sub {
+  fill: rgba(255,255,255,.74);
+  font-size: 9px;
+  font-weight: 800;
+}
+
 .node-pulse {
   animation: nodePulse 2.8s var(--ease-ios) infinite;
 }
@@ -693,6 +780,19 @@
   background: rgba(255, 69, 58, .08);
 }
 
+.map-object-chip.is-guide,
+.threat.is-guide {
+  border-color: rgba(100, 210, 255, .42);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(100,210,255,.16), transparent 40%),
+    rgba(0,122,255,.08);
+  box-shadow: 0 0 0 1px rgba(100,210,255,.08), 0 14px 36px rgba(0,122,255,.10), inset 0 1px 0 rgba(255,255,255,.12);
+}
+
+.map-object-chip.is-guide {
+  animation: guideChipPulse 1.8s var(--ease-ios) infinite;
+}
+
 .threat {
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
@@ -743,5 +843,15 @@
 
 @keyframes routeFlow {
   to { stroke-dashoffset: -120; }
+}
+
+@keyframes guidePulse {
+  0%, 100% { opacity: .16; transform: scale(.92); }
+  50% { opacity: .34; transform: scale(1.18); }
+}
+
+@keyframes guideChipPulse {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
 }
 

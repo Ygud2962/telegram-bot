@@ -401,6 +401,27 @@ function mapRoutePath(nodes) {
   return nodes.map((node, index) => `${index === 0 ? "M" : "L"}${node.x} ${node.y}`).join(" ");
 }
 
+function renderMapGuideCallout(node) {
+  if (!node) return "";
+  const pointsLeft = node.x > 250;
+  const labelX = Math.max(14, Math.min(250, node.x + (pointsLeft ? -152 : 34)));
+  const labelY = Math.max(18, Math.min(238, node.y - 70));
+  const startX = pointsLeft ? labelX + 18 : labelX + 100;
+  const startY = labelY + 42;
+  const endX = node.x + (pointsLeft ? -26 : 26);
+  const endY = node.y - 14;
+  const controlX = (startX + endX) / 2;
+  const controlY = Math.min(startY, endY) - 16;
+  return `
+    <g class="map-guide-callout" aria-hidden="true">
+      <path class="guide-arrow" d="M${startX} ${startY} Q${controlX} ${controlY} ${endX} ${endY}"/>
+      <rect class="guide-bubble" x="${labelX}" y="${labelY}" width="116" height="48" rx="17"/>
+      <text class="guide-bubble-title" x="${labelX + 58}" y="${labelY + 20}" text-anchor="middle">Нажми сюда</text>
+      <text class="guide-bubble-sub" x="${labelX + 58}" y="${labelY + 35}" text-anchor="middle">первая угроза</text>
+    </g>
+  `;
+}
+
 function nodeStatusLabel(status) {
   return {
     protected: "OK",
@@ -445,11 +466,16 @@ function renderMissionCoach(activeCount) {
   }
   const canLaunch = threat.gameType === "packet_rain" || threat.game === "Packet Rain";
   return html`
-    <section class="mission-coach">
+    <section class="mission-coach guided-coach">
       <div class="coach-copy">
         <span class="eyebrow">что делать сейчас</span>
         <h2>1. Нажми объект «${objectName}»</h2>
         <p>Красная точка означает атаку. Открой объект, нажми нейтрализацию, пройди мини-игру и забери награду.</p>
+      </div>
+      <div class="coach-next-step">
+        <b>следующий клик</b>
+        <strong>${objectName}</strong>
+        <span>Мы откроем карточку объекта и покажем кнопку запуска миссии.</span>
       </div>
       <div class="coach-steps" aria-label="Игровой цикл">
         <span><b>1</b> объект</span>
@@ -525,6 +551,9 @@ function renderMap() {
   const energyPct = Math.round((state.energy / Math.max(1, state.energyMax)) * 100);
   const mapNodes = getMapLayoutNodes();
   const routePath = mapRoutePath(mapNodes);
+  const primaryThreat = getPrimaryThreat();
+  const guideObjectId = primaryThreat?.objectId || null;
+  const guideNode = guideObjectId ? mapNodes.find(node => node.id === guideObjectId) : null;
   return html`
     <section class="hero-card command-hero">
       <div class="hero-copy">
@@ -583,7 +612,7 @@ function renderMap() {
         <path class="city-route primary" d="${routePath}" fill="none" stroke="url(#routeGradient)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
         <path class="city-route secondary" d="${routePath}" fill="none" stroke="rgba(56,216,255,.24)" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 10"/>
         ${mapNodes.map(node => `
-          <g class="map-node map-node-${node.state} ${node.threat ? "has-threat" : ""}" data-object="${node.id}" tabindex="0" role="button" aria-label="${node.name}: ${nodeStatusText(node.state)}">
+          <g class="map-node map-node-${node.state} ${node.threat ? "has-threat" : ""} ${node.id === guideObjectId ? "is-guide" : ""}" data-object="${node.id}" tabindex="0" role="button" aria-label="${node.name}: ${nodeStatusText(node.state)}">
             <circle class="node-pulse" cx="${node.x}" cy="${node.y}" r="34" fill="${nodeColor(node.state)}" opacity=".08"/>
             <circle class="node-pin" cx="${node.x}" cy="${node.y}" r="24" fill="rgba(6,10,18,.86)" stroke="${nodeColor(node.state)}" stroke-width="2.5" filter="url(#nodeGlow)"/>
             <circle cx="${node.x}" cy="${node.y}" r="7" fill="${nodeColor(node.state)}"/>
@@ -591,6 +620,7 @@ function renderMap() {
             ${node.threat ? `<text class="map-node-alert" x="${node.x + 18}" y="${node.y - 18}" fill="#ff453a" font-size="16" text-anchor="middle">!</text>` : ""}
           </g>
         `).join("")}
+        ${renderMapGuideCallout(guideNode)}
         <g class="daemon">
           <circle cx="224" cy="202" r="18" fill="rgba(0,212,255,.22)" stroke="var(--accent)" filter="url(#nodeGlow)"/>
           <text x="224" y="208" text-anchor="middle" font-size="22">🐉</text>
@@ -598,10 +628,10 @@ function renderMap() {
       </svg>
       <div class="map-object-strip" aria-label="Объекты города">
         ${mapNodes.map(node => `
-          <button class="map-object-chip map-node-${node.state} ${node.threat ? "has-threat" : ""}" data-object="${node.id}">
+          <button class="map-object-chip map-node-${node.state} ${node.threat ? "has-threat" : ""} ${node.id === guideObjectId ? "is-guide" : ""}" data-object="${node.id}">
             <b>${node.index + 1}</b>
             <span>${node.name}</span>
-            <small>${node.threat ? "угроза" : nodeStatusText(node.state)}</small>
+            <small>${node.id === guideObjectId ? "нажми сюда" : node.threat ? "угроза" : nodeStatusText(node.state)}</small>
           </button>
         `).join("")}
       </div>
@@ -621,7 +651,7 @@ function renderMap() {
         <span>${activeCount ? "таймер идёт" : "нет атак"}</span>
       </div>
       ${state.threats.length ? state.threats.map(threat => `
-        <button class="threat" data-threat="${threat.id}">
+        <button class="threat ${threat.id === primaryThreat?.id ? "is-guide" : ""}" data-threat="${threat.id}">
           <span class="threat-severity">D${threat.difficulty}</span>
           <span class="threat-body">
             <strong>${threat.title}</strong>
@@ -644,6 +674,8 @@ function showLocationSheet(objectId) {
   const node = state.map.find(item => item.id === objectId);
   if (!phone || !node) return;
   const threat = threatForObject(objectId);
+  const primaryThreat = getPrimaryThreat();
+  const isGuidedThreat = threat && primaryThreat && threat.id === primaryThreat.id;
   const canLaunch = threat && (threat.gameType === "packet_rain" || threat.game === "Packet Rain");
   const layer = document.createElement("div");
   layer.className = "location-layer";
@@ -656,6 +688,12 @@ function showLocationSheet(objectId) {
         <h2>${node.name}</h2>
         <p>${threat ? `Активная угроза: ${threat.title}. Таймер уже идёт.` : "Объект под наблюдением. Проверь инструменты или дождись новой угрозы."}</p>
       </div>
+      ${isGuidedThreat ? `
+        <div class="location-next-step">
+          <b>Шаг 2</b>
+          <span>Нажми кнопку нейтрализации. Дальше откроется мини-игра Packet Rain с короткой инструкцией.</span>
+        </div>
+      ` : ""}
       <div class="location-metrics">
         <div><span>Защита</span><strong>${node.level}/10</strong></div>
         <div><span>Статус</span><strong>${nodeStatusLabel(node.state)}</strong></div>
@@ -669,7 +707,7 @@ function showLocationSheet(objectId) {
         </article>
       ` : ""}
       <div class="location-actions">
-        ${threat ? `<button class="primary-btn" data-location-threat="${threat.id}" ${canLaunch ? "" : "disabled"}>${canLaunch ? "Начать нейтрализацию" : "Мини-игра скоро"}</button>` : `<button class="primary-btn" data-location-tab="tools">Усилить защиту</button>`}
+        ${threat ? `<button class="primary-btn" data-location-threat="${threat.id}" ${canLaunch ? "" : "disabled"}>${canLaunch ? (isGuidedThreat ? "Шаг 2: начать нейтрализацию" : "Начать нейтрализацию") : "Мини-игра скоро"}</button>` : `<button class="primary-btn" data-location-tab="tools">Усилить защиту</button>`}
         <button class="secondary-btn" data-location-tab="collection">Коллекция</button>
       </div>
     </section>
@@ -1634,7 +1672,7 @@ async function startPacketRain(threat) {
       <canvas id="gameCanvas"></canvas>
       <section class="game-intro" id="gameIntro">
         <div class="game-intro-card">
-          <span class="game-kicker">SOC TRAINING</span>
+          <span class="game-kicker">ШАГ 3 · SOC TRAINING</span>
           <h2>Разбери поток пакетов</h2>
           <p>Свайпай ближайший пакет: вредный блокируй, нормальный пропускай, подозрительный отправляй в карантин.</p>
           <div class="packet-controls">
@@ -1646,7 +1684,7 @@ async function startPacketRain(threat) {
             <span>Инструменты</span>
             <strong>${activeToolLabel}</strong>
           </div>
-          <button class="primary-btn game-start-btn" id="startGame" type="button">Начать нейтрализацию</button>
+          <button class="primary-btn game-start-btn" id="startGame" type="button">Шаг 3: начать мини-игру</button>
         </div>
       </section>
       <div class="game-fury" id="gameFury">Fury Analyst</div>
