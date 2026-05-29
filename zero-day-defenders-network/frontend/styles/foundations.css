@@ -146,6 +146,34 @@ button {
   gap: 10px;
 }
 
+.hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.help-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background:
+    radial-gradient(circle at 35% 22%, rgba(255,255,255,.28), transparent 28%),
+    linear-gradient(135deg, rgba(0,122,255,.92), rgba(56,216,255,.72));
+  box-shadow: 0 12px 30px rgba(0, 122, 255, .22), inset 0 1px 0 rgba(255,255,255,.22);
+  font-size: 15px;
+  font-weight: 950;
+  transition: transform .22s var(--ease-ios), filter .22s var(--ease-ios);
+}
+
+.help-btn:active {
+  transform: scale(.92);
+  filter: brightness(1.08);
+}
+
 .brand {
   display: grid;
   gap: 3px;
@@ -272,7 +300,31 @@ button {
   scrollbar-width: none;
 }
 
+.content > * {
+  animation: contentRise .32s var(--ease-ios) both;
+}
+
+.content > *:nth-child(2) {
+  animation-delay: .04s;
+}
+
+.content > *:nth-child(3) {
+  animation-delay: .08s;
+}
+
 .content::-webkit-scrollbar {
   display: none;
+}
+
+@keyframes contentRise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 

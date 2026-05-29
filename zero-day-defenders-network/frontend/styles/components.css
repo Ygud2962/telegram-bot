@@ -46,6 +46,12 @@
 .primary-btn {
   background: linear-gradient(135deg, var(--blue), var(--accent));
   box-shadow: 0 14px 34px rgba(0, 122, 255, .22), inset 0 1px 0 rgba(255,255,255,.22);
+  transition: transform .22s var(--ease-ios), filter .22s var(--ease-ios), box-shadow .22s var(--ease-ios);
+}
+
+.primary-btn:active {
+  transform: scale(.97);
+  filter: brightness(1.08);
 }
 
 .close-btn {
@@ -123,6 +129,154 @@
   font-size: 30px;
   line-height: .95;
   letter-spacing: -0.06em;
+}
+
+.more-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 14px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(circle at 82% 16%, rgba(56,216,255,.22), transparent 30%),
+    radial-gradient(circle at 14% 96%, rgba(184,108,255,.18), transparent 36%),
+    linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.04)),
+    var(--panel);
+  box-shadow: 0 18px 58px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.14);
+  backdrop-filter: blur(30px) saturate(150%);
+}
+
+.more-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 84% 18%, rgba(255,255,255,.20), transparent 18%),
+    linear-gradient(110deg, transparent 0 34%, rgba(255,255,255,.11) 50%, transparent 68%);
+  opacity: .55;
+}
+
+.more-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.more-hero h2 {
+  max-width: 330px;
+  margin: 6px 0 8px;
+  font-size: 30px;
+  line-height: .94;
+  letter-spacing: -0.06em;
+}
+
+.more-hero p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.46;
+}
+
+.more-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.more-card {
+  min-height: 132px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 26px;
+  padding: 14px;
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  text-align: left;
+  background:
+    radial-gradient(circle at 78% 12%, rgba(255,255,255,.15), transparent 27%),
+    linear-gradient(145deg, rgba(255,255,255,.095), rgba(255,255,255,.035));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+  transition: transform .22s var(--ease-ios), border-color .22s var(--ease-ios), background .22s var(--ease-ios);
+}
+
+.more-card:active {
+  transform: scale(.97);
+}
+
+.more-card span {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 35% 20%, rgba(255,255,255,.30), transparent 27%),
+    linear-gradient(135deg, rgba(0,122,255,.36), rgba(184,108,255,.22));
+  border: 1px solid rgba(255,255,255,.14);
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.more-card strong {
+  font-size: 15px;
+  letter-spacing: -0.025em;
+}
+
+.more-card small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.32;
+}
+
+.flow-panel {
+  padding: 16px;
+}
+
+.flow-steps {
+  display: grid;
+  gap: 9px;
+}
+
+.flow-steps article {
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 22px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 3px;
+  align-items: start;
+  background: rgba(255,255,255,.055);
+}
+
+.flow-steps b {
+  width: 30px;
+  height: 30px;
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--blue);
+  background: rgba(0,122,255,.14);
+  font-size: 13px;
+}
+
+.flow-steps strong {
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+
+.flow-steps span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.34;
 }
 
 .tool-slots {
@@ -227,6 +381,12 @@
   background: rgba(255,255,255,.07);
   font-size: 12px;
   font-weight: 800;
+  transition: transform .22s var(--ease-ios), background .22s var(--ease-ios), border-color .22s var(--ease-ios);
+}
+
+.secondary-btn:active,
+.slot-btn:active {
+  transform: scale(.97);
 }
 
 .secondary-btn {

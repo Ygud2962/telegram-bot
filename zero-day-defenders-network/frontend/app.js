@@ -247,12 +247,15 @@ function refreshThreatTimers() {
 const tabs = [
   ["map", "🗺", "Карта"],
   ["tools", "🛠", "Инстр."],
-  ["collection", "🃏", "Коллекц."],
-  ["daemon", "🐉", "Демон"],
-  ["squad", "🛡", "Отряд"],
-  ["story", "🧩", "Сюжет"],
-  ["shop", "◇", "Магазин"],
+  ["collection", "🃏", "Колода"],
+  ["more", "•••", "Ещё"],
 ];
+
+const moreTabIds = new Set(["more", "daemon", "squad", "story", "shop"]);
+
+function activeTabRoot() {
+  return moreTabIds.has(state.activeTab) ? "more" : state.activeTab;
+}
 
 const app = document.querySelector("#app");
 
@@ -261,6 +264,7 @@ function html(strings, ...values) {
 }
 
 function render() {
+  const shouldRestoreOnboarding = Boolean(document.querySelector(".onboarding-layer"));
   app.innerHTML = html`
     <main class="phone">
       <section class="screen">
@@ -273,7 +277,7 @@ function render() {
     </main>
   `;
   bindEvents();
-  requestAnimationFrame(maybeShowOnboarding);
+  requestAnimationFrame(shouldRestoreOnboarding ? showOnboarding : maybeShowOnboarding);
 }
 
 function renderHud() {
@@ -284,7 +288,10 @@ function renderHud() {
           <span class="eyebrow"><i></i> SOC Новый Сектор · ${state.sync.toUpperCase()}</span>
           <strong>ZERO_DAY</strong>
         </div>
-        <span class="status-chip">SOC Lv.${state.socLevel}</span>
+        <div class="hud-actions">
+          <button class="help-btn" data-show-tutorial type="button" aria-label="Как играть">?</button>
+          <span class="status-chip">SOC Lv.${state.socLevel}</span>
+        </div>
       </div>
       <div class="hud-stats" aria-label="Ресурсы игрока">
         <span class="metric credits"><b>₵</b><span>${state.credits.toLocaleString("ru-RU")}</span><small>кредиты</small></span>
@@ -300,7 +307,7 @@ function renderTabs() {
   return html`
     <nav class="tabbar">
       ${tabs.map(([id, icon, label]) => `
-        <button class="tab ${state.activeTab === id ? "active" : ""}" data-tab="${id}">
+        <button class="tab ${activeTabRoot() === id ? "active" : ""}" data-tab="${id}">
           <span class="ico">${icon}</span>
           <span>${label}</span>
         </button>
@@ -323,6 +330,8 @@ function renderTab() {
       return renderStory();
     case "shop":
       return renderShop();
+    case "more":
+      return renderMore();
     default:
       return renderMap();
   }
@@ -1026,6 +1035,62 @@ function renderShop() {
   `;
 }
 
+function renderMore() {
+  const protectedCount = state.map.filter(node => node.state === "protected").length;
+  const activeCount = state.threats.length;
+  const paidCount = state.payments.filter(payment => payment.status === "paid").length;
+  return html`
+    <section class="more-hero">
+      <span class="eyebrow">центр управления</span>
+      <h2>Всё, что не нужно на первом экране</h2>
+      <p>Основной путь игры: карта → угроза → мини-игра → награда. Остальные разделы здесь, чтобы нижнее меню не мешало.</p>
+      <button class="primary-btn" data-show-tutorial type="button">Повторить обучение</button>
+    </section>
+
+    <section class="more-grid" aria-label="Дополнительные разделы">
+      <button class="more-card" data-tab="shop">
+        <span>◇</span>
+        <strong>Магазин</strong>
+        <small>Ключи, покупки, история. Оплачено: ${paidCount}</small>
+      </button>
+      <button class="more-card" data-tab="daemon">
+        <span>🐉</span>
+        <strong>Демон</strong>
+        <small>Питомец, бонусы, авто-сбор.</small>
+      </button>
+      <button class="more-card" data-tab="squad">
+        <span>🛡</span>
+        <strong>Отряд</strong>
+        <small>Команда школы и общий щит.</small>
+      </button>
+      <button class="more-card" data-tab="story">
+        <span>🧩</span>
+        <strong>Сюжет</strong>
+        <small>Проект Зеро и миссии сезона.</small>
+      </button>
+    </section>
+
+    <section class="panel flow-panel">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">как это работает</span>
+          <h2>Игровой цикл</h2>
+        </div>
+        <span>${protectedCount}/${state.map.length} объектов</span>
+      </div>
+      <div class="flow-steps">
+        <article><b>1</b><strong>Карта</strong><span>Ищи красный объект. Это атака.</span></article>
+        <article><b>2</b><strong>Мини-игра</strong><span>Действуй быстро, не отвечай на тесты.</span></article>
+        <article><b>3</b><strong>Награда</strong><span>Кредиты, карточки, опыт SOC.</span></article>
+        <article><b>4</b><strong>Прокачка</strong><span>Инструменты помогают пройти лучше.</span></article>
+      </div>
+      <div class="coach-actions">
+        <button class="primary-btn" data-tab="map">${activeCount ? "К активной угрозе" : "На карту"}</button>
+        <button class="secondary-btn" data-tab="tools">Прокачать инструменты</button>
+      </div>
+    </section>
+  `;
+}
 function renderProduct(product) {
   const productId = product.productId;
   const busy = state.busyProducts.has(productId);
@@ -1135,6 +1200,13 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-show-tutorial]").forEach(button => {
+    button.addEventListener("click", () => {
+      onboardingShownThisSession = false;
+      showOnboarding();
+      haptic.light();
+    });
+  });
   document.querySelectorAll("[data-threat]").forEach(button => {
     button.addEventListener("click", async () => {
       const threat = state.threats.find(item => item.id === button.dataset.threat);
