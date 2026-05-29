@@ -1,0 +1,125 @@
+{
+  "style": "original raster cyber-anime daemon",
+  "levels": [
+    {
+      "level": 1,
+      "name": "spark-core",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 2,
+      "name": "pixel-worm",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 3,
+      "name": "ids-wolf",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 4,
+      "name": "firewall-lynx",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 5,
+      "name": "scanner-owl",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 6,
+      "name": "proxy-fox",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 7,
+      "name": "soc-griffin",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 8,
+      "name": "quantum-dragon",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 9,
+      "name": "zero-sentinel",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    },
+    {
+      "level": 10,
+      "name": "hologram-dragon",
+      "moods": [
+        "idle",
+        "alert",
+        "happy",
+        "hungry",
+        "sad",
+        "levelup"
+      ]
+    }
+  ]
+}

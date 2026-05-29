@@ -51,10 +51,21 @@
   animation: daemonBreathe 3.2s var(--ease-ios) infinite;
 }
 
+.daemon-art,
 .daemon-avatar-svg {
   width: 100%;
   height: 100%;
+  display: block;
+  object-fit: contain;
   overflow: visible;
+}
+
+.daemon-svg-fallback {
+  display: none;
+}
+
+.daemon-svg-fallback.is-visible {
+  display: block;
 }
 
 .daemon-avatar-icon {
@@ -170,8 +181,17 @@
   filter: drop-shadow(0 0 10px rgba(255,69,58,.86));
 }
 
+.daemon-mood-alert .daemon-art {
+  filter: drop-shadow(0 0 16px rgba(255,69,58,.34));
+}
+
 .daemon-mood-hungry {
   filter: grayscale(.18) drop-shadow(0 12px 22px rgba(0,0,0,.36));
+}
+
+.daemon-mood-hungry .daemon-art,
+.daemon-mood-sad .daemon-art {
+  filter: saturate(.78) brightness(.86);
 }
 
 .daemon-mood-hungry .daemon-aura,
@@ -186,6 +206,11 @@
 
 .daemon-mood-levelup {
   filter: drop-shadow(0 0 28px var(--daemon-accent));
+}
+
+.daemon-mood-levelup .daemon-art,
+.daemon-mood-happy .daemon-art {
+  filter: drop-shadow(0 0 18px rgba(0,255,132,.28)) saturate(1.12);
 }
 
 .map-card {
@@ -256,6 +281,10 @@
 
 .map-daemon {
   pointer-events: none;
+}
+
+.map-daemon-art {
+  filter: drop-shadow(0 0 10px var(--daemon-primary)) drop-shadow(0 12px 18px rgba(0,0,0,.34));
 }
 
 .map-daemon-aura {

@@ -1075,6 +1075,14 @@ function daemonMood(context = "default") {
   return "idle";
 }
 
+function daemonAssetMood(mood = "idle") {
+  return ["idle", "alert", "happy", "hungry", "sad", "levelup"].includes(mood) ? mood : "idle";
+}
+
+function daemonAssetSrc(level = getDaemonState().level, mood = "idle") {
+  return `assets/daemon/level-${String(clampDaemonLevel(level)).padStart(2, "0")}/${daemonAssetMood(mood)}.png`;
+}
+
 function daemonLine(context = "map") {
   const reaction = getDaemonReaction();
   if (reaction?.text) return reaction.text;
@@ -1133,9 +1141,11 @@ function renderDaemonAvatar(level = getDaemonState().level, variant = "card", mo
     sad: "M91 109 C96 104 104 104 109 109",
     alert: "M91 105 L109 105",
   }[mood] || "M91 105 C96 110 104 110 109 105";
+  const assetSrc = daemonAssetSrc(safeLevel, mood);
   return `
     <span class="daemon-avatar daemon-avatar-${variant} daemon-level-${safeLevel} daemon-mood-${mood}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-hidden="true">
-      <svg class="daemon-avatar-svg" viewBox="0 0 200 200" role="img">
+      <img class="daemon-art" src="${assetSrc}" alt="" loading="lazy" draggable="false" onerror="this.hidden=true;this.nextElementSibling.classList.add('is-visible')">
+      <svg class="daemon-avatar-svg daemon-svg-fallback" viewBox="0 0 200 200" role="img">
         <defs>
           <radialGradient id="daemonGlow${safeLevel}${variant}" cx="50%" cy="38%" r="62%">
             <stop offset="0%" stop-color="var(--daemon-primary)" stop-opacity=".96"/>
@@ -1172,20 +1182,9 @@ function renderMapDaemonMarker() {
   const daemon = getDaemonState();
   const evo = getDaemonEvolution(daemon.level);
   const mood = daemonMood("map");
-  const wing = daemon.level >= 5 ? `<path class="map-daemon-wing left" d="M211 200 C196 184 190 205 204 220"/><path class="map-daemon-wing right" d="M237 200 C252 184 258 205 244 220"/>` : "";
-  const tail = daemon.level >= 6 ? `<path class="map-daemon-tail" d="M238 214 C258 215 262 194 247 192"/>` : "";
-  const horns = daemon.level >= 8 ? `<path class="map-daemon-horn left" d="M217 194 L211 182 L224 190"/><path class="map-daemon-horn right" d="M231 194 L237 182 L224 190"/>` : "";
   return `
     <g class="daemon map-daemon daemon-mood-${mood}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-label="Кибер-демон ${evo.name}">
-      <circle class="map-daemon-aura" cx="224" cy="202" r="${18 + daemon.level}"/>
-      ${tail}
-      ${wing}
-      ${horns}
-      <path class="map-daemon-body" d="M207 203 C210 188 219 181 224 181 C229 181 238 188 241 203 C243 219 235 228 224 228 C213 228 205 219 207 203Z"/>
-      <path class="map-daemon-face" d="M213 200 C215 190 221 187 224 187 C227 187 233 190 235 200 C236 209 231 215 224 215 C217 215 212 209 213 200Z"/>
-      <circle class="map-daemon-eye" cx="219" cy="201" r="2.4"/>
-      <circle class="map-daemon-eye" cx="229" cy="201" r="2.4"/>
-      <circle class="map-daemon-core" cx="224" cy="219" r="3.8"/>
+      <image class="map-daemon-art" href="${daemonAssetSrc(daemon.level, mood)}" x="184" y="156" width="80" height="80" preserveAspectRatio="xMidYMid meet"/>
     </g>
   `;
 }
