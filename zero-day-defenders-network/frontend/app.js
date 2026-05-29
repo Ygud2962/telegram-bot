@@ -19,6 +19,7 @@ if (!window.ZDNETMockState?.createInitialState) {
 const state = window.ZDNETMockState.createInitialState();
 const ONBOARDING_KEY = "ZDNET_ONBOARDING_SEEN";
 let onboardingShownThisSession = false;
+let daemonReaction = null;
 
 const DAEMON_XP_THRESHOLDS = [0, 80, 200, 380, 620, 920, 1280, 1700, 2180, 2720];
 const DAEMON_EVOLUTIONS = [
@@ -587,12 +588,13 @@ function renderMap() {
           <span>щит города</span>
         </div>
         <div class="daemon-orb" aria-label="Кибер-демон">
-          ${renderDaemonAvatar(getDaemonState().level, "mini")}
+          ${renderDaemonAvatar(getDaemonState().level, "mini", daemonMood("map"))}
         </div>
       </div>
     </section>
 
     ${renderMissionCoach(activeCount)}
+    ${renderDaemonCompanion("map")}
 
     <section class="city-overview" aria-label="Состояние города">
       <article class="overview-tile safe"><span>защищено</span><strong>${protectedCount}</strong></article>
@@ -1004,11 +1006,15 @@ function daemonLevelFromXp(xp) {
 function getDaemonState() {
   const daemon = state.daemon || {};
   const xp = Math.max(0, Number(daemon.xp || 0));
+  const lastFedAt = daemon.lastFedAt || null;
+  const lastFedTime = lastFedAt ? Date.parse(lastFedAt) : NaN;
+  const hungryByTime = Number.isFinite(lastFedTime) && Date.now() - lastFedTime > 4 * 60 * 60 * 1000;
   return {
     level: clampDaemonLevel(daemon.level || daemonLevelFromXp(xp) || state.socLevel || 1),
     xp,
-    hungerState: daemon.hungerState || "fed",
+    hungerState: hungryByTime ? "hungry" : (daemon.hungerState || "fed"),
     skinId: daemon.skinId || "default",
+    lastFedAt,
   };
 }
 
@@ -1035,6 +1041,7 @@ function grantDaemonXp(amount) {
   state.daemon.xp = Math.max(0, Number(state.daemon.xp || 0) + Number(amount || 0));
   state.daemon.level = Math.max(before, daemonLevelFromXp(state.daemon.xp));
   state.daemon.hungerState = "fed";
+  state.daemon.lastFedAt = new Date().toISOString();
   return {
     xp: amount,
     level: state.daemon.level,
@@ -1042,7 +1049,72 @@ function grantDaemonXp(amount) {
   };
 }
 
-function renderDaemonAvatar(level = getDaemonState().level, variant = "card") {
+function setDaemonReaction(type, text, ttlMs = 5200) {
+  daemonReaction = {
+    type,
+    text,
+    expiresAt: Date.now() + ttlMs,
+  };
+}
+
+function getDaemonReaction() {
+  if (!daemonReaction) return null;
+  if (Date.now() > daemonReaction.expiresAt) {
+    daemonReaction = null;
+    return null;
+  }
+  return daemonReaction;
+}
+
+function daemonMood(context = "default") {
+  const reaction = getDaemonReaction();
+  if (reaction?.type) return reaction.type;
+  const daemon = getDaemonState();
+  if (daemon.hungerState !== "fed") return "hungry";
+  if (context === "map" && state.threats.length) return "alert";
+  return "idle";
+}
+
+function daemonLine(context = "map") {
+  const reaction = getDaemonReaction();
+  if (reaction?.text) return reaction.text;
+  const daemon = getDaemonState();
+  const primaryThreat = getPrimaryThreat();
+  if (daemon.hungerState !== "fed") {
+    return "Я голоден. Запусти миссию, и я снова буду сканировать город на полной скорости.";
+  }
+  if (context === "reward") {
+    return "Я забрал опыт из миссии. Ещё несколько вылазок, и форма изменится.";
+  }
+  if (context === "daemon") {
+    const evo = getDaemonEvolution(daemon.level);
+    const progress = daemonProgress();
+    return daemon.level >= 10
+      ? `${evo.name} в финальной форме. Теперь можно охотиться за скинами и редкими эффектами.`
+      : `${evo.name} готов к росту: ${progress.percent}% до следующей формы. Корми меня миссиями.`;
+  }
+  if (primaryThreat) {
+    return `Вижу шум возле «${mapObjectName(primaryThreat.objectId)}». Нажми подсвеченный объект, я поведу дальше.`;
+  }
+  return "Сектор чистый. Можно открыть тайник, прокачать инструменты или ждать новый алерт.";
+}
+
+function renderDaemonCompanion(context = "map") {
+  const daemon = getDaemonState();
+  const evo = getDaemonEvolution(daemon.level);
+  const mood = daemonMood(context);
+  return html`
+    <section class="daemon-companion daemon-companion-${mood}">
+      ${renderDaemonAvatar(daemon.level, "companion", mood)}
+      <div>
+        <span>${evo.name} · ${mood === "hungry" ? "голоден" : mood === "alert" ? "видит угрозу" : mood === "happy" ? "доволен" : mood === "levelup" ? "эволюция" : "рядом"}</span>
+        <p>${daemonLine(context)}</p>
+      </div>
+    </section>
+  `;
+}
+
+function renderDaemonAvatar(level = getDaemonState().level, variant = "card", mood = daemonMood()) {
   const safeLevel = clampDaemonLevel(level);
   const evo = getDaemonEvolution(safeLevel);
   const hasSegments = safeLevel >= 2;
@@ -1054,8 +1126,15 @@ function renderDaemonAvatar(level = getDaemonState().level, variant = "card") {
   const hasHorns = safeLevel >= 8;
   const hasHalo = safeLevel >= 9;
   const hasHolo = safeLevel >= 10;
+  const mouthPath = {
+    happy: "M88 102 C94 114 106 114 112 102",
+    levelup: "M88 102 C94 114 106 114 112 102",
+    hungry: "M91 109 C96 104 104 104 109 109",
+    sad: "M91 109 C96 104 104 104 109 109",
+    alert: "M91 105 L109 105",
+  }[mood] || "M91 105 C96 110 104 110 109 105";
   return `
-    <span class="daemon-avatar daemon-avatar-${variant} daemon-level-${safeLevel}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-hidden="true">
+    <span class="daemon-avatar daemon-avatar-${variant} daemon-level-${safeLevel} daemon-mood-${mood}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-hidden="true">
       <svg class="daemon-avatar-svg" viewBox="0 0 200 200" role="img">
         <defs>
           <radialGradient id="daemonGlow${safeLevel}${variant}" cx="50%" cy="38%" r="62%">
@@ -1080,7 +1159,7 @@ function renderDaemonAvatar(level = getDaemonState().level, variant = "card") {
         <path class="daemon-face-plate" d="M75 84 C80 70 91 64 100 64 C109 64 120 70 125 84 C127 101 116 112 100 112 C84 112 73 101 75 84Z"/>
         <circle class="daemon-eye left" cx="88" cy="88" r="${safeLevel >= 8 ? 6 : 5}"/>
         <circle class="daemon-eye right" cx="112" cy="88" r="${safeLevel >= 8 ? 6 : 5}"/>
-        <path class="daemon-mouth" d="M91 105 C96 110 104 110 109 105"/>
+        <path class="daemon-mouth" d="${mouthPath}"/>
         <circle class="daemon-core" cx="100" cy="${hasArmor ? 126 : 132}" r="${8 + Math.min(6, safeLevel)}"/>
         ${safeLevel >= 2 ? `<path class="daemon-antenna left" d="M86 49 C76 32 66 28 57 24"/><path class="daemon-antenna right" d="M114 49 C124 32 134 28 143 24"/><circle class="daemon-antenna-dot" cx="57" cy="24" r="4"/><circle class="daemon-antenna-dot" cx="143" cy="24" r="4"/>` : ""}
         ${hasHolo ? `<path class="daemon-holo-line" d="M45 150 C75 177 126 177 155 150"/><path class="daemon-holo-line second" d="M54 164 C82 190 119 190 147 164"/>` : ""}
@@ -1092,11 +1171,12 @@ function renderDaemonAvatar(level = getDaemonState().level, variant = "card") {
 function renderMapDaemonMarker() {
   const daemon = getDaemonState();
   const evo = getDaemonEvolution(daemon.level);
+  const mood = daemonMood("map");
   const wing = daemon.level >= 5 ? `<path class="map-daemon-wing left" d="M211 200 C196 184 190 205 204 220"/><path class="map-daemon-wing right" d="M237 200 C252 184 258 205 244 220"/>` : "";
   const tail = daemon.level >= 6 ? `<path class="map-daemon-tail" d="M238 214 C258 215 262 194 247 192"/>` : "";
   const horns = daemon.level >= 8 ? `<path class="map-daemon-horn left" d="M217 194 L211 182 L224 190"/><path class="map-daemon-horn right" d="M231 194 L237 182 L224 190"/>` : "";
   return `
-    <g class="daemon map-daemon" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-label="Кибер-демон ${evo.name}">
+    <g class="daemon map-daemon daemon-mood-${mood}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-label="Кибер-демон ${evo.name}">
       <circle class="map-daemon-aura" cx="224" cy="202" r="${18 + daemon.level}"/>
       ${tail}
       ${wing}
@@ -1115,6 +1195,7 @@ function renderDaemon() {
   const evo = getDaemonEvolution(daemon.level);
   const progress = daemonProgress();
   const next = progress.nextLevel ? getDaemonEvolution(progress.nextLevel) : null;
+  const mood = daemonMood("daemon");
   return html`
     <section class="panel daemon-panel">
       <div class="section-title">
@@ -1124,8 +1205,9 @@ function renderDaemon() {
         </div>
         <span>форма ${daemon.level}/10</span>
       </div>
+      ${renderDaemonCompanion("daemon")}
       <div class="daemon-stage">
-        ${renderDaemonAvatar(daemon.level, "showcase")}
+        ${renderDaemonAvatar(daemon.level, "showcase", mood)}
         <div class="daemon-stage-copy">
           <span>${evo.role}</span>
           <p>${evo.note}</p>
@@ -1721,7 +1803,7 @@ function antiCheatMessage(flags = []) {
   return list.length ? list.join(" · ") : "Сессия не прошла проверку честности.";
 }
 
-function showRewardSheet({ title, subtitle = "", credits = 0, cards = [], stats = [], actions = [], tone = "success" }) {
+function showRewardSheet({ title, subtitle = "", credits = 0, cards = [], stats = [], actions = [], tone = "success", daemon = null }) {
   document.querySelector(".reward-layer")?.remove();
   const phone = document.querySelector(".phone");
   if (!phone) return;
@@ -1730,6 +1812,11 @@ function showRewardSheet({ title, subtitle = "", credits = 0, cards = [], stats 
   const safeStats = stats.filter(item => item && item.label && item.value !== undefined && item.value !== null);
   const safeActions = actions.length ? actions : [{ label: "Закрыть", close: true, primary: true }];
   const eyebrow = tone === "error" ? "проверка не пройдена" : "миссия завершена";
+  const daemonReward = daemon && tone !== "error" ? {
+    xp: Number(daemon.xp || daemon.daemonXp || 0),
+    level: clampDaemonLevel(daemon.level || getDaemonState().level),
+    levelUp: Boolean(daemon.levelUp || daemon.daemonLevelUp),
+  } : null;
   const layer = document.createElement("div");
   layer.className = `reward-layer reward-layer-${tone}`;
   layer.innerHTML = `
@@ -1739,6 +1826,16 @@ function showRewardSheet({ title, subtitle = "", credits = 0, cards = [], stats 
       <span class="eyebrow">${eyebrow}</span>
       <h2>${title}</h2>
       ${subtitle ? `<p>${subtitle}</p>` : ""}
+      ${daemonReward ? `
+        <section class="reward-daemon ${daemonReward.levelUp ? "is-levelup" : ""}">
+          ${renderDaemonAvatar(daemonReward.level, "reward", daemonReward.levelUp ? "levelup" : "happy")}
+          <div>
+            <span>${daemonReward.levelUp ? "Новая форма демона" : "Демон накормлен"}</span>
+            <strong>${getDaemonEvolution(daemonReward.level).name}</strong>
+            <p>${daemonReward.levelUp ? `Эволюция до уровня ${daemonReward.level}. Силуэт героя изменился.` : `+${daemonReward.xp} XP. ${daemonLine("reward")}`}</p>
+          </div>
+        </section>
+      ` : ""}
       ${safeStats.length ? `
         <div class="reward-summary" aria-label="Статистика попытки">
           ${safeStats.map(item => `
@@ -2203,6 +2300,16 @@ async function startPacketRain(threat) {
           },
         });
         await refreshBootstrap();
+        if (response.accepted) {
+          setDaemonReaction(
+            response.rewards.daemonLevelUp ? "levelup" : "happy",
+            response.rewards.daemonLevelUp
+              ? `Эволюция! Я перешёл на уровень ${response.rewards.daemonLevel}.`
+              : `Миссия засчитана. Я получил +${response.rewards.daemonXp || 0} XP и снова сыт.`
+          );
+        } else {
+          setDaemonReaction("sad", "Сессию не засчитали. Попробуем честно ещё раз.");
+        }
         removeOverlay();
         render();
         if (response.accepted) {
@@ -2217,6 +2324,11 @@ async function startPacketRain(threat) {
               { label: "Fair", value: `+${response.fairScoreDelta}` },
               { label: "Демон", value: response.rewards.daemonLevelUp ? `Lv.${response.rewards.daemonLevel}` : `+${response.rewards.daemonXp || 0} XP` },
             ],
+            daemon: {
+              xp: response.rewards.daemonXp || 0,
+              level: response.rewards.daemonLevel || getDaemonState().level,
+              levelUp: response.rewards.daemonLevelUp,
+            },
             actions: resultActions,
           });
           haptic.ok();
@@ -2259,7 +2371,11 @@ async function startPacketRain(threat) {
     state.energy -= 1;
     if (success) {
       state.credits += credits;
-      grantDaemonXp(34 + Number(threat.difficulty || 1) * 12 + Math.min(60, Math.floor(score / 120)));
+      var daemonGain = grantDaemonXp(34 + Number(threat.difficulty || 1) * 12 + Math.min(60, Math.floor(score / 120)));
+      setDaemonReaction(
+        daemonGain.levelUp ? "levelup" : "happy",
+        daemonGain.levelUp ? `Эволюция! Я перешёл на уровень ${daemonGain.level}.` : `Я получил +${daemonGain.xp} XP. Ещё миссия, и город станет спокойнее.`
+      );
       if (mockDrop) grantMockCard(mockDrop);
     }
     const target = state.map.find(item => item.id === threat.objectId);
@@ -2271,6 +2387,7 @@ async function startPacketRain(threat) {
     removeOverlay();
     render();
     if (!success) {
+      setDaemonReaction("sad", "Я не успел удержать поток. Объект заражён, но мы можем восстановиться.");
       toast("Угроза сорвалась. Объект заражён.");
       showRewardSheet({
         title: "Угроза сорвалась",
@@ -2294,6 +2411,7 @@ async function startPacketRain(threat) {
           ...resultStats,
           { label: "Демон", value: `Lv.${getDaemonState().level}` },
         ],
+        daemon: daemonGain,
         actions: resultActions,
       });
       haptic.ok();

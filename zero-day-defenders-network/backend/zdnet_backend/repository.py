@@ -151,6 +151,7 @@ class InMemoryGameRepository:
 
     def bootstrap(self, state: PlayerState) -> dict[str, Any]:
         self._reset_energy_if_needed(state)
+        self._update_daemon_hunger(state)
         self._ensure_active_threat(state)
         return {
             "player": deepcopy(state.player),
@@ -508,6 +509,17 @@ class InMemoryGameRepository:
             "level": int(daemon["level"]),
             "levelUp": int(daemon["level"]) > before,
         }
+
+    def _update_daemon_hunger(self, state: PlayerState) -> None:
+        raw_last_fed = state.daemon.get("lastFedAt")
+        if not raw_last_fed:
+            return
+        try:
+            last_fed = datetime.fromisoformat(str(raw_last_fed)).astimezone(timezone.utc)
+        except ValueError:
+            return
+        if utc_now() - last_fed > timedelta(hours=4):
+            state.daemon["hungerState"] = "hungry"
 
     def _grant_card(self, state: PlayerState, card_id: str) -> None:
         owned = state.cards.get(card_id)

@@ -4,6 +4,7 @@ import random
 import sys
 import unittest
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +85,11 @@ class RepositoryTests(unittest.TestCase):
         boot = self.repo.bootstrap(self.state)
         self.assertGreaterEqual(len(boot["activeThreats"]), 1)
         self.assertEqual(boot["energy"]["current"], 12)
+
+    def test_bootstrap_marks_daemon_hungry_after_four_hours(self):
+        self.state.daemon["lastFedAt"] = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+        boot = self.repo.bootstrap(self.state)
+        self.assertEqual(boot["daemon"]["hungerState"], "hungry")
 
     def test_attempt_finish_is_idempotent(self):
         threat = self.repo.bootstrap(self.state)["activeThreats"][0]
