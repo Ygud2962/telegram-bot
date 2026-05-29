@@ -17,6 +17,32 @@ if (!window.ZDNETMockState?.createInitialState) {
   throw new Error("ZDNETMockState is not loaded");
 }
 const state = window.ZDNETMockState.createInitialState();
+const ONBOARDING_KEY = "ZDNET_ONBOARDING_SEEN";
+let onboardingShownThisSession = false;
+
+function hasSeenOnboarding() {
+  try {
+    return localStorage.getItem(ONBOARDING_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function forceOnboarding() {
+  try {
+    return new URLSearchParams(window.location.search).get("tutorial") === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function markOnboardingSeen() {
+  try {
+    localStorage.setItem(ONBOARDING_KEY, "1");
+  } catch (error) {
+    // Mini App can still work if browser storage is unavailable.
+  }
+}
 async function apiRequest(path, options = {}) {
   const headers = {
     "Content-Type": "application/json",
@@ -247,6 +273,7 @@ function render() {
     </main>
   `;
   bindEvents();
+  requestAnimationFrame(maybeShowOnboarding);
 }
 
 function renderHud() {
@@ -385,6 +412,101 @@ function nodeStatusText(status) {
   }[status] || "Сканирование";
 }
 
+function getPrimaryThreat() {
+  return state.threats.find(threat => threat.gameType === "packet_rain" || threat.game === "Packet Rain") || state.threats[0] || null;
+}
+
+function renderMissionCoach(activeCount) {
+  const threat = getPrimaryThreat();
+  const objectName = threat ? mapObjectName(threat.objectId) : "город";
+  if (!activeCount || !threat) {
+    return html`
+      <section class="mission-coach calm">
+        <div class="coach-copy">
+          <span class="eyebrow">что делать сейчас</span>
+          <h2>Сектор чистый. Усиливай команду.</h2>
+          <p>Открой тайник, посмотри коллекцию или прокачай инструменты. Новая ежедневная угроза появится позже.</p>
+        </div>
+        <div class="coach-actions">
+          <button class="primary-btn" data-tab="collection">Открыть коллекцию</button>
+          <button class="secondary-btn" data-tab="tools">Инструменты</button>
+        </div>
+      </section>
+    `;
+  }
+  const canLaunch = threat.gameType === "packet_rain" || threat.game === "Packet Rain";
+  return html`
+    <section class="mission-coach">
+      <div class="coach-copy">
+        <span class="eyebrow">что делать сейчас</span>
+        <h2>1. Нажми объект «${objectName}»</h2>
+        <p>Красная точка означает атаку. Открой объект, нажми нейтрализацию, пройди мини-игру и забери награду.</p>
+      </div>
+      <div class="coach-steps" aria-label="Игровой цикл">
+        <span><b>1</b> объект</span>
+        <span><b>2</b> мини-игра</span>
+        <span><b>3</b> награда</span>
+        <span><b>4</b> прокачка</span>
+      </div>
+      <div class="coach-actions">
+        <button class="primary-btn" data-coach-object="${threat.objectId}">Показать объект</button>
+        <button class="secondary-btn" data-coach-threat="${threat.id}" ${canLaunch ? "" : "disabled"}>${canLaunch ? "Начать сразу" : "Скоро"}</button>
+      </div>
+    </section>
+  `;
+}
+
+function maybeShowOnboarding() {
+  if (state.activeTab !== "map" || onboardingShownThisSession) return;
+  if (!forceOnboarding() && hasSeenOnboarding()) return;
+  if (!document.querySelector(".phone")) return;
+  onboardingShownThisSession = true;
+  showOnboarding();
+}
+
+function showOnboarding() {
+  document.querySelector(".onboarding-layer")?.remove();
+  const phone = document.querySelector(".phone");
+  if (!phone) return;
+  const threat = getPrimaryThreat();
+  const objectName = threat ? mapObjectName(threat.objectId) : "первый объект";
+  const layer = document.createElement("div");
+  layer.className = "onboarding-layer";
+  layer.innerHTML = `
+    <section class="onboarding-sheet" role="dialog" aria-modal="true" aria-label="Как играть">
+      <button class="close-btn onboarding-close" data-onboarding-later type="button" aria-label="Закрыть обучение">×</button>
+      <span class="eyebrow">быстрый старт</span>
+      <h2>Твоя задача — защитить город</h2>
+      <p>Не ищи тесты и правильные ответы. Здесь всё через действия: нажать объект, пройти мини-игру, получить ресурсы и усилить SOC.</p>
+      <div class="onboarding-steps">
+        <article><b>1</b><strong>Смотри карту</strong><span>Красный объект = атака, фиолетовый = заражение.</span></article>
+        <article><b>2</b><strong>Открой угрозу</strong><span>Нажми «${objectName}» или карточку угрозы.</span></article>
+        <article><b>3</b><strong>Играй мини-игру</strong><span>В Packet Rain свайпай пакеты: BLOCK, PASS, QUAR.</span></article>
+        <article><b>4</b><strong>Забери прогресс</strong><span>Кредиты, карточки и улучшения делают город сильнее.</span></article>
+      </div>
+      <div class="onboarding-actions">
+        <button class="primary-btn" data-onboarding-start>Показать первую угрозу</button>
+        <button class="secondary-btn" data-onboarding-done>Больше не показывать</button>
+      </div>
+    </section>
+  `;
+  phone.appendChild(layer);
+
+  function close(markSeen = false) {
+    if (markSeen) markOnboardingSeen();
+    layer.remove();
+  }
+
+  layer.querySelector("[data-onboarding-start]")?.addEventListener("click", () => {
+    close(true);
+    if (threat) showLocationSheet(threat.objectId);
+  });
+  layer.querySelector("[data-onboarding-done]")?.addEventListener("click", () => close(true));
+  layer.querySelector("[data-onboarding-later]")?.addEventListener("click", () => close(false));
+  layer.addEventListener("click", event => {
+    if (event.target === layer) close(false);
+  });
+}
 function renderMap() {
   const activeCount = state.threats.length;
   const protectedCount = state.map.filter(node => node.state === "protected").length;
@@ -416,6 +538,8 @@ function renderMap() {
         </div>
       </div>
     </section>
+
+    ${renderMissionCoach(activeCount)}
 
     <section class="city-overview" aria-label="Состояние города">
       <article class="overview-tile safe"><span>защищено</span><strong>${protectedCount}</strong></article>
@@ -1027,6 +1151,19 @@ function bindEvents() {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       open();
+    });
+  });
+  document.querySelectorAll("[data-coach-object]").forEach(button => {
+    button.addEventListener("click", () => {
+      showLocationSheet(button.dataset.coachObject);
+      haptic.light();
+    });
+  });
+
+  document.querySelectorAll("[data-coach-threat]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const threat = state.threats.find(item => item.id === button.dataset.coachThreat);
+      await launchThreat(threat);
     });
   });
   document.querySelectorAll("[data-buy-product]").forEach(button => {
