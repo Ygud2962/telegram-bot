@@ -13,6 +13,24 @@
 - Подключение к backend API.
 - Fallback mock-режим, если backend недоступен.
 
+## Структура
+
+```text
+frontend/
+  index.html
+  app.js                 Главный экранный контроллер и gameplay loop
+  styles.css             Entry CSS с @import
+  src/
+    runtime.js           Telegram WebApp runtime, API base, haptics
+    mockState.js         Начальное mock-состояние для offline/dev режима
+  styles/
+    foundations.css      Tokens, base, app shell, HUD
+    components.css       Cards, buttons, shop/tools components
+    screens.css          Map, tabs, collection and screen layouts
+    overlays.css         Packet Rain overlay, toast, reward sheet
+    responsive.css       Mobile and reduced-motion rules
+```
+
 ## Запуск
 
 ```powershell
@@ -50,7 +68,7 @@ location.reload()
 
 ## Технический долг
 
-Сейчас [app.js](app.js) и [styles.css](styles.css) слишком большие. Следующий правильный шаг - разделить frontend на модули:
+`styles.css` уже разделен на тематические файлы. Следующий правильный шаг - дальше дробить [app.js](app.js):
 
 ```text
 src/
@@ -61,12 +79,6 @@ src/
   screens/
   minigames/
   ui/
-styles/
-  tokens.css
-  layout.css
-  components.css
-  screens.css
-  animations.css
 ```
 
-До разделения модулей лучше не добавлять крупные новые экраны.
+До полного разделения `app.js` лучше не добавлять крупные новые экраны.
