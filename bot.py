@@ -4,6 +4,7 @@ import asyncio
 import functools
 import hashlib
 import hmac
+import html
 import inspect
 import json
 import time
@@ -1119,6 +1120,55 @@ def game_access_notice(game_title: str, mode: str) -> str:
         "и пользователям из бета-списка.\n\n"
         "Если вы хотите получить доступ или сообщить об ошибке — напишите автору проекта."
     )
+
+
+GAME_TITLES = {
+    'cipher': 'Шифровальщик',
+    'zdnet': 'ZERO_DAY',
+}
+
+PROJECT_UPDATES = [
+    {
+        'date': '29.05.2026',
+        'scope': 'Бот',
+        'title': 'Раздел игр и статусы доступа',
+        'text': 'Игры вынесены в отдельное меню. Теперь видно, открыта игра, закрыта или работает в beta-режиме.',
+    },
+    {
+        'date': '29.05.2026',
+        'scope': 'Бот',
+        'title': 'Заявки на beta-доступ',
+        'text': 'Игрок может отправить заявку прямо из beta-уведомления, а администратор принять или отклонить её.',
+    },
+    {
+        'date': '29.05.2026',
+        'scope': 'ZERO_DAY',
+        'title': 'Защита закрытого режима',
+        'text': 'Закрытая игра больше не должна запускаться напрямую: пользователь видит понятное уведомление и ссылку на автора.',
+    },
+    {
+        'date': '29.05.2026',
+        'scope': 'Шифровальщик',
+        'title': 'Единая модель доступа',
+        'text': 'Beta, открытый и закрытый режимы теперь отображаются одинаково понятно в пользовательском и админском меню.',
+    },
+]
+
+
+def game_mode_label(mode: str) -> str:
+    return {
+        'open': '🟢 Открыта',
+        'beta': '🧪 Beta',
+        'closed': '🔒 Закрыта',
+    }.get(mode, f'⚙️ {mode}')
+
+
+def game_access_rows(game_key: str, mode: str, back_callback: str = 'menu_games') -> list[list[InlineKeyboardButton]]:
+    rows: list[list[InlineKeyboardButton]] = []
+    if mode == 'beta':
+        rows.append([btn("🧪 Хочу тестировать", f'beta_request_{game_key}')])
+    rows.extend(author_contact_rows(back_callback))
+    return rows
 
 
 def zdnet_access_page(mode: str) -> str:
@@ -3457,7 +3507,7 @@ async def menu_game(query, context):
     # Проверка доступа (бета-режим)
     if not await is_game_allowed(user.id):
         mode = await _get_cached_game_mode()
-        await safe_edit(query, game_access_notice("Шифровальщик", mode), author_contact_rows())
+        await safe_edit(query, game_access_notice("Шифровальщик", mode), game_access_rows('cipher', mode))
         return
 
     if not GAME_URL:
@@ -3734,10 +3784,10 @@ async def menu_zdnet(query, context):
     user = query.from_user
     mode = await _get_cached_zdnet_mode()
     if mode == 'closed':
-        await safe_edit(query, game_access_notice("ZERO_DAY", mode), author_contact_rows())
+        await safe_edit(query, game_access_notice("ZERO_DAY", mode), game_access_rows('zdnet', mode))
         return
     if not await is_zdnet_allowed(user.id):
-        await safe_edit(query, game_access_notice("ZERO_DAY", mode), author_contact_rows())
+        await safe_edit(query, game_access_notice("ZERO_DAY", mode), game_access_rows('zdnet', mode))
         return
 
     if not ZDNET_URL:
@@ -4979,7 +5029,7 @@ async def admin_game_panel(query, context):
         [btn("🔓 Доступ игроков к главам", 'admin_player_chapters')],
         [btn("👤 Роли игроков", 'admin_roles_panel')],
         [btn("🗑 Сбросить игру всем", 'admin_game_reset_all')],
-        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+        [btn("◀️ Игры", 'admin_games_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -4996,7 +5046,7 @@ async def admin_set_game_mode(query, context, mode: str):
     _beta_cache = set(); _beta_cache_ts = 0
     mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
     txt = f"✅ Режим игры: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
-    await safe_edit(query, txt, [[btn("◀️ Управление игрой", 'admin_game_panel')]])
+    await safe_edit(query, txt, [[btn("◀️ Управление игрой", 'admin_game_panel'), btn("🎮 Игры", 'admin_games_panel')]])
 
 
 async def admin_game_leaderboard(query, context):
@@ -5278,7 +5328,7 @@ async def admin_zdnet_panel(query, context):
         list(mode_btns.values()),
         [btn("🧪 Бета-список", 'admin_zdnet_beta_panel'), btn("🎭 Роли", 'admin_zdnet_roles')],
         [btn("👑 Сделать меня admin", 'admin_zdnet_make_me_admin')],
-        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+        [btn("◀️ Игры", 'admin_games_panel'), btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(query, text, kb)
 
@@ -5294,7 +5344,7 @@ async def admin_set_zdnet_mode(query, context, mode: str):
     _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
     mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
     txt = f"✅ Режим ZERO_DAY: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
-    await safe_edit(query, txt, [[btn("◀️ ZERO_DAY", 'admin_zdnet_panel')]])
+    await safe_edit(query, txt, [[btn("◀️ ZERO_DAY", 'admin_zdnet_panel'), btn("🎮 Игры", 'admin_games_panel')]])
 
 
 async def admin_zdnet_beta_panel(query, context):
@@ -5665,6 +5715,211 @@ async def admin_system_panel(query, context):
     )
 
 
+async def get_games_access_modes() -> tuple[str, str]:
+    """Возвращает режимы доступа: (Шифровальщик, ZERO_DAY)."""
+    cipher_mode, zdnet_mode = await asyncio.gather(
+        asyncio.to_thread(db.get_game_access_mode),
+        asyncio.to_thread(db.get_zdnet_access_mode),
+        return_exceptions=True,
+    )
+    if isinstance(cipher_mode, Exception) or cipher_mode not in ('open', 'beta', 'closed'):
+        cipher_mode = 'beta'
+    if isinstance(zdnet_mode, Exception) or zdnet_mode not in ('open', 'beta', 'closed'):
+        zdnet_mode = 'beta'
+    return str(cipher_mode), str(zdnet_mode)
+
+
+async def admin_games_panel(query, context):
+    """Единая админ-вкладка всех игр."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    cipher_mode, zdnet_mode = await get_games_access_modes()
+    pending = await asyncio.to_thread(db.get_beta_access_requests, 'pending', 50)
+    pending_count = len(pending)
+
+    text = (
+        "🎮 <b>ИГРЫ</b>\n\n"
+        "Здесь собраны все игровые проекты бота и быстрые настройки доступа.\n\n"
+        f"🎮 <b>Шифровальщик</b>: {game_mode_label(cipher_mode)}\n"
+        f"🛡 <b>ZERO_DAY</b>: {game_mode_label(zdnet_mode)}\n\n"
+        f"🧪 Ожидают beta-доступа: <b>{pending_count}</b>"
+    )
+
+    kb = [
+        [btn("🎮 Шифровальщик", 'admin_game_panel'), btn("🛡 ZERO_DAY", 'admin_zdnet_panel')],
+        [btn(f"🧪 Beta-заявки ({pending_count})", 'admin_beta_requests')],
+        [btn("🆕 Обновления", 'menu_updates')],
+        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def beta_request_access(query, context, game_key: str):
+    """Создаёт заявку пользователя на beta-доступ к игре."""
+    game_key = str(game_key or '').strip().lower()
+    game_title = GAME_TITLES.get(game_key)
+    if not game_title:
+        await query.answer("Неизвестная игра", show_alert=True)
+        return
+
+    mode_func = db.get_zdnet_access_mode if game_key == 'zdnet' else db.get_game_access_mode
+    try:
+        mode = await asyncio.to_thread(mode_func)
+    except Exception:
+        mode = 'beta'
+    if mode != 'beta':
+        await query.answer("Заявки принимаются только в beta-режиме.", show_alert=True)
+        await menu_games(query, context)
+        return
+
+    user = query.from_user
+    is_allowed = await (is_zdnet_allowed(user.id) if game_key == 'zdnet' else is_game_allowed(user.id))
+    if is_allowed:
+        await query.answer("У вас уже есть доступ.", show_alert=True)
+        if game_key == 'zdnet':
+            await menu_zdnet(query, context)
+        else:
+            await menu_game(query, context)
+        return
+
+    user_name = (user.full_name or user.first_name or user.username or 'Игрок').strip()
+    result = await asyncio.to_thread(db.add_beta_access_request, game_key, user.id, user_name)
+    if result.get('error'):
+        await query.answer("Не удалось отправить заявку. Попробуйте позже.", show_alert=True)
+        return
+
+    request_id = result.get('id')
+    if result.get('created'):
+        safe_name = html.escape(user_name)
+        for admin_id in await get_admin_ids():
+            await safe_send(
+                context,
+                admin_id,
+                "🧪 <b>Новая beta-заявка</b>\n\n"
+                f"Игра: <b>{html.escape(game_title)}</b>\n"
+                f"Игрок: <a href=\"tg://user?id={user.id}\">{safe_name}</a>\n"
+                f"ID: <code>{user.id}</code>\n"
+                f"Заявка: <code>#{request_id}</code>",
+                [
+                    [btn("✅ Принять", f'beta_req_approve_{request_id}'),
+                     btn("❌ Отклонить", f'beta_req_reject_{request_id}')],
+                    [btn("🎮 Игры", 'admin_games_panel')],
+                ],
+            )
+
+    status_line = "Заявка отправлена администратору." if result.get('created') else "Ваша заявка уже ожидает решения."
+    await safe_edit(
+        query,
+        f"🧪 <b>Beta-доступ: {html.escape(game_title)}</b>\n\n"
+        f"{status_line}\n"
+        f"Номер заявки: <code>#{request_id}</code>\n\n"
+        "Когда администратор примет решение, бот пришлёт уведомление.",
+        author_contact_rows(),
+    )
+
+
+async def admin_beta_requests(query, context):
+    """Список заявок на beta-доступ по всем играм."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    requests = await asyncio.to_thread(db.get_beta_access_requests, 'pending', 20)
+    if not requests:
+        await safe_edit(
+            query,
+            "🧪 <b>BETA-ЗАЯВКИ</b>\n\nОжидающих заявок нет.",
+            [[btn("↩️ Игры", 'admin_games_panel'), btn("🏠 Главное меню", 'back_to_main')]],
+        )
+        return
+
+    lines = [f"🧪 <b>BETA-ЗАЯВКИ</b> ({len(requests)})\n"]
+    kb = []
+    for request_id, game_key, user_id, user_name, status, requested_at in requests:
+        title = GAME_TITLES.get(game_key, game_key)
+        name = html.escape(user_name or 'Игрок')
+        when = convert_utc_to_minsk(requested_at)
+        lines.append(
+            f"• <code>#{request_id}</code> <b>{html.escape(title)}</b>\n"
+            f"  {name} · <code>{user_id}</code>\n"
+            f"  {when}"
+        )
+        kb.append([
+            btn(f"✅ #{request_id}", f'beta_req_approve_{request_id}'),
+            btn(f"❌ #{request_id}", f'beta_req_reject_{request_id}'),
+        ])
+
+    kb.append([btn("↩️ Игры", 'admin_games_panel'), btn("🏠 Главное меню", 'back_to_main')])
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def resolve_beta_request(query, context, request_id: int, approve: bool):
+    """Принимает или отклоняет beta-заявку."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await query.answer("⛔", show_alert=True)
+        return
+
+    status = 'approved' if approve else 'rejected'
+    row = await asyncio.to_thread(db.resolve_beta_access_request, request_id, status, query.from_user.id)
+    if not row:
+        await safe_edit(
+            query,
+            "⚠️ Заявка не найдена или уже обработана.",
+            [[btn("↩️ Beta-заявки", 'admin_beta_requests'), btn("🎮 Игры", 'admin_games_panel')]],
+        )
+        return
+
+    req_id, game_key, user_id, user_name, _, _requested_at = row
+    game_title = GAME_TITLES.get(game_key, game_key)
+    global _beta_cache, _beta_cache_ts, _zdnet_beta_cache, _zdnet_beta_cache_ts
+
+    grant_ok = True
+    if approve:
+        note = f"Заявка #{req_id}"
+        if game_key == 'zdnet':
+            grant_ok = await asyncio.to_thread(db.add_zdnet_beta_user, user_id, user_name, note)
+            _zdnet_beta_cache = set()
+            _zdnet_beta_cache_ts = 0
+        else:
+            grant_ok = await asyncio.to_thread(db.add_beta_user, user_id, user_name, note)
+            _beta_cache = set()
+            _beta_cache_ts = 0
+
+    safe_title = html.escape(game_title)
+    if approve:
+        user_text = (
+            f"✅ <b>Beta-доступ одобрен</b>\n\n"
+            f"Игра: <b>{safe_title}</b>\n"
+            "Теперь вы можете открыть игру через меню «Игры»."
+        )
+        admin_text = (
+            f"✅ Заявка <code>#{req_id}</code> одобрена.\n"
+            f"Игра: <b>{safe_title}</b>\n"
+            f"Игрок: <code>{user_id}</code>\n"
+            f"Доступ выдан: <b>{'да' if grant_ok else 'уже был / не изменён'}</b>"
+        )
+    else:
+        user_text = (
+            f"❌ <b>Beta-заявка отклонена</b>\n\n"
+            f"Игра: <b>{safe_title}</b>\n"
+            "Если есть вопросы — напишите автору проекта."
+        )
+        admin_text = (
+            f"❌ Заявка <code>#{req_id}</code> отклонена.\n"
+            f"Игра: <b>{safe_title}</b>\n"
+            f"Игрок: <code>{user_id}</code>"
+        )
+
+    await safe_send(context, user_id, user_text, [[btn("🎮 Игры", 'menu_games')]])
+    await safe_edit(
+        query,
+        admin_text,
+        [[btn("↩️ Beta-заявки", 'admin_beta_requests'), btn("🎮 Игры", 'admin_games_panel')]],
+    )
+
+
 async def show_admin_panel(query):
     if not await is_bot_admin_async(query.from_user.id):
         await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
@@ -5676,8 +5931,7 @@ async def show_admin_panel(query):
     maint_badge = f"🔧 техрежим: {'вкл' if maint.get('enabled') else 'выкл'}"
 
     kb = [
-        [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Шифровальщик", 'admin_game_panel')],
-        [btn("🛡 ZERO_DAY", 'admin_zdnet_panel')],
+        [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Игры", 'admin_games_panel')],
         [btn("👤 Мой игровой режим", 'admin_my_game_role')],
         [btn("⚙️ Система", 'admin_system_panel')],
         [btn("🏠 Главное меню",  'back_to_main')],
@@ -5975,6 +6229,10 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
     ):
         return
 
+    if d.startswith('beta_request_'):
+        await beta_request_access(query, context, d.replace('beta_request_', '', 1))
+        return
+
     # ── Добавление замены (пошаговый режим) ──
     if context.user_data.get('adding_sub'):
         await handle_sub_flow(query, context)
@@ -6145,6 +6403,13 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
 
     # ── Админские колбэки игры ──
     if user_is_admin:
+        if d.startswith('beta_req_approve_'):
+            await resolve_beta_request(query, context, int(d.replace('beta_req_approve_', '', 1)), True)
+            return
+        if d.startswith('beta_req_reject_'):
+            await resolve_beta_request(query, context, int(d.replace('beta_req_reject_', '', 1)), False)
+            return
+
         if d.startswith('admin_set_my_role_'):
             role = d.replace('admin_set_my_role_', '')
             await admin_set_my_role(query, context, role)
@@ -6417,10 +6682,13 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'menu_my':                menu_my,
         'menu_ai':                menu_ai,
         'menu_games':             menu_games,
+        'menu_updates':           menu_updates,
         'menu_game':              menu_game,
         'menu_zdnet':             menu_zdnet,
         'menu_help':              menu_help,
         'admin_panel':                show_admin_panel,
+        'admin_games_panel':          admin_games_panel,
+        'admin_beta_requests':        admin_beta_requests,
         'admin_content_panel':        admin_content_panel,
         'admin_system_panel':         admin_system_panel,
         'admin_season_mode_panel':    admin_season_mode_panel,
@@ -8475,16 +8743,40 @@ def main():
         except Exception:
             pass
 
-async def menu_games(query, context):
-    """Подменю игр."""
+async def menu_updates(query, context):
+    """Страница последних обновлений проекта."""
+    lines = ["🆕 <b>ОБНОВЛЕНИЯ</b>\n", "Последние изменения бота и игровых разделов:\n"]
+    for item in PROJECT_UPDATES[:10]:
+        lines.append(
+            f"• <b>{html.escape(item['date'])}</b> · {html.escape(item['scope'])}\n"
+            f"  <b>{html.escape(item['title'])}</b>\n"
+            f"  {html.escape(item['text'])}"
+        )
     kb = [
-        [btn("🛡 ZERO_DAY: Защитники сети", 'menu_zdnet')],
-        [btn("🎮 Шифровальщик", 'menu_game')],
+        [btn("🎮 Игры", 'menu_games')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(query, "\n\n".join(lines), kb)
+
+
+async def menu_games(query, context):
+    """Подменю игр со статусами доступа."""
+    cipher_mode, zdnet_mode = await get_games_access_modes()
+    kb = [
+        [btn(f"🛡 ZERO_DAY · {game_mode_label(zdnet_mode)}", 'menu_zdnet')],
+        [btn(f"🎮 Шифровальщик · {game_mode_label(cipher_mode)}", 'menu_game')],
+        [btn("🆕 Обновления", 'menu_updates')],
         [btn("🏠 Главное меню", 'back_to_main')],
     ]
     await safe_edit(
         query,
-        "🎮 <b>ИГРЫ</b>\n\nВыберите игру:",
+        "🎮 <b>ИГРЫ</b>\n\n"
+        "Статусы показывают, почему игра может быть недоступна:\n"
+        "🟢 Открыта — можно играть всем.\n"
+        "🧪 Beta — нужен доступ тестировщика.\n"
+        "🔒 Закрыта — запуск временно отключён.\n\n"
+        f"🛡 ZERO_DAY: <b>{game_mode_label(zdnet_mode)}</b>\n"
+        f"🎮 Шифровальщик: <b>{game_mode_label(cipher_mode)}</b>",
         kb,
     )
 
@@ -8504,7 +8796,7 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
         [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
         [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ-помощник", 'menu_ai')],
         [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
-        [btn("🎮 Игры", 'menu_games')],
+        [btn("🎮 Игры", 'menu_games'), btn("🆕 Обновления", 'menu_updates')],
         [btn("🆘 Помощь", 'menu_help')],
     ]
 

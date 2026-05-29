@@ -863,6 +863,22 @@ def init_db():
                 note       TEXT
             )
         ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS beta_access_requests (
+                id           SERIAL PRIMARY KEY,
+                game_key     TEXT NOT NULL,
+                user_id      BIGINT NOT NULL,
+                user_name    TEXT,
+                status       TEXT NOT NULL DEFAULT 'pending',
+                requested_at TIMESTAMPTZ DEFAULT NOW(),
+                resolved_at  TIMESTAMPTZ,
+                resolved_by  BIGINT
+            )
+        ''')
+        cur.execute('''
+            CREATE INDEX IF NOT EXISTS idx_beta_access_requests_pending
+            ON beta_access_requests (game_key, status, requested_at DESC)
+        ''')
         # Инициализируем таблицу ролей
         cur.execute('''
             CREATE TABLE IF NOT EXISTS game_roles (
@@ -3989,6 +4005,22 @@ def _ensure_zdnet_access_tables(cur):
             note       TEXT
         )
     ''')
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS beta_access_requests (
+            id           SERIAL PRIMARY KEY,
+            game_key     TEXT NOT NULL,
+            user_id      BIGINT NOT NULL,
+            user_name    TEXT,
+            status       TEXT NOT NULL DEFAULT 'pending',
+            requested_at TIMESTAMPTZ DEFAULT NOW(),
+            resolved_at  TIMESTAMPTZ,
+            resolved_by  BIGINT
+        )
+    ''')
+    cur.execute('''
+        CREATE INDEX IF NOT EXISTS idx_beta_access_requests_pending
+        ON beta_access_requests (game_key, status, requested_at DESC)
+    ''')
 
 
 def get_zdnet_access_mode() -> str:
@@ -4224,6 +4256,101 @@ def get_zdnet_admin_stats():
     finally:
         release_connection(conn)
     return stats
+
+
+def _normalize_game_key(game_key):
+    key = str(game_key or '').strip().lower()
+    return key if key in ('cipher', 'zdnet') else ''
+
+
+def add_beta_access_request(game_key, user_id, user_name=None):
+    '''Создаёт beta-заявку для игры. Возвращает dict с created/id.'''
+    game_key = _normalize_game_key(game_key)
+    if not game_key:
+        return {'created': False, 'id': None, 'error': 'bad_game_key'}
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _ensure_zdnet_access_tables(cur)
+        cur.execute('''
+            SELECT id FROM beta_access_requests
+            WHERE game_key = %s AND user_id = %s AND status = 'pending'
+            ORDER BY requested_at DESC
+            LIMIT 1
+        ''', (game_key, user_id))
+        row = cur.fetchone()
+        if row:
+            conn.commit()
+            return {'created': False, 'id': row[0], 'error': None}
+        cur.execute('''
+            INSERT INTO beta_access_requests (game_key, user_id, user_name)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        ''', (game_key, user_id, user_name))
+        req_id = cur.fetchone()[0]
+        conn.commit()
+        return {'created': True, 'id': req_id, 'error': None}
+    except Exception as e:
+        logger.error(f"add_beta_access_request error: {e}")
+        _safe_rollback(conn)
+        return {'created': False, 'id': None, 'error': str(e)}
+    finally:
+        release_connection(conn)
+
+
+def get_beta_access_requests(status='pending', limit=30):
+    '''Возвращает beta-заявки: [(id, game_key, user_id, user_name, status, requested_at), ...].'''
+    status = str(status or 'pending').strip().lower()
+    if status not in ('pending', 'approved', 'rejected'):
+        status = 'pending'
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _ensure_zdnet_access_tables(cur)
+        cur.execute('''
+            SELECT id, game_key, user_id, user_name, status, requested_at
+            FROM beta_access_requests
+            WHERE status = %s
+            ORDER BY requested_at DESC
+            LIMIT %s
+        ''', (status, int(limit or 30)))
+        rows = cur.fetchall()
+        conn.commit()
+        return rows
+    except Exception as e:
+        logger.error(f"get_beta_access_requests error: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def resolve_beta_access_request(request_id, status, resolved_by):
+    '''Меняет статус заявки и возвращает её данные.'''
+    status = str(status or '').strip().lower()
+    if status not in ('approved', 'rejected'):
+        return None
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _ensure_zdnet_access_tables(cur)
+        cur.execute('''
+            UPDATE beta_access_requests
+            SET status = %s, resolved_at = NOW(), resolved_by = %s
+            WHERE id = %s AND status = 'pending'
+            RETURNING id, game_key, user_id, user_name, status, requested_at
+        ''', (status, resolved_by, request_id))
+        row = cur.fetchone()
+        conn.commit()
+        return row
+    except Exception as e:
+        logger.error(f"resolve_beta_access_request error: {e}")
+        _safe_rollback(conn)
+        return None
+    finally:
+        release_connection(conn)
 
 
 def count_admins() -> int:
