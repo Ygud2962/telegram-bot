@@ -89,6 +89,7 @@ class RepositoryTests(unittest.TestCase):
         threat = self.repo.bootstrap(self.state)["activeThreats"][0]
         start = self.repo.start_attempt(self.state, threat["id"])
         credits_before = self.state.wallet["credits"]
+        daemon_xp_before = self.state.daemon["xp"]
         payload = {
             "gameType": start.get("gameType", threat["gameType"]),
             "durationMs": 30000,
@@ -99,11 +100,14 @@ class RepositoryTests(unittest.TestCase):
         }
         result1 = self.repo.finish_attempt(self.state, start["attemptId"], payload)
         credits_after_first = self.state.wallet["credits"]
+        daemon_xp_after_first = self.state.daemon["xp"]
         result2 = self.repo.finish_attempt(self.state, start["attemptId"], payload)
         self.assertTrue(result1["accepted"])
         self.assertEqual(result1, result2)
         self.assertEqual(self.state.wallet["credits"], credits_after_first)
+        self.assertEqual(self.state.daemon["xp"], daemon_xp_after_first)
         self.assertGreater(credits_after_first, credits_before)
+        self.assertGreater(daemon_xp_after_first, daemon_xp_before)
 
     def test_open_cache_spends_keys_and_grants_card(self):
         before_keys = self.state.wallet["zeroKeys"]

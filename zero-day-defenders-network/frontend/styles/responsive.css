@@ -120,6 +120,14 @@
   .onboarding-sheet {
     border-radius: 30px 30px 0 0;
   }
+
+  .daemon-stage {
+    min-height: 250px;
+  }
+
+  .daemon-evolution-track {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 380px) {
@@ -144,6 +152,10 @@
 
   .tab {
     font-size: 10px;
+  }
+
+  .daemon-traits {
+    grid-template-columns: 1fr;
   }
 }
 

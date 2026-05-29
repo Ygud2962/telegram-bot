@@ -20,6 +20,20 @@ const state = window.ZDNETMockState.createInitialState();
 const ONBOARDING_KEY = "ZDNET_ONBOARDING_SEEN";
 let onboardingShownThisSession = false;
 
+const DAEMON_XP_THRESHOLDS = [0, 80, 200, 380, 620, 920, 1280, 1700, 2180, 2720];
+const DAEMON_EVOLUTIONS = [
+  { name: "Искра SOC", role: "ядро-помощник", primary: "#64d2ff", secondary: "#007aff", accent: "#00ff84", note: "Учится видеть пакеты и реагирует на первые угрозы." },
+  { name: "Пиксельный червь", role: "разведчик сети", primary: "#5ac8fa", secondary: "#00c7be", accent: "#ffee66", note: "Получает сегменты тела и начинает ползать по карте." },
+  { name: "IDS-волчонок", role: "сторожевой агент", primary: "#7dd3fc", secondary: "#3b82f6", accent: "#34c759", note: "Появляются лапы, уши и первая защитная стойка." },
+  { name: "Firewall рысь", role: "щит периметра", primary: "#ff9f0a", secondary: "#ff453a", accent: "#ffd60a", note: "Обрастает бронепластинами и гасит часть ошибок." },
+  { name: "Сканер-филин", role: "аналитик трафика", primary: "#bf5af2", secondary: "#64d2ff", accent: "#ffffff", note: "Разворачивает крылья-антенны и лучше подсвечивает цель." },
+  { name: "Proxy лис", role: "охотник за фишингом", primary: "#ff6b35", secondary: "#ff375f", accent: "#ffd60a", note: "Получает хвост-ретранслятор и ловит скрытые кредиты." },
+  { name: "SOC грифон", role: "командный защитник", primary: "#34c759", secondary: "#0a84ff", accent: "#ffee66", note: "Крылья становятся боевыми, а когти держат заражение." },
+  { name: "Квантовый дракон", role: "разбор zero-day", primary: "#00ff84", secondary: "#bf5af2", accent: "#64d2ff", note: "Появляются рога, длинный хвост и квантовое ядро." },
+  { name: "Zero Sentinel", role: "страж города", primary: "#ffd60a", secondary: "#ff9f0a", accent: "#64d2ff", note: "Активирует нимб, броню и режим защиты всего сектора." },
+  { name: "Голографический дракон", role: "легендарная форма", primary: "#ffffff", secondary: "#64d2ff", accent: "#ffd60a", note: "Финальная форма с голографическим свечением и полным крылом." },
+];
+
 function hasSeenOnboarding() {
   try {
     return localStorage.getItem(ONBOARDING_KEY) === "1";
@@ -160,6 +174,7 @@ function applyBootstrap(boot) {
   state.energy = boot.energy?.current ?? state.energy;
   state.energyMax = boot.energy?.dailyMax ?? state.energyMax;
   state.socLevel = boot.progression?.socLevel ?? boot.player?.socLevel ?? state.socLevel;
+  state.daemon = boot.daemon || state.daemon;
   state.keys = boot.wallet?.zeroKeys ?? state.keys;
   state.cleanFragments = boot.wallet?.cleanFragments ?? state.cleanFragments;
   state.gacha = boot.gacha || state.gacha;
@@ -572,7 +587,7 @@ function renderMap() {
           <span>щит города</span>
         </div>
         <div class="daemon-orb" aria-label="Кибер-демон">
-          <span>🐉</span>
+          ${renderDaemonAvatar(getDaemonState().level, "mini")}
         </div>
       </div>
     </section>
@@ -621,10 +636,7 @@ function renderMap() {
           </g>
         `).join("")}
         ${renderMapGuideCallout(guideNode)}
-        <g class="daemon">
-          <circle cx="224" cy="202" r="18" fill="rgba(0,212,255,.22)" stroke="var(--accent)" filter="url(#nodeGlow)"/>
-          <text x="224" y="208" text-anchor="middle" font-size="22">🐉</text>
-        </g>
+        ${renderMapDaemonMarker()}
       </svg>
       <div class="map-object-strip" aria-label="Объекты города">
         ${mapNodes.map(node => `
@@ -976,15 +988,169 @@ function normalizeRewardCard(drop) {
   });
 }
 
+function clampDaemonLevel(level) {
+  return Math.max(1, Math.min(10, Number(level || 1)));
+}
+
+function daemonLevelFromXp(xp) {
+  const safeXp = Math.max(0, Number(xp || 0));
+  let level = 1;
+  DAEMON_XP_THRESHOLDS.forEach((threshold, index) => {
+    if (safeXp >= threshold) level = index + 1;
+  });
+  return clampDaemonLevel(level);
+}
+
+function getDaemonState() {
+  const daemon = state.daemon || {};
+  const xp = Math.max(0, Number(daemon.xp || 0));
+  return {
+    level: clampDaemonLevel(daemon.level || daemonLevelFromXp(xp) || state.socLevel || 1),
+    xp,
+    hungerState: daemon.hungerState || "fed",
+    skinId: daemon.skinId || "default",
+  };
+}
+
+function getDaemonEvolution(level = getDaemonState().level) {
+  return DAEMON_EVOLUTIONS[clampDaemonLevel(level) - 1] || DAEMON_EVOLUTIONS[0];
+}
+
+function daemonProgress() {
+  const daemon = getDaemonState();
+  const currentThreshold = DAEMON_XP_THRESHOLDS[daemon.level - 1] || 0;
+  const nextThreshold = DAEMON_XP_THRESHOLDS[daemon.level] || currentThreshold;
+  const span = Math.max(1, nextThreshold - currentThreshold);
+  return {
+    current: Math.max(0, daemon.xp - currentThreshold),
+    target: daemon.level >= 10 ? 0 : span,
+    percent: daemon.level >= 10 ? 100 : Math.min(100, Math.round(((daemon.xp - currentThreshold) / span) * 100)),
+    nextLevel: daemon.level >= 10 ? null : daemon.level + 1,
+  };
+}
+
+function grantDaemonXp(amount) {
+  state.daemon = state.daemon || { level: 1, xp: 0, skinId: "default", hungerState: "fed" };
+  const before = clampDaemonLevel(state.daemon.level);
+  state.daemon.xp = Math.max(0, Number(state.daemon.xp || 0) + Number(amount || 0));
+  state.daemon.level = Math.max(before, daemonLevelFromXp(state.daemon.xp));
+  state.daemon.hungerState = "fed";
+  return {
+    xp: amount,
+    level: state.daemon.level,
+    levelUp: state.daemon.level > before,
+  };
+}
+
+function renderDaemonAvatar(level = getDaemonState().level, variant = "card") {
+  const safeLevel = clampDaemonLevel(level);
+  const evo = getDaemonEvolution(safeLevel);
+  const hasSegments = safeLevel >= 2;
+  const hasLegs = safeLevel >= 3;
+  const hasArmor = safeLevel >= 4;
+  const hasWings = safeLevel >= 5;
+  const hasTail = safeLevel >= 6;
+  const hasClaws = safeLevel >= 7;
+  const hasHorns = safeLevel >= 8;
+  const hasHalo = safeLevel >= 9;
+  const hasHolo = safeLevel >= 10;
+  return `
+    <span class="daemon-avatar daemon-avatar-${variant} daemon-level-${safeLevel}" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-hidden="true">
+      <svg class="daemon-avatar-svg" viewBox="0 0 200 200" role="img">
+        <defs>
+          <radialGradient id="daemonGlow${safeLevel}${variant}" cx="50%" cy="38%" r="62%">
+            <stop offset="0%" stop-color="var(--daemon-primary)" stop-opacity=".96"/>
+            <stop offset="56%" stop-color="var(--daemon-secondary)" stop-opacity=".42"/>
+            <stop offset="100%" stop-color="transparent" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <circle class="daemon-aura" cx="100" cy="104" r="${64 + safeLevel * 3}" fill="url(#daemonGlow${safeLevel}${variant})"/>
+        ${hasHolo ? `<path class="daemon-holo-shard shard-a" d="M49 32 L72 18 L84 48 Z"/><path class="daemon-holo-shard shard-b" d="M145 28 L171 45 L142 58 Z"/>` : ""}
+        ${hasHalo ? `<ellipse class="daemon-halo" cx="100" cy="38" rx="45" ry="13"/>` : ""}
+        ${hasTail ? `<path class="daemon-tail" d="M133 126 C176 122 184 83 153 76 C179 101 156 113 134 110"/>` : ""}
+        ${hasWings ? `<path class="daemon-wing left" d="M73 92 C35 63 24 98 44 134 C50 113 61 105 80 110 Z"/><path class="daemon-wing right" d="M127 92 C165 63 176 98 156 134 C150 113 139 105 120 110 Z"/>` : ""}
+        ${hasSegments ? `<g class="daemon-segments"><circle cx="74" cy="128" r="20"/><circle cx="100" cy="136" r="24"/><circle cx="126" cy="128" r="20"/></g>` : ""}
+        <path class="daemon-body" d="M58 112 C58 75 82 55 100 55 C118 55 142 75 142 112 C142 146 124 163 100 163 C76 163 58 146 58 112Z"/>
+        ${hasArmor ? `<path class="daemon-armor" d="M72 110 C82 96 118 96 128 110 L121 142 C110 150 90 150 79 142 Z"/>` : ""}
+        ${hasLegs ? `<path class="daemon-leg left" d="M73 151 L58 171 L84 166 Z"/><path class="daemon-leg right" d="M127 151 L142 171 L116 166 Z"/>` : ""}
+        ${hasClaws ? `<path class="daemon-claw left" d="M58 171 L50 183 L68 174"/><path class="daemon-claw right" d="M142 171 L150 183 L132 174"/>` : ""}
+        ${hasHorns ? `<path class="daemon-horn left" d="M76 59 L64 30 L91 51"/><path class="daemon-horn right" d="M124 59 L136 30 L109 51"/>` : ""}
+        ${safeLevel >= 3 ? `<path class="daemon-ear left" d="M76 67 L55 45 L62 82"/><path class="daemon-ear right" d="M124 67 L145 45 L138 82"/>` : ""}
+        <path class="daemon-head" d="M62 82 C68 54 87 42 100 42 C113 42 132 54 138 82 C142 109 124 126 100 126 C76 126 58 109 62 82Z"/>
+        <path class="daemon-face-plate" d="M75 84 C80 70 91 64 100 64 C109 64 120 70 125 84 C127 101 116 112 100 112 C84 112 73 101 75 84Z"/>
+        <circle class="daemon-eye left" cx="88" cy="88" r="${safeLevel >= 8 ? 6 : 5}"/>
+        <circle class="daemon-eye right" cx="112" cy="88" r="${safeLevel >= 8 ? 6 : 5}"/>
+        <path class="daemon-mouth" d="M91 105 C96 110 104 110 109 105"/>
+        <circle class="daemon-core" cx="100" cy="${hasArmor ? 126 : 132}" r="${8 + Math.min(6, safeLevel)}"/>
+        ${safeLevel >= 2 ? `<path class="daemon-antenna left" d="M86 49 C76 32 66 28 57 24"/><path class="daemon-antenna right" d="M114 49 C124 32 134 28 143 24"/><circle class="daemon-antenna-dot" cx="57" cy="24" r="4"/><circle class="daemon-antenna-dot" cx="143" cy="24" r="4"/>` : ""}
+        ${hasHolo ? `<path class="daemon-holo-line" d="M45 150 C75 177 126 177 155 150"/><path class="daemon-holo-line second" d="M54 164 C82 190 119 190 147 164"/>` : ""}
+      </svg>
+    </span>
+  `;
+}
+
+function renderMapDaemonMarker() {
+  const daemon = getDaemonState();
+  const evo = getDaemonEvolution(daemon.level);
+  const wing = daemon.level >= 5 ? `<path class="map-daemon-wing left" d="M211 200 C196 184 190 205 204 220"/><path class="map-daemon-wing right" d="M237 200 C252 184 258 205 244 220"/>` : "";
+  const tail = daemon.level >= 6 ? `<path class="map-daemon-tail" d="M238 214 C258 215 262 194 247 192"/>` : "";
+  const horns = daemon.level >= 8 ? `<path class="map-daemon-horn left" d="M217 194 L211 182 L224 190"/><path class="map-daemon-horn right" d="M231 194 L237 182 L224 190"/>` : "";
+  return `
+    <g class="daemon map-daemon" style="--daemon-primary:${evo.primary};--daemon-secondary:${evo.secondary};--daemon-accent:${evo.accent}" aria-label="Кибер-демон ${evo.name}">
+      <circle class="map-daemon-aura" cx="224" cy="202" r="${18 + daemon.level}"/>
+      ${tail}
+      ${wing}
+      ${horns}
+      <path class="map-daemon-body" d="M207 203 C210 188 219 181 224 181 C229 181 238 188 241 203 C243 219 235 228 224 228 C213 228 205 219 207 203Z"/>
+      <path class="map-daemon-face" d="M213 200 C215 190 221 187 224 187 C227 187 233 190 235 200 C236 209 231 215 224 215 C217 215 212 209 213 200Z"/>
+      <circle class="map-daemon-eye" cx="219" cy="201" r="2.4"/>
+      <circle class="map-daemon-eye" cx="229" cy="201" r="2.4"/>
+      <circle class="map-daemon-core" cx="224" cy="219" r="3.8"/>
+    </g>
+  `;
+}
+
 function renderDaemon() {
+  const daemon = getDaemonState();
+  const evo = getDaemonEvolution(daemon.level);
+  const progress = daemonProgress();
+  const next = progress.nextLevel ? getDaemonEvolution(progress.nextLevel) : null;
   return html`
-    <section class="panel" style="padding:18px">
+    <section class="panel daemon-panel">
       <div class="section-title">
-        <h2>Демон</h2>
-        <span>форма 3/10</span>
+        <div>
+          <span class="eyebrow">cyber-daemon</span>
+          <h2>${evo.name}</h2>
+        </div>
+        <span>форма ${daemon.level}/10</span>
       </div>
-      <div style="font-size:76px;text-align:center;margin:20px 0">🐉</div>
-      <p>IDS-волчонок уже нюхает подозрительные пакеты. Накорми его мини-игрой, и он принесет скрытые кредиты.</p>
+      <div class="daemon-stage">
+        ${renderDaemonAvatar(daemon.level, "showcase")}
+        <div class="daemon-stage-copy">
+          <span>${evo.role}</span>
+          <p>${evo.note}</p>
+        </div>
+      </div>
+      <div class="daemon-progress">
+        <div class="daemon-progress-head">
+          <span>Опыт демона</span>
+          <strong>${daemon.level >= 10 ? "MAX" : `${progress.current}/${progress.target} XP`}</strong>
+        </div>
+        <div class="daemon-progress-bar"><span style="width:${progress.percent}%"></span></div>
+        <small>${next ? `Следующая форма: ${next.name}` : "Финальная форма открыта. Дальше прокачивается только косметика."}</small>
+      </div>
+      <div class="daemon-traits">
+        <article><b>${daemon.hungerState === "fed" ? "сыт" : "голоден"}</b><span>состояние</span></article>
+        <article><b>${daemon.skinId}</b><span>скин</span></article>
+        <article><b>${daemon.level >= 5 ? "крылья" : daemon.level >= 3 ? "лапки" : "ядро"}</b><span>деталь формы</span></article>
+      </div>
+      <div class="daemon-evolution-track" aria-label="Эволюция демона">
+        ${DAEMON_EVOLUTIONS.map((item, index) => {
+          const level = index + 1;
+          return `<span class="${level < daemon.level ? "done" : level === daemon.level ? "current" : ""}"><b>${level}</b>${renderDaemonAvatar(level, `track-${level}`)}<small>${item.name}</small></span>`;
+        }).join("")}
+      </div>
+      <p>Демон растёт от прохождения миссий. Каждый уровень меняет силуэт: сначала ядро, потом сегменты, лапы, броня, крылья, хвост, рога и голографическая финальная форма.</p>
       <button class="primary-btn" data-tab="map">К угрозам</button>
     </section>
   `;
@@ -1092,7 +1258,7 @@ function renderMore() {
         <small>Ключи, покупки, история. Оплачено: ${paidCount}</small>
       </button>
       <button class="more-card" data-tab="daemon">
-        <span>🐉</span>
+        <span>${renderDaemonAvatar(getDaemonState().level, "icon")}</span>
         <strong>Демон</strong>
         <small>Питомец, бонусы, авто-сбор.</small>
       </button>
@@ -2049,6 +2215,7 @@ async function startPacketRain(threat) {
             stats: [
               ...resultStats,
               { label: "Fair", value: `+${response.fairScoreDelta}` },
+              { label: "Демон", value: response.rewards.daemonLevelUp ? `Lv.${response.rewards.daemonLevel}` : `+${response.rewards.daemonXp || 0} XP` },
             ],
             actions: resultActions,
           });
@@ -2092,6 +2259,7 @@ async function startPacketRain(threat) {
     state.energy -= 1;
     if (success) {
       state.credits += credits;
+      grantDaemonXp(34 + Number(threat.difficulty || 1) * 12 + Math.min(60, Math.floor(score / 120)));
       if (mockDrop) grantMockCard(mockDrop);
     }
     const target = state.map.find(item => item.id === threat.objectId);
@@ -2122,7 +2290,10 @@ async function startPacketRain(threat) {
         subtitle: "Mock-режим: прогресс не сохранится после перезагрузки",
         credits,
         cards: mockDrop ? [mockDrop] : [],
-        stats: resultStats,
+        stats: [
+          ...resultStats,
+          { label: "Демон", value: `Lv.${getDaemonState().level}` },
+        ],
         actions: resultActions,
       });
       haptic.ok();

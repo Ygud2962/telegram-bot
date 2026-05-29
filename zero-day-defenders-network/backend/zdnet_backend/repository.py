@@ -14,6 +14,9 @@ from .payments import apply_product_grant, get_product, public_catalog
 from .security import create_session_token
 
 
+DAEMON_XP_THRESHOLDS = [0, 80, 200, 380, 620, 920, 1280, 1700, 2180, 2720]
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -221,7 +224,7 @@ class InMemoryGameRepository:
             flags.append("game_type_mismatch")
 
         accepted = not flags
-        rewards = {"credits": 0, "socXp": 0, "cardDrops": []}
+        rewards = {"credits": 0, "socXp": 0, "daemonXp": 0, "cardDrops": []}
         fair_score_delta = 0
         map_delta: dict[str, Any] = {}
 
@@ -241,6 +244,13 @@ class InMemoryGameRepository:
             rewards["credits"] = reward.credits
             rewards["socXp"] = reward.soc_xp
             fair_score_delta = reward.fair_score_delta
+            daemon_gain = self._grant_daemon_xp(
+                state,
+                34 + int(attempt["difficulty"]) * 12 + min(60, score // 120),
+            )
+            rewards["daemonXp"] = daemon_gain["xp"]
+            rewards["daemonLevel"] = daemon_gain["level"]
+            rewards["daemonLevelUp"] = daemon_gain["levelUp"]
 
             card_drop = self._grant_attempt_card(state, score, accuracy)
             if card_drop:
@@ -481,6 +491,23 @@ class InMemoryGameRepository:
         card = pool[score % len(pool)]
         self._grant_card(state, card["id"])
         return card["id"]
+
+    def _grant_daemon_xp(self, state: PlayerState, amount: int) -> dict[str, Any]:
+        daemon = state.daemon
+        before = max(1, min(10, int(daemon.get("level", 1) or 1)))
+        daemon["xp"] = max(0, int(daemon.get("xp", 0) or 0) + int(amount))
+        level = 1
+        for index, threshold in enumerate(DAEMON_XP_THRESHOLDS, start=1):
+            if daemon["xp"] >= threshold:
+                level = index
+        daemon["level"] = max(before, min(10, level))
+        daemon["hungerState"] = "fed"
+        daemon["lastFedAt"] = iso(utc_now())
+        return {
+            "xp": int(amount),
+            "level": int(daemon["level"]),
+            "levelUp": int(daemon["level"]) > before,
+        }
 
     def _grant_card(self, state: PlayerState, card_id: str) -> None:
         owned = state.cards.get(card_id)

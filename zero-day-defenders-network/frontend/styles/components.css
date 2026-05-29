@@ -208,7 +208,7 @@
   transform: scale(.97);
 }
 
-.more-card span {
+.more-card > span {
   width: 44px;
   height: 44px;
   display: grid;
@@ -221,6 +221,10 @@
   border: 1px solid rgba(255,255,255,.14);
   font-size: 22px;
   font-weight: 950;
+}
+
+.more-card > span .daemon-avatar-icon {
+  width: 42px;
 }
 
 .more-card strong {
@@ -277,6 +281,203 @@
   color: var(--muted);
   font-size: 12px;
   line-height: 1.34;
+}
+
+.daemon-panel {
+  padding: 18px;
+}
+
+.daemon-stage {
+  min-height: 272px;
+  position: relative;
+  overflow: hidden;
+  margin: 8px 0 14px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 30px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(100,210,255,.24), transparent 38%),
+    radial-gradient(circle at 78% 82%, rgba(191,90,242,.16), transparent 32%),
+    linear-gradient(145deg, rgba(255,255,255,.10), rgba(255,255,255,.035));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.13);
+}
+
+.daemon-stage::before {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 26px;
+  background:
+    linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 20px 20px;
+  opacity: .55;
+  mask-image: radial-gradient(circle at 50% 48%, black, transparent 72%);
+}
+
+.daemon-stage .daemon-avatar {
+  position: relative;
+  z-index: 1;
+}
+
+.daemon-stage-copy {
+  width: calc(100% - 28px);
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 20px;
+  background: rgba(3, 6, 12, .58);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+
+.daemon-stage-copy span {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.daemon-stage-copy p {
+  margin-top: 5px;
+}
+
+.daemon-progress {
+  margin: 0 0 12px;
+  padding: 13px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 22px;
+  background: rgba(255,255,255,.055);
+}
+
+.daemon-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.daemon-progress-head strong {
+  color: #fff;
+}
+
+.daemon-progress-bar {
+  height: 9px;
+  overflow: hidden;
+  margin: 9px 0 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+}
+
+.daemon-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), var(--accent), var(--safe));
+  box-shadow: 0 0 20px rgba(56,216,255,.48);
+}
+
+.daemon-progress small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.daemon-traits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.daemon-traits article {
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 18px;
+  display: grid;
+  align-content: center;
+  background: rgba(255,255,255,.055);
+}
+
+.daemon-traits b {
+  color: #fff;
+  font-size: 15px;
+}
+
+.daemon-traits span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.daemon-evolution-track {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 7px;
+  margin: 0 0 14px;
+}
+
+.daemon-evolution-track > span {
+  min-height: 58px;
+  padding: 8px 6px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 16px;
+  display: grid;
+  gap: 4px;
+  background: rgba(255,255,255,.045);
+}
+
+.daemon-evolution-track > span.done {
+  border-color: rgba(0,255,132,.22);
+  background: rgba(0,255,132,.075);
+}
+
+.daemon-evolution-track > span.current {
+  border-color: rgba(100,210,255,.34);
+  background: rgba(0,122,255,.10);
+  box-shadow: 0 0 0 1px rgba(100,210,255,.08), 0 14px 34px rgba(0,122,255,.10);
+}
+
+.daemon-evolution-track .daemon-avatar {
+  width: 36px;
+  justify-self: center;
+}
+
+.daemon-evolution-track b {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: white;
+  background: rgba(255,255,255,.12);
+  font-size: 11px;
+}
+
+.daemon-evolution-track .current b {
+  background: var(--blue);
+}
+
+.daemon-evolution-track .done b {
+  background: var(--safe);
+  color: #041008;
+}
+
+.daemon-evolution-track small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.05;
+  text-overflow: ellipsis;
 }
 
 .tool-slots {

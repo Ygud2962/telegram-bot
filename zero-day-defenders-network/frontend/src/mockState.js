@@ -15,6 +15,14 @@
   payments: [],
   busyProducts: new Set(),
   busyTools: new Set(),
+  daemon: {
+    level: 3,
+    xp: 240,
+    skinId: "default",
+    hungerState: "fed",
+    lastFedAt: null,
+    autoFeedUntil: null,
+  },
   content: {
     cardsById: {},
     toolsById: {},
