@@ -2,6 +2,8 @@
 import logging
 import asyncio
 import functools
+import hashlib
+import hmac
 import inspect
 import json
 import time
@@ -1117,6 +1119,80 @@ def game_access_notice(game_title: str, mode: str) -> str:
         "и пользователям из бета-списка.\n\n"
         "Если вы хотите получить доступ или сообщить об ошибке — напишите автору проекта."
     )
+
+
+def zdnet_access_page(mode: str) -> str:
+    title = "ZERO_DAY закрыт" if mode == 'closed' else "ZERO_DAY в beta-режиме"
+    body = (
+        "Игра сейчас закрыта для запуска. Идут технические работы или подготовка обновления."
+        if mode == 'closed'
+        else "Игра доступна только через кнопку в боте для пользователей из beta-списка."
+    )
+    author_link = (
+        f'<a class="btn" href="{PROJECT_AUTHOR_URL}" target="_blank" rel="noopener">{PROJECT_AUTHOR_LABEL}</a>'
+        if PROJECT_AUTHOR_URL else ''
+    )
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+    html,body{{height:100%;margin:0;background:#050607;color:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
+    body{{display:grid;place-items:center;padding:24px;box-sizing:border-box}}
+    .card{{max-width:420px;padding:28px;border:1px solid rgba(255,255,255,.16);border-radius:28px;background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04));box-shadow:0 24px 80px rgba(0,0,0,.45);text-align:center}}
+    h1{{margin:0 0 12px;font-size:28px;letter-spacing:-.04em}}
+    p{{margin:0 0 20px;color:#aab3c2;line-height:1.45}}
+    .btn{{display:inline-block;padding:12px 16px;border-radius:999px;background:#007aff;color:#fff;text-decoration:none;font-weight:800}}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>{title}</h1>
+    <p>{body}</p>
+    <p>Все вопросы по доступу — к автору проекта.</p>
+    {author_link}
+  </main>
+</body>
+</html>"""
+
+
+def sign_zdnet_launch_payload(payload: dict) -> str:
+    secret = (TOKEN or '').encode('utf-8')
+    unsigned = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hmac.new(secret, unsigned.encode('utf-8'), hashlib.sha256).hexdigest()
+
+
+def build_zdnet_launch_payload(user_id: int, mode: str, role: str) -> str:
+    payload = {
+        'screen': 'map',
+        'api': ZDNET_API_URL,
+        'v': ZDNET_VERSION,
+        'uid': int(user_id),
+        'mode': mode,
+        'role': role,
+        'ts': int(time.time()),
+    }
+    payload['sig'] = sign_zdnet_launch_payload(payload)
+    return urllib.parse.quote(json.dumps(payload, ensure_ascii=False))
+
+
+def verify_zdnet_launch_payload(raw_payload: str, ttl_sec: int = 900) -> tuple[bool, dict]:
+    if not raw_payload:
+        return False, {}
+    try:
+        payload = json.loads(urllib.parse.unquote(raw_payload))
+        sig = str(payload.pop('sig', ''))
+        ts = int(payload.get('ts') or 0)
+        if ts <= 0 or abs(int(time.time()) - ts) > ttl_sec:
+            return False, {}
+        expected = sign_zdnet_launch_payload(payload)
+        if not hmac.compare_digest(sig, expected):
+            return False, {}
+        return True, payload
+    except Exception:
+        return False, {}
 
 # Ключи, которые относятся к текущему «флоу» и могут быть безопасно сброшены
 _FLOW_KEYS = (
@@ -3656,8 +3732,11 @@ async def menu_game(query, context):
 async def menu_zdnet(query, context):
     """Запуск ZERO_DAY: Защитники сети как Telegram Mini App."""
     user = query.from_user
+    mode = await _get_cached_zdnet_mode()
+    if mode == 'closed':
+        await safe_edit(query, game_access_notice("ZERO_DAY", mode), author_contact_rows())
+        return
     if not await is_zdnet_allowed(user.id):
-        mode = await _get_cached_zdnet_mode()
         await safe_edit(query, game_access_notice("ZERO_DAY", mode), author_contact_rows())
         return
 
@@ -3675,17 +3754,12 @@ async def menu_zdnet(query, context):
 
     from telegram import InlineKeyboardButton, WebAppInfo
     try:
-        access_mode = await _get_cached_zdnet_mode()
+        access_mode = mode
         zdnet_role = await asyncio.to_thread(db.get_zdnet_role, user.id)
     except Exception:
         access_mode, zdnet_role = 'beta', 'player'
 
-    payload_data = {
-        'screen': 'map',
-        'api': ZDNET_API_URL,
-        'v': ZDNET_VERSION,
-    }
-    payload = urllib.parse.quote(json.dumps(payload_data, ensure_ascii=False))
+    payload = build_zdnet_launch_payload(user.id, access_mode, zdnet_role)
     zdnet_url = build_game_launch_url(ZDNET_URL, ZDNET_VERSION, payload)
 
     kb = InlineKeyboardMarkup([
@@ -7909,19 +7983,20 @@ def start_http_server_thread():
                 if not ok or telegram_id is None:
                     return _zdnet_json({'error': reason}, request, status=401, methods='POST, OPTIONS')
                 nickname = user_obj.get('username') or user_obj.get('first_name') or f'rookie_{telegram_id}'
-            if os.environ.get('ZDNET_DEV_AUTH', '0') != '1' and not await is_zdnet_allowed(int(telegram_id)):
+            if os.environ.get('ZDNET_DEV_AUTH', '0') != '1':
                 mode = await _get_cached_zdnet_mode()
-                return _zdnet_json(
-                    {
-                        'error': 'zdnet_access_denied',
-                        'mode': mode,
-                        'authorUrl': PROJECT_AUTHOR_URL,
-                        'detail': 'ZERO_DAY is not available for this user in current access mode.',
-                    },
-                    request,
-                    status=403,
-                    methods='POST, OPTIONS',
-                )
+                if mode == 'closed' or not await is_zdnet_allowed(int(telegram_id)):
+                    return _zdnet_json(
+                        {
+                            'error': 'zdnet_access_denied',
+                            'mode': mode,
+                            'authorUrl': PROJECT_AUTHOR_URL,
+                            'detail': 'ZERO_DAY is not available for this user in current access mode.',
+                        },
+                        request,
+                        status=403,
+                        methods='POST, OPTIONS',
+                    )
             state = ZDNET_REPO.get_or_create_player(telegram_id, nickname)
             token = ZDNET_REPO.create_session(int(state.player['id']))
             boot = ZDNET_REPO.bootstrap(state)
@@ -8088,6 +8163,28 @@ def start_http_server_thread():
             return _zdnet_json({'error': 'internal_error'}, request, status=500, methods='POST, OPTIONS')
 
     async def serve_zdnet_index(request):
+        if os.environ.get('ZDNET_DEV_AUTH', '0') != '1':
+            mode = await _get_cached_zdnet_mode()
+            if mode == 'closed':
+                return aiohttp_web.Response(
+                    text=zdnet_access_page('closed'),
+                    headers={
+                        'Content-Type': 'text/html; charset=utf-8',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    },
+                )
+            if mode == 'beta':
+                raw_payload = str(request.query.get('tgWebAppStartParam') or '')
+                ok, launch = verify_zdnet_launch_payload(raw_payload)
+                uid = int(launch.get('uid') or 0) if ok else 0
+                if not ok or uid <= 0 or not await is_zdnet_allowed(uid):
+                    return aiohttp_web.Response(
+                        text=zdnet_access_page('beta'),
+                        headers={
+                            'Content-Type': 'text/html; charset=utf-8',
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        },
+                    )
         fpath = ZDNET_FRONTEND_DIR / 'index.html'
         if fpath.exists():
             html = fpath.read_text(encoding='utf-8')
