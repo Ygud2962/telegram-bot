@@ -15,6 +15,29 @@
     grid-template-columns: 1fr;
   }
 
+  .command-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .command-orbit {
+    grid-template-columns: auto auto;
+    justify-content: start;
+  }
+
+  .city-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .overview-tile {
+    min-height: 68px;
+    padding: 10px;
+    border-radius: 20px;
+  }
+
+  .overview-tile strong {
+    font-size: 24px;
+  }
+
   .cache-card {
     grid-template-columns: 1fr;
   }
@@ -43,6 +66,17 @@
 
   .tabbar {
     grid-template-columns: repeat(4, 1fr);
+  }
+
+  .threat {
+    grid-template-columns: auto 1fr;
+  }
+
+  .threat-meta {
+    grid-column: 1 / -1;
+    grid-template-columns: auto auto;
+    justify-content: space-between;
+    justify-items: start;
   }
 }
 

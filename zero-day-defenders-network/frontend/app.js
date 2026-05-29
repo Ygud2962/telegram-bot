@@ -253,22 +253,21 @@ function renderHud() {
     <header class="hud">
       <div class="hud-top">
         <div class="brand">
-          <span class="eyebrow">SOC Новый Сектор · ${state.sync.toUpperCase()}</span>
+          <span class="eyebrow"><i></i> SOC Новый Сектор · ${state.sync.toUpperCase()}</span>
           <strong>ZERO_DAY</strong>
         </div>
-        <span class="status-chip">Lv.${state.socLevel}</span>
+        <span class="status-chip">SOC Lv.${state.socLevel}</span>
       </div>
-      <div class="hud-stats">
-        <span class="metric"><b>₵</b>${state.credits.toLocaleString("ru-RU")}</span>
-        <span class="metric energy"><b>⚡</b>${state.energy}/${state.energyMax}</span>
-        <span class="metric"><b>#</b>${state.rank}</span>
-        <span class="metric"><b>◇</b>${state.keys}</span>
-        <span class="metric"><b>✦</b>${state.cleanFragments}</span>
+      <div class="hud-stats" aria-label="Ресурсы игрока">
+        <span class="metric credits"><b>₵</b><span>${state.credits.toLocaleString("ru-RU")}</span><small>кредиты</small></span>
+        <span class="metric energy"><b>⚡</b><span>${state.energy}/${state.energyMax}</span><small>энергия</small></span>
+        <span class="metric rank"><b>#</b><span>${state.rank}</span><small>рейтинг</small></span>
+        <span class="metric keys"><b>◇</b><span>${state.keys}</span><small>ключи</small></span>
+        <span class="metric fragments"><b>✦</b><span>${state.cleanFragments}</span><small>фрагм.</small></span>
       </div>
     </header>
   `;
 }
-
 function renderTabs() {
   return html`
     <nav class="tabbar">
@@ -314,26 +313,46 @@ function nodeColor(nodeState) {
 function renderMap() {
   const activeCount = state.threats.length;
   const protectedCount = state.map.filter(node => node.state === "protected").length;
+  const infectedCount = state.map.filter(node => node.state === "infected").length;
+  const attackCount = state.map.filter(node => node.state === "under_attack").length;
   const cityIntegrity = Math.round((protectedCount / Math.max(1, state.map.length)) * 100);
+  const energyPct = Math.round((state.energy / Math.max(1, state.energyMax)) * 100);
   return html`
-    <section class="hero-card">
+    <section class="hero-card command-hero">
       <div class="hero-copy">
         <span class="eyebrow">дежурство активно</span>
         <h1>Город держится на твоем SOC</h1>
-        <p>${activeCount ? `На карте ${activeCount} активные угрозы. Закрой Packet Rain до таймера.` : "Сектор чистый. Поддерживай стрик и готовься к легендарному спавну."}</p>
+        <p>${activeCount ? `На карте ${activeCount} активные угрозы. Закрой Packet Rain до таймера и удержи защиту района.` : "Сектор чистый. Поддерживай стрик и готовься к легендарному спавну."}</p>
+        <div class="hero-actions" aria-label="Краткая сводка">
+          <span>🛡 ${protectedCount}/${state.map.length} объектов защищено</span>
+          <span>⚡ ${energyPct}% энергии</span>
+          <span>🔥 ${activeCount || "нет"} угроз</span>
+        </div>
       </div>
-      <div class="daemon-orb" aria-label="Кибер-демон">
-        <span>🐉</span>
+      <div class="command-orbit" aria-label="Индекс защиты города">
+        <div class="integrity-ring" style="--value:${cityIntegrity}">
+          <strong>${cityIntegrity}%</strong>
+          <span>щит города</span>
+        </div>
+        <div class="daemon-orb" aria-label="Кибер-демон">
+          <span>🐉</span>
+        </div>
       </div>
     </section>
 
-    <article class="map-card">
+    <section class="city-overview" aria-label="Состояние города">
+      <article class="overview-tile safe"><span>защищено</span><strong>${protectedCount}</strong></article>
+      <article class="overview-tile attack"><span>атака</span><strong>${attackCount}</strong></article>
+      <article class="overview-tile infected"><span>заражено</span><strong>${infectedCount}</strong></article>
+    </section>
+
+    <article class="map-card command-map">
       <div class="section-title">
         <div>
-          <span class="eyebrow">SVG city map</span>
+          <span class="eyebrow">live city grid</span>
           <h2>Новый Сектор</h2>
         </div>
-        <span>${cityIntegrity}% защищено</span>
+        <span class="map-status-pill">${cityIntegrity}% защищено</span>
       </div>
       <svg class="city-map" viewBox="0 0 380 300" role="img" aria-label="Карта города">
         <defs>
@@ -344,17 +363,22 @@ function renderMap() {
               <feMergeNode in="SourceGraphic"/>
             </feMerge>
           </filter>
+          <linearGradient id="routeGradient" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stop-color="rgba(56,216,255,.18)"/>
+            <stop offset="55%" stop-color="rgba(0,255,132,.34)"/>
+            <stop offset="100%" stop-color="rgba(255,211,106,.18)"/>
+          </linearGradient>
         </defs>
         <path d="M54 104 C94 36 186 34 238 72 C304 78 336 125 322 184 C310 248 250 270 190 250 C128 254 74 224 66 166 C42 146 39 126 54 104Z" fill="rgba(255,255,255,.035)" stroke="rgba(255,255,255,.12)" stroke-width="1.5"/>
-        <path d="M82 72 L238 72 L300 176 L224 238 L145 160 L82 72" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="3" stroke-dasharray="8 10"/>
-        <path d="M238 72 L145 160 L224 238" fill="none" stroke="rgba(0,212,255,.22)" stroke-width="2"/>
+        <path class="city-route primary" d="M82 72 L238 72 L300 176 L224 238 L145 160 L82 72" fill="none" stroke="url(#routeGradient)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="city-route secondary" d="M238 72 L145 160 L224 238" fill="none" stroke="rgba(56,216,255,.30)" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 10"/>
         ${state.map.map(node => `
-          <g class="map-node" data-object="${node.id}">
-            <circle cx="${node.x}" cy="${node.y}" r="31" fill="${nodeColor(node.state)}" opacity=".08"/>
-            <circle cx="${node.x}" cy="${node.y}" r="24" fill="rgba(6,10,18,.78)" stroke="${nodeColor(node.state)}" stroke-width="2.5" filter="url(#nodeGlow)"/>
+          <g class="map-node map-node-${node.state}" data-object="${node.id}">
+            <circle class="node-pulse" cx="${node.x}" cy="${node.y}" r="36" fill="${nodeColor(node.state)}" opacity=".08"/>
+            <circle cx="${node.x}" cy="${node.y}" r="24" fill="rgba(6,10,18,.82)" stroke="${nodeColor(node.state)}" stroke-width="2.5" filter="url(#nodeGlow)"/>
             <circle cx="${node.x}" cy="${node.y}" r="7" fill="${nodeColor(node.state)}"/>
-            <text x="${node.x}" y="${node.y + 42}" fill="#f4f7fb" font-size="12" text-anchor="middle">${node.name}</text>
-            <text x="${node.x}" y="${node.y - 36}" fill="#9ca9b8" font-size="10" text-anchor="middle">${nodeStatusLabel(node.state)} · DEF ${node.level}</text>
+            <text x="${node.x}" y="${node.y + 43}" fill="#f4f7fb" font-size="12" text-anchor="middle">${node.name}</text>
+            <text x="${node.x}" y="${node.y - 38}" fill="#9ca9b8" font-size="10" text-anchor="middle">${nodeStatusLabel(node.state)} · DEF ${node.level}</text>
           </g>
         `).join("")}
         <g class="daemon">
@@ -362,12 +386,17 @@ function renderMap() {
           <text x="224" y="208" text-anchor="middle" font-size="22">🐉</text>
         </g>
       </svg>
+      <div class="map-legend">
+        <span><i class="safe"></i> защита</span>
+        <span><i class="attack"></i> атака</span>
+        <span><i class="infected"></i> заражение</span>
+      </div>
     </article>
 
     <section class="threat-feed">
       <div class="section-title">
         <div>
-          <span class="eyebrow">FOMO feed</span>
+          <span class="eyebrow">daily threat queue</span>
           <h2>Активные угрозы</h2>
         </div>
         <span>${activeCount ? "таймер идет" : "нет атак"}</span>
@@ -377,15 +406,18 @@ function renderMap() {
           <span class="threat-severity">D${threat.difficulty}</span>
           <span class="threat-body">
             <strong>${threat.title}</strong>
-            <span>${threat.game} · ${threat.type} · осталось <b data-threat-timer="${threat.id}">${threat.timer}</b></span>
+            <span>${threat.game} · ${threat.type}</span>
+            <small>${state.content.mapById[threat.objectId]?.name || state.map.find(node => node.id === threat.objectId)?.name || "Объект"}</small>
           </span>
-          <span class="threat-cta">Открыть</span>
+          <span class="threat-meta">
+            <b data-threat-timer="${threat.id}">${threat.timer}</b>
+            <i>Нейтрализовать</i>
+          </span>
         </button>
       `).join("") : `<div class="empty-card"><strong>Сектор чистый</strong><p>Нет активных угроз. Можно открыть тайник или проверить коллекцию.</p></div>`}
     </section>
   `;
 }
-
 function nodeStatusLabel(status) {
   return {
     protected: "OK",

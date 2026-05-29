@@ -212,6 +212,57 @@ button {
   color: var(--gold);
 }
 
+.brand .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand .eyebrow i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--safe);
+  box-shadow: 0 0 16px rgba(0, 255, 132, .75);
+}
+
+.hud {
+  padding: 14px 14px 10px;
+}
+
+.hud-stats {
+  gap: 8px;
+}
+
+.metric {
+  min-width: 74px;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 7px;
+  row-gap: 1px;
+}
+
+.metric span {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.metric small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: .04em;
+}
+
+.status-chip {
+  min-height: 34px;
+  padding-inline: 12px;
+  background: linear-gradient(135deg, rgba(255,211,106,.18), rgba(255,255,255,.07));
+}
+
 .content {
   position: relative;
   z-index: 1;
