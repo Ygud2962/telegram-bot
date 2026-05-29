@@ -1,7 +1,8 @@
 param(
     [switch]$WithPostgres,
     [switch]$SkipSmoke,
-    [int]$SmokePort = 8095
+    [int]$SmokePort = 8095,
+    [string]$NodeExe = $env:ZDNET_NODE
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,6 +12,16 @@ $WorkspaceRoot = Resolve-Path -LiteralPath (Join-Path $ProjectRoot '..')
 $BackendRoot = Resolve-Path -LiteralPath (Join-Path $ProjectRoot 'backend')
 $FrontendApp = Join-Path $ProjectRoot 'frontend\app.js'
 $BotFile = Join-Path $WorkspaceRoot 'bot.py'
+
+if (-not $NodeExe) {
+    $BundledNode = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
+    if (Test-Path -LiteralPath $BundledNode) {
+        $NodeExe = $BundledNode
+    }
+    else {
+        $NodeExe = 'node'
+    }
+}
 
 function Invoke-Step {
     param(
@@ -40,7 +51,7 @@ try {
     }
 
     Invoke-Step "frontend syntax" {
-        node --check $FrontendApp
+        & $NodeExe --check $FrontendApp
     }
 
     if (-not $SkipSmoke) {

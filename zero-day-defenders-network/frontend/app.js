@@ -1187,49 +1187,76 @@ async function startPacketRain(threat) {
     return;
   }
 
-  let backendAttempt = null;
-  if (backendOnline) {
-    try {
-      backendAttempt = await apiRequest(`/api/threats/${threat.id}/start`, {
-        method: "POST",
-        body: {},
-      });
-      state.energy = backendAttempt.energyLeft;
-    } catch (error) {
-      toast(`Не удалось начать: ${error.message}`);
-      haptic.error();
-      return;
-    }
-  }
-
   const phone = document.querySelector(".phone");
+  if (!phone) return;
+
   const toolEffects = getPacketRainToolEffects();
   const activeToolLabel = toolEffects.labels.length ? toolEffects.labels.join(" · ") : "basic mode";
   const overlay = document.createElement("div");
-  overlay.className = "game-overlay";
+  overlay.className = "game-overlay packet-rain-overlay";
   overlay.innerHTML = `
-    <header class="game-header">
+    <header class="game-header packet-game-header">
+      <button class="game-back-btn" id="closeGame" type="button" aria-label="Закрыть игру">‹</button>
       <div class="game-title">
         <strong>Packet Rain</strong>
         <small>${activeToolLabel}</small>
       </div>
-      <button class="close-btn" id="closeGame">Закрыть</button>
+      <div class="game-status-dot" aria-label="SOC online"></div>
     </header>
-    <canvas id="gameCanvas"></canvas>
-    <footer class="game-footer">
-      <span id="gameHint">← BLOCK · → PASS · ↑ QUARANTINE</span>
-      <span id="gameShield"></span>
-      <span id="gameScore">0 pts</span>
+    <section class="game-hud" aria-label="Статистика игры">
+      <div class="game-stat">
+        <span>Очки</span>
+        <strong id="gameScore">0</strong>
+      </div>
+      <div class="game-stat">
+        <span>Комбо</span>
+        <strong id="gameCombo">0</strong>
+      </div>
+      <div class="game-stat">
+        <span>Время</span>
+        <strong id="gameTime">45с</strong>
+      </div>
+    </section>
+    <div class="game-canvas-wrap">
+      <canvas id="gameCanvas"></canvas>
+      <section class="game-intro" id="gameIntro">
+        <div class="game-intro-card">
+          <span class="game-kicker">SOC TRAINING</span>
+          <h2>Разбери поток пакетов</h2>
+          <p>Свайпай ближайший пакет: вредный блокируй, нормальный пропускай, подозрительный отправляй в карантин.</p>
+          <div class="packet-controls">
+            <div class="control-card control-block"><b>←</b><span>BLOCK</span><small>вредный</small></div>
+            <div class="control-card control-pass"><b>→</b><span>PASS</span><small>чистый</small></div>
+            <div class="control-card control-quar"><b>↑</b><span>QUAR</span><small>подозрительный</small></div>
+          </div>
+          <div class="game-loadout">
+            <span>Инструменты</span>
+            <strong>${activeToolLabel}</strong>
+          </div>
+          <button class="primary-btn game-start-btn" id="startGame" type="button">Начать нейтрализацию</button>
+        </div>
+      </section>
+      <div class="game-fury" id="gameFury">Fury Analyst</div>
+    </div>
+    <footer class="game-footer packet-game-footer">
+      <span id="gameHint">Нажми старт, затем свайпай пакеты</span>
+      <span id="gameShield">Ошибки 0/6</span>
     </footer>
   `;
   phone.appendChild(overlay);
 
   const canvas = overlay.querySelector("#gameCanvas");
   const scoreEl = overlay.querySelector("#gameScore");
+  const comboEl = overlay.querySelector("#gameCombo");
+  const timeEl = overlay.querySelector("#gameTime");
   const hintEl = overlay.querySelector("#gameHint");
   const shieldEl = overlay.querySelector("#gameShield");
+  const furyEl = overlay.querySelector("#gameFury");
+  const introEl = overlay.querySelector("#gameIntro");
+  const startBtn = overlay.querySelector("#startGame");
   const ctx = canvas.getContext("2d");
   const packets = [];
+  const popups = [];
   const types = ["pass", "block", "quarantine"];
   let score = 0;
   let combo = 0;
@@ -1240,37 +1267,35 @@ async function startPacketRain(threat) {
   let firewallAbsorbed = 0;
   let furyUntil = 0;
   let running = true;
+  let gameStarted = false;
+  let backendStarting = false;
   let finishing = false;
   let lastSpawn = 0;
-  let startedAt = performance.now();
-  const durationLimitMs = 45000 + toolEffects.timeBonusMs;
+  let startedAt = 0;
+  let backendAttempt = null;
   let pointerStart = null;
+  let animationFrame = null;
+  const durationLimitMs = 45000 + toolEffects.timeBonusMs;
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.floor(rect.width * devicePixelRatio);
-    canvas.height = Math.floor(rect.height * devicePixelRatio);
-    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+    canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawIdle();
   }
 
-  function spawn(now) {
-    if (now - lastSpawn < 720) return;
-    lastSpawn = now;
-    packets.push({
-      x: 38 + Math.random() * (canvas.clientWidth - 76),
-      y: -20,
-      type: types[Math.floor(Math.random() * types.length)],
-      speed: 1.2 + Math.random() * 1.9,
-      size: 20 + Math.random() * 8,
-    });
+  function packetColor(type) {
+    return { pass: "#34c759", block: "#ff375f", quarantine: "#ffd60a" }[type] || "#ffffff";
   }
 
-  function color(type) {
-    return { pass: "#00ff41", block: "#ff003c", quarantine: "#ffee00" }[type];
+  function packetLabel(type) {
+    return { pass: "PASS", block: "MAL", quarantine: "SUS" }[type] || "PKT";
   }
 
-  function label(type) {
-    return { pass: "PASS", block: "BAD", quarantine: "SUS" }[type];
+  function packetCaption(type) {
+    return { pass: "trusted", block: "block", quarantine: "quarantine" }[type] || "packet";
   }
 
   function getPriorityPacket() {
@@ -1278,43 +1303,174 @@ async function startPacketRain(threat) {
     return packets.reduce((best, item) => item.y > best.y ? item : best, packets[0]);
   }
 
-  function draw() {
-    ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-    ctx.fillStyle = "rgba(255,255,255,.04)";
-    for (let x = 0; x < canvas.clientWidth; x += 28) {
-      ctx.fillRect(x, 0, 1, canvas.clientHeight);
+  function timeLeft(now = performance.now()) {
+    if (!gameStarted || !startedAt) return durationLimitMs;
+    return Math.max(0, durationLimitMs - (now - startedAt));
+  }
+
+  function updateHud(now = performance.now()) {
+    scoreEl.textContent = `${score}`;
+    comboEl.textContent = `${combo}×`;
+    timeEl.textContent = `${Math.ceil(timeLeft(now) / 1000)}с`;
+    const priorityPacket = toolEffects.scannerLevel ? getPriorityPacket() : null;
+    hintEl.textContent = priorityPacket ? `Scanner: ${packetActionLabel(priorityPacket.type)}` : "← BLOCK · → PASS · ↑ QUARANTINE";
+    shieldEl.textContent = firewallCharges > 0 ? `Firewall ${firewallCharges}` : `Ошибки ${mistakes}/6`;
+    overlay.classList.toggle("is-fury", now < furyUntil);
+    furyEl.classList.toggle("is-visible", now < furyUntil);
+  }
+
+  function drawBackground(now = performance.now()) {
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const offset = (now / 32) % 36;
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, "rgba(5, 14, 28, 1)");
+    gradient.addColorStop(0.48, "rgba(1, 7, 13, 1)");
+    gradient.addColorStop(1, "rgba(10, 5, 22, 1)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = "rgba(100, 210, 255, .34)";
+    ctx.lineWidth = 1;
+    for (let x = -36; x < width + 36; x += 36) {
+      ctx.beginPath();
+      ctx.moveTo(x + offset, 0);
+      ctx.lineTo(x - offset * 0.25, height);
+      ctx.stroke();
     }
+    for (let y = -36; y < height + 36; y += 36) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + offset);
+      ctx.lineTo(width, y + offset);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = now < furyUntil ? 0.42 : 0.18;
+    ctx.fillStyle = now < furyUntil ? "rgba(255, 214, 10, .18)" : "rgba(0, 122, 255, .16)";
+    ctx.beginPath();
+    ctx.ellipse(width * 0.52, height * 0.18, width * 0.42, height * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawIdle() {
+    if (!ctx || gameStarted) return;
+    drawBackground();
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,.82)";
+    ctx.font = "800 22px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("PACKET RAIN", width / 2, Math.max(72, height * 0.22));
+    ctx.fillStyle = "rgba(255,255,255,.48)";
+    ctx.font = "600 12px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText("waiting for analyst input", width / 2, Math.max(96, height * 0.22 + 24));
+    ctx.restore();
+  }
+
+  function spawn(now) {
+    const spawnDelay = now < furyUntil ? 560 : 700;
+    if (now - lastSpawn < spawnDelay) return;
+    lastSpawn = now;
+    const width = canvas.clientWidth;
+    packets.push({
+      x: 42 + Math.random() * Math.max(1, width - 84),
+      y: -28,
+      type: types[Math.floor(Math.random() * types.length)],
+      speed: 1.28 + Math.random() * 1.86 + Math.min(0.7, score / 9000),
+      size: 22 + Math.random() * 8,
+      spin: Math.random() * Math.PI,
+    });
+  }
+
+  function roundRectPath(context, x, y, width, height, radius) {
+    const r = Math.min(radius, Math.abs(width) / 2, Math.abs(height) / 2);
+    context.beginPath();
+    context.moveTo(x + r, y);
+    context.arcTo(x + width, y, x + width, y + height, r);
+    context.arcTo(x + width, y + height, x, y + height, r);
+    context.arcTo(x, y + height, x, y, r);
+    context.arcTo(x, y, x + width, y, r);
+    context.closePath();
+  }
+
+  function drawPacket(packet, isPriority) {
+    const radius = packet.size;
+    const color = packetColor(packet.type);
+    ctx.save();
+    ctx.translate(packet.x, packet.y);
+    ctx.rotate(Math.sin(packet.spin) * 0.08);
+    ctx.shadowBlur = isPriority ? 24 : 16;
+    ctx.shadowColor = isPriority ? "#64d2ff" : color;
+    ctx.fillStyle = "rgba(8, 12, 18, .88)";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isPriority ? 3 : 2;
+    roundRectPath(ctx, -radius * 1.15, -radius * 0.86, radius * 2.3, radius * 1.72, 13);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = `${color}24`;
+    roundRectPath(ctx, -radius * 0.82, -radius * 0.56, radius * 1.64, radius * 1.12, 10);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(packetLabel(packet.type), 0, 4);
+    ctx.fillStyle = "rgba(255,255,255,.52)";
+    ctx.font = "700 8px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText(packetCaption(packet.type), 0, 16);
+    ctx.restore();
+
+    if (isPriority) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(100, 210, 255, .75)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.arc(packet.x, packet.y, radius + 12 + toolEffects.scannerLevel, 0, Math.PI * 2);
+      ctx.stroke();
+      if (toolEffects.scannerLevel >= 2) {
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#64d2ff";
+        ctx.font = "800 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(packetActionLabel(packet.type), packet.x, packet.y - radius - 18);
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawPopups(now) {
+    for (let i = popups.length - 1; i >= 0; i -= 1) {
+      const popup = popups[i];
+      const age = now - popup.createdAt;
+      if (age > 620) {
+        popups.splice(i, 1);
+        continue;
+      }
+      const progress = age / 620;
+      ctx.save();
+      ctx.globalAlpha = 1 - progress;
+      ctx.fillStyle = popup.color;
+      ctx.font = "900 16px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(popup.text, popup.x, popup.y - progress * 34);
+      ctx.restore();
+    }
+  }
+
+  function draw(now = performance.now()) {
+    drawBackground(now);
     const priorityPacket = toolEffects.scannerLevel ? getPriorityPacket() : null;
     for (const packet of packets) {
-      const isPriority = packet === priorityPacket;
-      if (isPriority) {
-        ctx.beginPath();
-        ctx.arc(packet.x, packet.y, packet.size + 8 + toolEffects.scannerLevel, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(56,216,255,.72)";
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
-      ctx.beginPath();
-      ctx.arc(packet.x, packet.y, packet.size, 0, Math.PI * 2);
-      ctx.fillStyle = `${color(packet.type)}33`;
-      ctx.fill();
-      ctx.strokeStyle = color(packet.type);
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = "#fff";
-      ctx.font = "11px ui-monospace, monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(label(packet.type), packet.x, packet.y + 4);
-      if (isPriority && toolEffects.scannerLevel >= 2) {
-        ctx.font = "10px ui-monospace, monospace";
-        ctx.fillStyle = "#38d8ff";
-        ctx.fillText(packetActionLabel(packet.type), packet.x, packet.y - packet.size - 10);
-      }
+      drawPacket(packet, packet === priorityPacket);
     }
-    ctx.fillStyle = "rgba(255,255,255,.72)";
-    ctx.font = "13px ui-monospace, monospace";
-    ctx.textAlign = "left";
-    ctx.fillText(`combo ${combo} · max ${comboMax} · mistakes ${mistakes}`, 14, 24);
+    drawPopups(now);
   }
 
   function registerMistake(source) {
@@ -1324,41 +1480,48 @@ async function startPacketRain(threat) {
       firewallAbsorbed += 1;
       toast(source === "miss" ? "Glass Firewall поймал пропущенный пакет" : "Glass Firewall поглотил ошибку");
       haptic.warn();
+      updateHud();
       return;
     }
     mistakes += 1;
     haptic.error();
+    updateHud();
   }
 
   function loop(now) {
-    if (!running) return;
+    if (!running || !gameStarted) return;
     spawn(now);
     packets.forEach(packet => {
-      const furyMultiplier = now < furyUntil ? 0.58 : 1;
+      const furyMultiplier = now < furyUntil ? 0.56 : 1;
       packet.y += packet.speed * furyMultiplier;
+      packet.spin += 0.015;
     });
     for (let i = packets.length - 1; i >= 0; i -= 1) {
-      if (packets[i].y > canvas.clientHeight + 40) {
+      if (packets[i].y > canvas.clientHeight + 46) {
+        popups.push({
+          x: packets[i].x,
+          y: Math.max(42, canvas.clientHeight - 24),
+          text: "MISS",
+          color: "#ff453a",
+          createdAt: now,
+        });
         packets.splice(i, 1);
         registerMistake("miss");
       }
     }
-    draw();
-    scoreEl.textContent = `${score} pts`;
-    const priorityPacket = toolEffects.scannerLevel ? getPriorityPacket() : null;
-    hintEl.textContent = priorityPacket ? `Scanner: ${packetActionLabel(priorityPacket.type)}` : "← BLOCK · → PASS · ↑ QUARANTINE";
-    shieldEl.textContent = firewallCharges > 0 ? `Firewall ${firewallCharges}` : `Ошибки ${mistakes}/6`;
-    if (performance.now() - startedAt > durationLimitMs || mistakes >= 6) {
+    draw(now);
+    updateHud(now);
+    if (timeLeft(now) <= 0 || mistakes >= 6) {
       finish();
       return;
     }
-    requestAnimationFrame(loop);
+    animationFrame = requestAnimationFrame(loop);
   }
 
   function classify(direction) {
-    if (!packets.length) return;
+    if (!running || !gameStarted || !packets.length) return;
     swipes += 1;
-    const packet = packets.reduce((best, item) => item.y > best.y ? item : best, packets[0]);
+    const packet = getPriorityPacket();
     const expected = packet.type;
     const ok = direction === expected;
     packets.splice(packets.indexOf(packet), 1);
@@ -1366,21 +1529,33 @@ async function startPacketRain(threat) {
       combo += 1;
       comboMax = Math.max(comboMax, combo);
       score += 100 + combo * 12;
+      popups.push({ x: packet.x, y: packet.y, text: `+${100 + combo * 12}`, color: packetColor(expected), createdAt: performance.now() });
       haptic.light();
       if (combo > 0 && combo % 10 === 0) {
         furyUntil = performance.now() + 6000;
-        toast("Fury Analyst: время будто замедлилось");
+        toast("Fury Analyst: время замедлено");
         haptic.ok();
       }
     } else {
+      popups.push({ x: packet.x, y: packet.y, text: "WRONG", color: "#ff453a", createdAt: performance.now() });
       registerMistake("wrong");
     }
+    updateHud();
+  }
+
+  function removeOverlay() {
+    running = false;
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    window.removeEventListener("keydown", keyHandler);
+    window.removeEventListener("resize", resize);
+    overlay.remove();
   }
 
   async function finish() {
     if (finishing) return;
     finishing = true;
     running = false;
+    const durationMs = Math.max(0, Math.floor(performance.now() - startedAt));
     const credits = Math.max(60, Math.floor(score / 16));
     if (backendOnline && backendAttempt) {
       try {
@@ -1388,7 +1563,7 @@ async function startPacketRain(threat) {
           method: "POST",
           body: {
             gameType: "packet_rain",
-            durationMs: Math.floor(performance.now() - startedAt),
+            durationMs,
             score,
             accuracy: Math.max(0, 1 - mistakes / 10),
             comboMax,
@@ -1401,13 +1576,13 @@ async function startPacketRain(threat) {
           },
         });
         await refreshBootstrap();
-        overlay.remove();
+        removeOverlay();
         render();
         if (response.accepted) {
           toast(`API: +${response.rewards.credits} кредитов`);
           showRewardSheet({
             title: "Угроза нейтрализована",
-            subtitle: `Fair score +${response.fairScoreDelta}. Объект защищен.`,
+            subtitle: `Fair score +${response.fairScoreDelta}. Объект защищён.` ,
             credits: response.rewards.credits,
             cards: response.rewards.cardDrops || [],
           });
@@ -1418,7 +1593,7 @@ async function startPacketRain(threat) {
         }
         return;
       } catch (error) {
-        overlay.remove();
+        removeOverlay();
         render();
         toast(`Ошибка finish: ${error.message}`);
         haptic.error();
@@ -1434,10 +1609,10 @@ async function startPacketRain(threat) {
       target.level = Math.min(10, target.level + (mistakes >= 6 ? 0 : 1));
     }
     state.threats = state.threats.filter(item => item.id !== threat.id);
-    overlay.remove();
+    removeOverlay();
     render();
     if (mistakes >= 6) {
-      toast("Угроза сорвалась. Объект заражен.");
+      toast("Угроза сорвалась. Объект заражён.");
       haptic.error();
     } else {
       toast(`Нейтрализация: +${credits} кредитов`);
@@ -1450,12 +1625,44 @@ async function startPacketRain(threat) {
     }
   }
 
+  async function beginGame() {
+    if (backendStarting || gameStarted || finishing) return;
+    backendStarting = true;
+    startBtn.disabled = true;
+    startBtn.textContent = backendOnline ? "Создаю сессию..." : "Запуск...";
+    if (backendOnline) {
+      try {
+        backendAttempt = await apiRequest(`/api/threats/${threat.id}/start`, {
+          method: "POST",
+          body: {},
+        });
+        state.energy = backendAttempt.energyLeft;
+      } catch (error) {
+        toast(`Не удалось начать: ${error.message}`);
+        haptic.error();
+        removeOverlay();
+        return;
+      }
+    }
+    backendStarting = false;
+    gameStarted = true;
+    startedAt = performance.now();
+    lastSpawn = startedAt - 520;
+    overlay.classList.add("is-running");
+    introEl.remove();
+    resize();
+    updateHud(startedAt);
+    haptic.ok();
+    animationFrame = requestAnimationFrame(loop);
+  }
+
   canvas.addEventListener("pointerdown", event => {
+    if (!gameStarted) return;
     pointerStart = { x: event.clientX, y: event.clientY };
   });
 
   canvas.addEventListener("pointerup", event => {
-    if (!pointerStart) return;
+    if (!gameStarted || !pointerStart) return;
     const dx = event.clientX - pointerStart.x;
     const dy = event.clientY - pointerStart.y;
     pointerStart = null;
@@ -1467,21 +1674,20 @@ async function startPacketRain(threat) {
 
   window.addEventListener("keydown", keyHandler);
   function keyHandler(event) {
-    if (!running) return;
+    if (!running || !gameStarted) return;
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)) return;
+    event.preventDefault();
     if (event.key === "ArrowLeft") classify("block");
     if (event.key === "ArrowRight") classify("pass");
     if (event.key === "ArrowUp") classify("quarantine");
   }
 
-  overlay.querySelector("#closeGame").addEventListener("click", () => {
-    running = false;
-    window.removeEventListener("keydown", keyHandler);
-    overlay.remove();
-  });
+  overlay.querySelector("#closeGame").addEventListener("click", removeOverlay);
+  startBtn.addEventListener("click", beginGame);
 
   resize();
-  window.addEventListener("resize", resize, { once: true });
-  requestAnimationFrame(loop);
+  updateHud();
+  window.addEventListener("resize", resize);
 }
 
 render();
