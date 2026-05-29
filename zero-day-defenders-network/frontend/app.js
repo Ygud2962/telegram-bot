@@ -1144,39 +1144,99 @@ function toast(message) {
   setTimeout(() => element.remove(), 1800);
 }
 
-function showRewardSheet({ title, subtitle = "", credits = 0, cards = [] }) {
+function rewardAccuracy(mistakes) {
+  return Math.max(0, Math.round((1 - Math.min(10, Number(mistakes || 0)) / 10) * 100));
+}
+
+function antiCheatMessage(flags = []) {
+  const readable = {
+    duration_too_short: "слишком короткая сессия",
+    duration_too_long: "сессия превысила лимит времени",
+    score_rate_too_high: "очки набраны быстрее допустимого лимита",
+    game_type_mismatch: "тип игры не совпал с попыткой",
+    unknown_game_type: "неизвестный тип мини-игры",
+    negative_score: "некорректные очки",
+    bad_accuracy: "некорректная точность",
+    bad_combo: "некорректное комбо",
+    input_summary_too_large: "слишком большой отчёт ввода",
+  };
+  const list = flags.map(flag => readable[flag] || flag).filter(Boolean);
+  return list.length ? list.join(" · ") : "Сессия не прошла проверку честности.";
+}
+
+function showRewardSheet({ title, subtitle = "", credits = 0, cards = [], stats = [], actions = [], tone = "success" }) {
   document.querySelector(".reward-layer")?.remove();
   const phone = document.querySelector(".phone");
   if (!phone) return;
 
   const normalizedCards = cards.map(normalizeRewardCard).filter(Boolean);
+  const safeStats = stats.filter(item => item && item.label && item.value !== undefined && item.value !== null);
+  const safeActions = actions.length ? actions : [{ label: "Закрыть", close: true, primary: true }];
+  const eyebrow = tone === "error" ? "проверка не пройдена" : "миссия завершена";
   const layer = document.createElement("div");
-  layer.className = "reward-layer";
+  layer.className = `reward-layer reward-layer-${tone}`;
   layer.innerHTML = `
-    <div class="reward-sheet">
+    <div class="reward-sheet reward-${tone}" role="dialog" aria-modal="true" aria-label="Итог миссии">
       <div class="reward-burst"></div>
-      <button class="close-btn reward-close" data-close-reward>Закрыть</button>
-      <span class="eyebrow">награда получена</span>
+      <button class="close-btn reward-close" data-close-reward type="button" aria-label="Закрыть результат">×</button>
+      <span class="eyebrow">${eyebrow}</span>
       <h2>${title}</h2>
       ${subtitle ? `<p>${subtitle}</p>` : ""}
-      ${credits ? `<div class="reward-currency"><span>₵</span><strong>+${credits.toLocaleString("ru-RU")}</strong><small>кредиты SOC</small></div>` : ""}
-      ${normalizedCards.length ? `
-        <div class="reward-cards">
-          ${normalizedCards.map(card => `
-            <article class="reward-card rarity-${card.rarity}">
-              <small>${card.rarity.toUpperCase()}</small>
-              <strong>${card.name}</strong>
-              <span>Lv.${card.level}${card.isHolo ? " · HOLO" : ""} · ${duplicateLabel(card)}</span>
-            </article>
+      ${safeStats.length ? `
+        <div class="reward-summary" aria-label="Статистика попытки">
+          ${safeStats.map(item => `
+            <div class="reward-stat">
+              <span>${item.label}</span>
+              <strong>${item.value}</strong>
+            </div>
           `).join("")}
         </div>
       ` : ""}
+      ${credits ? `<div class="reward-currency"><span>₵</span><strong>+${credits.toLocaleString("ru-RU")}</strong><small>кредиты SOC</small></div>` : ""}
+      ${normalizedCards.length ? `
+        <section class="reward-cards-wrap" aria-label="Полученные карточки">
+          <div class="reward-section-title">
+            <span>Card drop</span>
+            <strong>${normalizedCards.length}</strong>
+          </div>
+          <div class="reward-cards">
+            ${normalizedCards.map((card, index) => `
+              <article class="reward-card rarity-${card.rarity} ${card.isHolo ? "holo" : ""}" style="--card-index:${index}">
+                <div class="reward-card-art"><span>${cardArtGlyph(card)}</span></div>
+                <small>${card.rarity.toUpperCase()}</small>
+                <strong>${card.name}</strong>
+                <span>Lv.${card.level}${card.isHolo ? " · HOLO" : ""} · ${duplicateLabel(card)}</span>
+              </article>
+            `).join("")}
+          </div>
+        </section>
+      ` : ""}
+      <div class="reward-actions">
+        ${safeActions.map(action => {
+          const attrs = [action.screen ? `data-reward-screen="${action.screen}"` : "", action.close ? "data-close-reward" : ""].filter(Boolean).join(" ");
+          return `<button class="${action.primary ? "primary-btn" : "secondary-btn"}" type="button" ${attrs}>${action.label}</button>`;
+        }).join("")}
+      </div>
     </div>
   `;
   phone.appendChild(layer);
-  layer.querySelector("[data-close-reward]").addEventListener("click", () => layer.remove());
+
+  function close() {
+    layer.remove();
+  }
+
+  layer.querySelectorAll("[data-close-reward]").forEach(button => {
+    button.addEventListener("click", close);
+  });
+  layer.querySelectorAll("[data-reward-screen]").forEach(button => {
+    button.addEventListener("click", () => {
+      state.activeTab = button.dataset.rewardScreen || state.activeTab;
+      close();
+      render();
+    });
+  });
   layer.addEventListener("click", event => {
-    if (event.target === layer) layer.remove();
+    if (event.target === layer) close();
   });
 }
 
@@ -1557,6 +1617,16 @@ async function startPacketRain(threat) {
     running = false;
     const durationMs = Math.max(0, Math.floor(performance.now() - startedAt));
     const credits = Math.max(60, Math.floor(score / 16));
+    const resultStats = [
+      { label: "Очки", value: score.toLocaleString("ru-RU") },
+      { label: "Точность", value: `${rewardAccuracy(mistakes)}%` },
+      { label: "Комбо", value: `${comboMax}×` },
+      { label: "Свайпы", value: swipes.toLocaleString("ru-RU") },
+    ];
+    const resultActions = [
+      { label: "На карту", screen: "map", primary: true },
+      { label: "В коллекцию", screen: "collection" },
+    ];
     if (backendOnline && backendAttempt) {
       try {
         const response = await apiRequest(`/api/attempts/${backendAttempt.attemptId}/finish`, {
@@ -1582,37 +1652,77 @@ async function startPacketRain(threat) {
           toast(`API: +${response.rewards.credits} кредитов`);
           showRewardSheet({
             title: "Угроза нейтрализована",
-            subtitle: `Fair score +${response.fairScoreDelta}. Объект защищён.` ,
+            subtitle: `Fair score +${response.fairScoreDelta}. Объект защищён.`,
             credits: response.rewards.credits,
             cards: response.rewards.cardDrops || [],
+            stats: [
+              ...resultStats,
+              { label: "Fair", value: `+${response.fairScoreDelta}` },
+            ],
+            actions: resultActions,
           });
           haptic.ok();
         } else {
-          toast(`Сессия не засчитана: ${response.antiCheatFlags.join(", ")}`);
+          showRewardSheet({
+            title: "Сессия не засчитана",
+            subtitle: antiCheatMessage(response.antiCheatFlags || []),
+            stats: resultStats,
+            tone: "error",
+            actions: [
+              { label: "На карту", screen: "map", primary: true },
+              { label: "Закрыть", close: true },
+            ],
+          });
           haptic.error();
         }
         return;
       } catch (error) {
         removeOverlay();
         render();
-        toast(`Ошибка finish: ${error.message}`);
+        showRewardSheet({
+          title: "Ошибка синхронизации",
+          subtitle: `Backend не принял результат: ${error.message}`,
+          stats: resultStats,
+          tone: "error",
+          actions: [
+            { label: "На карту", screen: "map", primary: true },
+            { label: "Закрыть", close: true },
+          ],
+        });
         haptic.error();
         return;
       }
     }
 
+    const success = mistakes < 6;
+    const mockDrop = success && rewardAccuracy(mistakes) >= 75 && state.cards.length
+      ? normalizeRewardCard(state.cards[(score + comboMax) % state.cards.length])
+      : null;
     state.energy -= 1;
-    state.credits += credits;
+    if (success) {
+      state.credits += credits;
+      if (mockDrop) grantMockCard(mockDrop);
+    }
     const target = state.map.find(item => item.id === threat.objectId);
     if (target) {
-      target.state = mistakes >= 6 ? "infected" : "protected";
-      target.level = Math.min(10, target.level + (mistakes >= 6 ? 0 : 1));
+      target.state = success ? "protected" : "infected";
+      target.level = Math.min(10, target.level + (success ? 1 : 0));
     }
     state.threats = state.threats.filter(item => item.id !== threat.id);
     removeOverlay();
     render();
-    if (mistakes >= 6) {
+    if (!success) {
       toast("Угроза сорвалась. Объект заражён.");
+      showRewardSheet({
+        title: "Угроза сорвалась",
+        subtitle: "Слишком много ошибок. Объект заражён, восстановление будет дороже.",
+        stats: resultStats,
+        tone: "error",
+        actions: [
+          { label: "На карту", screen: "map", primary: true },
+          { label: "Закрыть", close: true },
+        ],
+      });
       haptic.error();
     } else {
       toast(`Нейтрализация: +${credits} кредитов`);
@@ -1620,6 +1730,9 @@ async function startPacketRain(threat) {
         title: "Угроза нейтрализована",
         subtitle: "Mock-режим: прогресс не сохранится после перезагрузки",
         credits,
+        cards: mockDrop ? [mockDrop] : [],
+        stats: resultStats,
+        actions: resultActions,
       });
       haptic.ok();
     }
