@@ -1,14 +1,22 @@
-# Backend Scaffold
+# ZERO_DAY Backend
 
-Минимальный backend-прототип для `ZERO_DAY: ЗАЩИТНИКИ СЕТИ`.
+Минимальный backend для `ZERO_DAY: Защитники сети`.
 
-## Почему стандартный HTTP
+Цель текущего backend - дать стабильный MVP-контур без лишних зависимостей:
 
-MVP backend сделан на стандартном `http.server`, чтобы запускаться без установки зависимостей. Доменная логика отделена от HTTP-слоя, чтобы позже можно было перейти на FastAPI, aiohttp или другой production-фреймворк.
+- Telegram auth / dev auth.
+- Bootstrap состояния игрока.
+- Старт и завершение попыток угроз.
+- Расчет наград.
+- Gacha / Zero Cache.
+- Платежный контур Telegram Stars.
+- In-memory и PostgreSQL storage.
 
-## Запуск
+## Почему стандартный HTTP-сервер
 
-In-memory режим:
+MVP использует стандартный `http.server`, чтобы запускаться без установки framework-зависимостей. Доменная логика вынесена отдельно, поэтому позже можно перейти на FastAPI, aiohttp или другой production framework без переписывания игры с нуля.
+
+## Запуск in-memory
 
 ```powershell
 cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
@@ -24,7 +32,9 @@ http://localhost:8090
 
 ## Dev auth
 
-Для локального тестирования можно включить `ZDNET_DEV_AUTH=1` и отправить:
+Для локального тестирования включается `ZDNET_DEV_AUTH=1`.
+
+Пример payload для auth:
 
 ```json
 {
@@ -39,7 +49,7 @@ http://localhost:8090
 
 ## PostgreSQL режим
 
-Применить миграцию:
+Миграция:
 
 ```powershell
 cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
@@ -57,11 +67,13 @@ $env:ZDNET_DATABASE_URL='postgresql://user:pass@localhost:5432/dbname'
 py -3 -m zdnet_backend.server
 ```
 
-Текущий PostgreSQL adapter сохраняет authoritative snapshot в `zdnet.player_snapshots` и зеркалит базовые поля в `players`, `player_wallet`, `player_energy`, `player_progress`. Это осознанный MVP-подход: быстро получить надежную персистентность, пока доменная модель еще меняется.
+PostgreSQL adapter хранит authoritative snapshot в `zdnet.player_snapshots` и зеркалит основные поля в `players`, `player_wallet`, `player_energy`, `player_progress`.
+
+Это осознанный MVP-подход: быстро получить надежную persistence-модель, пока доменная модель еще меняется.
 
 ## Платежи
 
-Контур платежей не начисляет награды при создании счета.
+Платежный контур не выдает награды при создании счета.
 
 Порядок:
 
@@ -72,7 +84,9 @@ py -3 -m zdnet_backend.server
 5. Повторный grant по тому же payload не выдает награду второй раз.
 6. `fairScore` не меняется от покупок.
 
-Продукты используют `XTR` Telegram Stars. Для локального режима без Telegram можно проверить выдачу через:
+Продукты используют `XTR` Telegram Stars.
+
+Локальная проверка grant без Telegram:
 
 ```powershell
 Invoke-RestMethod `
@@ -91,18 +105,7 @@ py -3 -m unittest discover zero-day-defenders-network\backend\tests -q
 
 ## MVP smoke test
 
-Run this after starting the API with `ZDNET_DEV_AUTH=1`. It validates the full MVP loop:
-dev auth -> bootstrap -> threat attempt -> rewards -> cache opening -> invoice creation -> Telegram payment grant -> idempotent duplicate payment.
-
-Standalone backend:
-
-```powershell
-cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
-$env:ZDNET_DEV_AUTH='1'
-py -3 -m zdnet_backend.server
-```
-
-In another terminal:
+После запуска API с `ZDNET_DEV_AUTH=1`:
 
 ```powershell
 cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
@@ -118,32 +121,10 @@ py -3 tools\smoke_mvp.py --base-url https://your-domain.example/zdnet_api
 
 ## PostgreSQL persistence gate
 
-Run this when `ZDNET_DATABASE_URL` points to a real PostgreSQL database. It creates a temporary player, writes gameplay, gacha and payment state, recreates the repository three times, and verifies that progress and paid grants survive restart without duplicate rewards.
+Проверяет, что прогресс, gacha и платежные grant сохраняются после пересоздания repository.
 
 ```powershell
 cd C:\Users\uragu\telegram-bot\zero-day-defenders-network\backend
 $env:ZDNET_DATABASE_URL='postgresql://user:pass@localhost:5432/dbname'
 py -3 tools\check_postgres_persistence.py
-```
-
-## Local PostgreSQL with Docker
-
-From the project root:
-
-```powershell
-cd C:\Users\uragu\telegram-bot\zero-day-defenders-network
-docker compose up -d postgres
-```
-
-Dev DSN:
-
-```text
-postgresql://zdnet:zdnet_dev_password@127.0.0.1:55432/zdnet
-```
-
-Full backend gate:
-
-```powershell
-cd C:\Users\uragu\telegram-bot\zero-day-defenders-network
-.\scripts\dev_check.ps1 -WithPostgres
 ```

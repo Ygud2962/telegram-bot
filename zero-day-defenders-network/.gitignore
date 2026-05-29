@@ -1,0 +1,31 @@
+# Python runtime/cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Frontend/build artifacts
+node_modules/
+dist/
+build/
+coverage/
+
+# Logs and local data
+*.log
+logs/
+*.db
+*.sqlite
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,4 +1,4 @@
-# База данных
+# Databases
 school_bot.db
 *.db
 
@@ -26,11 +26,11 @@ share/python-wheels/
 .installed.cfg
 *.egg
 
-# Виртуальное окружение
+# Virtual environments
 venv/
 ENV/
 env/
-.venv
+.venv/
 
 # IDE
 .vscode/
@@ -39,14 +39,14 @@ env/
 *.swo
 *~
 
-# ОС
+# OS
 .DS_Store
 Thumbs.db
 
-# Логи
+# Logs
 *.log
 logs/
 
-# Переменные окружения
+# Environment variables
 .env
 .env.local
