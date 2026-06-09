@@ -313,8 +313,6 @@ function renderHud() {
         <span class="metric credits"><b>₵</b><span>${state.credits.toLocaleString("ru-RU")}</span><small>кредиты</small></span>
         <span class="metric energy"><b>⚡</b><span>${state.energy}/${state.energyMax}</span><small>энергия</small></span>
         <span class="metric rank"><b>#</b><span>${state.rank}</span><small>рейтинг</small></span>
-        <span class="metric keys"><b>◇</b><span>${state.keys}</span><small>ключи</small></span>
-        <span class="metric fragments"><b>✦</b><span>${state.cleanFragments}</span><small>фрагм.</small></span>
       </div>
     </header>
   `;
@@ -469,13 +467,13 @@ function renderMissionCoach(activeCount) {
     return html`
       <section class="mission-coach calm">
         <div class="coach-copy">
-          <span class="eyebrow">что делать сейчас</span>
-          <h2>Сектор чистый. Усиливай команду.</h2>
-          <p>Открой тайник, посмотри коллекцию или прокачай инструменты. Новая ежедневная угроза появится позже.</p>
+          <span class="eyebrow">сектор стабилен</span>
+          <h2>Усиливай команду</h2>
+          <p>Новая угроза появится сегодня. Пока — открой тайник или прокачай инструменты.</p>
         </div>
         <div class="coach-actions">
-          <button class="primary-btn" data-tab="collection">Открыть коллекцию</button>
-          <button class="secondary-btn" data-tab="tools">Инструменты</button>
+          <button class="primary-btn" data-tab="collection">◇ Открыть тайник</button>
+          <button class="secondary-btn" data-tab="tools">⚙ Инструменты</button>
         </div>
       </section>
     `;
@@ -484,24 +482,15 @@ function renderMissionCoach(activeCount) {
   return html`
     <section class="mission-coach guided-coach">
       <div class="coach-copy">
-        <span class="eyebrow">что делать сейчас</span>
-        <h2>1. Нажми объект «${objectName}»</h2>
-        <p>Красная точка означает атаку. Открой объект, нажми нейтрализацию, пройди мини-игру и забери награду.</p>
-      </div>
-      <div class="coach-next-step">
-        <b>следующий клик</b>
-        <strong>${objectName}</strong>
-        <span>Мы откроем карточку объекта и покажем кнопку запуска миссии.</span>
-      </div>
-      <div class="coach-steps" aria-label="Игровой цикл">
-        <span><b>1</b> объект</span>
-        <span><b>2</b> мини-игра</span>
-        <span><b>3</b> награда</span>
-        <span><b>4</b> прокачка</span>
+        <span class="eyebrow">⚠ активная угроза · ${objectName}</span>
+        <h2>${threat.title}</h2>
+        <p>${threat.type} · Уровень сложности D${threat.difficulty}</p>
       </div>
       <div class="coach-actions">
-        <button class="primary-btn" data-coach-object="${threat.objectId}">Показать объект</button>
-        <button class="secondary-btn" data-coach-threat="${threat.id}" ${canLaunch ? "" : "disabled"}>${canLaunch ? "Начать сразу" : "Скоро"}</button>
+        <button class="primary-btn" data-coach-threat="${threat.id}" ${canLaunch ? "" : "disabled"} style="font-size:13px">
+          ${canLaunch ? "▶ НЕЙТРАЛИЗОВАТЬ" : "Скоро будет доступно"}
+        </button>
+        <button class="secondary-btn" data-coach-object="${threat.objectId}">Объект на карте</button>
       </div>
     </section>
   `;
