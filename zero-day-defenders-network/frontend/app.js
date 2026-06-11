@@ -1,6 +1,6 @@
 const runtime = window.ZDNETRuntime || {};
 const tg = runtime.tg || window.Telegram?.WebApp;
-const API_BASE = runtime.apiBase || window.ZDNET_CONFIG?.apiBase || localStorage.getItem("ZDNET_API_BASE") || "http://localhost:8090";
+const API_BASE = runtime.apiBase || window.ZDNET_CONFIG?.apiBase || (function(){ try { return localStorage.getItem("ZDNET_API_BASE"); } catch(e) { return null; } })() || "http://localhost:8090";
 let sessionToken = null;
 let backendOnline = false;
 
@@ -261,10 +261,10 @@ function refreshThreatTimers() {
 }
 
 const tabs = [
-  ["map", "🗺", "Карта"],
-  ["tools", "🛠", "Инстр."],
-  ["collection", "🃏", "Колода"],
-  ["more", "•••", "Ещё"],
+  ["map", "◉", "Карта"],
+  ["tools", "⚙", "Инстр."],
+  ["collection", "◇", "Колода"],
+  ["more", "···", "Ещё"],
 ];
 
 const moreTabIds = new Set(["more", "daemon", "squad", "story", "shop"]);
@@ -2443,5 +2443,9 @@ async function startPacketRain(threat) {
 }
 
 render();
+// Убираем splash после первого рендера
+if (typeof window.__splashDone === 'function') {
+  window.__splashDone();
+}
 connectBackend();
 setInterval(refreshThreatTimers, 1000);
