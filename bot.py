@@ -7,6 +7,7 @@ import hmac
 import html
 import inspect
 import json
+import subprocess
 import time
 import urllib.parse
 from datetime import datetime, timedelta
@@ -1128,6 +1129,18 @@ GAME_TITLES = {
 }
 
 PROJECT_UPDATES = [
+    {
+        'date': '16.06.2026',
+        'scope': 'ZERO_DAY',
+        'title': 'Сюжетные эпизоды',
+        'text': 'Добавлен экран сюжета с прогрессом сезона, карточками эпизодов, уроками и фактами по кибербезопасности.',
+    },
+    {
+        'date': '16.06.2026',
+        'scope': 'ZERO_DAY',
+        'title': 'Магазин через Telegram Stars',
+        'text': 'В магазине появилась понятная подсказка: покупки доступны при запуске игры через Telegram, а не в offline/mock-режиме.',
+    },
     {
         'date': '29.05.2026',
         'scope': 'Бот',
@@ -3276,6 +3289,154 @@ def project_update_dedupe_key(item: dict) -> str:
     return "static:" + hashlib.sha1(raw.encode('utf-8')).hexdigest()
 
 
+PROJECT_CHANGE_PATH_RULES = (
+    ('zero-day-defenders-network/frontend/', 'zdnet', 'интерфейс ZERO_DAY'),
+    ('zero-day-defenders-network/backend/', 'zdnet', 'backend ZERO_DAY'),
+    ('zero-day-defenders-network/schemas/', 'zdnet', 'данные ZERO_DAY'),
+    ('zero-day-defenders-network/docs/', 'zdnet', 'документация ZERO_DAY'),
+    ('game/', 'cipher', 'игра Шифровальщик'),
+    ('bot.py', 'bot', 'бот'),
+    ('database.py', 'bot', 'база данных бота'),
+    ('ui_texts.py', 'bot', 'тексты интерфейса бота'),
+    ('game_security.py', 'bot', 'защита Mini App'),
+    ('tests/', 'bot', 'тесты проекта'),
+)
+
+
+def _project_root_dir() -> str:
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _run_git_text(args: list[str], timeout: float = 4.0) -> str:
+    try:
+        result = subprocess.run(
+            ['git', *args],
+            cwd=_project_root_dir(),
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=timeout,
+            check=False,
+        )
+    except Exception:
+        return ''
+    if result.returncode != 0:
+        return ''
+    return result.stdout or ''
+
+
+def _git_status_entries() -> list[tuple[str, str]]:
+    output = _run_git_text(['status', '--porcelain=v1', '--untracked-files=all'])
+    entries: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        if len(line) < 4:
+            continue
+        status = line[:2]
+        path = line[3:].strip()
+        if ' -> ' in path:
+            path = path.rsplit(' -> ', 1)[1].strip()
+        path = path.strip('"').replace('\\', '/')
+        if path:
+            entries.append((status, path))
+    return entries
+
+
+def _project_change_area_for_path(path: str) -> tuple[str, str] | None:
+    normalized = path.replace('\\', '/')
+    for prefix, scope, area in PROJECT_CHANGE_PATH_RULES:
+        if normalized == prefix or normalized.startswith(prefix):
+            return scope, area
+    return None
+
+
+def _git_change_action(status: str) -> str:
+    if 'D' in status:
+        return 'Удален'
+    if 'A' in status or status == '??':
+        return 'Добавлен'
+    if 'R' in status:
+        return 'Переименован'
+    return 'Обновлен'
+
+
+def _git_numstat_for_path(path: str) -> str:
+    output = _run_git_text(['diff', 'HEAD', '--numstat', '--', path])
+    for line in output.splitlines():
+        parts = line.split('\t')
+        if len(parts) >= 3 and parts[2].replace('\\', '/') == path:
+            added, removed = parts[0], parts[1]
+            if added.isdigit() and removed.isdigit():
+                return f"+{added}/-{removed}"
+    return ''
+
+
+def _git_diff_fingerprint(path: str, status: str) -> str:
+    diff = _run_git_text(['diff', 'HEAD', '--', path], timeout=8.0)
+    if not diff and status == '??':
+        full_path = os.path.join(_project_root_dir(), path.replace('/', os.sep))
+        try:
+            stat = os.stat(full_path)
+            diff = f"untracked:{stat.st_size}:{int(stat.st_mtime)}"
+        except Exception:
+            diff = 'untracked'
+    raw = f"{status}\n{path}\n{diff[:200000]}"
+    return hashlib.sha1(raw.encode('utf-8', errors='replace')).hexdigest()
+
+
+def build_git_project_changes(limit: int = 12) -> list[dict]:
+    """Строит записи автоновостей из локального git diff, если репозиторий доступен."""
+    if os.environ.get('AUTO_NEWS_GIT_SCAN', '1').strip() == '0':
+        return []
+
+    changes: list[dict] = []
+    seen_paths: set[str] = set()
+    for status, path in _git_status_entries():
+        if path in seen_paths:
+            continue
+        seen_paths.add(path)
+        area = _project_change_area_for_path(path)
+        if not area:
+            continue
+
+        scope, area_label = area
+        action = _git_change_action(status)
+        numstat = _git_numstat_for_path(path)
+        detail_bits = [path]
+        if numstat:
+            detail_bits.append(numstat)
+        details = '. '.join(detail_bits) + '.'
+        fingerprint = _git_diff_fingerprint(path, status)
+        changes.append({
+            'scope': scope,
+            'title': f"{action} {area_label}",
+            'details': details,
+            'change_type': 'change',
+            'source': 'git',
+            'dedupe_key': f"git:{path}:{fingerprint}",
+        })
+        if len(changes) >= limit:
+            break
+    return changes
+
+
+async def seed_git_project_update_log():
+    git_changes = await asyncio.to_thread(build_git_project_changes)
+    active_keys = [item['dedupe_key'] for item in git_changes]
+    await asyncio.to_thread(db.mark_stale_project_changes_used_by_source, 'git', active_keys)
+    for item in git_changes:
+        await asyncio.to_thread(
+            db.add_project_change,
+            item['scope'],
+            item['title'],
+            item['details'],
+            item['change_type'],
+            None,
+            item['source'],
+            item['dedupe_key'],
+        )
+
+
 async def seed_project_update_log():
     """Записывает встроенные изменения в БД один раз, чтобы автоновость не зависела от git."""
     for item in PROJECT_UPDATES:
@@ -3289,6 +3450,8 @@ async def seed_project_update_log():
             'codex',
             project_update_dedupe_key(item),
         )
+    await seed_git_project_update_log()
+
 
 
 def infer_next_bot_news_number(recent_news) -> int:

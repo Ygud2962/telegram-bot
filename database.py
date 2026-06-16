@@ -1619,6 +1619,47 @@ def mark_project_changes_used(change_ids):
         release_connection(conn)
 
 
+def mark_stale_project_changes_used_by_source(source, active_dedupe_keys=None):
+    '''Помечает устаревшие неиспользованные изменения источника как использованные.'''
+    source = str(source or '').strip().lower()[:40]
+    if not source:
+        return 0
+    active_keys = [
+        str(key).strip()
+        for key in (active_dedupe_keys or [])
+        if str(key or '').strip()
+    ]
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        _ensure_project_change_log_table(cur)
+        if active_keys:
+            cur.execute('''
+                UPDATE project_change_log
+                SET used_in_news = TRUE
+                WHERE source = %s
+                  AND used_in_news = FALSE
+                  AND (dedupe_key IS NULL OR NOT (dedupe_key = ANY(%s)))
+            ''', (source, active_keys))
+        else:
+            cur.execute('''
+                UPDATE project_change_log
+                SET used_in_news = TRUE
+                WHERE source = %s
+                  AND used_in_news = FALSE
+            ''', (source,))
+        updated = cur.rowcount
+        conn.commit()
+        return updated
+    except Exception as e:
+        logger.error(f"mark_stale_project_changes_used_by_source error: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
+
+
 
 def get_total_news_count(scope=None):
     conn = None

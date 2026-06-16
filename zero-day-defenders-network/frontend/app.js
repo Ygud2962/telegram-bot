@@ -1211,15 +1211,81 @@ function renderSquad() {
 }
 
 function renderStory() {
+  const episodes = [
+    {
+      num: 1,
+      title: "Первый алерт",
+      day: "День 1",
+      done: true,
+      text: "Ника открывает карту и говорит: «Если Wi-Fi мигает красным, кто-то уже дёргает дверь». Ты видишь первую угрозу. SOC оживает.",
+      lesson: "Как отличить нормальный трафик от атаки?",
+      fact: "80% взломов начинаются с фишингового письма. Одна секунда внимания = защита.",
+    },
+    {
+      num: 2,
+      title: "Маска рыбака",
+      day: "День 4",
+      done: true,
+      text: "В медиа-классе кто-то открыл письмо «Ты выиграл iPhone». Фишинговая страница уже ворует логины. Счёт идёт на минуты.",
+      lesson: "Как проверить ссылку перед кликом?",
+      fact: "Наведи на ссылку: настоящий домен виден в строке браузера. Edu.school.ru ≠ edu-school.ru",
+    },
+    {
+      num: 3,
+      title: "Пакетный шторм",
+      day: "День 9",
+      done: false,
+      text: "Тысячи запросов в секунду. Школьный Wi-Fi падает. Ника говорит: «Это не случайность — это координация». Пора в мини-игру.",
+      lesson: "Что такое DDoS и почему его трудно остановить?",
+      fact: "DDoS-атака из 100 000 устройств может выглядеть как обычный школьный трафик. Фильтрация — ключ.",
+    },
+    {
+      num: 4,
+      title: "Нулевой день",
+      day: "?",
+      done: false,
+      text: "Неизвестная уязвимость. Патча ещё нет. Разработчик даже не знает о дыре. Это и есть zero-day — самая опасная угроза.",
+      lesson: "Почему нужно обновлять ПО немедленно?",
+      fact: "Когда уязвимость найдена и патч вышел — хакеры атакуют именно тех, кто не обновился.",
+    },
+  ];
+  const doneCount = episodes.filter(e => e.done).length;
   return html`
-    <section class="panel" style="padding:18px">
-      <div class="section-title">
-        <h2>Эпизод 1</h2>
-        <span>День 1/30</span>
+    <section class="hero-card" style="grid-template-columns:1fr;padding:18px 18px 14px">
+      <span class="eyebrow">сезон 1 · проект зеро</span>
+      <h2 style="margin:6px 0 6px;font-size:22px">Сюжет</h2>
+      <p>Следи за историей Ники и SOC-команды. Каждый эпизод — реальная угроза и знание, которое работает в жизни.</p>
+      <div style="margin-top:10px;height:4px;background:rgba(0,220,255,.1);border-radius:999px;overflow:hidden">
+        <div style="height:100%;width:${Math.round(doneCount/episodes.length*100)}%;background:linear-gradient(90deg,#00dcff,#00ffb3);border-radius:999px"></div>
       </div>
-      <p><strong>Первый алерт.</strong> Ника открывает карту и говорит: "Если Wi-Fi мигает красным, кто-то уже дергает дверь".</p>
-      <button class="primary-btn" data-tab="map">Открыть карту</button>
+      <span style="font-size:10px;color:var(--muted);margin-top:4px;display:block">${doneCount}/${episodes.length} эпизодов пройдено</span>
     </section>
+
+    ${episodes.map(ep => `
+      <article class="panel" style="padding:16px 18px;margin-bottom:10px;${!ep.done ? "opacity:.65" : ""}">
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px">
+          <div style="width:36px;height:36px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;font-family:var(--font-display);font-size:13px;font-weight:900;
+            ${ep.done ? "background:linear-gradient(135deg,rgba(0,100,255,.3),rgba(0,220,255,.15));border:1px solid rgba(0,220,255,.3);color:var(--accent)" :
+                        "background:rgba(90,122,153,.1);border:1px solid rgba(90,122,153,.2);color:var(--muted2)"}"
+          >${ep.num}</div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+              <strong style="font-size:14px;color:var(--text)">${ep.title}</strong>
+              ${ep.done ? `<span style="font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:rgba(0,255,179,.1);color:var(--safe);border:1px solid rgba(0,255,179,.2)">пройдено</span>` :
+                          `<span style="font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:rgba(90,122,153,.1);color:var(--muted);border:1px solid rgba(90,122,153,.2)">закрыт</span>`}
+            </div>
+            <span style="font-size:10px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase">${ep.day}</span>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 10px">${ep.text}</p>
+        <div style="padding:10px 12px;border-radius:12px;background:rgba(0,220,255,.05);border:1px solid rgba(0,220,255,.12)">
+          <span style="font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)">урок эпизода</span>
+          <p style="margin:3px 0 6px;font-size:12px;font-weight:600;color:var(--text)">${ep.lesson}</p>
+          <p style="margin:0;font-size:11px;color:var(--muted);line-height:1.4">${ep.fact}</p>
+        </div>
+        ${ep.done ? "" : `<button class="primary-btn" data-tab="map" style="margin-top:12px;width:100%">Продолжить на карте</button>`}
+      </article>
+    `).join("")}
   `;
 }
 
@@ -1248,6 +1314,15 @@ function renderShop() {
       <span class="eyebrow">Telegram Stars · fair monetization</span>
       <h2>Магазин без pay-to-win</h2>
       <p>Покупки ускоряют коллекционирование и удобство, но не добавляют очки рейтинга. fairScoreImpact всегда равен 0.</p>
+      ${!backendOnline ? `
+        <div style="margin-top:12px;padding:10px 14px;border-radius:14px;background:rgba(255,204,0,.07);border:1px solid rgba(255,204,0,.25);display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">⚠</span>
+          <div>
+            <strong style="display:block;font-size:12px;color:var(--warn)">Требуется Telegram</strong>
+            <span style="font-size:11px;color:var(--muted)">Открой игру через бота, чтобы совершить покупку через Stars.</span>
+          </div>
+        </div>
+      ` : ""}
       <div class="shop-ledger">
         <span><b>${paidCount}</b> оплачено</span>
         <span><b>${pendingCount}</b> ожидает</span>
@@ -1343,7 +1418,7 @@ function renderProduct(product) {
   const disabled = busy || !backendOnline;
   const grant = formatProductGrant(product.grant);
   return `
-    <article class="shop-product">
+    <article class="shop-product" style="${!backendOnline ? "opacity:.7" : ""}">
       <div class="product-icon">${productIcon(product)}</div>
       <div class="product-copy">
         <div class="product-topline">
@@ -1356,9 +1431,10 @@ function renderProduct(product) {
           <span>fairScore +0</span>
           ${status ? `<span>${status}</span>` : ""}
         </div>
+        ${!backendOnline ? `<span style="font-size:10px;color:var(--warn);margin-top:4px;display:block">⚠ Открой в Telegram для покупки</span>` : ""}
       </div>
-      <button class="primary-btn shop-buy" data-buy-product="${productId}" ${disabled ? "disabled" : ""}>
-        ${busy ? "Создаем..." : backendOnline ? "Купить" : "Только API"}
+      <button class="primary-btn shop-buy" data-buy-product="${productId}" ${disabled ? "disabled" : ""} style="${!backendOnline ? "background:linear-gradient(135deg,#1a2a3a,#0a1520);color:var(--muted);box-shadow:none;cursor:default" : ""}">
+        ${busy ? "Создаём..." : backendOnline ? "Купить" : "В Telegram"}
       </button>
     </article>
   `;
