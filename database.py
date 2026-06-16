@@ -1469,6 +1469,42 @@ def get_news_page_asc(offset=0, limit=5, scope=None):
     return get_news(offset=offset, limit=limit, order='ASC', scope=scope)
 
 
+def get_news_page_with_count(offset=0, limit=8, scope=None, order='DESC'):
+    '''Возвращает (rows, total) одним запросом через window count.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        scope_norm = normalize_news_scope(scope) if scope is not None else None
+        order_sql = 'ASC' if order == 'ASC' else 'DESC'
+        if scope_norm is not None:
+            cur.execute('''
+                SELECT id, title, content, published_at, views_count,
+                       COUNT(*) OVER() AS total_count
+                FROM news
+                WHERE category=%s
+                ORDER BY published_at ''' + order_sql + ''', id ''' + order_sql + '''
+                OFFSET %s LIMIT %s
+            ''', (scope_norm, int(offset or 0), int(limit or 8)))
+        else:
+            cur.execute('''
+                SELECT id, title, content, published_at, views_count,
+                       COUNT(*) OVER() AS total_count
+                FROM news
+                ORDER BY published_at ''' + order_sql + ''', id ''' + order_sql + '''
+                OFFSET %s LIMIT %s
+            ''', (int(offset or 0), int(limit or 8)))
+        fetched = cur.fetchall()
+        rows = [row[:5] for row in fetched]
+        total = int(fetched[0][5] or 0) if fetched else 0
+        return rows, total
+    except Exception as e:
+        logger.error(f"get_news_page_with_count: {e}")
+        return [], 0
+    finally:
+        release_connection(conn)
+
+
 _PROJECT_CHANGE_SCOPES = {'bot', 'school', 'cipher', 'zdnet', 'games'}
 
 
@@ -1739,6 +1775,69 @@ def increment_news_views(news_id, user_id):
         if conn:
             _safe_rollback(conn)
         return False
+    finally:
+        release_connection(conn)
+
+
+def get_news_detail_and_increment(news_id, user_id, scope=None):
+    '''Возвращает новость и best-effort увеличивает просмотр в одной транзакции.'''
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        scope_norm = normalize_news_scope(scope) if scope is not None else None
+        if scope_norm is None:
+            cur.execute(
+                'SELECT id, title, content, published_at, views_count, category FROM news WHERE id=%s',
+                (news_id,)
+            )
+        else:
+            cur.execute(
+                'SELECT id, title, content, published_at, views_count, category FROM news WHERE id=%s AND category=%s',
+                (news_id, scope_norm)
+            )
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        views_count = row[4] or 0
+        try:
+            cur.execute(
+                '''
+                INSERT INTO news_views (news_id, user_id)
+                VALUES (%s, %s)
+                ON CONFLICT (news_id, user_id) DO NOTHING
+                ''',
+                (news_id, user_id),
+            )
+            if cur.rowcount:
+                cur.execute('UPDATE news SET views_count=views_count+1 WHERE id=%s', (news_id,))
+                views_count += 1
+        except Exception as e:
+            logger.warning(f"get_news_detail_and_increment view update skipped: {e}")
+            _safe_rollback(conn)
+            return {
+                'id': row[0],
+                'title': row[1],
+                'content': row[2],
+                'published_at': row[3],
+                'views_count': views_count,
+                'category': row[5],
+            }
+
+        conn.commit()
+        return {
+            'id': row[0],
+            'title': row[1],
+            'content': row[2],
+            'published_at': row[3],
+            'views_count': views_count,
+            'category': row[5],
+        }
+    except Exception as e:
+        logger.error(f"get_news_detail_and_increment: {e}")
+        _safe_rollback(conn)
+        return None
     finally:
         release_connection(conn)
 

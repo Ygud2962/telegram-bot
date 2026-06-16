@@ -105,37 +105,49 @@ SLOW_DB_MS = _env_int("SLOW_DB_MS", 350)
 SLOW_CALLBACK_MS = _env_int("SLOW_CALLBACK_MS", 1000)
 ACTIVITY_LOG_WORKERS = max(1, _env_int("ACTIVITY_LOG_WORKERS", 2))
 ACTIVITY_LOG_MAX_INFLIGHT = max(0, _env_int("ACTIVITY_LOG_MAX_INFLIGHT", 20))
-_activity_log_executor = ThreadPoolExecutor(
+_low_priority_db_executor = ThreadPoolExecutor(
     max_workers=ACTIVITY_LOG_WORKERS,
-    thread_name_prefix="activity-log",
+    thread_name_prefix="low-priority-db",
 )
-_activity_log_inflight = 0
+_low_priority_db_inflight = 0
+
+
+async def run_low_priority_db_background(label: str, fn, *args) -> None:
+    """Best-effort DB work that cannot saturate the default executor."""
+    global _low_priority_db_inflight
+    if ACTIVITY_LOG_MAX_INFLIGHT <= 0:
+        return
+    if _low_priority_db_inflight >= ACTIVITY_LOG_MAX_INFLIGHT:
+        logger.warning(
+            "low-priority-db skipped: backlog=%s task=%s",
+            _low_priority_db_inflight,
+            label,
+        )
+        return
+
+    _low_priority_db_inflight += 1
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            _low_priority_db_executor,
+            fn,
+            *args,
+        )
+    except Exception as e:
+        logger.warning(f"low-priority-db failed ({label}): {e}")
+    finally:
+        _low_priority_db_inflight = max(0, _low_priority_db_inflight - 1)
 
 
 async def log_user_activity_background(user_id: int, action: str,
                                        class_name: str | None = None) -> None:
-    """Best-effort activity log that cannot saturate the default executor."""
-    global _activity_log_inflight
-    if ACTIVITY_LOG_MAX_INFLIGHT <= 0:
-        return
-    if _activity_log_inflight >= ACTIVITY_LOG_MAX_INFLIGHT:
-        logger.warning("activity-log skipped: backlog=%s action=%s", _activity_log_inflight, action)
-        return
-
-    _activity_log_inflight += 1
-    try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            _activity_log_executor,
-            db.log_user_activity,
-            user_id,
-            action,
-            class_name,
-        )
-    except Exception as e:
-        logger.warning(f"activity-log failed: {e}")
-    finally:
-        _activity_log_inflight = max(0, _activity_log_inflight - 1)
+    await run_low_priority_db_background(
+        f"activity:{action}",
+        db.log_user_activity,
+        user_id,
+        action,
+        class_name,
+    )
 
 
 def _instrument_db_calls() -> None:
@@ -274,7 +286,7 @@ _zdnet_mode_cache_ts: float = 0
 ADMIN_IDS       = []  # Права администратора через БД (таблица bot_admins)
 _bot_admin_cache: dict[int, tuple[bool, float]] = {}
 _bot_admin_last_true: set[int] = set()
-_BOT_ADMIN_TTL = 30.0
+_BOT_ADMIN_TTL = 300.0
 
 def is_bot_admin(user_id: int) -> bool:
     """Проверяет права администратора БОТА (таблица bot_admins — не зависит от игровой роли)."""
@@ -1392,8 +1404,13 @@ async def safe_edit(query, text: str, keyboard=None, parse_mode='HTML'):
     markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     if len(text) > 4096:
         text = text[:4000] + "\n\n<i>...текст обрезан</i>"
+    started = time.perf_counter()
     try:
         await query.edit_message_text(text, reply_markup=markup, parse_mode=parse_mode)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if elapsed_ms >= SLOW_CALLBACK_MS:
+            data = getattr(query, 'data', '<unknown>')
+            logger.warning(f"slow-telegram-edit data={data} {elapsed_ms:.1f} ms")
     except BadRequest as e:
         err_str = str(e)
         # Игнорируем "не изменилось" и "сообщение не найдено" — не краш
@@ -2441,6 +2458,9 @@ async def show_main_menu_msg(update: Update, context: CallbackContext):
         asyncio.to_thread(db.find_teacher_by_telegram_id, user.id),
     )
     teacher_name = _tname(t_data)
+    context.user_data['profile_cache'] = profile
+    context.user_data['profile_cache_id'] = user.id
+    context.user_data['teacher_name_cache'] = teacher_name
     is_admin = await is_bot_admin_async(user.id)
     kb = get_main_menu_kb(profile, is_admin, teacher_name=teacher_name)
 
@@ -3151,7 +3171,11 @@ def news_scope_switch_row(active_scope: str) -> list[InlineKeyboardButton]:
 async def menu_news(query, context):
     """Экран выбора раздела новостей."""
     uid = query.from_user.id
-    await asyncio.to_thread(db.update_user_last_news_check, uid)
+    asyncio.create_task(run_low_priority_db_background(
+        'news-last-check',
+        db.update_user_last_news_check,
+        uid,
+    ))
     context.user_data.pop('news_shown', None)
     scope = normalize_news_scope(context.user_data.get('news_scope'), NEWS_SCOPE_BOT)
     kb = [
@@ -3176,16 +3200,19 @@ async def menu_news_scope(query, context, scope: str, page: int = 0):
     Страницы: page=0 — самые новые. Внутри страницы новые снизу.
     """
     uid = query.from_user.id
-    await asyncio.to_thread(db.update_user_last_news_check, uid)
+    asyncio.create_task(run_low_priority_db_background(
+        'news-last-check',
+        db.update_user_last_news_check,
+        uid,
+    ))
     context.user_data.pop('news_shown', None)
     scope = normalize_news_scope(scope)
     context.user_data['news_scope'] = scope
     context.user_data[f'news_page_{scope}'] = page
 
     per_page = 8
-    total = await asyncio.to_thread(db.get_total_news_count, scope)
     offset = page * per_page
-    news_list = await asyncio.to_thread(db.get_archive_news_page, offset, per_page, scope)
+    news_list, total = await asyncio.to_thread(db.get_news_page_with_count, offset, per_page, scope)
     total_pages = max(1, -(-total // per_page))
 
     kb = [[*news_scope_switch_row(scope)]]
@@ -3234,11 +3261,10 @@ async def show_news_full(query, context, news_id: int, scope: str | None = None,
     resolved_page = page
     if resolved_page is None:
         resolved_page = int(context.user_data.get(f'news_page_{resolved_scope}', 0) or 0)
-    await asyncio.to_thread(db.increment_news_views, news_id, query.from_user.id)
-    news = await asyncio.to_thread(db.get_news_detail, news_id, resolved_scope)
+    news = await asyncio.to_thread(db.get_news_detail_and_increment, news_id, query.from_user.id, resolved_scope)
     if not news:
         # Новость могла быть перенесена в другой раздел — ищем без фильтра.
-        news = await asyncio.to_thread(db.get_news_detail, news_id)
+        news = await asyncio.to_thread(db.get_news_detail_and_increment, news_id, query.from_user.id)
         if not news:
             await query.answer("❌ Новость не найдена", show_alert=True)
             return
