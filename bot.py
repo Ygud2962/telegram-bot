@@ -10,6 +10,7 @@ import json
 import subprocess
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from aiohttp import web as aiohttp_web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -102,6 +103,39 @@ def _env_int(name: str, default: int) -> int:
 
 SLOW_DB_MS = _env_int("SLOW_DB_MS", 350)
 SLOW_CALLBACK_MS = _env_int("SLOW_CALLBACK_MS", 1000)
+ACTIVITY_LOG_WORKERS = max(1, _env_int("ACTIVITY_LOG_WORKERS", 2))
+ACTIVITY_LOG_MAX_INFLIGHT = max(0, _env_int("ACTIVITY_LOG_MAX_INFLIGHT", 20))
+_activity_log_executor = ThreadPoolExecutor(
+    max_workers=ACTIVITY_LOG_WORKERS,
+    thread_name_prefix="activity-log",
+)
+_activity_log_inflight = 0
+
+
+async def log_user_activity_background(user_id: int, action: str,
+                                       class_name: str | None = None) -> None:
+    """Best-effort activity log that cannot saturate the default executor."""
+    global _activity_log_inflight
+    if ACTIVITY_LOG_MAX_INFLIGHT <= 0:
+        return
+    if _activity_log_inflight >= ACTIVITY_LOG_MAX_INFLIGHT:
+        logger.warning("activity-log skipped: backlog=%s action=%s", _activity_log_inflight, action)
+        return
+
+    _activity_log_inflight += 1
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            _activity_log_executor,
+            db.log_user_activity,
+            user_id,
+            action,
+            class_name,
+        )
+    except Exception as e:
+        logger.warning(f"activity-log failed: {e}")
+    finally:
+        _activity_log_inflight = max(0, _activity_log_inflight - 1)
 
 
 def _instrument_db_calls() -> None:
@@ -6506,10 +6540,8 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
     except Exception as e:
         logger.warning(f"query.answer error: {e}")
 
-    # Логируем активность в фоне — не блокируем
-    asyncio.create_task(asyncio.to_thread(
-        db.log_user_activity, user.id, f'btn_{query.data[:40]}'
-    ))
+    # Логируем активность в отдельном executor, чтобы медленная БД не тормозила кнопки.
+    asyncio.create_task(log_user_activity_background(user.id, f'btn_{query.data[:40]}'))
 
     d = query.data
     user_is_admin = await is_bot_admin_async(user.id)
