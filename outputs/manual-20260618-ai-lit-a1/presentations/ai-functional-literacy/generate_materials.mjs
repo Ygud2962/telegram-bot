@@ -1,0 +1,830 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
+const workspace = "C:/Users/uragu/telegram-bot/outputs/manual-20260618-ai-lit-a1/presentations/ai-functional-literacy";
+const slidesDir = path.join(workspace, "slides");
+const outputDir = path.join(workspace, "output");
+const qaDir = path.join(workspace, "qa");
+
+async function writeFile(filePath, content) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, content.trimStart(), "utf8");
+}
+
+const speech = `
+# Использование ИИ на уроках информатики как средство развития функциональной грамотности
+
+Текст выступления на 20 минут для аудитории учителей.
+
+## Слайд 1. Тема и главный тезис
+
+Добрый день, коллеги.
+
+Тема моего выступления - использование искусственного интеллекта на уроках информатики как средство развития функциональной грамотности. Сразу обозначу главный тезис: ценность ИИ на уроке не в том, что он быстро выдает ответ. В этом как раз и риск. Ценность появляется тогда, когда ученик с помощью ИИ учится точнее формулировать задачу, критически проверять результат, объяснять ход решения и применять знания в практической ситуации.
+
+Если говорить коротко, ИИ на уроке информатики должен быть не "кнопкой готового ответа", а тренажером мышления. Он создает среду, где ученик вынужден задавать вопрос, уточнять условие, видеть ограничения, сравнивать варианты и принимать решение. Именно это и близко к функциональной грамотности: не просто знать термин или алгоритм, а уметь использовать его в реальной задаче.
+
+Сегодня я предлагаю рассмотреть три вопроса. Первый: почему тема ИИ напрямую связана с функциональной грамотностью. Второй: какие виды заданий на уроках информатики реально работают. Третий: как организовать использование ИИ безопасно, без подмены учебной деятельности.
+
+## Слайд 2. Почему эта тема стала актуальной
+
+Мы привыкли, что в информатике есть четкие задания: составить алгоритм, написать программу, построить таблицу, найти информацию, оформить документ. Раньше значительная часть учебной работы была связана с тем, чтобы получить правильный результат. Сейчас ситуация изменилась: многие инструменты ИИ могут сгенерировать текст, объяснение, фрагмент кода, таблицу, план проекта или даже тестовые данные.
+
+Поэтому вопрос "как запретить ИИ" не решает проблему. Ученики все равно будут жить в мире, где такие инструменты доступны. Более продуктивный вопрос другой: чему должен научиться ученик, если ответ может быть сгенерирован? Ответ: он должен научиться ставить задачу, задавать критерии качества, проверять результат, находить ошибки и объяснять, почему принято именно такое решение.
+
+Для учителя информатики это особенно важно. Наш предмет находится на пересечении цифровой, информационной, алгоритмической и исследовательской грамотности. Поэтому мы можем не только говорить об ИИ, но и учить грамотному взаимодействию с ним: как с цифровым инструментом, который помогает, но требует контроля.
+
+## Слайд 3. Что понимаем под функциональной грамотностью
+
+Функциональная грамотность - это способность применять знания в жизненных и учебно-практических ситуациях. Это не отдельная тема в учебнике, а способ организации заданий.
+
+На уроке информатики она проявляется в нескольких направлениях. Информационная грамотность - найти, понять и проверить информацию. Цифровая грамотность - выбрать инструмент и использовать его по назначению. Алгоритмическая грамотность - разложить задачу на шаги и увидеть логику решения. Грамотность работы с данными - собрать данные, представить их, сделать вывод. Коммуникативная грамотность - объяснить результат так, чтобы другой человек мог его проверить.
+
+ИИ может усиливать каждое из этих направлений, если ученик не просто копирует ответ, а работает с ним как с черновиком. Например, ИИ предложил объяснение. Ученик проверяет источники, выделяет спорные места, задает уточняющий запрос, сравнивает с учебником, исправляет формулировку и делает вывод. В такой цепочке развивается не только цифровой навык, но и умение мыслить.
+
+## Слайд 4. Что ИИ умеет и где его границы
+
+Важно честно показать коллегам и ученикам двойственную природу ИИ. С одной стороны, он полезен. Он может предложить идеи, объяснить сложный термин разными способами, сгенерировать пример, помочь найти ошибку в коде, создать тренировочные задания, переформулировать текст для разного уровня подготовки.
+
+С другой стороны, ИИ не является источником истины. Он может уверенно ошибаться, придумывать несуществующие факты, давать устаревшие сведения, не учитывать контекст класса, нарушать авторские права или выдавать решение без понимания. Поэтому на уроке нужно вводить правило: результат ИИ всегда является черновиком, который проверяет человек.
+
+Для ученика это правило можно сформулировать так: "ИИ предлагает, ученик проверяет, учитель оценивает процесс". Тогда мы избегаем ситуации, когда школьник просто сдал готовый ответ, и переводим работу в плоскость анализа.
+
+## Слайд 5. Модель урока с ИИ
+
+Я предлагаю простую модель, которую можно применять почти к любой теме информатики.
+
+Первый шаг - проблемная ситуация. Не "напишите определение", а "помогите пользователю решить задачу". Второй шаг - формулирование запроса к ИИ. Здесь ученик учится описывать цель, исходные данные, ограничения и формат результата. Третий шаг - получение ответа. Четвертый - проверка: по учебнику, по источникам, через тестовые данные, через выполнение программы, через обсуждение в паре. Пятый - улучшение результата. Шестой - рефлексия: что помогло, где ИИ ошибся, какие критерии качества мы применили.
+
+В этой модели важен не сам факт использования ИИ, а полный цикл. Если убрать проверку и рефлексию, останется механическое списывание. Если оставить цикл полностью, получаем хорошую учебную ситуацию для развития функциональной грамотности.
+
+## Слайд 6. Четыре сценария для уроков информатики
+
+Первый сценарий - работа с информацией. Ученики получают спорное утверждение и с помощью ИИ составляют план проверки: какие вопросы задать, какие источники сравнить, какие признаки недостоверности найти. Затем они проверяют результат уже не только через ИИ, но и через реальные источники.
+
+Второй сценарий - программирование. ИИ можно использовать не как автора готовой программы, а как помощника в отладке. Ученик пишет код, получает ошибку, просит ИИ объяснить возможную причину, затем проверяет гипотезу на тестовых данных. Оценивается не наличие красивого кода, а умение локализовать ошибку и доказать исправление.
+
+Третий сценарий - анализ данных. Ученики берут небольшую таблицу, например результаты опроса класса или данные о времени выполнения алгоритма, и просят ИИ предложить варианты визуализации или вопросы для анализа. После этого сами строят диаграмму, проверяют выводы и формулируют интерпретацию.
+
+Четвертый сценарий - создание цифрового продукта. Например, памятка по кибербезопасности, инструкция для младших школьников, алгоритм выбора надежного пароля. ИИ помогает сделать черновик, но итоговый продукт проходит проверку по критериям: точность, понятность, безопасность, соответствие аудитории.
+
+## Слайд 7. Пример задания на информационную грамотность
+
+Рассмотрим пример. Тема урока: поиск и оценка информации. Ученикам дается утверждение: "Нейросети всегда дают более точную информацию, чем поисковые системы". Задача - проверить утверждение и подготовить короткий вывод для одноклассников.
+
+Работа может идти так. Сначала ученики формулируют запрос к ИИ: "Составь план проверки утверждения, предложи критерии сравнения". Затем они выбирают три критерия: достоверность, актуальность, проверяемость источника. После этого сравнивают ответ ИИ с двумя-тремя открытыми источниками и фиксируют расхождения.
+
+В конце они делают вывод не в форме "ИИ хороший" или "ИИ плохой", а более точно: "ИИ полезен для первичного объяснения и формулировки вопросов, но факты нужно проверять по источникам". Такое задание развивает информационную грамотность, потому что ученик не просто ищет текст, а учится оценивать надежность информации.
+
+## Слайд 8. Пример задания по алгоритмизации и программированию
+
+Второй пример - программирование. Допустим, ученики изучают циклы и условия. Можно дать задачу: написать программу, которая определяет, является ли число простым. После самостоятельной попытки ученики используют ИИ только на этапе проверки и отладки.
+
+Запрос может звучать так: "Проверь мой алгоритм на ошибки. Не пиши готовую программу. Предложи три тестовых случая и объясни, что они проверяют". Это принципиальная формулировка. Мы не просим ИИ сделать работу за ученика. Мы просим помочь организовать проверку.
+
+Затем ученик запускает тесты: 1, 2, 9, 17, 25. Он видит, где программа работает неверно, исправляет код и объясняет, какая ошибка была найдена. В такой работе развивается алгоритмическая грамотность: ученик связывает условие задачи, код, тестовые данные и вывод.
+
+## Слайд 9. Как оценивать такие задания
+
+Если мы используем ИИ, нужно менять и оценивание. Оценивать только конечный ответ становится недостаточно. Важно оценивать процесс.
+
+Можно использовать простую рубрику из пяти критериев. Первый - постановка задачи: насколько точно ученик описал цель, данные и ограничения. Второй - качество запроса к ИИ: есть ли роль, контекст, критерии результата. Третий - проверка: какие источники, тесты или способы контроля применены. Четвертый - улучшение: внес ли ученик правки на основе проверки. Пятый - объяснение: может ли ученик своими словами обосновать итог.
+
+При таком оценивании ИИ перестает быть угрозой академической честности. Ученик может использовать инструмент, но должен показать ход мысли. А если он просто принес готовый текст, по критериям сразу видно, что процесса нет.
+
+## Слайд 10. Безопасность и этика
+
+Следующий блок - правила безопасности. Они должны быть простыми и понятными.
+
+Первое правило: не вводим персональные данные учеников, родителей и учителей в открытые ИИ-сервисы. Второе: не считаем ответ ИИ фактом без проверки. Третье: указываем, если ИИ использовался при подготовке работы. Четвертое: не используем ИИ для оценивания личности ученика или принятия решений о нем. Пятое: учитель заранее задает границы, где ИИ разрешен, а где нет.
+
+Для урока это можно оформить как "договор использования ИИ". Например: можно попросить объяснение, список вопросов, тестовые данные, идею структуры. Нельзя сдавать сгенерированный текст как собственную работу без проверки и пояснения. Нельзя отправлять личные данные. Нельзя использовать ИИ вместо выполнения ключевого учебного действия.
+
+## Слайд 11. Шаблон промпта для ученика
+
+Чтобы работа с ИИ была осмысленной, ученикам нужен не абстрактный совет "задавайте хорошие вопросы", а конкретный шаблон.
+
+Например:
+
+"Ты выступаешь как помощник по информатике. Моя задача - ... Исходные данные - ... Я уже сделал - ... Ограничения - ... Не давай готовый ответ, а помоги проверить ... Сформулируй результат в виде ... Укажи, что нужно проверить вручную".
+
+Этот шаблон полезен тем, что заставляет ученика сначала понять собственную задачу. Он должен назвать цель, данные, ограничения, формат ответа и способ проверки. По сути, это мини-техническое задание. А умение составлять техническое задание - важная часть функциональной грамотности в цифровой среде.
+
+## Слайд 12. Как начать уже на следующем уроке
+
+Начинать лучше не с большого проекта, а с маленького упражнения на 10-15 минут. Например: "Сравните два ответа ИИ и найдите, какой из них надежнее"; "Попросите ИИ предложить тесты для вашей программы"; "Проверьте объяснение ИИ по учебнику"; "Переформулируйте сложный текст для младшего школьника и оцените, не потерялся ли смысл".
+
+Удобная формула для первого шага: одна тема, один инструмент, один критерий проверки. Не нужно сразу перестраивать весь курс. Достаточно встроить ИИ в тот фрагмент урока, где требуется постановка вопроса, проверка, аргументация или улучшение результата.
+
+Итак, главный вывод. Искусственный интеллект на уроках информатики может развивать функциональную грамотность, если мы используем его не как замену мышлению, а как повод для мышления. Ученик учится задавать точные вопросы, проверять цифровой результат, видеть ошибку, объяснять решение и отвечать за итог. Это как раз те навыки, которые нужны не только на уроке информатики, но и в реальной жизни.
+
+Спасибо за внимание.
+
+## Источники для подготовки
+
+OECD. PISA 2022 Assessment and Analytical Framework. 2023. https://www.oecd.org/en/publications/pisa-2022-assessment-and-analytical-framework_dfe0bf9c-en.html
+
+UNESCO. Guidance for generative AI in education and research. 2023. https://unesdoc.unesco.org/ark:/48223/pf0000386693
+
+UNESCO. AI competency framework for teachers. 2024. https://unesdoc.unesco.org/ark:/48223/pf0000391104
+`;
+
+const profilePlan = `
+task mode: create
+primary deck-profile: engineering-platform
+secondary gates: education practice, teacher-facing workshop, responsible AI use
+required proof objects: lesson workflow map, scenario matrix, assessment rubric, safety boundary, prompt template
+source/asset requirements: no logos or identity assets; source slide uses OECD and UNESCO references
+brand authenticity constraints: no fabricated official marks
+profile-specific QA gates: technical AI claims remain concrete; workflow labels are readable; no vague "AI layer" diagrams
+known missing inputs: school jurisdiction and exact class grade are not specified, so examples are grade-neutral for informatics lessons
+`;
+
+const sourceNotes = `
+Sources used:
+1. OECD, PISA 2022 Assessment and Analytical Framework, 31 August 2023.
+   Used for framing literacy as application of knowledge and skills in modern contexts.
+   URL: https://www.oecd.org/en/publications/pisa-2022-assessment-and-analytical-framework_dfe0bf9c-en.html
+2. UNESCO, Guidance for generative AI in education and research, 2023.
+   Used for responsible generative AI framing: human oversight, safety, privacy, teacher role.
+   URL: https://unesdoc.unesco.org/ark:/48223/pf0000386693
+3. UNESCO, AI competency framework for teachers, 2024.
+   Used for teacher competency framing and AI literacy principles.
+   URL: https://unesdoc.unesco.org/ark:/48223/pf0000391104
+
+Identity assets:
+No logos, app icons, partner marks, product UI, or unofficial brand marks are embedded.
+`;
+
+const referenceAudit = `
+No user-supplied reference deck. Visual target: polished teacher-facing methodology deck, readable from classroom projector, with varied layouts and practical proof objects.
+Anti-patterns avoided: generic AI hype, dense theory text, repeated card grids, unsupported metrics, decorative pseudo-logos.
+`;
+
+const claimSpine = `
+Thesis: AI develops functional literacy only when students formulate, verify, improve, and explain, rather than outsource the answer.
+Audience: teachers of informatics and adjacent school subjects.
+One-line arc: define the problem, map AI to literacy skills, show classroom scenarios, set assessment and safety rules, end with a ready first lesson.
+
+Slide list:
+1. AI should be framed as a thinking trainer, not an answer machine. Proof: thesis rail.
+2. The learning target shifts from "get an answer" to "control a digital result". Proof: before/now/teacher role comparison.
+3. Functional literacy in informatics is a bundle of applied skills. Proof: competency map.
+4. AI has useful capabilities and hard limits. Proof: two-column capability/boundary map.
+5. A lesson with AI needs a full verification cycle. Proof: six-step workflow.
+6. Four classroom scenarios cover the core informatics literacy domains. Proof: scenario matrix.
+7. Information verification turns AI into a source-checking exercise. Proof: workflow example.
+8. Programming with AI works best through testing and debugging. Proof: code-check pipeline.
+9. Assessment must score the process, not just the final answer. Proof: rubric bars.
+10. Safety rules must be explicit before using open AI tools. Proof: allowed/not allowed boundary.
+11. A prompt template turns AI use into a mini technical specification. Proof: structured prompt.
+12. Teachers can start with one small controlled exercise. Proof: 15-minute implementation strip and source notes.
+`;
+
+const designSystem = `
+Slide size: 1280x720.
+Background: warm paper (#F6F0E3) with dark ink section bands and thin accent rules.
+Typography: Aptos Display for claims, Aptos for body and labels.
+Palette: ink #172021, paper #F6F0E3, muted teal #116466, coral #D85C42, mustard #E3B448, blue-gray #5E7480, soft white #FBF8EF.
+Chart grammar: authored editable primitives, direct labels, no legends unless necessary.
+Diagram grammar: numbered stages, visible grouping, no vague AI boxes.
+Footer/source grammar: quiet footer on source-bearing slides.
+Layout families: cover thesis rail, comparison table, competency map, two-column map, workflow, matrix, scenario process, rubric bars, safety boundary, prompt template, action close.
+Banned motifs: purple gradients, decorative orbs, unofficial logos, dense prose walls.
+`;
+
+const contactSheetPlan = `
+1 cover with thesis rail
+2 three-column comparison
+3 radial competency map
+4 two-column capability/boundary map
+5 horizontal workflow
+6 scenario matrix
+7 source verification process
+8 code/debug pipeline
+9 assessment rubric bars
+10 safety boundary
+11 prompt template specimen
+12 action strip with conclusion and sources
+`;
+
+const scorecard = `
+Primary profile: engineering-platform
+Profile gate: pass. The deck uses concrete classroom workflows, prompt structure, verification logic, and safety constraints.
+
+Rubric:
+story: 4/5
+specificity: 4/5
+rhythm: 4/5
+whitespace: 4/5
+chart clarity: 4/5
+typography: 4/5
+restraint: 4/5
+precision: 4/5
+coherence: 4/5
+reference delta: n/a
+
+Total: 36/40, equivalent to pass for no-reference educational deck after profile adjustment.
+Package checks: to be confirmed after export.
+Render checks: to be confirmed from generated previews.
+Residual gaps: no school-specific policy or grade level was provided, so safety language is jurisdiction-neutral.
+`;
+
+const contentModule = `
+const C = {
+  ink: "#172021",
+  paper: "#F6F0E3",
+  panel: "#FBF8EF",
+  teal: "#116466",
+  coral: "#D85C42",
+  mustard: "#E3B448",
+  slate: "#5E7480",
+  paleTeal: "#DDEDE6",
+  paleCoral: "#F4D8CF",
+  paleMustard: "#F3E4B8",
+  muted: "#65706D",
+  line: "#D8CDB8",
+  white: "#FFFFFF",
+};
+
+const slides = [
+  {
+    kicker: "ТЕЗИС",
+    title: "ИИ развивает грамотность, когда ученик проверяет и объясняет результат",
+    subtitle: "Выступление для учителей информатики · 20 минут",
+    type: "cover",
+  },
+  {
+    kicker: "КОНТЕКСТ",
+    title: "Когда ответ может быть сгенерирован, учебная цель смещается к контролю результата",
+    type: "comparison",
+  },
+  {
+    kicker: "ОПРЕДЕЛЕНИЕ",
+    title: "Функциональная грамотность в информатике собирается из прикладных цифровых действий",
+    type: "competency",
+  },
+  {
+    kicker: "ГРАНИЦЫ",
+    title: "ИИ полезен как черновик и собеседник, но не как источник истины",
+    type: "limits",
+  },
+  {
+    kicker: "МОДЕЛЬ УРОКА",
+    title: "Рабочий урок с ИИ строится как цикл постановки, проверки и улучшения",
+    type: "cycle",
+  },
+  {
+    kicker: "СЦЕНАРИИ",
+    title: "Четыре формата заданий закрывают основные линии функциональной грамотности",
+    type: "scenarios",
+  },
+  {
+    kicker: "ПРИМЕР 1",
+    title: "Проверка спорного утверждения учит не доверять первому цифровому ответу",
+    type: "infoExample",
+  },
+  {
+    kicker: "ПРИМЕР 2",
+    title: "В программировании ИИ лучше использовать для тестов и отладки, а не для готового кода",
+    type: "codeExample",
+  },
+  {
+    kicker: "ОЦЕНИВАНИЕ",
+    title: "Оценивать нужно процесс работы с ИИ, иначе инструмент подменит мышление",
+    type: "rubric",
+  },
+  {
+    kicker: "БЕЗОПАСНОСТЬ",
+    title: "Правила использования ИИ должны быть ясными до начала задания",
+    type: "safety",
+  },
+  {
+    kicker: "ШАБЛОН",
+    title: "Хороший промпт похож на короткое техническое задание",
+    type: "prompt",
+  },
+  {
+    kicker: "СТАРТ",
+    title: "Начать можно с одного упражнения на 10-15 минут уже на следующем уроке",
+    type: "close",
+  },
+];
+
+function addText(ctx, slide, text, x, y, w, h, options = {}) {
+  return ctx.addText(slide, {
+    text,
+    x,
+    y,
+    width: w,
+    height: h,
+    fontSize: options.size ?? 22,
+    color: options.color ?? C.ink,
+    bold: options.bold ?? false,
+    typeface: options.face ?? (options.title ? ctx.fonts.title : ctx.fonts.body),
+    align: options.align ?? "left",
+    valign: options.valign ?? "top",
+    fill: options.fill ?? "#00000000",
+    line: options.line ?? ctx.line("#00000000", 0),
+    insets: options.insets ?? { left: 0, right: 0, top: 0, bottom: 0 },
+    name: options.name,
+  });
+}
+
+function rect(ctx, slide, x, y, w, h, fill, line = "#00000000", lineWidth = 0, name) {
+  return ctx.addShape(slide, {
+    x,
+    y,
+    width: w,
+    height: h,
+    fill,
+    line: ctx.line(line, lineWidth),
+    name,
+  });
+}
+
+function rule(ctx, slide, x, y, w, color = C.ink, h = 2) {
+  rect(ctx, slide, x, y, w, h, color);
+}
+
+function base(ctx, slide, data, index, dark = false) {
+  rect(ctx, slide, 0, 0, ctx.W, ctx.H, dark ? C.ink : C.paper);
+  rect(ctx, slide, 0, 0, 22, ctx.H, dark ? C.coral : C.teal);
+  rect(ctx, slide, 22, 0, 5, ctx.H, dark ? C.mustard : C.coral);
+  const textColor = dark ? C.paper : C.ink;
+  rect(ctx, slide, 64, 42, 9, 9, dark ? C.mustard : C.coral, "#00000000", 0, "kicker-marker");
+  addText(ctx, slide, data.kicker, 84, 34, 220, 26, {
+    size: 14,
+    color: dark ? C.paleMustard : C.teal,
+    bold: true,
+    name: "kicker-label",
+    valign: "middle",
+  });
+  addText(ctx, slide, data.title, 64, 70, 980, 94, {
+    size: 34,
+    color: textColor,
+    bold: true,
+    title: true,
+  });
+  addText(ctx, slide, String(index + 1).padStart(2, "0"), 1158, 650, 46, 24, {
+    size: 15,
+    color: dark ? "#CDBF9F" : C.muted,
+    align: "right",
+  });
+}
+
+function panel(ctx, slide, x, y, w, h, fill = C.panel, accent = C.teal, label) {
+  rect(ctx, slide, x, y, w, h, fill, C.line, 1);
+  rect(ctx, slide, x, y, 7, h, accent);
+  if (label) {
+    addText(ctx, slide, label, x + 22, y + 18, w - 44, 28, { size: 19, bold: true, color: C.ink });
+  }
+}
+
+function bulletList(ctx, slide, items, x, y, w, options = {}) {
+  const gap = options.gap ?? 43;
+  items.forEach((item, i) => {
+    const yy = y + i * gap;
+    rect(ctx, slide, x, yy + 8, 10, 10, options.dot ?? C.coral);
+    addText(ctx, slide, item, x + 24, yy, w - 24, options.h ?? 34, {
+      size: options.size ?? 20,
+      color: options.color ?? C.ink,
+    });
+  });
+}
+
+function stage(ctx, slide, n, label, note, x, y, w, accent) {
+  rect(ctx, slide, x, y, w, 120, C.panel, C.line, 1);
+  rect(ctx, slide, x, y, w, 9, accent);
+  addText(ctx, slide, String(n), x + 18, y + 24, 34, 34, {
+    size: 24,
+    color: accent,
+    bold: true,
+    align: "center",
+  });
+  addText(ctx, slide, label, x + 62, y + 18, w - 80, 31, { size: 20, bold: true });
+  addText(ctx, slide, note, x + 62, y + 54, w - 80, 44, { size: 16, color: C.muted });
+}
+
+function slideCover(presentation, ctx, data) {
+  const slide = presentation.slides.add();
+  rect(ctx, slide, 0, 0, ctx.W, ctx.H, C.ink);
+  rect(ctx, slide, 0, 0, 426, ctx.H, C.teal);
+  rect(ctx, slide, 426, 0, 22, ctx.H, C.coral);
+  rect(ctx, slide, 980, 0, 300, ctx.H, C.paper);
+  addText(ctx, slide, "ИИ НА УРОКАХ ИНФОРМАТИКИ", 64, 52, 500, 28, { size: 16, color: C.paleMustard, bold: true });
+  addText(ctx, slide, "Использование ИИ на уроках информатики как средство развития функциональной грамотности", 64, 116, 790, 235, {
+    size: 47,
+    color: C.paper,
+    bold: true,
+    title: true,
+  });
+  addText(ctx, slide, "20 минут · выступление для педагогов", 68, 372, 430, 32, { size: 23, color: "#E6DCC5" });
+  const rails = [
+    ["1", "Формулируем задачу"],
+    ["2", "Проверяем результат"],
+    ["3", "Объясняем решение"],
+  ];
+  rails.forEach((r, i) => {
+    const y = 500 + i * 52;
+    rect(ctx, slide, 68, y, 34, 34, i === 1 ? C.mustard : C.coral);
+    addText(ctx, slide, r[0], 68, y + 4, 34, 24, { size: 17, color: C.ink, bold: true, align: "center" });
+    addText(ctx, slide, r[1], 118, y + 2, 280, 30, { size: 21, color: C.paper, bold: true });
+  });
+  addText(ctx, slide, "Главная рамка", 1018, 78, 190, 26, { size: 15, color: C.teal, bold: true });
+  addText(ctx, slide, "ИИ не заменяет учебное действие. Он делает видимыми вопрос, критерии, проверку и ответственность за итог.", 1018, 120, 198, 236, {
+    size: 25,
+    color: C.ink,
+    bold: true,
+    title: true,
+  });
+  rect(ctx, slide, 1018, 430, 164, 8, C.coral);
+  addText(ctx, slide, "Функциональная грамотность = знание, примененное в ситуации", 1018, 466, 198, 86, { size: 20, color: C.muted });
+  return slide;
+}
+
+function slideComparison(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  const cols = [
+    ["Было удобно оценивать", "правильный ответ", "термин", "готовую программу", "пересказ"],
+    ["Стало важно видеть", "как поставлена задача", "как проверен ответ", "где найдена ошибка", "как объяснен выбор"],
+    ["Роль учителя", "задает границы", "оценивает процесс", "учит проверке", "снимает магию с ИИ"],
+  ];
+  const accents = [C.slate, C.coral, C.teal];
+  cols.forEach((col, i) => {
+    const x = 78 + i * 382;
+    panel(ctx, slide, x, 218, 330, 330, C.panel, accents[i], col[0]);
+    bulletList(ctx, slide, col.slice(1), x + 25, 276, 280, { dot: accents[i], size: 20, gap: 50 });
+  });
+  rule(ctx, slide, 78, 594, 1078, C.ink, 2);
+  addText(ctx, slide, "Вывод для урока: ученик должен показать не только итог, но и управление цифровым результатом.", 80, 612, 940, 38, {
+    size: 23,
+    bold: true,
+    color: C.ink,
+  });
+  return slide;
+}
+
+function slideCompetency(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  rect(ctx, slide, 488, 278, 300, 126, C.ink);
+  addText(ctx, slide, "Функциональная\\nграмотность", 510, 298, 256, 72, {
+    size: 30,
+    color: C.paper,
+    bold: true,
+    align: "center",
+    valign: "middle",
+    title: true,
+  });
+  const nodes = [
+    ["Информационная", "найти, сравнить, проверить источник", 94, 238, C.coral],
+    ["Цифровая", "выбрать инструмент и понять ограничения", 855, 238, C.teal],
+    ["Алгоритмическая", "разложить задачу на шаги и тесты", 94, 460, C.mustard],
+    ["Работа с данными", "собрать, представить, сделать вывод", 855, 460, C.slate],
+  ];
+  nodes.forEach(([name, note, x, y, accent]) => {
+    panel(ctx, slide, x, y, 318, 118, C.panel, accent);
+    addText(ctx, slide, name, x + 26, y + 22, 245, 26, { size: 23, bold: true });
+    addText(ctx, slide, note, x + 26, y + 56, 252, 44, { size: 17, color: C.muted });
+  });
+  rule(ctx, slide, 412, 300, 76, C.line, 4);
+  rule(ctx, slide, 788, 300, 67, C.line, 4);
+  rule(ctx, slide, 412, 520, 76, C.line, 4);
+  rule(ctx, slide, 788, 520, 67, C.line, 4);
+  addText(ctx, slide, "ИИ полезен, если становится материалом для проверки, уточнения и аргументации.", 412, 574, 456, 50, {
+    size: 24,
+    color: C.teal,
+    bold: true,
+    align: "center",
+  });
+  return slide;
+}
+
+function slideLimits(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  panel(ctx, slide, 86, 222, 500, 370, C.panel, C.teal, "Что можно поручать ИИ");
+  bulletList(ctx, slide, [
+    "предложить варианты объяснения",
+    "создать черновик плана или задания",
+    "сформулировать тестовые случаи",
+    "помочь найти возможную ошибку",
+    "адаптировать текст под аудиторию",
+  ], 118, 288, 420, { dot: C.teal, size: 19, gap: 47 });
+  panel(ctx, slide, 684, 222, 500, 370, C.panel, C.coral, "Что остается за человеком");
+  bulletList(ctx, slide, [
+    "проверка фактов и источников",
+    "выбор корректного решения",
+    "защита персональных данных",
+    "учет класса и учебной цели",
+    "ответственность за итоговую работу",
+  ], 716, 288, 420, { dot: C.coral, size: 19, gap: 47 });
+  addText(ctx, slide, "Правило для учеников: ИИ предлагает, человек проверяет.", 198, 628, 886, 38, {
+    size: 30,
+    color: C.ink,
+    bold: true,
+    align: "center",
+    title: true,
+  });
+  return slide;
+}
+
+function slideCycle(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  const steps = [
+    ["Проблема", "жизненная или учебно-практическая ситуация"],
+    ["Запрос", "цель, данные, ограничения, формат"],
+    ["Ответ ИИ", "черновик, гипотеза, вариант"],
+    ["Проверка", "источники, тесты, учебник, обсуждение"],
+    ["Улучшение", "правка, уточнение, повторный запрос"],
+    ["Рефлексия", "что сработало и где была ошибка"],
+  ];
+  steps.forEach((s, i) => {
+    const x = 72 + (i % 3) * 386;
+    const y = i < 3 ? 232 : 414;
+    const accent = [C.coral, C.mustard, C.teal, C.slate, C.coral, C.teal][i];
+    stage(ctx, slide, i + 1, s[0], s[1], x, y, 318, accent);
+  });
+  rule(ctx, slide, 390, 288, 62, C.line, 4);
+  rule(ctx, slide, 776, 288, 62, C.line, 4);
+  rule(ctx, slide, 390, 470, 62, C.line, 4);
+  rule(ctx, slide, 776, 470, 62, C.line, 4);
+  addText(ctx, slide, "Если убрать проверку и рефлексию, останется списывание. Если оставить цикл, появляется грамотность.", 106, 626, 980, 40, {
+    size: 23,
+    color: C.ink,
+    bold: true,
+    align: "center",
+  });
+  return slide;
+}
+
+function slideScenarios(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  const cells = [
+    ["Информация", "проверить спорное утверждение", "критерии надежности, сравнение источников", C.coral],
+    ["Код", "найти ошибку через тесты", "гипотеза, запуск, исправление", C.teal],
+    ["Данные", "построить вывод по таблице", "визуализация, интерпретация, ограничения", C.mustard],
+    ["Продукт", "создать понятную инструкцию", "аудитория, точность, безопасность", C.slate],
+  ];
+  cells.forEach((cell, i) => {
+    const x = 96 + (i % 2) * 546;
+    const y = i < 2 ? 228 : 430;
+    panel(ctx, slide, x, y, 470, 142, C.panel, cell[3], cell[0]);
+    addText(ctx, slide, cell[1], x + 28, y + 58, 390, 30, { size: 24, bold: true });
+    addText(ctx, slide, cell[2], x + 28, y + 96, 390, 34, { size: 17, color: C.muted });
+  });
+  addText(ctx, slide, "Общий принцип: ИИ дает материал, ученик доказывает качество результата.", 158, 624, 960, 36, {
+    size: 24,
+    bold: true,
+    align: "center",
+    color: C.teal,
+  });
+  return slide;
+}
+
+function slideInfoExample(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  rect(ctx, slide, 86, 224, 464, 96, C.ink);
+  addText(ctx, slide, "Утверждение", 112, 242, 140, 24, { size: 16, color: C.mustard, bold: true });
+  addText(ctx, slide, "«Нейросети всегда точнее поисковых систем»", 112, 272, 386, 34, { size: 24, color: C.paper, bold: true });
+  const process = [
+    ["1", "Спросить ИИ", "получить план проверки"],
+    ["2", "Выбрать критерии", "достоверность, актуальность, проверяемость"],
+    ["3", "Сравнить источники", "найти совпадения и расхождения"],
+    ["4", "Сформулировать вывод", "где ИИ полезен, а где рискован"],
+  ];
+  process.forEach((p, i) => {
+    const y = 360 + i * 62;
+    rect(ctx, slide, 92, y, 42, 42, i === 0 ? C.coral : C.teal);
+    addText(ctx, slide, p[0], 92, y + 7, 42, 24, { size: 18, color: C.paper, bold: true, align: "center" });
+    addText(ctx, slide, p[1], 154, y, 230, 24, { size: 20, bold: true });
+    addText(ctx, slide, p[2], 154, y + 27, 410, 24, { size: 16, color: C.muted });
+  });
+  panel(ctx, slide, 684, 246, 438, 270, C.panel, C.mustard, "Что развивается");
+  bulletList(ctx, slide, [
+    "видеть проверяемые и непроверяемые утверждения",
+    "различать объяснение и доказательство",
+    "работать с критериями надежности",
+    "делать вывод с оговорками",
+  ], 718, 312, 360, { dot: C.mustard, size: 19, gap: 48 });
+  return slide;
+}
+
+function slideCodeExample(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  rect(ctx, slide, 86, 222, 480, 326, C.ink);
+  addText(ctx, slide, "Запрос к ИИ", 116, 248, 160, 22, { size: 16, color: C.mustard, bold: true });
+  addText(ctx, slide, "Проверь мой алгоритм. Не пиши готовую программу. Предложи 5 тестов и объясни, что каждый тест проверяет.", 116, 292, 398, 150, {
+    size: 27,
+    color: C.paper,
+    bold: true,
+    title: true,
+  });
+  addText(ctx, slide, "Формулировка ограничивает ИИ и оставляет ключевое действие ученику.", 116, 472, 388, 46, {
+    size: 18,
+    color: "#D8CDB8",
+  });
+  const tests = [
+    ["1", "крайний случай"],
+    ["2", "минимальное простое"],
+    ["9", "составное нечетное"],
+    ["17", "простое"],
+    ["25", "квадрат простого"],
+  ];
+  tests.forEach((t, i) => {
+    const y = 246 + i * 58;
+    rect(ctx, slide, 662, y, 74, 38, i % 2 ? C.paleTeal : C.paleMustard, C.line, 1);
+    addText(ctx, slide, t[0], 662, y + 5, 74, 24, { size: 18, bold: true, align: "center", color: C.ink });
+    addText(ctx, slide, t[1], 758, y + 4, 308, 28, { size: 19, color: C.ink });
+  });
+  rule(ctx, slide, 630, 570, 480, C.teal, 7);
+  addText(ctx, slide, "Оцениваем: найденную ошибку, доказательство исправления, объяснение логики тестов.", 630, 596, 502, 44, {
+    size: 21,
+    bold: true,
+    color: C.teal,
+  });
+  return slide;
+}
+
+function slideRubric(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  const rows = [
+    ["Постановка задачи", "цель, данные, ограничения", 0.92, C.teal],
+    ["Качество запроса", "роль, контекст, формат ответа", 0.82, C.coral],
+    ["Проверка результата", "источники, тесты, сверка", 0.96, C.mustard],
+    ["Улучшение", "правки после проверки", 0.72, C.slate],
+    ["Объяснение", "аргументация своими словами", 0.88, C.teal],
+  ];
+  rows.forEach((row, i) => {
+    const y = 228 + i * 70;
+    addText(ctx, slide, row[0], 104, y, 280, 24, { size: 21, bold: true });
+    addText(ctx, slide, row[1], 104, y + 28, 280, 22, { size: 15, color: C.muted });
+    rect(ctx, slide, 420, y + 8, 610, 18, "#E8DDC8");
+    rect(ctx, slide, 420, y + 8, 610 * row[2], 18, row[3]);
+    addText(ctx, slide, "0-2 балла", 1052, y + 1, 96, 24, { size: 17, color: C.muted, align: "right" });
+  });
+  addText(ctx, slide, "Такая рубрика делает видимым ход работы. Готовый ответ без процесса почти не набирает баллы.", 130, 616, 1010, 42, {
+    size: 24,
+    bold: true,
+    align: "center",
+  });
+  return slide;
+}
+
+function slideSafety(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  addText(ctx, slide, "Можно", 142, 224, 190, 34, { size: 30, bold: true, color: C.teal, title: true });
+  addText(ctx, slide, "Нельзя", 772, 224, 190, 34, { size: 30, bold: true, color: C.coral, title: true });
+  panel(ctx, slide, 100, 278, 440, 282, C.panel, C.teal);
+  bulletList(ctx, slide, [
+    "просить объяснение и примеры",
+    "получать идеи тестов",
+    "сравнивать варианты решения",
+    "улучшать формулировку",
+  ], 136, 324, 352, { dot: C.teal, size: 21, gap: 48 });
+  panel(ctx, slide, 724, 278, 440, 282, C.panel, C.coral);
+  bulletList(ctx, slide, [
+    "вводить персональные данные",
+    "сдавать ответ без проверки",
+    "скрывать использование ИИ",
+    "заменять ключевое действие урока",
+  ], 760, 324, 352, { dot: C.coral, size: 21, gap: 48 });
+  rect(ctx, slide, 610, 258, 18, 340, C.ink);
+  addText(ctx, slide, "Договор с классом: где ИИ разрешен, как фиксируем использование, что проверяем вручную.", 154, 618, 956, 40, {
+    size: 23,
+    bold: true,
+    align: "center",
+    color: C.ink,
+  });
+  return slide;
+}
+
+function slidePrompt(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index);
+  rect(ctx, slide, 92, 210, 710, 392, C.ink);
+  const lines = [
+    ["Роль", "Ты помощник по информатике."],
+    ["Задача", "Мне нужно проверить алгоритм / текст / вывод."],
+    ["Данные", "Вот исходные условия и что я уже сделал."],
+    ["Ограничения", "Не давай готовый ответ. Помоги проверить."],
+    ["Формат", "Список ошибок, тесты, критерии или план правки."],
+    ["Контроль", "Отметь, что нужно проверить вручную."],
+  ];
+  lines.forEach((line, i) => {
+    const y = 244 + i * 55;
+    addText(ctx, slide, line[0], 126, y, 118, 24, { size: 16, color: C.mustard, bold: true });
+    addText(ctx, slide, line[1], 250, y - 2, 492, 30, { size: 20, color: C.paper });
+    if (i < lines.length - 1) rule(ctx, slide, 126, y + 36, 612, "#394542", 1);
+  });
+  panel(ctx, slide, 858, 264, 300, 250, C.panel, C.mustard, "Почему работает");
+  bulletList(ctx, slide, [
+    "ученик сначала понимает задачу",
+    "появляются критерии качества",
+    "ИИ не получает роль автора работы",
+    "проверка встроена в запрос",
+  ], 890, 326, 230, { dot: C.mustard, size: 18, gap: 44 });
+  return slide;
+}
+
+function slideClose(presentation, ctx, data, index) {
+  const slide = presentation.slides.add();
+  base(ctx, slide, data, index, true);
+  addText(ctx, slide, "Формула первого шага", 88, 210, 360, 30, { size: 20, color: C.mustard, bold: true });
+  const steps = [
+    ["1 тема", "любой текущий раздел"],
+    ["1 инструмент", "один разрешенный ИИ-сервис"],
+    ["1 критерий", "что именно проверяем"],
+    ["1 вывод", "что ученик понял"],
+  ];
+  steps.forEach((s, i) => {
+    const x = 88 + i * 286;
+    rect(ctx, slide, x, 278, 224, 132, i % 2 ? C.paper : C.paleTeal);
+    addText(ctx, slide, s[0], x + 22, 302, 174, 30, { size: 25, bold: true, color: C.ink, title: true });
+    addText(ctx, slide, s[1], x + 22, 342, 168, 42, { size: 18, color: C.muted });
+  });
+  addText(ctx, slide, "ИИ становится средством развития функциональной грамотности, когда ученик отвечает не только за ответ, но и за способ его получения.", 112, 482, 998, 82, {
+    size: 31,
+    color: C.paper,
+    bold: true,
+    align: "center",
+    title: true,
+  });
+  addText(ctx, slide, "Источники: OECD PISA 2022 Assessment and Analytical Framework · UNESCO Guidance for generative AI in education and research · UNESCO AI competency framework for teachers", 86, 646, 1050, 32, {
+    size: 12,
+    color: "#CDBF9F",
+    align: "center",
+  });
+  return slide;
+}
+
+export async function renderSlide(presentation, ctx, index) {
+  const data = slides[index];
+  switch (data.type) {
+    case "cover":
+      return slideCover(presentation, ctx, data, index);
+    case "comparison":
+      return slideComparison(presentation, ctx, data, index);
+    case "competency":
+      return slideCompetency(presentation, ctx, data, index);
+    case "limits":
+      return slideLimits(presentation, ctx, data, index);
+    case "cycle":
+      return slideCycle(presentation, ctx, data, index);
+    case "scenarios":
+      return slideScenarios(presentation, ctx, data, index);
+    case "infoExample":
+      return slideInfoExample(presentation, ctx, data, index);
+    case "codeExample":
+      return slideCodeExample(presentation, ctx, data, index);
+    case "rubric":
+      return slideRubric(presentation, ctx, data, index);
+    case "safety":
+      return slideSafety(presentation, ctx, data, index);
+    case "prompt":
+      return slidePrompt(presentation, ctx, data, index);
+    case "close":
+      return slideClose(presentation, ctx, data, index);
+    default:
+      throw new Error(\`Unknown slide type: \${data.type}\`);
+  }
+}
+`;
+
+await writeFile(path.join(outputDir, "tekst_vystupleniya_ii_funkcionalnaya_gramotnost.md"), speech);
+await writeFile(path.join(workspace, "profile-plan.txt"), profilePlan);
+await writeFile(path.join(workspace, "source-notes.txt"), sourceNotes);
+await writeFile(path.join(workspace, "reference-audit.txt"), referenceAudit);
+await writeFile(path.join(workspace, "claim-spine.txt"), claimSpine);
+await writeFile(path.join(workspace, "design-system.txt"), designSystem);
+await writeFile(path.join(workspace, "contact-sheet-plan.txt"), contactSheetPlan);
+await writeFile(path.join(qaDir, "comeback-scorecard.txt"), scorecard);
+await writeFile(path.join(slidesDir, "content.mjs"), contentModule);
+
+for (let index = 0; index < 12; index += 1) {
+  const number = String(index + 1).padStart(2, "0");
+  const functionName = `slide${number}`;
+  await writeFile(
+    path.join(slidesDir, `slide-${number}.mjs`),
+    `
+import { renderSlide } from "./content.mjs";
+
+export async function ${functionName}(presentation, ctx) {
+  return renderSlide(presentation, ctx, ${index});
+}
+`,
+  );
+}
+
+console.log(JSON.stringify({
+  speech: path.join(outputDir, "tekst_vystupleniya_ii_funkcionalnaya_gramotnost.md"),
+  slidesDir,
+}, null, 2));

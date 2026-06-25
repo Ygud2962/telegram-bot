@@ -1,0 +1,13 @@
+Sources used:
+1. OECD, PISA 2022 Assessment and Analytical Framework, 31 August 2023.
+   Used for framing literacy as application of knowledge and skills in modern contexts.
+   URL: https://www.oecd.org/en/publications/pisa-2022-assessment-and-analytical-framework_dfe0bf9c-en.html
+2. UNESCO, Guidance for generative AI in education and research, 2023.
+   Used for responsible generative AI framing: human oversight, safety, privacy, teacher role.
+   URL: https://unesdoc.unesco.org/ark:/48223/pf0000386693
+3. UNESCO, AI competency framework for teachers, 2024.
+   Used for teacher competency framing and AI literacy principles.
+   URL: https://unesdoc.unesco.org/ark:/48223/pf0000391104
+
+Identity assets:
+No logos, app icons, partner marks, product UI, or unofficial brand marks are embedded.

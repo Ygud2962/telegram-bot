@@ -1,0 +1,12 @@
+1 cover with thesis rail
+2 three-column comparison
+3 radial competency map
+4 two-column capability/boundary map
+5 horizontal workflow
+6 scenario matrix
+7 source verification process
+8 code/debug pipeline
+9 assessment rubric bars
+10 safety boundary
+11 prompt template specimen
+12 action strip with conclusion and sources

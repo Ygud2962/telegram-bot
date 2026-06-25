@@ -1,0 +1,9 @@
+Slide size: 1280x720.
+Background: warm paper (#F6F0E3) with dark ink section bands and thin accent rules.
+Typography: Aptos Display for claims, Aptos for body and labels.
+Palette: ink #172021, paper #F6F0E3, muted teal #116466, coral #D85C42, mustard #E3B448, blue-gray #5E7480, soft white #FBF8EF.
+Chart grammar: authored editable primitives, direct labels, no legends unless necessary.
+Diagram grammar: numbered stages, visible grouping, no vague AI boxes.
+Footer/source grammar: quiet footer on source-bearing slides.
+Layout families: cover thesis rail, comparison table, competency map, two-column map, workflow, matrix, scenario process, rubric bars, safety boundary, prompt template, action close.
+Banned motifs: purple gradients, decorative orbs, unofficial logos, dense prose walls.

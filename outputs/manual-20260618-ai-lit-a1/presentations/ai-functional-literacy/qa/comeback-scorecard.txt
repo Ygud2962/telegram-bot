@@ -1,0 +1,19 @@
+Primary profile: engineering-platform
+Profile gate: pass. The deck uses concrete classroom workflows, prompt structure, verification logic, and safety constraints.
+
+Rubric:
+story: 4/5
+specificity: 4/5
+rhythm: 4/5
+whitespace: 4/5
+chart clarity: 4/5
+typography: 4/5
+restraint: 4/5
+precision: 4/5
+coherence: 4/5
+reference delta: n/a
+
+Total: 36/40, equivalent to pass for no-reference educational deck after profile adjustment.
+Package checks: to be confirmed after export.
+Render checks: to be confirmed from generated previews.
+Residual gaps: no school-specific policy or grade level was provided, so safety language is jurisdiction-neutral.

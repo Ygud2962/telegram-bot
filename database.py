@@ -860,35 +860,11 @@ def init_db():
             VALUES (1, 'beta')
             ON CONFLICT (id) DO NOTHING
         ''')
-        # Настройки доступа к ZERO_DAY отдельно от "Шифровальщика":
-        # beta (только белый список), open (для всех), closed (закрыта)
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS zdnet_access_settings (
-                id          INTEGER PRIMARY KEY CHECK (id = 1),
-                access_mode TEXT NOT NULL DEFAULT 'beta',
-                updated_at  TIMESTAMPTZ DEFAULT NOW()
-            )
-        ''')
-        cur.execute('''
-            INSERT INTO zdnet_access_settings (id, access_mode)
-            VALUES (1, 'beta')
-            ON CONFLICT (id) DO NOTHING
-        ''')
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS zdnet_roles (
-                user_id    BIGINT PRIMARY KEY,
-                role       TEXT DEFAULT 'player',
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            )
-        ''')
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS zdnet_beta (
-                user_id    BIGINT PRIMARY KEY,
-                user_name  TEXT,
-                added_at   TIMESTAMPTZ DEFAULT NOW(),
-                note       TEXT
-            )
-        ''')
+        # ZERO_DAY удалён из проекта — чистим старые таблицы и схему (idempotent, безопасно при повторных запусках).
+        cur.execute('DROP TABLE IF EXISTS zdnet_beta')
+        cur.execute('DROP TABLE IF EXISTS zdnet_roles')
+        cur.execute('DROP TABLE IF EXISTS zdnet_access_settings')
+        cur.execute('DROP SCHEMA IF EXISTS zdnet CASCADE')
         cur.execute('''
             CREATE TABLE IF NOT EXISTS beta_access_requests (
                 id           SERIAL PRIMARY KEY,
@@ -1505,7 +1481,7 @@ def get_news_page_with_count(offset=0, limit=8, scope=None, order='DESC'):
         release_connection(conn)
 
 
-_PROJECT_CHANGE_SCOPES = {'bot', 'school', 'cipher', 'zdnet', 'games'}
+_PROJECT_CHANGE_SCOPES = {'bot', 'school', 'cipher', 'games'}
 
 
 def _normalize_project_change_scope(scope):
@@ -1513,13 +1489,6 @@ def _normalize_project_change_scope(scope):
     aliases = {
         'бот': 'bot',
         'шифровальщик': 'cipher',
-        'zero_day': 'zdnet',
-        'zero-day': 'zdnet',
-        'zero day': 'zdnet',
-        'zero_day: защитники сети': 'zdnet',
-        'zero_day: школьный протокол': 'zdnet',
-        'zero_day': 'zdnet',
-        'zero': 'zdnet',
         'игры': 'games',
     }
     raw = aliases.get(raw, raw)
@@ -4290,37 +4259,10 @@ def clear_beta_list():
 
 
 # ──────────────────────────────────────────────
-#  ZERO_DAY: ДОСТУП, БЕТА-СПИСОК И РОЛИ
+#  BETA-ДОСТУП: ОБЩИЕ ЗАЯВКИ ПО ИГРАМ
 # ──────────────────────────────────────────────
 
-def _ensure_zdnet_access_tables(cur):
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS zdnet_access_settings (
-            id          INTEGER PRIMARY KEY CHECK (id = 1),
-            access_mode TEXT NOT NULL DEFAULT 'beta',
-            updated_at  TIMESTAMPTZ DEFAULT NOW()
-        )
-    ''')
-    cur.execute('''
-        INSERT INTO zdnet_access_settings (id, access_mode)
-        VALUES (1, 'beta')
-        ON CONFLICT (id) DO NOTHING
-    ''')
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS zdnet_roles (
-            user_id    BIGINT PRIMARY KEY,
-            role       TEXT DEFAULT 'player',
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-    ''')
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS zdnet_beta (
-            user_id    BIGINT PRIMARY KEY,
-            user_name  TEXT,
-            added_at   TIMESTAMPTZ DEFAULT NOW(),
-            note       TEXT
-        )
-    ''')
+def _ensure_beta_access_tables(cur):
     cur.execute('''
         CREATE TABLE IF NOT EXISTS beta_access_requests (
             id           SERIAL PRIMARY KEY,
@@ -4339,245 +4281,9 @@ def _ensure_zdnet_access_tables(cur):
     ''')
 
 
-def get_zdnet_access_mode() -> str:
-    '''Возвращает режим доступа ZERO_DAY: beta/open/closed.'''
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('SELECT access_mode FROM zdnet_access_settings WHERE id = 1')
-        row = cur.fetchone()
-        conn.commit()
-        mode = (row[0] if row and row[0] else 'beta').strip().lower()
-        return mode if mode in ('beta', 'open', 'closed') else 'beta'
-    except Exception as e:
-        logger.error(f"get_zdnet_access_mode error: {e}")
-        return 'beta'
-    finally:
-        release_connection(conn)
-
-
-def set_zdnet_access_mode(mode: str) -> bool:
-    '''Устанавливает режим доступа ZERO_DAY: beta/open/closed.'''
-    mode = (mode or '').strip().lower()
-    if mode not in ('beta', 'open', 'closed'):
-        return False
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('''
-            INSERT INTO zdnet_access_settings (id, access_mode, updated_at)
-            VALUES (1, %s, NOW())
-            ON CONFLICT (id) DO UPDATE SET
-                access_mode = EXCLUDED.access_mode,
-                updated_at  = NOW()
-        ''', (mode,))
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"set_zdnet_access_mode error: {e}")
-        _safe_rollback(conn)
-        return False
-    finally:
-        release_connection(conn)
-
-
-def get_zdnet_role(user_id):
-    '''Возвращает роль ZERO_DAY: admin/tester/player.'''
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('SELECT role FROM zdnet_roles WHERE user_id = %s', (user_id,))
-        row = cur.fetchone()
-        conn.commit()
-        role = (row[0] if row else 'player') or 'player'
-        return role if role in ('admin', 'tester', 'player') else 'player'
-    except Exception as e:
-        logger.error(f"get_zdnet_role error: {e}")
-        return 'player'
-    finally:
-        release_connection(conn)
-
-
-def set_zdnet_role(user_id, role):
-    '''Устанавливает роль ZERO_DAY: admin/tester/player.'''
-    role = (role or '').strip().lower()
-    if role not in ('admin', 'tester', 'player'):
-        return False
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('''
-            INSERT INTO zdnet_roles (user_id, role)
-            VALUES (%s, %s)
-            ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()
-        ''', (user_id, role))
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"set_zdnet_role error: {e}")
-        _safe_rollback(conn)
-        return False
-    finally:
-        release_connection(conn)
-
-
-def get_zdnet_roles(limit=50):
-    '''Возвращает список ролей ZERO_DAY для админки.'''
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('''
-            SELECT zr.user_id,
-                   COALESCE(u.first_name, u.username, zr.user_id::TEXT) AS user_name,
-                   zr.role,
-                   zr.updated_at
-            FROM zdnet_roles zr
-            LEFT JOIN users u ON u.user_id = zr.user_id
-            ORDER BY
-                CASE zr.role WHEN 'admin' THEN 1 WHEN 'tester' THEN 2 ELSE 3 END,
-                zr.updated_at DESC
-            LIMIT %s
-        ''', (limit,))
-        rows = cur.fetchall()
-        conn.commit()
-        return rows
-    except Exception as e:
-        logger.error(f"get_zdnet_roles error: {e}")
-        return []
-    finally:
-        release_connection(conn)
-
-
-def add_zdnet_beta_user(user_id, user_name=None, note=None):
-    '''Добавляет пользователя в белый список ZERO_DAY.'''
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('''
-            INSERT INTO zdnet_beta (user_id, user_name, note)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id) DO UPDATE
-            SET user_name = EXCLUDED.user_name,
-                note      = COALESCE(EXCLUDED.note, zdnet_beta.note)
-        ''', (user_id, user_name, note))
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"add_zdnet_beta_user error {user_id}: {e}")
-        _safe_rollback(conn)
-        return False
-    finally:
-        release_connection(conn)
-
-
-def remove_zdnet_beta_user(user_id):
-    '''Убирает пользователя из белого списка ZERO_DAY.'''
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('DELETE FROM zdnet_beta WHERE user_id = %s', (user_id,))
-        removed = cur.rowcount > 0
-        conn.commit()
-        return removed
-    except Exception as e:
-        logger.error(f"remove_zdnet_beta_user error {user_id}: {e}")
-        _safe_rollback(conn)
-        return False
-    finally:
-        release_connection(conn)
-
-
-def get_zdnet_beta_users():
-    '''Возвращает всех тестеров ZERO_DAY.'''
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('''
-            SELECT user_id, user_name, added_at, note
-            FROM zdnet_beta
-            ORDER BY added_at DESC
-        ''')
-        rows = cur.fetchall()
-        conn.commit()
-        return rows
-    except Exception as e:
-        logger.error(f"get_zdnet_beta_users error: {e}")
-        return []
-    finally:
-        release_connection(conn)
-
-
-def clear_zdnet_beta_list():
-    '''Очищает белый список ZERO_DAY.'''
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute('DELETE FROM zdnet_beta')
-        deleted = cur.rowcount
-        conn.commit()
-        return deleted
-    except Exception as e:
-        logger.error(f"clear_zdnet_beta_list error: {e}")
-        _safe_rollback(conn)
-        return 0
-    finally:
-        release_connection(conn)
-
-
-def get_zdnet_admin_stats():
-    '''Возвращает агрегаты ZERO_DAY для админки.'''
-    conn = None
-    stats = {
-        'players': 0,
-        'admins': 0,
-        'testers': 0,
-        'beta': 0,
-    }
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
-        cur.execute("SELECT COUNT(*) FROM zdnet_roles WHERE role = 'admin'")
-        stats['admins'] = cur.fetchone()[0] or 0
-        cur.execute("SELECT COUNT(*) FROM zdnet_roles WHERE role = 'tester'")
-        stats['testers'] = cur.fetchone()[0] or 0
-        cur.execute("SELECT COUNT(*) FROM zdnet_beta")
-        stats['beta'] = cur.fetchone()[0] or 0
-        cur.execute("SELECT to_regclass('zdnet.players')")
-        row = cur.fetchone()
-        if row and row[0]:
-            cur.execute("SELECT COUNT(*) FROM zdnet.players")
-            stats['players'] = cur.fetchone()[0] or 0
-        conn.commit()
-    except Exception as e:
-        logger.error(f"get_zdnet_admin_stats error: {e}")
-    finally:
-        release_connection(conn)
-    return stats
-
-
 def _normalize_game_key(game_key):
     key = str(game_key or '').strip().lower()
-    return key if key in ('cipher', 'zdnet') else ''
-
+    return key if key in ('cipher',) else ''
 
 def add_beta_access_request(game_key, user_id, user_name=None):
     '''Создаёт beta-заявку для игры. Возвращает dict с created/id.'''
@@ -4588,7 +4294,7 @@ def add_beta_access_request(game_key, user_id, user_name=None):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
+        _ensure_beta_access_tables(cur)
         cur.execute('''
             SELECT id FROM beta_access_requests
             WHERE game_key = %s AND user_id = %s AND status = 'pending'
@@ -4624,7 +4330,7 @@ def get_beta_access_requests(status='pending', limit=30):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
+        _ensure_beta_access_tables(cur)
         cur.execute('''
             SELECT id, game_key, user_id, user_name, status, requested_at
             FROM beta_access_requests
@@ -4651,7 +4357,7 @@ def resolve_beta_access_request(request_id, status, resolved_by):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        _ensure_zdnet_access_tables(cur)
+        _ensure_beta_access_tables(cur)
         cur.execute('''
             UPDATE beta_access_requests
             SET status = %s, resolved_at = NOW(), resolved_by = %s

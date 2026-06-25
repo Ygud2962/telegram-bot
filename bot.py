@@ -195,15 +195,7 @@ GPT_AVAILABLE = bool(GROQ_API_KEY)
 GAME_URL      = (os.environ.get('GAME_URL', '') or '').strip()
 if GAME_URL and not GAME_URL.startswith('http'):
     GAME_URL = 'https://' + GAME_URL
-ZDNET_URL = (os.environ.get('ZDNET_URL', '') or '').strip()
-if ZDNET_URL and not ZDNET_URL.startswith('http'):
-    ZDNET_URL = 'https://' + ZDNET_URL
-ZDNET_API_URL = (os.environ.get('ZDNET_API_URL', '') or '').strip()
-if ZDNET_API_URL and not ZDNET_API_URL.startswith('http'):
-    ZDNET_API_URL = 'https://' + ZDNET_API_URL
-ZDNET_REPO = None
-ZDNET_BACKEND_ERROR: str | None = None
-# Public URL бота на Railway (для приёма sync запросов из игры)
+
 # Приоритет: BOT_PUBLIC_URL (ручная) > RAILWAY_PUBLIC_DOMAIN (авто)
 BOT_PUBLIC_URL = (
     os.environ.get('BOT_PUBLIC_URL', '')
@@ -212,10 +204,6 @@ BOT_PUBLIC_URL = (
 )
 if BOT_PUBLIC_URL and not BOT_PUBLIC_URL.startswith('http'):
     BOT_PUBLIC_URL = 'https://' + BOT_PUBLIC_URL
-if not ZDNET_URL and BOT_PUBLIC_URL:
-    ZDNET_URL = BOT_PUBLIC_URL.rstrip('/') + '/zdnet/'
-if not ZDNET_API_URL and BOT_PUBLIC_URL:
-    ZDNET_API_URL = BOT_PUBLIC_URL.rstrip('/') + '/zdnet_api'
 def _origin_from_url(raw_url: str) -> str:
     if not raw_url:
         return ''
@@ -230,8 +218,6 @@ def _origin_from_url(raw_url: str) -> str:
 
 _ALLOWED_GAME_ORIGINS: tuple[str, ...] = tuple(dict.fromkeys(filter(None, (
     _origin_from_url(GAME_URL),
-    _origin_from_url(ZDNET_URL),
-    _origin_from_url(ZDNET_API_URL),
     _origin_from_url(BOT_PUBLIC_URL),
 ))))
 
@@ -257,7 +243,6 @@ if not (1 <= PORT <= 65535):
 # Принята "честная" схема по количеству деплоев: X.Y.Z ~= сотни/десятки/единицы.
 BOT_VERSION = os.environ.get('BOT_VERSION', '9.8.0').strip() or '9.8.0'
 GAME_VERSION = os.environ.get('GAME_VERSION', '1.7.78').strip() or '1.7.78'
-ZDNET_VERSION = os.environ.get('ZDNET_VERSION', '0.1.0').strip() or '0.1.0'
 PROJECT_AUTHOR_LABEL = os.environ.get('PROJECT_AUTHOR_LABEL', 'Автор проекта').strip() or 'Автор проекта'
 PROJECT_AUTHOR_URL = os.environ.get('PROJECT_AUTHOR_URL', 'https://t.me/Yury_hud').strip()
 if PROJECT_AUTHOR_URL.startswith('@'):
@@ -274,10 +259,6 @@ _beta_cache_ts: float = 0
 # Кэш режима доступа к игре
 _game_mode_cache: str = 'beta'
 _game_mode_cache_ts: float = 0
-_zdnet_beta_cache: set = set()
-_zdnet_beta_cache_ts: float = 0
-_zdnet_mode_cache: str = 'beta'
-_zdnet_mode_cache_ts: float = 0
 
 
 # ══════════════════════════════════════════════════════════
@@ -1171,22 +1152,9 @@ def game_access_notice(game_title: str, mode: str) -> str:
 
 GAME_TITLES = {
     'cipher': 'Шифровальщик',
-    'zdnet': 'ZERO_DAY',
 }
 
 PROJECT_UPDATES = [
-    {
-        'date': '16.06.2026',
-        'scope': 'ZERO_DAY',
-        'title': 'Сюжетные эпизоды',
-        'text': 'Добавлен экран сюжета с прогрессом сезона, карточками эпизодов, уроками и фактами по кибербезопасности.',
-    },
-    {
-        'date': '16.06.2026',
-        'scope': 'ZERO_DAY',
-        'title': 'Магазин через Telegram Stars',
-        'text': 'В магазине появилась понятная подсказка: покупки доступны при запуске игры через Telegram, а не в offline/mock-режиме.',
-    },
     {
         'date': '29.05.2026',
         'scope': 'Бот',
@@ -1204,12 +1172,6 @@ PROJECT_UPDATES = [
         'scope': 'Бот',
         'title': 'Заявки на beta-доступ',
         'text': 'Игрок может отправить заявку прямо из beta-уведомления, а администратор принять или отклонить её.',
-    },
-    {
-        'date': '29.05.2026',
-        'scope': 'ZERO_DAY',
-        'title': 'Защита закрытого режима',
-        'text': 'Закрытая игра больше не должна запускаться напрямую: пользователь видит понятное уведомление и ссылку на автора.',
     },
     {
         'date': '29.05.2026',
@@ -1236,79 +1198,6 @@ def game_access_rows(game_key: str, mode: str, back_callback: str = 'menu_games'
     return rows
 
 
-def zdnet_access_page(mode: str) -> str:
-    title = "ZERO_DAY закрыт" if mode == 'closed' else "ZERO_DAY в beta-режиме"
-    body = (
-        "Игра сейчас закрыта для запуска. Идут технические работы или подготовка обновления."
-        if mode == 'closed'
-        else "Игра доступна только через кнопку в боте для пользователей из beta-списка."
-    )
-    author_link = (
-        f'<a class="btn" href="{PROJECT_AUTHOR_URL}" target="_blank" rel="noopener">{PROJECT_AUTHOR_LABEL}</a>'
-        if PROJECT_AUTHOR_URL else ''
-    )
-    return f"""<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
-  <style>
-    html,body{{height:100%;margin:0;background:#050607;color:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
-    body{{display:grid;place-items:center;padding:24px;box-sizing:border-box}}
-    .card{{max-width:420px;padding:28px;border:1px solid rgba(255,255,255,.16);border-radius:28px;background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04));box-shadow:0 24px 80px rgba(0,0,0,.45);text-align:center}}
-    h1{{margin:0 0 12px;font-size:28px;letter-spacing:-.04em}}
-    p{{margin:0 0 20px;color:#aab3c2;line-height:1.45}}
-    .btn{{display:inline-block;padding:12px 16px;border-radius:999px;background:#007aff;color:#fff;text-decoration:none;font-weight:800}}
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>{title}</h1>
-    <p>{body}</p>
-    <p>Все вопросы по доступу — к автору проекта.</p>
-    {author_link}
-  </main>
-</body>
-</html>"""
-
-
-def sign_zdnet_launch_payload(payload: dict) -> str:
-    secret = (TOKEN or '').encode('utf-8')
-    unsigned = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-    return hmac.new(secret, unsigned.encode('utf-8'), hashlib.sha256).hexdigest()
-
-
-def build_zdnet_launch_payload(user_id: int, mode: str, role: str) -> str:
-    payload = {
-        'screen': 'map',
-        'api': ZDNET_API_URL,
-        'v': ZDNET_VERSION,
-        'uid': int(user_id),
-        'mode': mode,
-        'role': role,
-        'ts': int(time.time()),
-    }
-    payload['sig'] = sign_zdnet_launch_payload(payload)
-    return urllib.parse.quote(json.dumps(payload, ensure_ascii=False))
-
-
-def verify_zdnet_launch_payload(raw_payload: str, ttl_sec: int = 900) -> tuple[bool, dict]:
-    if not raw_payload:
-        return False, {}
-    try:
-        payload = json.loads(urllib.parse.unquote(raw_payload))
-        sig = str(payload.pop('sig', ''))
-        ts = int(payload.get('ts') or 0)
-        if ts <= 0 or abs(int(time.time()) - ts) > ttl_sec:
-            return False, {}
-        expected = sign_zdnet_launch_payload(payload)
-        if not hmac.compare_digest(sig, expected):
-            return False, {}
-        return True, payload
-    except Exception:
-        return False, {}
-
 # Ключи, которые относятся к текущему «флоу» и могут быть безопасно сброшены
 _FLOW_KEYS = (
     'adding_sub', 'sub_step', 'sub_data', 'sub_date', 'sub_day',
@@ -1326,7 +1215,6 @@ _FLOW_KEYS = (
     'deleting_sub', 'searching_teacher', 'found_teachers',
     'awaiting_ai', 'registering_teacher',
     'schedule_chapter', 'beta_action',
-    'zdnet_beta_action', 'zdnet_role_action',
 )
 
 
@@ -2726,16 +2614,11 @@ async def cmd_teacher(update: Update, context: CallbackContext):
 async def cmd_version(update: Update, context: CallbackContext):
     """Показывает текущие версии бота и игры."""
     game_url_state = "настроен" if GAME_URL else "не задан"
-    zdnet_url_state = "настроен" if ZDNET_URL else "не задан"
-    zdnet_api_state = "настроен" if ZDNET_API_URL else "не задан"
     msg = (
         "🧩 <b>Версии системы</b>\n\n"
         f"🤖 Бот: <b>{BOT_VERSION}</b>\n"
         f"🎮 Игра: <b>{GAME_VERSION}</b>\n"
-        f"🛡 ZERO_DAY: <b>{ZDNET_VERSION}</b>\n"
         f"🌐 GAME_URL: <b>{game_url_state}</b>\n"
-        f"🌐 ZDNET_URL: <b>{zdnet_url_state}</b>\n"
-        f"🔌 ZDNET_API_URL: <b>{zdnet_api_state}</b>\n"
     )
     await update.message.reply_text(msg, parse_mode='HTML')
 
@@ -3350,10 +3233,6 @@ def project_update_dedupe_key(item: dict) -> str:
 
 
 PROJECT_CHANGE_PATH_RULES = (
-    ('zero-day-defenders-network/frontend/', 'zdnet', 'интерфейс ZERO_DAY'),
-    ('zero-day-defenders-network/backend/', 'zdnet', 'backend ZERO_DAY'),
-    ('zero-day-defenders-network/schemas/', 'zdnet', 'данные ZERO_DAY'),
-    ('zero-day-defenders-network/docs/', 'zdnet', 'документация ZERO_DAY'),
     ('game/', 'cipher', 'игра Шифровальщик'),
     ('bot.py', 'bot', 'бот'),
     ('database.py', 'bot', 'база данных бота'),
@@ -3527,7 +3406,6 @@ def project_scope_label(scope: str) -> str:
     return {
         'bot': 'Бот',
         'cipher': 'Шифровальщик',
-        'zdnet': 'ZERO_DAY',
         'games': 'Игры',
         'school': 'Школа',
     }.get(str(scope or 'bot').lower(), 'Бот')
@@ -3810,60 +3688,6 @@ async def is_game_allowed(user_id: int) -> bool:
     return user_id in _beta_cache
 
 
-async def _get_cached_zdnet_mode() -> str:
-    import time
-    global _zdnet_mode_cache, _zdnet_mode_cache_ts
-    if time.time() - _zdnet_mode_cache_ts > 30:
-        _zdnet_mode_cache = await asyncio.to_thread(db.get_zdnet_access_mode)
-        _zdnet_mode_cache_ts = time.time()
-    if _zdnet_mode_cache not in ('beta', 'open', 'closed'):
-        _zdnet_mode_cache = 'beta'
-    return _zdnet_mode_cache
-
-
-async def is_zdnet_privileged_async(user_id: int, *, bot_admin: bool | None = None,
-                                    zdnet_role: str | None = None) -> bool:
-    if bot_admin is None:
-        bot_admin = await is_bot_admin_async(user_id)
-    if bot_admin:
-        return True
-    if zdnet_role is None:
-        try:
-            zdnet_role = await asyncio.to_thread(db.get_zdnet_role, user_id)
-        except Exception:
-            zdnet_role = None
-    return zdnet_role == 'admin'
-
-
-async def is_zdnet_allowed(user_id: int) -> bool:
-    """Доступ к ZERO_DAY по режимам closed / beta / open."""
-    import time
-    global _zdnet_beta_cache, _zdnet_beta_cache_ts
-
-    bot_admin = await is_bot_admin_async(user_id)
-    try:
-        role = await asyncio.to_thread(db.get_zdnet_role, user_id)
-    except Exception:
-        role = 'player'
-
-    if bot_admin or role == 'admin':
-        return True
-
-    mode = await _get_cached_zdnet_mode()
-    if mode == 'closed':
-        return False
-    if role == 'tester':
-        return mode in ('beta', 'open')
-    if mode == 'open':
-        return True
-
-    if time.time() - _zdnet_beta_cache_ts > 60:
-        rows = await asyncio.to_thread(db.get_zdnet_beta_users)
-        _zdnet_beta_cache = {r[0] for r in rows}
-        _zdnet_beta_cache_ts = time.time()
-    return user_id in _zdnet_beta_cache
-
-
 async def menu_game(query, context):
     """Запуск игры Шифровальщик с учётом роли (admin/tester/player)."""
     await query.answer()
@@ -4141,64 +3965,6 @@ async def menu_game(query, context):
         "🏆 <b>Таблица лидеров</b> всей школы"
         + my_info + role_hint,
         parse_mode='HTML', reply_markup=kb
-    )
-
-
-async def menu_zdnet(query, context):
-    """Запуск ZERO_DAY: Защитники сети как Telegram Mini App."""
-    user = query.from_user
-    mode = await _get_cached_zdnet_mode()
-    if mode == 'closed':
-        await safe_edit(query, game_access_notice("ZERO_DAY", mode), game_access_rows('zdnet', mode))
-        return
-    if not await is_zdnet_allowed(user.id):
-        await safe_edit(query, game_access_notice("ZERO_DAY", mode), game_access_rows('zdnet', mode))
-        return
-
-    if not ZDNET_URL:
-        await safe_edit(
-            query,
-            "🛡 <b>ZERO_DAY: ЗАЩИТНИКИ СЕТИ</b>\n\n"
-            "⚠️ Mini App пока не настроен.\n\n"
-            "Нужно задать <code>BOT_PUBLIC_URL</code> или <code>ZDNET_URL</code>, "
-            "чтобы Telegram мог открыть игру по HTTPS.\n\n"
-            "Все вопросы по доступу — к автору проекта.",
-            author_contact_rows(),
-        )
-        return
-
-    from telegram import InlineKeyboardButton, WebAppInfo
-    try:
-        access_mode = mode
-        zdnet_role = await asyncio.to_thread(db.get_zdnet_role, user.id)
-    except Exception:
-        access_mode, zdnet_role = 'beta', 'player'
-
-    payload = build_zdnet_launch_payload(user.id, access_mode, zdnet_role)
-    zdnet_url = build_game_launch_url(ZDNET_URL, ZDNET_VERSION, payload)
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛡 ОТКРЫТЬ ZERO_DAY", web_app=WebAppInfo(url=zdnet_url))],
-        [InlineKeyboardButton("🎮 Другие игры", callback_data='menu_games')],
-        [InlineKeyboardButton("🏠 Главное меню", callback_data='back_to_main')],
-    ])
-    await query.message.edit_text(
-        "🛡 <b>ZERO_DAY: ЗАЩИТНИКИ СЕТИ</b>\n"
-        "<i>Telegram Mini App · SOC-симулятор</i>\n\n"
-        f"🔐 Режим доступа: <b>{ {'beta': 'бета', 'open': 'открыта', 'closed': 'закрыта'}.get(access_mode, access_mode) }</b>"
-        f" · роль: <b>{zdnet_role}</b>\n\n"
-        "Ты — стажёр Центра оперативного реагирования Нового Сектора.\n"
-        "На карте появляются угрозы, а твоя задача — нейтрализовать их через "
-        "свайпы, графы, пазлы и мини-игры без скучных тестов.\n\n"
-        "⚡ Энергия аналитика: 12 действий в день\n"
-        "🃏 Коллекция: карточки угроз и редкости\n"
-        "🐉 Демон: кибер-питомец и помощник\n"
-        "🛡 Отряд: общий щит, рейды и школьная лига\n\n"
-        f"🌐 Frontend: <code>{ZDNET_URL}</code>\n"
-        f"🔌 API: <code>{ZDNET_API_URL or 'не настроен'}</code>",
-        parse_mode='HTML',
-        reply_markup=kb,
-        disable_web_page_preview=True,
     )
 
 
@@ -5641,239 +5407,6 @@ async def admin_game_reset_all_confirm(query, context, drop_referrals: bool = Fa
 
 
 # ══════════════════════════════════════════════════════════
-#  АДМИН: ZERO_DAY
-# ══════════════════════════════════════════════════════════
-
-async def admin_zdnet_panel(query, context):
-    """Панель управления доступом ZERO_DAY."""
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-
-    access_mode, beta_users, roles, stats = await asyncio.gather(
-        asyncio.to_thread(db.get_zdnet_access_mode),
-        asyncio.to_thread(db.get_zdnet_beta_users),
-        asyncio.to_thread(db.get_zdnet_roles, 50),
-        asyncio.to_thread(db.get_zdnet_admin_stats),
-    )
-    beta_count = len(beta_users)
-    role_count = len(roles)
-    mode_labels = {
-        'beta': f"🧪 Бета-режим ({beta_count})",
-        'open': "🟢 Игра открыта",
-        'closed': "🔒 Игра закрыта",
-    }
-    mode_btns = {
-        'beta': btn("🧪 Бета", 'zdnet_mode_beta'),
-        'open': btn("🟢 Открыта", 'zdnet_mode_open'),
-        'closed': btn("🔒 Закрыта", 'zdnet_mode_closed'),
-    }
-    if access_mode in mode_btns:
-        current = mode_btns.pop(access_mode)
-        mode_row = [btn(f"✅ {current.text}", 'noop')]
-    else:
-        mode_row = [btn(f"✅ {mode_labels.get(access_mode, access_mode)}", 'noop')]
-
-    text = (
-        "🛡 <b>Управление ZERO_DAY</b>\n\n"
-        f"🔐 Режим: <b>{mode_labels.get(access_mode, access_mode)}</b>\n"
-        f"👥 Игроков в ZDNET БД: <b>{int(stats.get('players', 0) or 0)}</b>\n"
-        f"🧪 Бета-доступ: <b>{beta_count}</b>\n"
-        f"🎭 Ролей выдано: <b>{role_count}</b>\n"
-        f"👑 Админов ZERO_DAY: <b>{int(stats.get('admins', 0) or 0)}</b>\n"
-        f"🧪 Тестировщиков ZERO_DAY: <b>{int(stats.get('testers', 0) or 0)}</b>\n\n"
-        f"🌐 Frontend: <code>{ZDNET_URL or 'не настроен'}</code>\n"
-        f"🔌 API: <code>{ZDNET_API_URL or 'не настроен'}</code>\n"
-        f"🔖 Версия: <b>{ZDNET_VERSION}</b>\n\n"
-        "В beta/closed обычные пользователи видят уведомление и кнопку связи с автором."
-    )
-
-    kb = [
-        mode_row,
-        list(mode_btns.values()),
-        [btn("🧪 Бета-список", 'admin_zdnet_beta_panel'), btn("🎭 Роли", 'admin_zdnet_roles')],
-        [btn("👑 Сделать меня admin", 'admin_zdnet_make_me_admin')],
-        [btn("◀️ Игры", 'admin_games_panel'), btn("🏠 Главное меню", 'back_to_main')],
-    ]
-    await safe_edit(query, text, kb)
-
-
-async def admin_set_zdnet_mode(query, context, mode: str):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    ok = await asyncio.to_thread(db.set_zdnet_access_mode, mode)
-    global _zdnet_mode_cache, _zdnet_mode_cache_ts, _zdnet_beta_cache, _zdnet_beta_cache_ts
-    _zdnet_mode_cache = mode if ok else _zdnet_mode_cache
-    _zdnet_mode_cache_ts = 0
-    _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
-    mode_names = {'beta': '🧪 Бета-режим', 'open': '🟢 Игра открыта', 'closed': '🔒 Игра закрыта'}
-    txt = f"✅ Режим ZERO_DAY: <b>{mode_names.get(mode, mode)}</b>" if ok else "❌ Не удалось изменить режим."
-    await safe_edit(query, txt, [[btn("◀️ ZERO_DAY", 'admin_zdnet_panel'), btn("🎮 Игры", 'admin_games_panel')]])
-
-
-async def admin_zdnet_beta_panel(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    users = await asyncio.to_thread(db.get_zdnet_beta_users)
-    lines = [f"🧪 <b>БЕТА-СПИСОК ZERO_DAY</b>\n\nДоступ имеют <b>{len(users)}</b> чел. + роли admin/tester."]
-    if users:
-        lines.append("\n<b>Пользователи:</b>")
-        for uid, name, added, note in users[:20]:
-            lines.append(f"• <b>{name or 'Игрок'}</b> <code>{uid}</code>" + (f" — {note}" if note else ""))
-    kb = [
-        [btn("➕ Добавить", 'admin_zdnet_beta_add'), btn("➖ Убрать", 'admin_zdnet_beta_remove')],
-        [btn("🧹 Очистить список", 'admin_zdnet_beta_clear_confirm')],
-        [btn("↩️ ZERO_DAY", 'admin_zdnet_panel'), btn("🏠 Меню", 'back_to_main')],
-    ]
-    await safe_edit(query, "\n".join(lines), kb)
-
-
-async def admin_zdnet_beta_add(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    context.user_data['zdnet_beta_action'] = 'add'
-    await safe_edit(
-        query,
-        "➕ <b>Добавить бета-тестера ZERO_DAY</b>\n\n"
-        "Введи Telegram ID. Можно несколько через запятую:\n"
-        "<code>123456789, 987654321</code>",
-        [[btn("❌ Отмена", 'admin_zdnet_beta_panel')]],
-    )
-
-
-async def admin_zdnet_beta_remove(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    users = await asyncio.to_thread(db.get_zdnet_beta_users)
-    if not users:
-        await safe_edit(query, "ℹ️ Бета-список ZERO_DAY пуст.", [[btn("↩️ Бета-панель", 'admin_zdnet_beta_panel')]])
-        return
-    kb = [[btn(f"✖ {r[1] or r[0]} ({r[0]})", f'azbeta_rm_{r[0]}')] for r in users]
-    kb.append([btn("❌ Отмена", 'admin_zdnet_beta_panel')])
-    await safe_edit(query, "➖ <b>Убрать из бета-списка ZERO_DAY</b>", kb)
-
-
-async def admin_zdnet_beta_clear_confirm(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    await safe_edit(
-        query,
-        "⚠️ Очистить бета-список ZERO_DAY?\n\n"
-        "Режим доступа не изменится автоматически. Если нужно открыть игру всем — переключите режим на «Открыта».",
-        [[btn("✅ Очистить", 'azbeta_clear_do')], [btn("❌ Отмена", 'admin_zdnet_beta_panel')]],
-    )
-
-
-async def admin_zdnet_beta_clear_do(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    global _zdnet_beta_cache, _zdnet_beta_cache_ts
-    _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
-    deleted = await asyncio.to_thread(db.clear_zdnet_beta_list)
-    await safe_edit(query, f"✅ Бета-список ZERO_DAY очищен. Удалено: <b>{deleted}</b>.",
-                    [[btn("↩️ ZERO_DAY", 'admin_zdnet_panel')]])
-
-
-async def handle_zdnet_beta_add_input(update, context, text):
-    global _zdnet_beta_cache, _zdnet_beta_cache_ts
-    parts = [p.strip() for p in text.replace(',', ' ').split()]
-    added, failed = [], []
-    for part in parts:
-        try:
-            uid = int(part)
-            uinfo = await asyncio.to_thread(db.get_user_info, uid) if hasattr(db, 'get_user_info') else None
-            uname = None
-            if uinfo and isinstance(uinfo, dict):
-                uname = uinfo.get('first_name') or uinfo.get('username')
-            ok = await asyncio.to_thread(db.add_zdnet_beta_user, uid, uname)
-            if ok: added.append(str(uid))
-            else: failed.append(str(uid))
-        except ValueError:
-            failed.append(part)
-    _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
-    context.user_data.pop('zdnet_beta_action', None)
-    lines = []
-    if added: lines.append(f"✅ Добавлено: {', '.join(added)}")
-    if failed: lines.append(f"❌ Ошибка: {', '.join(failed)}")
-    lines.append("\n<i>Теперь эти пользователи смогут открыть ZERO_DAY в beta-режиме.</i>")
-    await update.message.reply_text("\n".join(lines), parse_mode='HTML',
-                                    reply_markup=InlineKeyboardMarkup([[btn("↩️ Бета-панель", 'admin_zdnet_beta_panel')]]))
-
-
-async def admin_zdnet_roles(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    rows = await asyncio.to_thread(db.get_zdnet_roles, 50)
-    lines = ["🎭 <b>РОЛИ ZERO_DAY</b>\n"]
-    if rows:
-        role_names = {'admin': '👑 admin', 'tester': '🧪 tester', 'player': '🎮 player'}
-        for uid, name, role, updated in rows[:25]:
-            lines.append(f"• <b>{name or 'Игрок'}</b> <code>{uid}</code> — {role_names.get(role, role)}")
-    else:
-        lines.append("<i>Отдельные роли ещё не назначены.</i>")
-    kb = [
-        [btn("➕ Назначить роль", 'admin_zdnet_role_add')],
-        [btn("↩️ ZERO_DAY", 'admin_zdnet_panel'), btn("🏠 Меню", 'back_to_main')],
-    ]
-    await safe_edit(query, "\n".join(lines), kb)
-
-
-async def admin_zdnet_role_add(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    context.user_data['zdnet_role_action'] = 'set'
-    await safe_edit(
-        query,
-        "➕ <b>Назначить роль ZERO_DAY</b>\n\n"
-        "Формат:\n"
-        "<code>123456789 admin</code>\n"
-        "<code>123456789 tester</code>\n"
-        "<code>123456789 player</code>",
-        [[btn("❌ Отмена", 'admin_zdnet_roles')]],
-    )
-
-
-async def handle_zdnet_role_input(update, context, text):
-    parts = text.replace(',', ' ').split()
-    if len(parts) < 2:
-        await update.message.reply_text("❌ Нужен формат: <code>user_id role</code>", parse_mode='HTML')
-        return
-    try:
-        uid = int(parts[0])
-    except ValueError:
-        await update.message.reply_text("❌ user_id должен быть числом.")
-        return
-    role = parts[1].strip().lower()
-    ok = await asyncio.to_thread(db.set_zdnet_role, uid, role)
-    context.user_data.pop('zdnet_role_action', None)
-    role_name = {'admin': 'Администратор 👑', 'tester': 'Тестировщик 🧪', 'player': 'Игрок 🎮'}.get(role, role)
-    await update.message.reply_text(
-        f"{'✅ Роль ZERO_DAY изменена' if ok else '❌ Не удалось изменить роль'}\n"
-        f"ID: <code>{uid}</code>\nРоль: <b>{role_name}</b>",
-        parse_mode='HTML',
-        reply_markup=InlineKeyboardMarkup([[btn("↩️ Роли ZERO_DAY", 'admin_zdnet_roles')]]),
-    )
-
-
-async def admin_zdnet_make_me_admin(query, context):
-    if not await is_bot_admin_async(query.from_user.id):
-        await query.answer("⛔"); return
-    await query.answer()
-    ok = await asyncio.to_thread(db.set_zdnet_role, query.from_user.id, 'admin')
-    await safe_edit(query,
-                    "✅ Вам выдана роль <b>admin</b> в ZERO_DAY." if ok else "❌ Не удалось выдать роль.",
-                    [[btn("↩️ ZERO_DAY", 'admin_zdnet_panel')]])
-
-
-# ══════════════════════════════════════════════════════════
 #  МОЙ ИГРОВОЙ РЕЖИМ (для администратора)
 # ══════════════════════════════════════════════════════════
 async def admin_manage_bot_admins(query, context):
@@ -6081,18 +5614,12 @@ async def admin_system_panel(query, context):
     )
 
 
-async def get_games_access_modes() -> tuple[str, str]:
-    """Возвращает режимы доступа: (Шифровальщик, ZERO_DAY)."""
-    cipher_mode, zdnet_mode = await asyncio.gather(
-        asyncio.to_thread(db.get_game_access_mode),
-        asyncio.to_thread(db.get_zdnet_access_mode),
-        return_exceptions=True,
-    )
-    if isinstance(cipher_mode, Exception) or cipher_mode not in ('open', 'beta', 'closed'):
+async def get_games_access_modes() -> str:
+    """Возвращает режим доступа к игре «Шифровальщик»."""
+    cipher_mode = await asyncio.to_thread(db.get_game_access_mode)
+    if cipher_mode not in ('open', 'beta', 'closed'):
         cipher_mode = 'beta'
-    if isinstance(zdnet_mode, Exception) or zdnet_mode not in ('open', 'beta', 'closed'):
-        zdnet_mode = 'beta'
-    return str(cipher_mode), str(zdnet_mode)
+    return str(cipher_mode)
 
 
 async def admin_games_panel(query, context):
@@ -6101,20 +5628,19 @@ async def admin_games_panel(query, context):
         await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
         return
 
-    cipher_mode, zdnet_mode = await get_games_access_modes()
+    cipher_mode = await get_games_access_modes()
     pending = await asyncio.to_thread(db.get_beta_access_requests, 'pending', 50)
     pending_count = len(pending)
 
     text = (
         "🎮 <b>ИГРЫ</b>\n\n"
         "Здесь собраны все игровые проекты бота и быстрые настройки доступа.\n\n"
-        f"🎮 <b>Шифровальщик</b>: {game_mode_label(cipher_mode)}\n"
-        f"🛡 <b>ZERO_DAY</b>: {game_mode_label(zdnet_mode)}\n\n"
+        f"🎮 <b>Шифровальщик</b>: {game_mode_label(cipher_mode)}\n\n"
         f"🧪 Ожидают beta-доступа: <b>{pending_count}</b>"
     )
 
     kb = [
-        [btn("🎮 Шифровальщик", 'admin_game_panel'), btn("🛡 ZERO_DAY", 'admin_zdnet_panel')],
+        [btn("🎮 Шифровальщик", 'admin_game_panel')],
         [btn(f"🧪 Beta-заявки ({pending_count})", 'admin_beta_requests')],
         [btn("🆕 Обновления", 'menu_updates')],
         [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
@@ -6130,9 +5656,8 @@ async def beta_request_access(query, context, game_key: str):
         await query.answer("Неизвестная игра", show_alert=True)
         return
 
-    mode_func = db.get_zdnet_access_mode if game_key == 'zdnet' else db.get_game_access_mode
     try:
-        mode = await asyncio.to_thread(mode_func)
+        mode = await asyncio.to_thread(db.get_game_access_mode)
     except Exception:
         mode = 'beta'
     if mode != 'beta':
@@ -6141,13 +5666,10 @@ async def beta_request_access(query, context, game_key: str):
         return
 
     user = query.from_user
-    is_allowed = await (is_zdnet_allowed(user.id) if game_key == 'zdnet' else is_game_allowed(user.id))
+    is_allowed = await is_game_allowed(user.id)
     if is_allowed:
         await query.answer("У вас уже есть доступ.", show_alert=True)
-        if game_key == 'zdnet':
-            await menu_zdnet(query, context)
-        else:
-            await menu_game(query, context)
+        await menu_game(query, context)
         return
 
     user_name = (user.full_name or user.first_name or user.username or 'Игрок').strip()
@@ -6239,19 +5761,14 @@ async def resolve_beta_request(query, context, request_id: int, approve: bool):
 
     req_id, game_key, user_id, user_name, _, _requested_at = row
     game_title = GAME_TITLES.get(game_key, game_key)
-    global _beta_cache, _beta_cache_ts, _zdnet_beta_cache, _zdnet_beta_cache_ts
+    global _beta_cache, _beta_cache_ts
 
     grant_ok = True
     if approve:
         note = f"Заявка #{req_id}"
-        if game_key == 'zdnet':
-            grant_ok = await asyncio.to_thread(db.add_zdnet_beta_user, user_id, user_name, note)
-            _zdnet_beta_cache = set()
-            _zdnet_beta_cache_ts = 0
-        else:
-            grant_ok = await asyncio.to_thread(db.add_beta_user, user_id, user_name, note)
-            _beta_cache = set()
-            _beta_cache_ts = 0
+        grant_ok = await asyncio.to_thread(db.add_beta_user, user_id, user_name, note)
+        _beta_cache = set()
+        _beta_cache_ts = 0
 
     safe_title = html.escape(game_title)
     if approve:
@@ -6579,12 +6096,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             user.id,
             bot_admin=user_is_admin,
         )
-    elif d == 'menu_zdnet':
-        maintenance_scope = 'game'
-        maintenance_bypass = await is_zdnet_privileged_async(
-            user.id,
-            bot_admin=user_is_admin,
-        )
     if await check_maintenance(
         update,
         context,
@@ -6806,15 +6317,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
             await safe_edit(query,
                 f"{'✅ Тестер удалён из списка.' if ok else '❌ Не найден.'}",
                 [[btn("↩️ Бета-панель", 'admin_beta_panel')]])
-            return
-        if d.startswith('azbeta_rm_'):
-            uid = int(d.replace('azbeta_rm_', ''))
-            global _zdnet_beta_cache, _zdnet_beta_cache_ts
-            _zdnet_beta_cache = set(); _zdnet_beta_cache_ts = 0
-            ok = await asyncio.to_thread(db.remove_zdnet_beta_user, uid)
-            await safe_edit(query,
-                f"{'✅ Пользователь удалён из бета-списка ZERO_DAY.' if ok else '❌ Не найден.'}",
-                [[btn("↩️ Бета-панель ZERO_DAY", 'admin_zdnet_beta_panel')]])
             return
         if d.startswith('apc_player_'):
             target_uid = int(d.replace('apc_player_', ''))
@@ -7048,7 +6550,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'menu_games':             menu_games,
         'menu_updates':           menu_updates,
         'menu_game':              menu_game,
-        'menu_zdnet':             menu_zdnet,
         'menu_help':              menu_help,
         'admin_panel':                show_admin_panel,
         'admin_games_panel':          admin_games_panel,
@@ -7085,18 +6586,6 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'game_mode_beta':         lambda q, c: admin_set_game_mode(q, c, 'beta'),
         'game_mode_open':         lambda q, c: admin_set_game_mode(q, c, 'open'),
         'game_mode_closed':       lambda q, c: admin_set_game_mode(q, c, 'closed'),
-        'admin_zdnet_panel':      admin_zdnet_panel,
-        'zdnet_mode_beta':        lambda q, c: admin_set_zdnet_mode(q, c, 'beta'),
-        'zdnet_mode_open':        lambda q, c: admin_set_zdnet_mode(q, c, 'open'),
-        'zdnet_mode_closed':      lambda q, c: admin_set_zdnet_mode(q, c, 'closed'),
-        'admin_zdnet_beta_panel': admin_zdnet_beta_panel,
-        'admin_zdnet_beta_add':   admin_zdnet_beta_add,
-        'admin_zdnet_beta_remove': admin_zdnet_beta_remove,
-        'admin_zdnet_beta_clear_confirm': admin_zdnet_beta_clear_confirm,
-        'azbeta_clear_do':        admin_zdnet_beta_clear_do,
-        'admin_zdnet_roles':      admin_zdnet_roles,
-        'admin_zdnet_role_add':   admin_zdnet_role_add,
-        'admin_zdnet_make_me_admin': admin_zdnet_make_me_admin,
         'admin_game_roles':       admin_game_roles,
         'admin_beta_panel':       admin_beta_panel,
         'admin_chapters_panel':   admin_chapters_panel,
@@ -7194,14 +6683,6 @@ async def handle_message(update: Update, context: CallbackContext):
 
     if context.user_data.get('beta_action') == 'add' and await is_bot_admin_async(user.id):
         await handle_beta_add_input(update, context, text)
-        return
-
-    if context.user_data.get('zdnet_beta_action') == 'add' and await is_bot_admin_async(user.id):
-        await handle_zdnet_beta_add_input(update, context, text)
-        return
-
-    if context.user_data.get('zdnet_role_action') == 'set' and await is_bot_admin_async(user.id):
-        await handle_zdnet_role_input(update, context, text)
         return
 
     # ── Удаление замены по ID ──
@@ -8463,33 +7944,11 @@ async def handle_game_media(request):
 
 def start_http_server_thread():
     """Запускает aiohttp в отдельном потоке чтобы не конфликтовать с event loop бота."""
-    global ZDNET_REPO, ZDNET_BACKEND_ERROR
     import threading
     import pathlib
     import sys
 
     GAME_DIR = pathlib.Path(__file__).parent / 'game'
-    ZDNET_FRONTEND_DIR = pathlib.Path(__file__).parent / 'zero-day-defenders-network' / 'frontend'
-    ZDNET_BACKEND_DIR = pathlib.Path(__file__).parent / 'zero-day-defenders-network' / 'backend'
-    ZDNetGameError = Exception
-    _zdnet_validate_init_data = None
-
-    try:
-        if ZDNET_BACKEND_DIR.exists() and str(ZDNET_BACKEND_DIR) not in sys.path:
-            sys.path.insert(0, str(ZDNET_BACKEND_DIR))
-        from zdnet_backend.content import load_content as _zdnet_load_content
-        from zdnet_backend.repository import GameError as _ZDNetGameError
-        from zdnet_backend.security import validate_webapp_init_data as _validate_zdnet_init_data
-        from zdnet_backend.storage import build_repository as _zdnet_build_repository
-
-        ZDNetGameError = _ZDNetGameError
-        _zdnet_validate_init_data = _validate_zdnet_init_data
-        ZDNET_REPO = _zdnet_build_repository(_zdnet_load_content())
-        ZDNET_BACKEND_ERROR = None
-        logger.info("✅ ZDNET backend mounted in bot HTTP server")
-    except Exception as e:
-        ZDNET_BACKEND_ERROR = str(e)
-        logger.warning(f"ZDNET backend is not mounted: {e}")
 
     async def serve_game_index(request):
         """Отдаёт index.html игры."""
@@ -8527,359 +7986,6 @@ def start_http_server_thread():
         logger.warning(f"serve_game_file not found: filename='{filename}', path='{request.path_qs}'")
         return aiohttp_web.Response(text='Not found', status=404)
 
-    def _zdnet_cors_headers(request, methods: str = 'GET, POST, OPTIONS') -> dict[str, str]:
-        return {
-            'Access-Control-Allow-Origin': _resolve_game_cors_origin(request),
-            'Access-Control-Allow-Methods': methods,
-            'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-            'Vary': 'Origin',
-        }
-
-    def _zdnet_json(data: dict, request, status: int = 200, methods: str = 'GET, POST, OPTIONS'):
-        return aiohttp_web.json_response(
-            data,
-            status=status,
-            headers=_zdnet_cors_headers(request, methods),
-        )
-
-    def _zdnet_unavailable(request):
-        return _zdnet_json(
-            {
-                'error': 'zdnet_backend_unavailable',
-                'detail': ZDNET_BACKEND_ERROR or 'backend not mounted',
-            },
-            request,
-            status=503,
-        )
-
-    async def _zdnet_body(request) -> dict:
-        try:
-            data = await request.json()
-        except Exception:
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def _zdnet_require_state(request):
-        if not ZDNET_REPO:
-            raise RuntimeError('zdnet backend not mounted')
-        auth = request.headers.get('Authorization', '')
-        if not auth.startswith('Bearer '):
-            raise ZDNetGameError('missing_bearer_token', status=401)
-        return ZDNET_REPO.get_by_session(auth.removeprefix('Bearer ').strip())
-
-    async def _create_zdnet_invoice_link(payment: dict) -> str:
-        currency = str(payment.get('currency') or 'XTR')
-        provider_token = '' if currency == 'XTR' else os.environ.get('TELEGRAM_PAYMENT_PROVIDER_TOKEN', '')
-        if currency != 'XTR' and not provider_token:
-            raise RuntimeError('TELEGRAM_PAYMENT_PROVIDER_TOKEN is required for non-XTR payments')
-        payload = {
-            'title': str(payment.get('title') or 'ZERO_DAY'),
-            'description': str(payment.get('description') or 'ZERO_DAY purchase'),
-            'payload': str(payment.get('invoicePayload') or ''),
-            'provider_token': provider_token,
-            'currency': currency,
-            'prices': [
-                {
-                    'label': str(payment.get('title') or 'ZERO_DAY'),
-                    'amount': int(payment.get('amount') or payment.get('amountMinor') or 0),
-                }
-            ],
-        }
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f'https://api.telegram.org/bot{TOKEN}/createInvoiceLink',
-                json=payload,
-            )
-        data = resp.json()
-        if not data.get('ok') or not data.get('result'):
-            raise RuntimeError(str(data.get('description') or 'createInvoiceLink failed'))
-        return str(data['result'])
-
-    async def handle_zdnet_options(request):
-        return aiohttp_web.Response(status=204, headers=_zdnet_cors_headers(request))
-
-    async def handle_zdnet_auth(request):
-        if request.method == 'OPTIONS':
-            return await handle_zdnet_options(request)
-        if not ZDNET_REPO or not _zdnet_validate_init_data:
-            return _zdnet_unavailable(request)
-        try:
-            body = await _zdnet_body(request)
-            if os.environ.get('ZDNET_DEV_AUTH', '0') == '1':
-                telegram_id = int(body.get('devTelegramId') or request.query.get('devTelegramId') or 1001)
-                nickname = str(body.get('devNickname') or f'rookie_{telegram_id}')
-            else:
-                ok, reason, telegram_id, user_obj = _zdnet_validate_init_data(
-                    str(body.get('initData') or ''),
-                    TOKEN,
-                )
-                if not ok or telegram_id is None:
-                    return _zdnet_json({'error': reason}, request, status=401, methods='POST, OPTIONS')
-                nickname = user_obj.get('username') or user_obj.get('first_name') or f'rookie_{telegram_id}'
-            if os.environ.get('ZDNET_DEV_AUTH', '0') != '1':
-                mode = await _get_cached_zdnet_mode()
-                if mode == 'closed' or not await is_zdnet_allowed(int(telegram_id)):
-                    return _zdnet_json(
-                        {
-                            'error': 'zdnet_access_denied',
-                            'mode': mode,
-                            'authorUrl': PROJECT_AUTHOR_URL,
-                            'detail': 'ZERO_DAY is not available for this user in current access mode.',
-                        },
-                        request,
-                        status=403,
-                        methods='POST, OPTIONS',
-                    )
-            state = ZDNET_REPO.get_or_create_player(telegram_id, nickname)
-            token = ZDNET_REPO.create_session(int(state.player['id']))
-            boot = ZDNET_REPO.bootstrap(state)
-            return _zdnet_json(
-                {
-                    'sessionToken': token,
-                    'player': state.player,
-                    'serverTime': boot.get('serverTime'),
-                },
-                request,
-                methods='POST, OPTIONS',
-            )
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
-        except Exception as e:
-            logger.exception(f"handle_zdnet_auth error: {e}")
-            return _zdnet_json({'error': 'internal_error'}, request, status=500)
-
-    async def handle_zdnet_bootstrap(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            return _zdnet_json(ZDNET_REPO.bootstrap(_zdnet_require_state(request)), request)
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
-
-    async def handle_zdnet_content(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            from zdnet_backend.content import load_content as _zdnet_load_content
-            return _zdnet_json(_zdnet_load_content(), request)
-        except Exception as e:
-            logger.exception(f"handle_zdnet_content error: {e}")
-            return _zdnet_json({'error': 'internal_error'}, request, status=500)
-
-    async def handle_zdnet_start_attempt(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            state = _zdnet_require_state(request)
-            return _zdnet_json(ZDNET_REPO.start_attempt(state, request.match_info['threatId']), request, methods='POST, OPTIONS')
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
-
-    async def handle_zdnet_finish_attempt(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            state = _zdnet_require_state(request)
-            body = await _zdnet_body(request)
-            return _zdnet_json(
-                ZDNET_REPO.finish_attempt(state, request.match_info['attemptId'], body),
-                request,
-                methods='POST, OPTIONS',
-            )
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
-
-    async def handle_zdnet_open_cache(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            state = _zdnet_require_state(request)
-            body = await _zdnet_body(request)
-            return _zdnet_json(ZDNET_REPO.open_cache(state, int(body.get('count') or 1)), request, methods='POST, OPTIONS')
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
-
-    async def handle_zdnet_tool_upgrade(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            state = _zdnet_require_state(request)
-            return _zdnet_json(ZDNET_REPO.upgrade_tool(state, request.match_info['toolId']), request, methods='POST, OPTIONS')
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
-
-    async def handle_zdnet_tool_equip(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            state = _zdnet_require_state(request)
-            body = await _zdnet_body(request)
-            return _zdnet_json(
-                ZDNET_REPO.equip_tool(state, request.match_info['toolId'], int(body.get('slotIndex') or 0)),
-                request,
-                methods='POST, OPTIONS',
-            )
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
-
-    async def handle_zdnet_invoice(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            state = _zdnet_require_state(request)
-            body = await _zdnet_body(request)
-            invoice = ZDNET_REPO.create_invoice(state, str(body.get('productId') or ''))
-            if os.environ.get('ZDNET_PAYMENTS_DEMO', '0') == '1':
-                invoice['demoMode'] = True
-                invoice['message'] = 'Demo mode: invoice is created, but rewards are not granted without payment confirmation.'
-                return _zdnet_json(invoice, request, methods='POST, OPTIONS')
-            try:
-                invoice_url = await _create_zdnet_invoice_link(invoice['payment'])
-            except Exception as e:
-                try:
-                    ZDNET_REPO.fail_payment(invoice['payload'], f'invoice_link_failed:{e}')
-                except Exception:
-                    pass
-                logger.warning(f"ZDNET invoice link failed: {e}")
-                return _zdnet_json(
-                    {'error': 'invoice_link_failed', 'detail': str(e), 'payload': invoice.get('payload')},
-                    request,
-                    status=502,
-                    methods='POST, OPTIONS',
-                )
-            invoice['invoiceUrl'] = invoice_url
-            invoice['payment']['invoiceUrl'] = invoice_url
-            return _zdnet_json(invoice, request, methods='POST, OPTIONS')
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
-
-    async def handle_zdnet_payment_history(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            return _zdnet_json(ZDNET_REPO.payment_history(_zdnet_require_state(request)), request)
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400))
-
-    async def handle_zdnet_payment_products(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            from zdnet_backend.payments import public_catalog
-            return _zdnet_json({'products': public_catalog()}, request)
-        except Exception as e:
-            logger.exception(f"handle_zdnet_payment_products error: {e}")
-            return _zdnet_json({'error': 'internal_error'}, request, status=500)
-
-    async def handle_zdnet_payment_webhook(request):
-        if not ZDNET_REPO:
-            return _zdnet_unavailable(request)
-        try:
-            expected = os.environ.get('ZDNET_PAYMENT_WEBHOOK_SECRET', '')
-            if expected and request.headers.get('X-ZDNET-Webhook-Secret') != expected:
-                return _zdnet_json({'error': 'bad_webhook_secret'}, request, status=401, methods='POST, OPTIONS')
-            body = await _zdnet_body(request)
-            return _zdnet_json(
-                ZDNET_REPO.grant_payment(
-                    str(body.get('payload') or ''),
-                    telegram_payment_charge_id=body.get('telegramPaymentChargeId'),
-                    provider_payment_charge_id=body.get('providerPaymentChargeId'),
-                    raw=body,
-                ),
-                request,
-                methods='POST, OPTIONS',
-            )
-        except ZDNetGameError as e:
-            return _zdnet_json({'error': getattr(e, 'code', str(e))}, request, status=getattr(e, 'status', 400), methods='POST, OPTIONS')
-        except Exception as e:
-            logger.exception(f"handle_zdnet_payment_webhook error: {e}")
-            return _zdnet_json({'error': 'internal_error'}, request, status=500, methods='POST, OPTIONS')
-
-    async def serve_zdnet_index(request):
-        if os.environ.get('ZDNET_DEV_AUTH', '0') != '1':
-            mode = await _get_cached_zdnet_mode()
-            if mode == 'closed':
-                return aiohttp_web.Response(
-                    text=zdnet_access_page('closed'),
-                    headers={
-                        'Content-Type': 'text/html; charset=utf-8',
-                        'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    },
-                )
-            if mode == 'beta':
-                raw_payload = str(request.query.get('tgWebAppStartParam') or '')
-                ok, launch = verify_zdnet_launch_payload(raw_payload)
-                uid = int(launch.get('uid') or 0) if ok else 0
-                if not ok or uid <= 0 or not await is_zdnet_allowed(uid):
-                    return aiohttp_web.Response(
-                        text=zdnet_access_page('beta'),
-                        headers={
-                            'Content-Type': 'text/html; charset=utf-8',
-                            'Cache-Control': 'no-cache, no-store, must-revalidate',
-                        },
-                    )
-        fpath = ZDNET_FRONTEND_DIR / 'index.html'
-        if fpath.exists():
-            html = fpath.read_text(encoding='utf-8')
-            config = json.dumps(
-                {
-                    'apiBase': ZDNET_API_URL,
-                    'version': ZDNET_VERSION,
-                    'botHosted': True,
-                },
-                ensure_ascii=False,
-            )
-            html = html.replace('</head>', f'<script>window.ZDNET_CONFIG={config};</script></head>')
-            return aiohttp_web.Response(
-                text=html,
-                headers={
-                    'Content-Type': 'text/html; charset=utf-8',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                },
-            )
-        return aiohttp_web.Response(text='ZDNET frontend not found', status=404)
-
-    async def serve_zdnet_file(request):
-        filename = request.match_info.get('filename', '')
-        normalized = filename.replace('\\', '/').strip('/')
-        relative_path = pathlib.PurePosixPath(normalized)
-        parts = relative_path.parts
-        if (
-            not normalized
-            or any(part in ('', '.', '..') or part.startswith('.') for part in parts)
-        ):
-            logger.warning(f"serve_zdnet_file forbidden: filename='{filename}', path='{request.path_qs}'")
-            return aiohttp_web.Response(text='Forbidden', status=403)
-
-        try:
-            frontend_root = ZDNET_FRONTEND_DIR.resolve()
-            fpath = (frontend_root / pathlib.Path(*parts)).resolve()
-        except Exception:
-            logger.warning(f"serve_zdnet_file bad path: filename='{filename}', path='{request.path_qs}'")
-            return aiohttp_web.Response(text='Forbidden', status=403)
-
-        if fpath != frontend_root and frontend_root not in fpath.parents:
-            logger.warning(f"serve_zdnet_file escaped root: filename='{filename}', path='{request.path_qs}'")
-            return aiohttp_web.Response(text='Forbidden', status=403)
-
-        if fpath.exists() and fpath.is_file():
-            content_types = {
-                '.js': 'application/javascript; charset=utf-8',
-                '.css': 'text/css; charset=utf-8',
-                '.html': 'text/html; charset=utf-8',
-                '.png': 'image/png',
-                '.jpg': 'image/jpeg',
-                '.svg': 'image/svg+xml',
-                '.json': 'application/json; charset=utf-8',
-            }
-            ct = content_types.get(fpath.suffix, 'application/octet-stream')
-            return aiohttp_web.FileResponse(fpath, headers={
-                'Content-Type': ct,
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-            })
-        logger.warning(f"serve_zdnet_file not found: filename='{filename}', path='{request.path_qs}'")
-        return aiohttp_web.Response(text='Not found', status=404)
-
 
     async def _run():
         app_http = aiohttp_web.Application()
@@ -8895,30 +8001,12 @@ def start_http_server_thread():
         app_http.router.add_get('/game_media/{track_id}', handle_game_media)
         app_http.router.add_options('/game_media/{track_id}', handle_game_media)
         app_http.router.add_get('/health', lambda r: aiohttp_web.json_response({'ok': True}))
-        # API новой игры ZERO_DAY: Защитники сети
-        app_http.router.add_options('/zdnet_api/{tail:.*}', handle_zdnet_options)
-        app_http.router.add_post('/zdnet_api/auth/telegram', handle_zdnet_auth)
-        app_http.router.add_get('/zdnet_api/bootstrap', handle_zdnet_bootstrap)
-        app_http.router.add_get('/zdnet_api/content', handle_zdnet_content)
-        app_http.router.add_post('/zdnet_api/threats/{threatId}/start', handle_zdnet_start_attempt)
-        app_http.router.add_post('/zdnet_api/attempts/{attemptId}/finish', handle_zdnet_finish_attempt)
-        app_http.router.add_post('/zdnet_api/cache/open', handle_zdnet_open_cache)
-        app_http.router.add_post('/zdnet_api/tools/{toolId}/upgrade', handle_zdnet_tool_upgrade)
-        app_http.router.add_post('/zdnet_api/tools/{toolId}/equip', handle_zdnet_tool_equip)
-        app_http.router.add_post('/zdnet_api/payments/invoice', handle_zdnet_invoice)
-        app_http.router.add_get('/zdnet_api/payments/history', handle_zdnet_payment_history)
-        app_http.router.add_get('/zdnet_api/payments/products', handle_zdnet_payment_products)
-        app_http.router.add_post('/zdnet_api/payments/webhook/telegram', handle_zdnet_payment_webhook)
         # Файлы игры
         app_http.router.add_get('/', serve_game_index)
         app_http.router.add_get('/index.html', serve_game_index)
         app_http.router.add_get('/game', serve_game_index)
         app_http.router.add_get('/game/', serve_game_index)
         app_http.router.add_get('/game/{filename}', serve_game_file)
-        # Файлы новой игры ZERO_DAY
-        app_http.router.add_get('/zdnet', serve_zdnet_index)
-        app_http.router.add_get('/zdnet/', serve_zdnet_index)
-        app_http.router.add_get('/zdnet/{filename:.*}', serve_zdnet_file)
         app_http.router.add_get('/{filename}', serve_game_file)
         runner = aiohttp_web.AppRunner(app_http)
         await runner.setup()
@@ -8926,7 +8014,6 @@ def start_http_server_thread():
         await site.start()
         logger.info(f"✅ HTTP server started on port {PORT}")
         logger.info(f"📁 Game dir: {GAME_DIR} (exists: {GAME_DIR.exists()})")
-        logger.info(f"📁 ZDNET frontend dir: {ZDNET_FRONTEND_DIR} (exists: {ZDNET_FRONTEND_DIR.exists()})")
         # Держим сервер запущенным
         await asyncio.Event().wait()
 
@@ -8941,91 +8028,6 @@ def start_http_server_thread():
     t = threading.Thread(target=_thread, daemon=True)
     t.start()
     logger.info(f"HTTP server thread started (port {PORT})")
-
-
-async def handle_zdnet_precheckout(update: Update, context: CallbackContext):
-    """Telegram payment pre-checkout for ZERO_DAY products."""
-    query = update.pre_checkout_query
-    if not query:
-        return
-    payload = query.invoice_payload or ''
-    if not payload.startswith('zdnet:'):
-        await query.answer(ok=False, error_message='Неизвестный платеж.')
-        return
-    if not ZDNET_REPO:
-        logger.error("ZDNET precheckout failed: repository is not mounted")
-        await query.answer(ok=False, error_message='Платежи временно недоступны. Попробуйте позже.')
-        return
-    try:
-        ok, reason = ZDNET_REPO.validate_payment(payload, query.total_amount, query.currency)
-        if not ok:
-            logger.warning(f"ZDNET precheckout rejected payload={payload}: {reason}")
-            await query.answer(ok=False, error_message='Счет устарел. Откройте магазин и создайте новый счет.')
-            return
-        await query.answer(ok=True)
-    except Exception as e:
-        logger.exception(f"ZDNET precheckout error: {e}")
-        await query.answer(ok=False, error_message='Не удалось проверить счет. Попробуйте позже.')
-
-
-async def handle_zdnet_successful_payment(update: Update, context: CallbackContext):
-    """Grants ZERO_DAY products after Telegram confirms successful payment."""
-    message = update.message
-    payment = getattr(message, 'successful_payment', None) if message else None
-    if not payment:
-        return
-    payload = payment.invoice_payload or ''
-    if not payload.startswith('zdnet:'):
-        return
-    if not ZDNET_REPO:
-        logger.critical(f"ZDNET paid but repository unavailable. payload={payload}")
-        await message.reply_text(
-            "⚠️ Платёж получен, но выдача временно недоступна. "
-            "Напишите администратору, мы восстановим покупку по чеку."
-        )
-        return
-    try:
-        raw = payment.to_dict() if hasattr(payment, 'to_dict') else {}
-        ok, reason = ZDNET_REPO.validate_payment(payload, payment.total_amount, payment.currency)
-        if not ok and not reason.startswith('bad_payment_status:paid'):
-            logger.error(f"ZDNET successful payment validation failed payload={payload}: {reason}")
-            await message.reply_text(
-                "⚠️ Платёж получен, но данные счета не совпали. "
-                "Покупка отправлена на ручную проверку."
-            )
-            return
-        result = ZDNET_REPO.grant_payment(
-            payload,
-            telegram_payment_charge_id=getattr(payment, 'telegram_payment_charge_id', None),
-            provider_payment_charge_id=getattr(payment, 'provider_payment_charge_id', None),
-            raw=raw,
-        )
-        grant = result.get('payment', {}).get('appliedGrant') or result.get('payment', {}).get('grant') or {}
-        if result.get('idempotent'):
-            await message.reply_text("✅ Эта покупка уже была выдана ранее. Повторно награда не начислялась.")
-            return
-        grant_bits = []
-        if grant.get('zeroKeys'):
-            grant_bits.append(f"+{grant['zeroKeys']} Ключей Зеро")
-        if grant.get('cleanFragments'):
-            grant_bits.append(f"+{grant['cleanFragments']} Чистых фрагментов")
-        if grant.get('extraSpins'):
-            grant_bits.append(f"+{grant['extraSpins']} спин")
-        if grant.get('socEliteDays'):
-            grant_bits.append(f"SOC ELITE на {grant['socEliteDays']} дней")
-        grant_text = ', '.join(grant_bits) if grant_bits else 'покупка активирована'
-        await message.reply_text(
-            "✅ <b>Покупка ZERO_DAY подтверждена</b>\n\n"
-            f"Выдано: <b>{grant_text}</b>\n"
-            "Fair score и рейтинги не изменены.",
-            parse_mode='HTML',
-        )
-    except Exception as e:
-        logger.exception(f"ZDNET successful payment grant error: {e}")
-        await message.reply_text(
-            "⚠️ Платёж получен, но выдача не завершилась. "
-            "Покупка сохранена для ручной проверки."
-        )
 
 
 def main():
@@ -9084,8 +8086,6 @@ def main():
     app.add_handler(CommandHandler("version",     cmd_version))
     app.add_handler(CommandHandler("teacher",     cmd_teacher))
     app.add_handler(CommandHandler("claim_admin", cmd_claim_admin))
-    app.add_handler(PreCheckoutQueryHandler(handle_zdnet_precheckout))
-    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, handle_zdnet_successful_payment))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
@@ -9100,8 +8100,6 @@ def main():
     print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
     print(f"👥 Пользователей: {db.get_user_count()}")
     print(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
-    print(f"🛡 ZDNET_URL: {ZDNET_URL or '❌ НЕ ЗАДАН'}")
-    print(f"🔌 ZDNET_API_URL: {ZDNET_API_URL or '❌ НЕ ЗАДАН'}")
     print(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
     print(f"🔌 HTTP-порт: {PORT}")
     if not BOT_PUBLIC_URL:
@@ -9145,9 +8143,8 @@ async def menu_updates(query, context):
 
 async def menu_games(query, context):
     """Подменю игр со статусами доступа."""
-    cipher_mode, zdnet_mode = await get_games_access_modes()
+    cipher_mode = await get_games_access_modes()
     kb = [
-        [btn(f"🛡 ZERO_DAY · {game_mode_label(zdnet_mode)}", 'menu_zdnet')],
         [btn(f"🎮 Шифровальщик · {game_mode_label(cipher_mode)}", 'menu_game')],
         [btn("🆕 Обновления", 'menu_updates')],
         [btn("🏠 Главное меню", 'back_to_main')],
@@ -9159,7 +8156,6 @@ async def menu_games(query, context):
         "🟢 Открыта — можно играть всем.\n"
         "🧪 Beta — нужен доступ тестировщика.\n"
         "🔒 Закрыта — запуск временно отключён.\n\n"
-        f"🛡 ZERO_DAY: <b>{game_mode_label(zdnet_mode)}</b>\n"
         f"🎮 Шифровальщик: <b>{game_mode_label(cipher_mode)}</b>",
         kb,
     )

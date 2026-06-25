@@ -1,0 +1,8 @@
+task mode: create
+primary deck-profile: engineering-platform
+secondary gates: education practice, teacher-facing workshop, responsible AI use
+required proof objects: lesson workflow map, scenario matrix, assessment rubric, safety boundary, prompt template
+source/asset requirements: no logos or identity assets; source slide uses OECD and UNESCO references
+brand authenticity constraints: no fabricated official marks
+profile-specific QA gates: technical AI claims remain concrete; workflow labels are readable; no vague "AI layer" diagrams
+known missing inputs: school jurisdiction and exact class grade are not specified, so examples are grade-neutral for informatics lessons

@@ -1,0 +1,17 @@
+Thesis: AI develops functional literacy only when students formulate, verify, improve, and explain, rather than outsource the answer.
+Audience: teachers of informatics and adjacent school subjects.
+One-line arc: define the problem, map AI to literacy skills, show classroom scenarios, set assessment and safety rules, end with a ready first lesson.
+
+Slide list:
+1. AI should be framed as a thinking trainer, not an answer machine. Proof: thesis rail.
+2. The learning target shifts from "get an answer" to "control a digital result". Proof: before/now/teacher role comparison.
+3. Functional literacy in informatics is a bundle of applied skills. Proof: competency map.
+4. AI has useful capabilities and hard limits. Proof: two-column capability/boundary map.
+5. A lesson with AI needs a full verification cycle. Proof: six-step workflow.
+6. Four classroom scenarios cover the core informatics literacy domains. Proof: scenario matrix.
+7. Information verification turns AI into a source-checking exercise. Proof: workflow example.
+8. Programming with AI works best through testing and debugging. Proof: code-check pipeline.
+9. Assessment must score the process, not just the final answer. Proof: rubric bars.
+10. Safety rules must be explicit before using open AI tools. Proof: allowed/not allowed boundary.
+11. A prompt template turns AI use into a mini technical specification. Proof: structured prompt.
+12. Teachers can start with one small controlled exercise. Proof: 15-minute implementation strip and source notes.
