@@ -158,6 +158,47 @@ python bot.py
 
 ---
 
+## 🖥️ Деплой на VPS через Docker
+
+Конфигурация [`compose.yaml`](compose.yaml) запускает бота и отдельный PostgreSQL
+контейнер. База хранится в Docker volume и сохраняется после перезапуска или
+пересборки бота.
+
+1. На сервере с Ubuntu установите Docker Engine и Docker Compose plugin.
+2. Клонируйте репозиторий и создайте файл окружения:
+
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+
+3. В `.env` обязательно укажите `BOT_TOKEN`, `POSTGRES_PASSWORD`,
+   `BOT_PUBLIC_URL` и `GAME_URL`. Пароль БД используйте длинный и URL-safe
+   (буквы, цифры, `_`, `-`). Для домена `https://bot.example.by` значения
+   последних двух переменных будут `https://bot.example.by` и
+   `https://bot.example.by/game/` соответственно.
+4. Запустите сервисы:
+
+   ```bash
+   docker compose up -d --build
+   docker compose logs -f bot
+   ```
+
+   Проверка готовности: `curl http://127.0.0.1:8080/health` должна вернуть
+   `{"ok": true}`.
+
+5. Для публичного домена поставьте Nginx или Caddy перед портом `8080` и
+   выпустите TLS-сертификат. Не открывайте порт PostgreSQL (`5432`) наружу.
+
+Для обновления кода на сервере: `git pull && docker compose up -d --build`.
+Перед существенным обновлением создайте бэкап базы:
+
+```bash
+docker compose exec -T postgres pg_dump -U bot school_bot > backup.sql
+```
+
+---
+
 ## ♻️ Сброс прогресса
 
 В админке доступны 2 режима:
