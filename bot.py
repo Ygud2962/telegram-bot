@@ -8103,8 +8103,8 @@ def main():
     print(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
     print(f"🔌 HTTP-порт: {PORT}")
     if not BOT_PUBLIC_URL:
-        print("⚠️  ВНИМАНИЕ: Задайте BOT_PUBLIC_URL в Railway → Variables!")
-        print("⚠️  Пример: BOT_PUBLIC_URL=https://ваш-домен.up.railway.app")
+        print("⚠️  ВНИМАНИЕ: Задайте BOT_PUBLIC_URL в переменных окружения!")
+        print("⚠️  Пример: BOT_PUBLIC_URL=https://bot.example.by")
 
     try:
         app.run_polling(

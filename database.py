@@ -14,6 +14,16 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
     raise ValueError("❌ DATABASE_URL не установлен!")
 
+# Railway требует TLS к управляемой БД, а PostgreSQL внутри закрытой Docker-сети
+# на VPS работает без него. По умолчанию оставляем прежнее безопасное поведение.
+_VALID_SSLMODES = {'disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'}
+DB_SSLMODE = os.environ.get('DB_SSLMODE', 'require').strip().lower()
+if DB_SSLMODE not in _VALID_SSLMODES:
+    raise ValueError(
+        '❌ DB_SSLMODE должен быть одним из: '
+        + ', '.join(sorted(_VALID_SSLMODES))
+    )
+
 db_pool = None
 _TEMP_CONNECTION_IDS: set[int] = set()
 _POLLING_LOCK_CONN = None
@@ -230,7 +240,7 @@ def init_pool():
                     pass
             db_pool = pool.SimpleConnectionPool(
                 minconn=1, maxconn=10,
-                dsn=DATABASE_URL, sslmode='require',
+                dsn=DATABASE_URL, sslmode=DB_SSLMODE,
                 connect_timeout=10,
             )
             logger.info(f"✅ Пул PostgreSQL инициализирован (попытка {attempt})")
@@ -250,7 +260,7 @@ def _try_new_connection():
     for attempt, delay in enumerate(_DB_RETRY_DELAYS[:3], 1):  # макс 3 попытки для одного запроса
         try:
             conn = psycopg2.connect(
-                DATABASE_URL, sslmode='require', connect_timeout=10
+                DATABASE_URL, sslmode=DB_SSLMODE, connect_timeout=10
             )
             return conn
         except Exception as e:
@@ -575,7 +585,7 @@ def acquire_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> bool:
     conn = None
     try:
         conn = psycopg2.connect(
-            DATABASE_URL, sslmode='require', connect_timeout=10
+            DATABASE_URL, sslmode=DB_SSLMODE, connect_timeout=10
         )
         conn.autocommit = True
         cur = conn.cursor()
@@ -643,7 +653,7 @@ def release_polling_lock(lock_key: int = _POLLING_LOCK_KEY) -> None:
 def init_db():
     conn = None
     try:
-        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        conn = psycopg2.connect(DATABASE_URL, sslmode=DB_SSLMODE)
         cur = conn.cursor()
 
         # Пользователи
