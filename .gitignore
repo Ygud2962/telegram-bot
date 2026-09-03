@@ -50,7 +50,3 @@ logs/
 # Environment variables
 .env
 .env.local
-.backup.env
-
-# VPS runtime data and logical PostgreSQL dumps
-backups/
