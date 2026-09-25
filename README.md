@@ -8,7 +8,7 @@
 [![Telegram](https://img.shields.io/badge/Telegram-@school__hoiniki__sch3__bot-27A7E7?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/school_hoiniki_sch3_bot)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Railway](https://img.shields.io/badge/Deploy-Railway-6B5CFF?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app/)
+[![Docker](https://img.shields.io/badge/Deploy-Docker%20Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![AI](https://img.shields.io/badge/AI-Groq-FF6B35?style=for-the-badge&logo=openai&logoColor=white)](https://groq.com/)
 
 <!-- AUTOVERSION:START -->
@@ -32,8 +32,8 @@
 | [Возможности](#-возможности) | Что умеет бот и игра |
 | [Архитектура](#-архитектура) | Как устроен проект |
 | [Быстрый старт](#-быстрый-старт) | Запуск локально |
-| [Переменные окружения](#-переменные-окружения) | Все env для Railway |
-| [Railway setup](#-настройка-railway) | Пошаговая настройка |
+| [Переменные окружения](#-переменные-окружения) | Все переменные окружения |
+| [Деплой на VPS](#-деплой-на-vps-через-docker) | Пошаговая настройка Docker Compose |
 | [API Mini App](#-api-mini-app) | `/game_sync`, `/game_state` и т.д. |
 | [Troubleshooting](#-частые-проблемы) | Что делать при сбоях |
 
@@ -140,21 +140,10 @@ python bot.py
 | `SLOW_DB_MS` | `350` | порог логов slow DB |
 | `SLOW_CALLBACK_MS` | `1000` | порог логов slow callback |
 
-Также поддерживаются fallback-переменные Railway: `RAILWAY_PUBLIC_DOMAIN`, `RAILWAY_STATIC_URL`.
-
----
-
-## 🧩 Настройка Railway
-
-1. Подключить PostgreSQL к сервису.
-2. В Variables задать:
-   - `BOT_TOKEN`
-   - `DATABASE_URL`
-   - `BOT_PUBLIC_URL=https://<your-service>.up.railway.app`
-   - `GAME_URL=https://<your-service>.up.railway.app/game/`
-   - `GAME_VERSION=<текущая версия>`
-3. После изменений фронта увеличивать `GAME_VERSION`.
-4. Открывать игру из кнопки бота (не из старой вкладки WebView).
+Проект переехал с Railway на собственный VPS (см. раздел ниже). Переменные
+`RAILWAY_PUBLIC_DOMAIN` и `RAILWAY_STATIC_URL` больше не используются как
+основной способ настройки — они остаются в коде только как legacy-fallback
+на случай повторного деплоя на Railway.
 
 ---
 
@@ -289,5 +278,3 @@ telegram-bot/
 
 - Бот: [@school_hoiniki_sch3_bot](https://t.me/school_hoiniki_sch3_bot)
 - Админ: [@Yury_hud](https://t.me/Yury_hud)
-
-
