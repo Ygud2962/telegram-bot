@@ -13,6 +13,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    profiles:
+      - dev # Локальная БД только для разработки. В продакшене на client.cloudvps.by не используется.
 
   bot:
     build: .
@@ -20,8 +22,11 @@ services:
     env_file:
       - .env
     environment:
+      # Для локальной разработки (profile: dev) используется локальная БД 'postgres'.
+      # Для продакшена на client.cloudvps.by замените на:
+      # DATABASE_URL: postgresql://user:pass@client.cloudvps.by:5432/school_bot
       DATABASE_URL: postgresql://${POSTGRES_USER:-bot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-school_bot}
-      PGSSLMODE: disable
+      PGSSLMODE: disable # Для локального Docker. Для client.cloudvps.by установите 'require' в .env
       PORT: 8080
     depends_on:
       postgres:
