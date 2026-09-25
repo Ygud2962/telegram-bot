@@ -1,4 +1,4 @@
-﻿import re
+import re
 import logging
 import asyncio
 import functools
@@ -8130,19 +8130,19 @@ def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
     app.add_error_handler(global_error_handler)
 
-    print("🤖 Бот запущен!")
-    print(f"🔖 Версия бота: {BOT_VERSION}")
-    print(f"🎮 Версия Шифровальщика: {GAME_VERSION}")
-    print(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
-    print("👑 Администраторы: определяются через БД (role=admin)")
-    print(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
-    print(f"👥 Пользователей: {db.get_user_count()}")
-    print(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
-    print(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
-    print(f"🔌 HTTP-порт: {PORT}")
+    logger.info("🤖 Бот запущен!")
+    logger.info(f"🔖 Версия бота: {BOT_VERSION}")
+    logger.info(f"🎮 Версия Шифровальщика: {GAME_VERSION}")
+    logger.info(f"👨‍🏫 Учителей в расписании: {len(ALL_TEACHERS)}")
+    logger.info("👑 Администраторы: определяются через БД (role=admin)")
+    logger.info(f"🤖 ИИ-помощник: {'✅ Groq ' + GROQ_MODEL if GPT_AVAILABLE else '❌ GROQ_API_KEY не задан'}")
+    logger.info(f"👥 Пользователей: {db.get_user_count()}")
+    logger.info(f"🎮 GAME_URL: {GAME_URL or '❌ НЕ ЗАДАН'}")
+    logger.info(f"🌐 BOT_PUBLIC_URL: {BOT_PUBLIC_URL or '❌ НЕ ЗАДАН — игра НЕ сможет синхронизировать очки!'}")
+    logger.info(f"🔌 HTTP-порт: {PORT}")
     if not BOT_PUBLIC_URL:
-        print("⚠️  ВНИМАНИЕ: Задайте BOT_PUBLIC_URL в Railway → Variables!")
-        print("⚠️  Пример: BOT_PUBLIC_URL=https://ваш-домен.up.railway.app")
+        logger.warning("⚠️  ВНИМАНИЕ: Задайте BOT_PUBLIC_URL в .env на сервере!")
+        logger.warning("⚠️  Пример: BOT_PUBLIC_URL=https://ваш-домен.by")
 
     try:
         app.run_polling(
