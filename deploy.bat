@@ -74,7 +74,7 @@ echo [7/7] Done.
 echo.
 echo ========================================
 echo   Done! Pushed to GitHub/main.
-echo   Railway deploy starts automatically via GitHub integration.
+echo   Not deployed yet: on the VPS run "git pull ^&^& docker compose up -d --build".
 echo ========================================
 echo.
 exit /b 0
@@ -120,7 +120,7 @@ rmdir /s /q "%TEMP_REPO%" >nul 2>nul
 echo.
 echo ========================================
 echo   Done! Pushed to GitHub/main (safe mode).
-echo   Railway deploy starts automatically via GitHub integration.
+echo   Not deployed yet: on the VPS run "git pull ^&^& docker compose up -d --build".
 echo ========================================
 echo.
 exit /b 0
