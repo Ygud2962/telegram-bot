@@ -3898,7 +3898,7 @@ function renderLeaderboard() {
     return `<div class="lb-row" style="${isMe?'background:rgba(255,224,51,.07);border-left:3px solid var(--accent)':''}">
       <div class="lb-rank ${rankClass}">${medals[i]||String(i+1)}</div>
       <div style="flex:1">
-        <div class="lb-name">${e.name}${isMe?' 👈':''}</div>
+        <div class="lb-name">${escapeHtml(e.name)}${isMe?' 👈':''}</div>
         <div class="lb-cls" style="font-size:var(--fs-xs);color:var(--muted)">${doneTag}</div>
       </div>
       <div class="lb-score">${e.score}</div>
@@ -4666,7 +4666,7 @@ function renderAboutTab() {
     // О игре
     + '<div style="background:rgba(255,224,51,.04);border:1px solid rgba(255,224,51,.1);border-radius:8px;padding:16px;margin-bottom:14px">'
     + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:8px">📖 О ИГРЕ</div>'
-    + '<div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7"><b style="color:#fdfaf0">Шивровальщик</b> — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div>'
+    + '<div style="font-size:var(--fs-sm);color:rgba(255,255,255,.8);line-height:1.7"><b style="color:#fdfaf0">Шифровальщик</b> — образовательная игра о событиях Великой Отечественной войны на территории Беларуси. Вы — советский разведчик. Расшифруйте донесения, пройдите 6 операций и приблизьте День Победы.</div></div>'
     // Как играть
     + '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:16px;margin-bottom:14px">'
     + '<div style="font-family:var(--head);font-size:var(--fs-base);color:var(--accent);letter-spacing:.06em;margin-bottom:10px">🎮 КАК ИГРАТЬ</div>'
@@ -4814,7 +4814,7 @@ function renderLeaderboardTab() {
         <div style="font-family:var(--head);font-size:var(--fs-base);
           color:${isMe?'var(--accent)':'#fdfaf0'};
           white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-          ${e.name}${roleIcon}${roleTag}${isMe?' 👈':''}
+          ${escapeHtml(e.name)}${roleIcon}${roleTag}${isMe?' 👈':''}
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.04em;display:flex;gap:6px">
           <span>${done}</span>
@@ -4850,7 +4850,7 @@ function renderLeaderboardTab() {
         background:${isMe?'rgba(255,224,51,.06)':''}">
         <div style="font-size:20px;min-width:28px;text-align:center">${medal}</div>
         <div style="flex:1">
-          <div style="font-family:var(--head);font-size:var(--fs-sm);color:${isMe?'var(--accent)':'#fdfaf0'}">${e.name}${isMe?' 👈':''}</div>
+          <div style="font-family:var(--head);font-size:var(--fs-sm);color:${isMe?'var(--accent)':'#fdfaf0'}">${escapeHtml(e.name)}${isMe?' 👈':''}</div>
           <div style="font-size:10px;color:var(--muted)">${achCount} достижений</div>
         </div>
         <div style="font-family:var(--head);font-size:var(--fs-md);color:var(--accent)">+${achPts}⭐</div>
