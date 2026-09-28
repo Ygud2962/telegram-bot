@@ -188,7 +188,7 @@ if not TOKEN:
     raise SystemExit("❌ BOT_TOKEN не задан!")
 
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-GROQ_MODEL   = "llama-3.3-70b-versatile"   # Более мощная бесплатная модель
+GROQ_MODEL = "llama-3.3-70b-versatile"   # Бесплатная модель OpenRouter
 GPT_AVAILABLE = bool(GROQ_API_KEY)
 
 # URL Mini App игры (задайте в Railway как переменную окружения GAME_URL)
@@ -1617,7 +1617,7 @@ async def ask_ai(question: str, user_id: int, is_teacher: bool = False) -> str:
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             r = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
+                "https://groq-proxy.uragud-2020.workers.dev",
                 json=payload, headers=headers
             )
             if r.status_code == 429:
@@ -3449,8 +3449,83 @@ def project_scope_label(scope: str) -> str:
     }.get(str(scope or 'bot').lower(), 'Бот')
 
 
+# Список бесплатных моделей OpenRouter для генерации новостей (по приоритету)
+
+# --- Cloudflare Workers AI ---
+CF_ACCOUNT_ID = os.environ.get('CLOUDFLARE_ACCOUNT_ID', '').strip()
+CF_EMAIL = os.environ.get('CLOUDFLARE_EMAIL', '').strip()
+CF_GLOBAL_KEY = os.environ.get('CLOUDFLARE_GLOBAL_KEY', '').strip()
+CF_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+
+
+def _clean_ai_markdown(text: str) -> str:
+    """Преобразует markdown от AI в HTML, понятный Telegram."""
+    if not text:
+        return text
+    # **bold** -> <b>bold</b>
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    # __bold__ -> <b>bold</b>
+    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
+    # Заголовки ##, ### в начале строк — убираем символы #
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # *italic* -> <i>italic</i> (одиночные, но не двойные)
+    text = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<i>\1</i>", text)
+    # - в начале строки на • 
+    text = re.sub(r"^\s*[-*]\s+", "• ", text, flags=re.MULTILINE)
+    return text.strip()
+
+
+async def _try_cloudflare_ai(prompt: str) -> str | None:
+    """Запрос к Cloudflare Workers AI напрямую по REST API."""
+    if not CF_ACCOUNT_ID or not CF_EMAIL or not CF_GLOBAL_KEY:
+        logger.error("CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_EMAIL или CLOUDFLARE_GLOBAL_KEY не заданы")
+        return None
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/{CF_MODEL}"
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                url,
+                headers={
+                    "X-Auth-Email": CF_EMAIL,
+                    "X-Auth-Key": CF_GLOBAL_KEY,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1200,
+                    "temperature": 0.75,
+                },
+            )
+            if r.status_code != 200:
+                logger.error(f"Cloudflare AI: status={r.status_code}, body={r.text[:300]!r}")
+                return None
+
+            data = r.json()
+            if not data.get("success"):
+                logger.error(f"Cloudflare AI: success=false, errors={data.get('errors')}")
+                return None
+
+            result = data.get("result") or {}
+            choices = result.get("choices") or []
+            text = ""
+            if choices:
+                text = ((choices[0].get("message") or {}).get("content") or "").strip()
+            elif result.get("response"):
+                text = result.get("response", "").strip()
+            if len(text) > 30:
+                text = _clean_ai_markdown(text)
+                logger.info(f"Cloudflare AI OK, {len(text)} символов")
+                return text
+            logger.error(f"Cloudflare AI: короткий/пустой ответ: {text[:100]!r}")
+            return None
+    except Exception as e:
+        logger.error(f"Cloudflare AI exception: {type(e).__name__}: {e!r}")
+        return None
+
+
 async def build_auto_news_draft():
-    """Собирает заголовок, текст и id изменений для автоматического черновика новости."""
+    """Собирает черновик новости через Cloudflare Workers AI, fallback — шаблон."""
     await seed_project_update_log()
     changes, recent_news = await asyncio.gather(
         asyncio.to_thread(db.get_project_changes, 20, True),
@@ -3462,31 +3537,61 @@ async def build_auto_news_draft():
     news_num = infer_next_bot_news_number(recent_news)
     title = f"Новость №{news_num}: обновления бота и игр"
 
-    grouped: dict[str, list[tuple]] = {}
-    change_ids: list[int] = []
+    change_list = []
+    change_ids = []
     for change_id, scope, change_type, change_title, details, source, created_at in changes:
-        grouped.setdefault(scope, []).append((change_title, details))
+        scope_label = project_scope_label(scope)
+        if details:
+            change_list.append(f"[{scope_label}] {change_title} — {details}")
+        else:
+            change_list.append(f"[{scope_label}] {change_title}")
         change_ids.append(int(change_id))
 
-    lines = [
-        f"🆕 <b>Новость №{news_num}</b>",
-        "",
-        "За последнее время в проекте появились важные изменения. Коротко и по делу:",
-    ]
-    for scope, items in grouped.items():
-        lines.append("")
-        lines.append(f"<b>{project_scope_label(scope)}</b>")
-        for change_title, details in items:
-            point = f"• {change_title}"
-            if details:
-                point += f" — {details}"
-            lines.append(point)
+    changes_text = "\n".join(change_list)
 
-    lines.extend([
-        "",
-        "Обновления будут выходить дальше. Если что-то работает странно — пишите автору проекта.",
-    ])
-    content = "\n".join(lines)
+    prompt = (
+        "Ты — автор новостей в Telegram-боте школьного проекта. Напиши пост-новость на русском языке. "
+        "Требования: живой дружелюбный стиль, эмодзи уместные (не более 8-10 на весь текст), "
+        "короткие абзацы, маркированные списки для изменений. Без сленга, без воды. "
+        "Разрешён HTML: только <b>...</b> для жирного. Никаких ** и ##. "
+        "Структура:\n"
+        "1) Яркий заголовок с эмодзи (одна строка).\n"
+        "2) Короткое вступление (1-2 предложения).\n"
+        "3) Блоки по разделам с подзаголовками и списком изменений.\n"
+        "4) Завершающая фраза (1 предложение).\n\n"
+        f"Список изменений:\n{changes_text}\n\n"
+        "Верни только текст новости, без пояснений."
+    )
+
+    ai_content = await _try_cloudflare_ai(prompt)
+
+    if not ai_content:
+        logger.info("Cloudflare AI недоступен, используем шаблонный метод.")
+        grouped: dict[str, list[tuple]] = {}
+        for change_id, scope, change_type, change_title, details, source, created_at in changes:
+            grouped.setdefault(scope, []).append((change_title, details))
+
+        lines = [
+            f"🆕 <b>Новость №{news_num}</b>",
+            "",
+            "За последнее время в проекте появились важные изменения. Коротко и по делу:",
+        ]
+        for scope, items in grouped.items():
+            lines.append("")
+            lines.append(f"<b>{project_scope_label(scope)}</b>")
+            for change_title, details in items:
+                point = f"• {change_title}"
+                if details:
+                    point += f" — {details}"
+                lines.append(point)
+
+        lines.extend([
+            "",
+            "Обновления будут выходить дальше. Если что-то работает странно — пишите автору проекта.",
+        ])
+        ai_content = "\n".join(lines)
+
+    content = ai_content
     if len(content) > 2000:
         content = content[:1940].rstrip() + "\n\n<i>Часть мелких изменений скрыта, чтобы новость была короче.</i>"
     return title[:100], content, change_ids
@@ -6889,7 +6994,7 @@ async def parse_photo_substitutions(photo_bytes: bytes) -> list:
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             r = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
+                "https://groq-proxy.uragud-2020.workers.dev",
                 json=payload, headers=headers
             )
             if r.status_code != 200:
