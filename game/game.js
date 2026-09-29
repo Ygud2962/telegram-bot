@@ -2763,7 +2763,7 @@ function animateMorse(el, text) {
 function renderRef(type, shift) {
   const ref = document.getElementById('cipher-ref');
   // Алфавит только для шифров: caesar, atbash, morse
-  if (!['caesar', 'atbash', 'morse'].includes(type)) {
+  if (!['caesar', 'atbash', 'morse', 'num'].includes(type)) {
     if (ref) ref.innerHTML = '';
     return;
   }

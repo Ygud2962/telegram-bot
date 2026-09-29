@@ -57,3 +57,4 @@ bot.py.backup*
 *.backup[0-9]
 cloudflared.deb
 compose.yaml.broken
+bot.py.before_time_test

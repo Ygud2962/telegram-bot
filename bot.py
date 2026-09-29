@@ -397,9 +397,9 @@ BELLS_TEXT = """🕒 <b>РАСПИСАНИЕ ЗВОНКОВ И ПИТАНИЯ</b
 ─────────────────────────────────
 🔔 5 урок:   12:00 – 12:45
 🔔 6 урок:   12:55 – 13:40
-🍎 <b>Полдник для всех</b>
 ─────────────────────────────────
 🔔 7 урок:   14:00 – 14:45
+🍎 <b>Полдник для всех</b>
 ─────────────────────────────────"""
 
 # ══════════════════════════════════════════════════════════
@@ -561,7 +561,7 @@ SCHEDULE_STRUCTURED = {
             (1, 'Информатика', 'Каджаия А.В./Гуд Ю.П.'),
             (2, 'Белорусский язык', 'Лебедевская М.П.'),
             (3, 'Русский язык', 'Пинчук А.В.'),
-            (4, 'Русская литература', 'КПинчук А.В.'),
+            (4, 'Русская литература', 'Пинчук А.В.'),
             (5, 'Математика', 'Коротчикова Л.В.'),
             (6, 'Английский язык', 'Тихоненко О.А.'),
         ],
@@ -883,7 +883,7 @@ SCHEDULE_STRUCTURED = {
             (2, 'Математика', 'Гуд Ю.П.'),
             (3, 'География', 'Юнах Т.В.'),
             (4, 'Русский язык', 'Леонова Д.А.'),
-            (5, 'История', 'Сивый А.В.'),
+            (5, 'Всемирная история', 'Сивый А.В.'),
             (6, 'Английский язык', 'Ревяко А.И./Штыхнова Л.Г.'),
         ],
         'Вторник': [
@@ -908,7 +908,7 @@ SCHEDULE_STRUCTURED = {
             (3, 'Искусство', 'Бельский С.В.'),
             (4, 'Физическая культура', 'Смольский С.М.'),
             (5, 'Информатика', 'Каджаия А.В./Гуд Ю.П.'),
-            (6, 'История', 'Сивый А.В.'),
+            (6, 'История Беларуси', 'Сивый А.В.'),
             (7, 'Математика', 'Гуд Ю.П.'),
         ],
         'Пятница': [
@@ -1591,8 +1591,8 @@ SYSTEM_PROMPT_TEACHER = (
 
 
 async def ask_ai(question: str, user_id: int, is_teacher: bool = False) -> str:
-    if not GROQ_API_KEY:
-        return "❌ ИИ-помощник не настроен. Установите GROQ_API_KEY."
+    if not CF_ACCOUNT_ID or not CF_EMAIL or not CF_GLOBAL_KEY:
+        return "❌ ИИ-помощник не настроен. Установите CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_EMAIL и CLOUDFLARE_GLOBAL_KEY."
 
     now_ts = time.time()
     _prune_ai_history(now_ts)
@@ -1606,47 +1606,45 @@ async def ask_ai(question: str, user_id: int, is_teacher: bool = False) -> str:
     sys_prompt = SYSTEM_PROMPT_TEACHER if is_teacher else SYSTEM_PROMPT_DEFAULT
 
     payload = {
-        "model": GROQ_MODEL,
         "messages": [{"role": "system", "content": sys_prompt}] + history,
         "max_tokens": 800,
         "temperature": 0.7,
     }
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}",
-               "Content-Type": "application/json"}
+    headers = {
+        "X-Auth-Email": CF_EMAIL,
+        "X-Auth-Key": CF_GLOBAL_KEY,
+        "Content-Type": "application/json",
+    }
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/ai/run/{CF_MODEL}"
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            r = await client.post(
-                "https://groq-proxy.uragud-2020.workers.dev",
-                json=payload, headers=headers
-            )
+            r = await client.post(url, json=payload, headers=headers)
             if r.status_code == 429:
                 return "⏳ Превышен лимит запросов. Попробуйте через минуту."
             if r.status_code == 401:
-                return "❌ Ошибка API-ключа Groq."
+                return "❌ Ошибка API-ключа Cloudflare."
             if r.status_code >= 400:
                 return f"❌ Ошибка API ({r.status_code}). Попробуйте позже."
-            r.raise_for_status()
-            answer = r.json()['choices'][0]['message']['content'].strip()
+            data = r.json()
+            result = data.get("result") or {}
+            choices = result.get("choices") or []
+            if choices:
+                answer = ((choices[0].get("message") or {}).get("content") or "").strip()
+            else:
+                answer = (result.get("response") or "").strip()
             if not answer:
-                return "❌ Пустой ответ ИИ. Перефразируйте вопрос."
-            # Сохраняем ответ в историю
+                return "❌ ИИ вернул пустой ответ. Попробуйте ещё раз."
+            answer = _clean_ai_markdown(answer)
             history.append({"role": "assistant", "content": answer})
-            AI_HISTORY_LAST_SEEN[user_id] = time.time()
-            AI_HISTORY[user_id] = history[-MAX_AI_HISTORY_MESSAGES:]
-            if len(answer) > 4000:
-                answer = answer[:4000] + "\n\n<i>...ответ обрезан</i>"
+            AI_HISTORY[user_id] = history
             return answer
-        except httpx.TimeoutException:
-            return "⏳ Превышено время ожидания. Попробуйте позже."
         except Exception as e:
-            logger.error(f"ask_ai error: {e}")
-            return f"❌ Ошибка ИИ: {str(e)[:100]}"
+            logger.error(f"ask_ai exception: {type(e).__name__}: {e!r}")
+            return "❌ Не удалось получить ответ от ИИ. Попробуйте позже."
 
 
-# ══════════════════════════════════════════════════════════
-#  ТЕХРЕЖИМ
-# ══════════════════════════════════════════════════════════
 async def check_maintenance(update: Update, context: CallbackContext,
                             is_admin: bool | None = None,
                             scope: str = 'bot') -> bool:
@@ -2797,6 +2795,24 @@ async def show_current_lesson(query, context):
             if sub:
                 text += f"⚠️ <b>ЗАМЕНА:</b> {sub[5]} — {sub[7]}\n"
         text += f"<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
+    elif info['status'] == 'before_school':
+        # До начала уроков
+        lessons = SCHEDULE_STRUCTURED.get(class_name, {}).get(day_name, [])
+        first_lesson = lessons[0] if lessons else None
+        text = (f"🌅 <b>ДОБРОЕ УТРО!</b>\n"
+                f"📅 {day_name}, {now.strftime('%d.%m')}\n"
+                f"🔔 Уроки ещё не начались\n"
+                f"⏳ До первого урока: <b>{_fmt_minutes(info['minutes_until'])}</b>\n")
+        if first_lesson:
+            text += (f"\n🕐 Начало в {info['start']}:\n"
+                     f"📚 <b>{first_lesson[1]}</b>\n"
+                     f"👨‍🏫 {first_lesson[2]}\n")
+            subs = await asyncio.to_thread(db.get_substitutions_for_class_date,
+                                           class_name, today_str)
+            sub = next((s for s in subs if s[3] == first_lesson[0]), None)
+            if sub:
+                text += f"⚠️ <b>ЗАМЕНА:</b> {sub[5]} — {sub[7]}\n"
+        text += f"\n<i>Обновлено: {now.strftime('%H:%M:%S')}</i>"
     else:
         num = info['number']
         text = (f"🔔 <b>ИДЁТ УРОК №{num}</b>\n"
@@ -4588,7 +4604,56 @@ async def admin_set_season_mode(query, context, mode: str):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ДОБАВЛЕНИЕ ЗАМЕНЫ (ПОШАГОВОЕ)
 # ══════════════════════════════════════════════════════════
+async def get_free_teachers(day: str, lesson_num: int, exclude_names: set | None = None):
+    """Возвращает (free, busy) — ФИО учителей, у которых нет урока / есть урок в указанный день/урок."""
+    if exclude_names is None:
+        exclude_names = set()
+
+    # Кто занят — из расписания
+    busy_set = set()
+    for cls, days in SCHEDULE_STRUCTURED.items():
+        lessons = days.get(day, [])
+        for lesson in lessons:
+            if lesson[0] == lesson_num:
+                for t in str(lesson[2]).split('/'):
+                    t = t.strip()
+                    if t:
+                        busy_set.add(t)
+
+    # Все учителя — из БД
+    teachers_db = await asyncio.to_thread(db.get_all_teachers_db)
+    all_names = []
+    for t in teachers_db:
+        name = str(t[0]).strip() if t and t[0] else ''
+        if name:
+            all_names.append(name)
+    all_names = sorted(set(all_names))
+
+    free = []
+    busy = []
+    for name in all_names:
+        if name in exclude_names:
+            continue
+        # Нормализуем: если в расписании "Королёва", а в БД "Королева" — считаем занятым
+        # Проверяем оба варианта (с ё и без)
+        variants = {name, name.replace('ё', 'е'), name.replace('е', 'ё')}
+        if variants & busy_set:
+            busy.append(name)
+        else:
+            free.append(name)
+
+    return free, busy
+
+
+
+
+
 async def admin_add_sub_start(query, context):
+    # Сбрасываем предыдущий флоу добавления замены (если был)
+    for k in list(context.user_data.keys()):
+        if k.startswith('sub_') or k == 'adding_sub':
+            context.user_data.pop(k, None)
+
     today = datetime.now(TZ_MINSK).date()
     kb = []
     for i in range(7):
@@ -4662,21 +4727,87 @@ async def handle_sub_flow(query, context):
                 'sub_old_teacher': lesson[2].split('/')[0].strip(),
                 'sub_step': 'new_teacher',
             })
-        teachers_db = await asyncio.to_thread(db.get_all_teachers_db)
-        names = [t[0] for t in teachers_db]
+        # Вычисляем свободных и занятых учителей
+        old_teacher = context.user_data.get('sub_old_teacher', '')
+        free, busy = await get_free_teachers(day, num, exclude_names={old_teacher})
+
+        def short(n):
+            return n if len(n) <= 28 else n[:26] + "…"
+
         kb = []
-        for i in range(0, len(names), 2):
-            row = [btn(names[i][:22], f'sub_tch_{i}')]
-            if i + 1 < len(names):
-                row.append(btn(names[i+1][:22], f'sub_tch_{i+1}'))
-            kb.append(row)
+        if free:
+            kb.append([btn("━━━ ✅ СВОБОДНЫЕ ━━━", 'sub_noop')])
+            for i in range(0, len(free), 2):
+                row = [btn(short(free[i]), f'sub_tchf_{i}')]
+                if i + 1 < len(free):
+                    row.append(btn(short(free[i+1]), f'sub_tchf_{i+1}'))
+                kb.append(row)
+            context.user_data['sub_free_teachers'] = free
+        else:
+            kb.append([btn("⚠️ Свободных нет", 'sub_noop')])
+
+        if busy:
+            kb.append([btn("━━━ ❌ ЗАНЯТЫ ━━━", 'sub_noop')])
+            for i in range(0, len(busy), 2):
+                row = [btn(short(busy[i]), f'sub_tch_{i}')]
+                if i + 1 < len(busy):
+                    row.append(btn(short(busy[i+1]), f'sub_tch_{i+1}'))
+                kb.append(row)
+            context.user_data['sub_teacher_names'] = busy
+
         kb.append([btn("❌ Отмена", 'cancel_adding')])
-        context.user_data['sub_teacher_names'] = names
+
         await safe_edit(query,
             f"<b>➕ ШАГ 4/4</b>\n"
             f"📅 {day}  🏫 {cls.upper()}  Урок {num}\n"
             f"📚 {context.user_data.get('sub_subject','')}\n"
-            f"👨‍🏫 Выберите НОВОГО учителя:", kb)
+            f"👨‍🏫 {old_teacher} (заменяем)\n\n"
+            f"🟢 Свободных: <b>{len(free)}</b>  ❌ Занятых: <b>{len(busy)}</b>\n"
+            f"Выберите нового учителя:", kb)
+
+    elif step == 'new_teacher' and data == 'sub_noop':
+        # Просто заголовок — ничего не делаем
+        await query.answer()
+
+    elif step == 'new_teacher' and data.startswith('sub_tchf_'):
+        idx = int(data.replace('sub_tchf_', ''))
+        free = context.user_data.get('sub_free_teachers', [])
+        new_teacher = free[idx] if idx < len(free) else "Неизвестно"
+
+        date_str    = context.user_data['sub_date']
+        day         = context.user_data['sub_day']
+        cls         = context.user_data['sub_class']
+        num         = context.user_data['sub_lesson']
+        subject     = context.user_data['sub_subject']
+        old_teacher = context.user_data['sub_old_teacher']
+
+        await asyncio.to_thread(
+            db.add_substitution,
+            date_str, day, num, subject, subject, old_teacher, new_teacher, cls
+        )
+        sub_data = {
+            'date': date_str, 'day': day, 'class_name': cls,
+            'lesson': num, 'old_subject': subject,
+            'new_subject': subject, 'old_teacher': old_teacher,
+        }
+        await notify_teacher_substitution(context, new_teacher, sub_data)
+        await notify_class_substitution(context, cls, {**sub_data, 'new_teacher': new_teacher})
+
+        # Чистим флоу, чтобы «Добавить ещё» работало
+        _clear_flow(context)
+
+        kb = [
+            [btn("➕ Добавить ещё", 'admin_add_sub')],
+            [btn("↩️ Контент", 'admin_content_panel')],
+        ]
+        d_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        await safe_edit(query,
+            f"✅ <b>Замена добавлена!</b>\n\n"
+            f"📅 {d_obj.strftime('%d.%m.%Y')} ({day})\n"
+            f"🏫 {cls.upper()}  Урок {num}  ({lesson_time_str(num)})\n"
+            f"📚 {subject}\n"
+            f"👨‍🏫 {old_teacher} → <b>{new_teacher}</b>\n\n"
+            f"<i>Уведомление отправлено учителю.</i>", kb)
 
     elif step == 'new_teacher' and data.startswith('sub_tch_'):
         idx = int(data.replace('sub_tch_', ''))
