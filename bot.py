@@ -1192,6 +1192,29 @@ GAME_TITLES = {
     'cipher': 'Шифровальщик',
 }
 
+# Ресурсные центры (открываются как WebApp в Telegram)
+RESOURCE_BIOLOGY_URL = "https://ygud2962.github.io/biology-site/index.html"
+RESOURCE_CHEMISTRY_URL = "https://ygud2962.github.io/chemistry-site/index.html"
+
+async def menu_resource_centers(query, context):
+    """Меню «Ресурсные центры» — Биология и Химия как WebApp."""
+    from telegram import InlineKeyboardButton, WebAppInfo
+    kb = [
+        [InlineKeyboardButton("🧬 Биология", web_app=WebAppInfo(url=RESOURCE_BIOLOGY_URL))],
+        [InlineKeyboardButton("🧪 Химия", web_app=WebAppInfo(url=RESOURCE_CHEMISTRY_URL))],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "📚 <b>РЕСУРСНЫЕ ЦЕНТРЫ</b>\n\n"
+        "Материалы для подготовки по предметам:\n"
+        "• 🧬 Биология — программа, план, материалы, олимпиады\n"
+        "• 🧪 Химия — программа, план, материалы, олимпиады\n\n"
+        "Нажмите на нужный раздел, чтобы открыть:",
+        kb,
+    )
+
+
 PROJECT_UPDATES = [
     {
         'date': '29.05.2026',
@@ -6823,6 +6846,7 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'menu_ai':                menu_ai,
         'menu_games':             menu_games,
         'menu_updates':           menu_updates,
+        'menu_resource_centers': menu_resource_centers,
         'menu_game':              menu_game,
         'menu_help':              menu_help,
         'admin_panel':                show_admin_panel,
@@ -8451,6 +8475,7 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
         [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ-помощник", 'menu_ai')],
         [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
         [btn("🎮 Игры", 'menu_games'), btn("🆕 Обновления", 'menu_updates')],
+        [btn("📚 Ресурсные центры", 'menu_resource_centers')],
         [btn("🆘 Помощь", 'menu_help')],
     ]
 

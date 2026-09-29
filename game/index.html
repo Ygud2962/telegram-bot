@@ -300,18 +300,64 @@
             max-height: none;
             overflow-y: visible;
         }
-        .cipher-ref-title { font-size: 9px; color: var(--accent); letter-spacing: .15em; margin-bottom: 8px; font-family: var(--head); }
+        .cipher-ref-title { font-size: 10px; color: var(--accent); letter-spacing: .12em; margin-bottom: 10px; font-family: var(--head); font-weight: 700; }
+
+        /* Сетка для Цезаря / Атбаш / Числового кода */
+        .caesar-ref {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            font-size: var(--fs-base);
+            font-family: var(--mono);
+        }
+        .caesar-ref > span {
+            background: rgba(255,224,51,.06);
+            border: 1px solid rgba(255,224,51,.15);
+            padding: 6px 4px;
+            border-radius: 4px;
+            text-align: center;
+            color: var(--text);
+            font-weight: 700;
+            letter-spacing: .04em;
+            white-space: nowrap;
+            line-height: 1.2;
+        }
+        .caesar-ref > span .arrow {
+            color: var(--accent);
+            opacity: .7;
+            margin: 0 2px;
+        }
+
+        /* Сетка для морзе */
         .morse-ref {
             display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 4px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
             font-size: var(--fs-sm);
         }
-        .morse-ref div {
-            background: rgba(255,224,51,.05);
-            padding: 4px;
-            border-radius: 3px;
+        .morse-ref .morse-item {
+            background: rgba(255,224,51,.06);
+            border: 1px solid rgba(255,224,51,.15);
+            padding: 5px 4px;
+            border-radius: 4px;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            line-height: 1.15;
+        }
+        .morse-ref .morse-item .letter {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: var(--fs-base);
+            font-family: var(--head);
+        }
+        .morse-ref .morse-item .code {
+            color: var(--muted);
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: .12em;
         }
         .morse-code-display {
             display: flex;

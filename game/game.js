@@ -2779,15 +2779,15 @@ function renderRef(type, shift) {
     <div style="font-size:var(--fs-lg);color:var(--accent2);font-weight:700;text-align:center;padding:8px 0;letter-spacing:.06em;border:1px solid rgba(255,90,90,.3);border-radius:4px;margin-bottom:8px">
       ⚠️ ДОЧИТАЙТЕ ТАБЛИЦУ ДО КОНЦА!
     </div>
-    <div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div class="morse-item">${l} ${c}</div>`).join('')}</div>`;
+    <div class="morse-ref">${Object.entries(MORSE_TABLE).map(([l,c])=>`<div class="morse-item"><span class="letter">${l}</span><span class="code">${c}</span></div>`).join('')}</div>`;
   } else if (type === 'atbash') {
     const a = RU_ALPHA;
     ref.innerHTML = `<div class="cipher-ref-title">// ТАБЛИЦА АТБАШ (зеркальный алфавит)</div>
-    <div class="caesar-ref">${a.split('').map((l,i)=>`${a[a.length-1-i]}→${l}`).join('  ')}</div>`;
+    <div class="caesar-ref">${a.split('').map((l,i)=>`<span>${a[a.length-1-i]}<span class="arrow">→</span>${l}</span>`).join('')}</div>`;
   } else if (type === 'num') {
     const a = RU_ALPHA;
     ref.innerHTML = `<div class="cipher-ref-title">// ЧИСЛОВОЙ КОД (буква = номер в алфавите)</div>
-    <div class="caesar-ref">${a.split('').map((l,i)=>`${i+1}=${l}`).join('  ')}</div>`;
+    <div class="caesar-ref">${a.split('').map((l,i)=>`<span>${i+1}<span class="arrow">=</span>${l}</span>`).join('')}</div>`;
   } else if (type === 'anagram' || type === 'map') {
     ref.innerHTML = ''; // рендерится отдельно
   } else if (type === 'math') {
@@ -2801,8 +2801,8 @@ function renderRef(type, shift) {
     ref.innerHTML = `<div class="cipher-ref-title">// АЛФАВИТ ДЛЯ РАСШИФРОВКИ (сдвиг ${shift})</div>
     <div class="caesar-ref">${alpha.split('').map((l,i)=>{
       const fromIdx = (i + shift) % alpha.length;
-      return `${alpha[fromIdx]}→${l}`;
-    }).join('  ')}</div>`;
+      return `<span>${alpha[fromIdx]}<span class="arrow">→</span>${l}</span>`;
+    }).join('')}</div>`;
   }
 }
 
