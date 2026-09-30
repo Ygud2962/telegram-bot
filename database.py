@@ -4827,3 +4827,370 @@ def get_chapter_schedule_for_game() -> list:
         return []
     finally:
         release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  ТИКЕТЫ (обращения пользователей)
+# ══════════════════════════════════════════════════════════
+
+def add_ticket(user_id: int, user_name: str, category: str = 'other') -> int:
+    """Создаёт новый тикет. Возвращает его id, или 0 при ошибке."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO tickets (user_id, user_name, category, status)
+            VALUES (%s, %s, %s, 'new')
+            RETURNING id
+        ''', (user_id, user_name or '', category or 'other'))
+        ticket_id = cur.fetchone()[0]
+        conn.commit()
+        logger.info(f"✅ Тикет #{ticket_id}: user={user_id} cat={category}")
+        return int(ticket_id)
+    except Exception as e:
+        logger.error(f"add_ticket: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
+
+
+def add_ticket_message(ticket_id: int, sender: str, sender_id: int,
+                       sender_name: str, text: str = None,
+                       photo_file_id: str = None) -> bool:
+    """Добавляет сообщение в тикет и обновляет updated_at."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO ticket_messages
+            (ticket_id, sender, sender_id, sender_name, text, photo_file_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (ticket_id, sender, sender_id, sender_name or '',
+              text or '', photo_file_id))
+        cur.execute('UPDATE tickets SET updated_at = NOW() WHERE id = %s', (ticket_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"add_ticket_message: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_ticket(ticket_id: int):
+    """Возвращает тикет как кортеж: id, user_id, user_name, category, status,
+    taken_by_id, taken_by_name, created_at, updated_at."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT id, user_id, user_name, category, status,
+                   taken_by_id, taken_by_name, created_at, updated_at
+            FROM tickets WHERE id = %s
+        ''', (ticket_id,))
+        return cur.fetchone()
+    except Exception as e:
+        logger.error(f"get_ticket: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+
+def get_ticket_messages(ticket_id: int) -> list:
+    """Все сообщения тикета в хронологическом порядке.
+    Возвращает: [(id, sender, sender_id, sender_name, text, photo_file_id, created_at), ...]"""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT id, sender, sender_id, sender_name, text, photo_file_id, created_at
+            FROM ticket_messages
+            WHERE ticket_id = %s
+            ORDER BY created_at ASC, id ASC
+        ''', (ticket_id,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_ticket_messages: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_user_tickets(user_id: int, limit: int = 10) -> list:
+    """Последние тикеты пользователя.
+    Возвращает: [(id, category, status, created_at, updated_at, msg_count), ...]"""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT t.id, t.category, t.status, t.created_at, t.updated_at,
+                   (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id) AS msg_count
+            FROM tickets t
+            WHERE t.user_id = %s
+            ORDER BY t.updated_at DESC
+            LIMIT %s
+        ''', (user_id, limit))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_user_tickets: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_tickets_by_status(status: str, limit: int = 20) -> list:
+    """Тикеты по статусу (для админа).
+    Возвращает: [(id, user_id, user_name, category, status, updated_at, msg_count), ...]"""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        if status == 'all':
+            cur.execute('''
+                SELECT t.id, t.user_id, t.user_name, t.category, t.status, t.updated_at,
+                       (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id)
+                FROM tickets t
+                ORDER BY
+                    CASE t.status
+                        WHEN 'new' THEN 1
+                        WHEN 'in_progress' THEN 2
+                        WHEN 'postponed' THEN 3
+                        WHEN 'resolved' THEN 4
+                        WHEN 'rejected' THEN 5
+                        ELSE 9
+                    END,
+                    t.updated_at DESC
+                LIMIT %s
+            ''', (limit,))
+        else:
+            cur.execute('''
+                SELECT t.id, t.user_id, t.user_name, t.category, t.status, t.updated_at,
+                       (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id)
+                FROM tickets t
+                WHERE t.status = %s
+                ORDER BY t.updated_at DESC
+                LIMIT %s
+            ''', (status, limit))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_tickets_by_status: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def count_tickets_by_status() -> dict:
+    """Счётчики по каждому статусу для фильтров админки."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT status, COUNT(*) FROM tickets GROUP BY status
+        ''')
+        rows = cur.fetchall()
+        result = {'new': 0, 'in_progress': 0, 'postponed': 0, 'resolved': 0, 'rejected': 0, 'all': 0}
+        for status, cnt in rows:
+            result[status] = cnt
+            result['all'] += cnt
+        return result
+    except Exception as e:
+        logger.error(f"count_tickets_by_status: {e}")
+        return {'new': 0, 'in_progress': 0, 'postponed': 0, 'resolved': 0, 'rejected': 0, 'all': 0}
+    finally:
+        release_connection(conn)
+
+
+def update_ticket_status(ticket_id: int, status: str,
+                         admin_id: int = None, admin_name: str = None) -> bool:
+    """Меняет статус тикета. Если status = 'in_progress' — фиксирует админа, взявшего в работу."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        if status == 'in_progress' and admin_id is not None:
+            cur.execute('''
+                UPDATE tickets
+                SET status = %s,
+                    taken_by_id = COALESCE(taken_by_id, %s),
+                    taken_by_name = COALESCE(taken_by_name, %s),
+                    updated_at = NOW()
+                WHERE id = %s
+            ''', (status, admin_id, admin_name or '', ticket_id))
+        else:
+            cur.execute('''
+                UPDATE tickets
+                SET status = %s, updated_at = NOW()
+                WHERE id = %s
+            ''', (status, ticket_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"update_ticket_status: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def get_last_ticket_time(user_id: int):
+    """Время последнего созданного тикета пользователем (для кулдауна)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT created_at FROM tickets
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (user_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"get_last_ticket_time: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+
+def touch_ticket(ticket_id: int) -> bool:
+    """Обновляет updated_at тикета (при новом сообщении)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('UPDATE tickets SET updated_at = NOW() WHERE id = %s', (ticket_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"touch_ticket: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+# ══════════════════════════════════════════════════════════
+#  FAQ (частые вопросы)
+# ══════════════════════════════════════════════════════════
+
+def add_faq(question: str, answer: str, source_ticket: int = None,
+            admin_id: int = None, admin_name: str = None) -> int:
+    """Добавляет вопрос-ответ в FAQ. Возвращает id."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO faq (question, answer, source_ticket, created_by_id, created_by_name)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (question.strip(), answer.strip(), source_ticket, admin_id, admin_name or ''))
+        faq_id = cur.fetchone()[0]
+        conn.commit()
+        logger.info(f"✅ FAQ #{faq_id}: {question[:50]}")
+        return int(faq_id)
+    except Exception as e:
+        logger.error(f"add_faq: {e}")
+        _safe_rollback(conn)
+        return 0
+    finally:
+        release_connection(conn)
+
+
+def get_faq_list(limit: int = 30) -> list:
+    """Все FAQ, новые сверху."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT id, question, answer, views_count, created_at
+            FROM faq
+            ORDER BY created_at DESC
+            LIMIT %s
+        ''', (limit,))
+        return cur.fetchall()
+    except Exception as e:
+        logger.error(f"get_faq_list: {e}")
+        return []
+    finally:
+        release_connection(conn)
+
+
+def get_faq(faq_id: int):
+    """Один FAQ."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT id, question, answer, views_count, created_at, created_by_name
+            FROM faq WHERE id = %s
+        ''', (faq_id,))
+        return cur.fetchone()
+    except Exception as e:
+        logger.error(f"get_faq: {e}")
+        return None
+    finally:
+        release_connection(conn)
+
+
+def increment_faq_view(faq_id: int) -> bool:
+    """Увеличивает счётчик просмотров."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('UPDATE faq SET views_count = views_count + 1 WHERE id = %s', (faq_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"increment_faq_view: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def delete_faq(faq_id: int) -> bool:
+    """Удаляет FAQ."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM faq WHERE id = %s', (faq_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"delete_faq: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)
+
+
+def delete_ticket(ticket_id: int) -> bool:
+    """Удаляет тикет и всю его переписку (каскадом)."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM tickets WHERE id = %s', (ticket_id,))
+        conn.commit()
+        logger.info(f"🗑 Тикет #{ticket_id} удалён")
+        return True
+    except Exception as e:
+        logger.error(f"delete_ticket: {e}")
+        _safe_rollback(conn)
+        return False
+    finally:
+        release_connection(conn)

@@ -1270,7 +1270,6 @@ _FLOW_KEYS = (
     'auto_news_change_ids',
     'edit_news_id', 'edit_step', 'edit_old_title', 'edit_old_content',
     'edit_old_scope', 'edit_new_title',
-    'photo_subs_pending', 'pending_subs', 'pending_subs_saved',
     'chname_page',
     'broadcasting', 'broadcast_step', 'broadcast_text',
     'deleting_sub', 'searching_teacher', 'found_teachers',
@@ -5851,6 +5850,366 @@ async def cmd_claim_admin(update: Update, context: CallbackContext):
 # ══════════════════════════════════════════════════════════
 #  МЕНЮ: ADMIN PANEL
 # ══════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#  ЗАМЕНЫ ГОЛОСОМ (Whisper → Llama → JSON)
+# ══════════════════════════════════════════════════════════
+#  ТИКЕТЫ: пользовательская часть
+# ══════════════════════════════════════════════════════════
+
+TICKET_CATEGORIES = {
+    'bug':      ('🐛 Баг', 'что-то не работает'),
+    'idea':     ('💡 Идея', 'предложение по улучшению'),
+    'question': ('❓ Вопрос', 'как что-то использовать'),
+    'other':    ('💬 Другое', 'что-то ещё'),
+}
+
+TICKET_STATUS_LABELS = {
+    'new':         '🆕 Новый',
+    'in_progress': '👀 В работе',
+    'postponed':   '🕐 Отложен',
+    'resolved':    '✅ Решено',
+    'rejected':    '❌ Отклонён',
+}
+
+TICKET_COOLDOWN_SEC = 300  # 5 минут
+
+
+def _ticket_category_label(cat: str) -> str:
+    return TICKET_CATEGORIES.get(cat, ('💬 Другое', ''))[0]
+
+
+def _ticket_status_label(status: str) -> str:
+    return TICKET_STATUS_LABELS.get(status, f'⚙️ {status}')
+
+
+async def menu_ticket_new(query, context):
+    """Меню: выбор категории для нового тикета."""
+    user = query.from_user
+
+    # Проверяем кулдаун
+    last = await asyncio.to_thread(db.get_last_ticket_time, user.id)
+    if last:
+        now_ts = datetime.now(pytz.utc)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        elapsed = (now_ts - last).total_seconds()
+        if elapsed < TICKET_COOLDOWN_SEC:
+            left = int(TICKET_COOLDOWN_SEC - elapsed)
+            mins = left // 60
+            secs = left % 60
+            await safe_edit(
+                query,
+                f"⏳ <b>Подождите немного</b>\n\n"
+                f"Новый тикет можно создать через <b>{mins} мин {secs} сек</b>.\n"
+                f"<i>Это защита от спама.</i>",
+                [[btn("🏠 Главное меню", 'back_to_main')]],
+            )
+            return
+
+    kb = [
+        [btn("🐛 Баг", 'ticket_cat_bug'), btn("💡 Идея", 'ticket_cat_idea')],
+        [btn("❓ Вопрос", 'ticket_cat_question'), btn("💬 Другое", 'ticket_cat_other')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "📩 <b>ЗАДАТЬ ВОПРОС</b>\n\n"
+        "Опишите проблему или предложение — я передам администрации.\n\n"
+        "🔒 <b>Анонимно:</b> автор виден только админам.\n"
+        "📩 <b>Ответ придёт сюда</b>, в личку.\n\n"
+        "Выберите категорию:",
+        kb,
+    )
+
+
+async def ticket_pick_category(query, context, category: str):
+    """Пользователь выбрал категорию — ждём текст."""
+    context.user_data['awaiting_ticket_text'] = True
+    context.user_data['ticket_draft_category'] = category
+
+    cat_label = _ticket_category_label(category)
+    kb = [[btn("❌ Отмена", 'ticket_cancel')]]
+    await safe_edit(
+        query,
+        f"📩 <b>НОВЫЙ ТИКЕТ</b>\n"
+        f"Категория: <b>{cat_label}</b>\n\n"
+        f"Опишите вашу проблему или вопрос.\n"
+        f"Можно приложить фото (необязательно).\n\n"
+        f"<i>Ответ придёт сюда, в личку.</i>",
+        kb,
+    )
+
+
+async def ticket_cancel(query, context):
+    """Отмена создания тикета."""
+    context.user_data.pop('awaiting_ticket_text', None)
+    context.user_data.pop('ticket_draft_category', None)
+    context.user_data.pop('awaiting_ticket_reply', None)
+    context.user_data.pop('ticket_reply_id', None)
+    kb = [[btn("🏠 Главное меню", 'back_to_main')]]
+    await safe_edit(query, "❌ Отменено.", kb)
+
+
+async def handle_ticket_text(update: Update, context: CallbackContext) -> bool:
+    """Если пользователь пишет текст/фото в режиме тикета — обрабатываем.
+    Возвращает True, если сообщение обработано (и handle_message должен выйти)."""
+    if not isinstance(context.user_data, dict):
+        return False
+
+    # ── Создание нового тикета ──
+    if context.user_data.get('awaiting_ticket_text'):
+        user = update.effective_user
+        text = (update.message.text or '').strip()
+        photo_file_id = None
+        if update.message.photo:
+            photo_file_id = update.message.photo[-1].file_id
+
+        if not text and not photo_file_id:
+            await update.message.reply_text("⚠️ Напишите текст или пришлите фото.")
+            return True
+        if text and len(text) > 2000:
+            text = text[:2000] + '…'
+
+        category = context.user_data.get('ticket_draft_category', 'other')
+        context.user_data.pop('awaiting_ticket_text', None)
+        context.user_data.pop('ticket_draft_category', None)
+
+        user_name = (user.first_name or '') + (' ' + user.last_name if user.last_name else '')
+        ticket_id = await asyncio.to_thread(db.add_ticket, user.id, user_name.strip(), category)
+        if not ticket_id:
+            await update.message.reply_text("❌ Не удалось создать тикет. Попробуйте позже.")
+            return True
+
+        await asyncio.to_thread(
+            db.add_ticket_message, ticket_id, 'user', user.id, user_name.strip(),
+            text, photo_file_id,
+        )
+
+        # Уведомляем админов
+        await _notify_admins_new_ticket(context, ticket_id, user.id, user_name.strip(), category, text, photo_file_id)
+
+        kb = [
+            [btn("📋 Мои обращения", 'ticket_my')],
+            [btn("🏠 Главное меню", 'back_to_main')],
+        ]
+        await update.message.reply_text(
+            f"✅ <b>Тикет #{ticket_id} создан!</b>\n\n"
+            f"Категория: {_ticket_category_label(category)}\n"
+            f"Ответ придёт сюда, в личку. Обычно в течение дня.",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode='HTML',
+        )
+        return True
+
+    # ── Ответ пользователя в существующий тикет ──
+    if context.user_data.get('awaiting_ticket_reply'):
+        user = update.effective_user
+        ticket_id = context.user_data.get('ticket_reply_id')
+        text = (update.message.text or '').strip()
+        photo_file_id = None
+        if update.message.photo:
+            photo_file_id = update.message.photo[-1].file_id
+
+        if not text and not photo_file_id:
+            await update.message.reply_text("⚠️ Напишите текст или пришлите фото.")
+            return True
+        if text and len(text) > 2000:
+            text = text[:2000] + '…'
+
+        context.user_data.pop('awaiting_ticket_reply', None)
+        context.user_data.pop('ticket_reply_id', None)
+
+        user_name = (user.first_name or '') + (' ' + user.last_name if user.last_name else '')
+        ok = await asyncio.to_thread(
+            db.add_ticket_message, ticket_id, 'user', user.id, user_name.strip(),
+            text, photo_file_id,
+        )
+        if not ok:
+            await update.message.reply_text("❌ Не удалось отправить сообщение.")
+            return True
+
+        # Если тикет был закрыт — переоткрываем
+        t = await asyncio.to_thread(db.get_ticket, ticket_id)
+        if t and t[4] in ('resolved', 'rejected'):
+            await asyncio.to_thread(db.update_ticket_status, ticket_id, 'new')
+
+        # Уведомляем админов
+        await _notify_admins_new_ticket(
+            context, ticket_id, user.id, user_name.strip(),
+            'reply', f"[Пользователь ответил]\n\n{text}", photo_file_id,
+        )
+
+        kb = [
+            [btn("📋 Мои обращения", 'ticket_my')],
+            [btn("🏠 Главное меню", 'back_to_main')],
+        ]
+        await update.message.reply_text(
+            f"✅ Сообщение отправлено в тикет #{ticket_id}.",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode='HTML',
+        )
+        return True
+
+    return False
+
+
+async def _notify_admins_new_ticket(context, ticket_id, user_id, user_name, category, text, photo_file_id):
+    """Отправляет уведомление всем админам о новом тикете или ответе."""
+    try:
+        admins = await asyncio.to_thread(db.get_all_bot_admins)
+    except Exception:
+        return
+
+    cat_label = _ticket_category_label(category) if category in TICKET_CATEGORIES else '💬 Ответ'
+    preview = (text or '')[:200]
+
+    msg = (
+        f"📬 <b>ТИКЕТ #{ticket_id}</b>\n"
+        f"Категория: {cat_label}\n"
+        f"Автор: <b>{html.escape(user_name)}</b> · <code>{user_id}</code>\n\n"
+        f"«{html.escape(preview)}»"
+    )
+
+    kb = [[btn(f"📋 Открыть тикет #{ticket_id}", f'ticket_admin_view_{ticket_id}')]]
+
+    for adm in admins or []:
+        try:
+            adm_id = adm[0] if isinstance(adm, (list, tuple)) else adm
+            if photo_file_id:
+                await context.bot.send_photo(
+                    chat_id=adm_id, photo=photo_file_id,
+                    caption=msg, reply_markup=InlineKeyboardMarkup(kb),
+                    parse_mode='HTML',
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=adm_id, text=msg,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                    parse_mode='HTML',
+                )
+        except Exception as e:
+            logger.warning(f"notify admin {adm} error: {e}")
+
+
+async def show_my_tickets(query, context):
+    """Список тикетов пользователя."""
+    user = query.from_user
+    tickets = await asyncio.to_thread(db.get_user_tickets, user.id, 15)
+
+    if not tickets:
+        kb = [
+            [btn("📩 Задать вопрос", 'ticket_new')],
+            [btn("🏠 Главное меню", 'back_to_main')],
+        ]
+        await safe_edit(
+            query,
+            "📋 <b>МОИ ОБРАЩЕНИЯ</b>\n\n"
+            "У вас пока нет обращений.\n\n"
+            "Если что-то не работает или есть идея — напишите нам!",
+            kb,
+        )
+        return
+
+    lines = [f"📋 <b>МОИ ОБРАЩЕНИЯ</b> ({len(tickets)})\n"]
+    kb = []
+    for t in tickets:
+        tid, cat, status, created, updated, msg_count = t
+        cat_lbl = _ticket_category_label(cat)
+        stat_lbl = _ticket_status_label(status)
+        date_str = convert_utc_to_minsk(updated) if hasattr(convert_utc_to_minsk, '__call__') else str(updated)[:16]
+        lines.append(f"<b>#{tid}</b> · {cat_lbl} · {stat_lbl}")
+        lines.append(f"    <i>{date_str} · сообщений: {msg_count}</i>")
+
+        # Кнопка открытия
+        kb.append([btn(f"📖 Открыть #{tid}", f'ticket_view_{tid}')])
+
+    kb.append([btn("📩 Новое обращение", 'ticket_new')])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
+
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def show_ticket_view(query, context, ticket_id: int):
+    """Просмотр тикета пользователем + переписка."""
+    user = query.from_user
+
+    ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+    if not ticket:
+        await safe_edit(query, "⚠️ Тикет не найден.", [[btn("◀️ Назад", 'ticket_my')]])
+        return
+
+    t_id, t_user_id, t_user_name, t_cat, t_status, t_taken_id, t_taken_name, t_created, t_updated = ticket
+
+    # Проверяем доступ — только автор видит свой тикет
+    if t_user_id != user.id:
+        await safe_edit(query, "⛔ Доступ запрещён.", [[btn("🏠 Главное меню", 'back_to_main')]])
+        return
+
+    messages = await asyncio.to_thread(db.get_ticket_messages, ticket_id)
+
+    cat_lbl = _ticket_category_label(t_cat)
+    stat_lbl = _ticket_status_label(t_status)
+
+    lines = [
+        f"📋 <b>ТИКЕТ #{t_id}</b>",
+        f"Категория: {cat_lbl}",
+        f"Статус: {stat_lbl}",
+        "",
+        "━━━ ПЕРЕПИСКА ━━━",
+        "",
+    ]
+
+    for msg in messages:
+        m_id, m_sender, m_sender_id, m_sender_name, m_text, m_photo, m_created = msg
+        time_str = convert_utc_to_minsk(m_created)[:16] if m_created else ''
+        if m_sender == 'user':
+            lines.append(f"👤 <b>Вы</b> <i>({time_str})</i>:")
+        else:
+            lines.append(f"🤖 <b>Администрация</b> <i>({time_str})</i>:")
+        if m_text:
+            lines.append(html.escape(m_text))
+        if m_photo:
+            lines.append("📎 <i>[фото]</i>")
+        lines.append("")
+
+    # Кнопки
+    kb = []
+    if t_status not in ('resolved', 'rejected'):
+        kb.append([btn("✏️ Написать ещё", f'ticket_reply_{t_id}')])
+    else:
+        kb.append([btn("✏️ Ответить (переоткрыть)", f'ticket_reply_{t_id}')])
+
+    kb.append([btn("◀️ К списку", 'ticket_my')])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
+
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3900] + "\n\n<i>…часть переписки скрыта.</i>"
+
+    await safe_edit(query, text, kb)
+
+
+async def ticket_reply_start(query, context, ticket_id: int):
+    """Пользователь начал отвечать в тикет."""
+    user = query.from_user
+    ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+    if not ticket or ticket[1] != user.id:
+        await safe_edit(query, "⛔ Доступ запрещён.", [[btn("🏠 Главное меню", 'back_to_main')]])
+        return
+
+    context.user_data['awaiting_ticket_reply'] = True
+    context.user_data['ticket_reply_id'] = ticket_id
+
+    kb = [[btn("❌ Отмена", 'ticket_cancel')]]
+    await safe_edit(
+        query,
+        f"✏️ <b>ОТВЕТ В ТИКЕТ #{ticket_id}</b>\n\n"
+        f"Напишите сообщение. Можно приложить фото.\n\n"
+        f"<i>Если тикет был закрыт — он переоткроется.</i>",
+        kb,
+    )
+
+
 async def admin_content_panel(query, context):
     """Подпапка контента: новости, замены, рассылка."""
     if not await is_bot_admin_async(query.from_user.id):
@@ -5859,7 +6218,7 @@ async def admin_content_panel(query, context):
     kb = [
         [btn("🧠 Автоновость", 'admin_generate_news_draft'), btn("📣 Вручную", 'admin_publish_news')],
         [btn("📰 Новости", 'admin_manage_news')],
-        [btn("➕ Замена вручную", 'admin_add_sub'), btn("📸 Замены из фото", 'admin_photo_subs')],
+        [btn("➕ Замена вручную", 'admin_add_sub')],
         [btn("📋 Все замены", 'admin_view_subs'), btn("📢 Рассылка", 'admin_broadcast')],
         [btn("🗑 Удалить замену (ID)", 'admin_del_sub'), btn("🧹 Очистить замены", 'admin_clear_subs')],
         [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
@@ -6100,6 +6459,648 @@ async def resolve_beta_request(query, context, request_id: int, approve: bool):
     )
 
 
+# ══════════════════════════════════════════════════════════
+#  ТИКЕТЫ: админ-часть
+# ══════════════════════════════════════════════════════════
+
+async def admin_tickets_panel(query, context):
+    """Меню тикетов для админа со счётчиками."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    cnt = await asyncio.to_thread(db.count_tickets_by_status)
+    kb = [
+        [btn(f"🆕 Новые ({cnt['new']})", 'admin_tickets_new'),
+         btn(f"👀 В работе ({cnt['in_progress']})", 'admin_tickets_in_progress')],
+        [btn(f"🕐 Отложены ({cnt['postponed']})", 'admin_tickets_postponed'),
+         btn(f"✅ Решено ({cnt['resolved']})", 'admin_tickets_resolved')],
+        [btn(f"❌ Отклонены ({cnt['rejected']})", 'admin_tickets_rejected'),
+         btn(f"📋 Все ({cnt['all']})", 'admin_tickets_all')],
+        [btn("◀️ Админ-панель", 'admin_panel'), btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "📬 <b>ТИКЕТЫ</b>\n\n"
+        f"Всего обращений: <b>{cnt['all']}</b>\n"
+        f"🆕 Новых: <b>{cnt['new']}</b> · 👀 В работе: <b>{cnt['in_progress']}</b>\n"
+        f"🕐 Отложены: <b>{cnt['postponed']}</b> · ✅ Решено: <b>{cnt['resolved']}</b>\n\n"
+        "Выберите фильтр:",
+        kb,
+    )
+
+
+async def admin_tickets_list(query, context, status: str):
+    """Список тикетов по статусу."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    tickets = await asyncio.to_thread(db.get_tickets_by_status, status, 25)
+
+    status_title = {
+        'new': '🆕 НОВЫЕ',
+        'in_progress': '👀 В РАБОТЕ',
+        'postponed': '🕐 ОТЛОЖЕНЫ',
+        'resolved': '✅ РЕШЕНО',
+        'rejected': '❌ ОТКЛОНЕНЫ',
+        'all': '📋 ВСЕ',
+    }.get(status, f'📋 {status.upper()}')
+
+    if not tickets:
+        kb = [
+            [btn("◀️ К фильтрам", 'admin_tickets')],
+            [btn("🏠 Главное меню", 'back_to_main')],
+        ]
+        await safe_edit(
+            query,
+            f"📬 <b>{status_title}</b>\n\n"
+            f"Здесь пусто.",
+            kb,
+        )
+        return
+
+    lines = [f"📬 <b>{status_title}</b> ({len(tickets)})\n"]
+    kb = []
+    for t in tickets:
+        tid, uid, uname, cat, stat, updated, msg_cnt = t
+        cat_lbl = _ticket_category_label(cat)
+        date_str = convert_utc_to_minsk(updated)[:16] if updated else '—'
+        safe_name = html.escape(uname or 'Аноним')
+
+        # Обрезаем имя если длинное
+        if len(safe_name) > 20:
+            safe_name = safe_name[:18] + '…'
+
+        lines.append(f"<b>#{tid}</b> · {cat_lbl}")
+        lines.append(f"   {safe_name} · {date_str} · 💬 {msg_cnt}")
+
+        kb.append([btn(f"📖 #{tid} · {cat_lbl} · {safe_name}", f'ticket_admin_view_{tid}')])
+
+    kb.append([btn("◀️ К фильтрам", 'admin_tickets')])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
+
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3900] + "\n\n<i>…список обрезан.</i>"
+
+    await safe_edit(query, text, kb)
+
+
+async def admin_ticket_view(query, context, ticket_id: int):
+    """Админ-просмотр тикета."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+    if not ticket:
+        await safe_edit(query, "⚠️ Тикет не найден.", [[btn("◀️ К тикетам", 'admin_tickets')]])
+        return
+
+    t_id, t_user_id, t_user_name, t_cat, t_status, t_taken_id, t_taken_name, t_created, t_updated = ticket
+    messages = await asyncio.to_thread(db.get_ticket_messages, ticket_id)
+
+    cat_lbl = _ticket_category_label(t_cat)
+    stat_lbl = _ticket_status_label(t_status)
+
+    lines = [
+        f"📋 <b>ТИКЕТ #{t_id}</b>",
+        f"Категория: {cat_lbl}",
+        f"Статус: {stat_lbl}",
+        f"Автор: <b>{html.escape(t_user_name or 'Аноним')}</b> · <code>{t_user_id}</code>",
+    ]
+    if t_taken_name:
+        lines.append(f"В работе у: <b>{html.escape(t_taken_name)}</b>")
+    lines.append("")
+    lines.append("━━━ ПЕРЕПИСКА ━━━")
+    lines.append("")
+
+    for msg in messages:
+        m_id, m_sender, m_sender_id, m_sender_name, m_text, m_photo, m_created = msg
+        time_str = convert_utc_to_minsk(m_created)[:16] if m_created else ''
+        if m_sender == 'user':
+            safe_name = html.escape(m_sender_name or 'Пользователь')
+            lines.append(f"👤 <b>{safe_name}</b> <i>({time_str})</i>:")
+        else:
+            safe_name = html.escape(m_sender_name or 'Админ')
+            lines.append(f"🤖 <b>{safe_name}</b> <i>({time_str})</i>:")
+        if m_text:
+            lines.append(html.escape(m_text))
+        if m_photo:
+            lines.append("📎 <i>[фото]</i>")
+        lines.append("")
+
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3900] + "\n\n<i>…переписка обрезана.</i>"
+
+    # Кнопки действий
+    kb = []
+    if t_status in ('new', 'postponed'):
+        kb.append([
+            btn("💬 Ответить", f'ticket_admin_reply_{t_id}'),
+            btn("👀 В работу", f'ticket_admin_status_{t_id}_in_progress'),
+        ])
+    elif t_status == 'in_progress':
+        kb.append([btn("💬 Ответить", f'ticket_admin_reply_{t_id}')])
+
+    if t_status not in ('resolved', 'rejected'):
+        kb.append([
+            btn("✅ Решено", f'ticket_admin_status_{t_id}_resolved'),
+            btn("❌ Отклонить", f'ticket_admin_status_{t_id}_rejected'),
+        ])
+        kb.append([btn("🕐 Отложить", f'ticket_admin_status_{t_id}_postponed')])
+    else:
+        kb.append([btn("🔄 Переоткрыть", f'ticket_admin_status_{t_id}_in_progress')])
+
+    # Кнопка добавления в FAQ
+    kb.append([btn("📌 В FAQ", f'ticket_admin_to_faq_{t_id}')])
+
+    # Кнопка удаления тикета
+    kb.append([btn("🗑 Удалить тикет", f'ticket_admin_delete_{t_id}')])
+
+    kb.append([btn("◀️ К тикетам", 'admin_tickets')])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
+
+    await safe_edit(query, text, kb)
+
+
+async def admin_ticket_reply_start(query, context, ticket_id: int):
+    """Админ начал ответ."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+    if not ticket:
+        await safe_edit(query, "⚠️ Тикет не найден.", [[btn("◀️ К тикетам", 'admin_tickets')]])
+        return
+
+    context.user_data['awaiting_admin_ticket_reply'] = True
+    context.user_data['admin_ticket_reply_id'] = ticket_id
+
+    kb = [[btn("❌ Отмена", f'ticket_admin_view_{ticket_id}')]]
+    await safe_edit(
+        query,
+        f"💬 <b>ОТВЕТ В ТИКЕТ #{ticket_id}</b>\n\n"
+        f"Автор: <b>{html.escape(ticket[2] or 'Аноним')}</b>\n\n"
+        f"Напишите ответ. Он уйдёт пользователю в личку.\n"
+        f"Можно приложить фото.",
+        kb,
+    )
+
+
+async def handle_admin_ticket_reply(update: Update, context: CallbackContext) -> bool:
+    """Обрабатывает текст/фото админа в режиме ответа. True — если обработано."""
+    if not isinstance(context.user_data, dict):
+        return False
+    if not context.user_data.get('awaiting_admin_ticket_reply'):
+        return False
+
+    user = update.effective_user
+    if not await is_bot_admin_async(user.id):
+        return False
+
+    ticket_id = context.user_data.get('admin_ticket_reply_id')
+    if not ticket_id:
+        return False
+
+    text = (update.message.text or '').strip()
+    photo_file_id = None
+    if update.message.photo:
+        photo_file_id = update.message.photo[-1].file_id
+
+    if not text and not photo_file_id:
+        await update.message.reply_text("⚠️ Напишите текст или пришлите фото.")
+        return True
+    if text and len(text) > 2000:
+        text = text[:2000] + '…'
+
+    context.user_data.pop('awaiting_admin_ticket_reply', None)
+    context.user_data.pop('admin_ticket_reply_id', None)
+
+    user_name = (user.first_name or '') + (' ' + user.last_name if user.last_name else '')
+    ok = await asyncio.to_thread(
+        db.add_ticket_message, ticket_id, 'admin', user.id, user_name.strip(),
+        text, photo_file_id,
+    )
+    if not ok:
+        await update.message.reply_text("❌ Не удалось сохранить ответ.")
+        return True
+
+    # Обновляем статус — если был новый/отложен, ставим "в работе"
+    ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+    if ticket and ticket[4] in ('new', 'postponed'):
+        await asyncio.to_thread(db.update_ticket_status, ticket_id, 'in_progress', user.id, user_name.strip())
+
+    # Уведомляем автора тикета в личку
+    if ticket:
+        author_id = ticket[1]
+        try:
+            reply_msg = (
+                f"📩 <b>Ответ на тикет #{ticket_id}</b>\n\n"
+                f"🤖 <b>Администрация:</b>\n{html.escape(text) if text else '[фото]'}"
+            )
+            author_kb = [[btn("📋 Мои обращения", 'ticket_my')]]
+            if photo_file_id:
+                await context.bot.send_photo(
+                    chat_id=author_id, photo=photo_file_id,
+                    caption=reply_msg, reply_markup=InlineKeyboardMarkup(author_kb),
+                    parse_mode='HTML',
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=author_id, text=reply_msg,
+                    reply_markup=InlineKeyboardMarkup(author_kb),
+                    parse_mode='HTML',
+                )
+        except Exception as e:
+            logger.warning(f"Не удалось уведомить автора тикета {author_id}: {e}")
+
+    kb = [
+        [btn(f"📖 Открыть тикет #{ticket_id}", f'ticket_admin_view_{ticket_id}')],
+        [btn("◀️ К тикетам", 'admin_tickets')],
+    ]
+    await update.message.reply_text(
+        f"✅ <b>Ответ отправлен!</b>\n\nТикет #{ticket_id}",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode='HTML',
+    )
+    return True
+
+
+async def admin_ticket_set_status(query, context, ticket_id: int, new_status: str):
+    """Смена статуса тикета админом."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    user = query.from_user
+    user_name = (user.first_name or '') + (' ' + user.last_name if user.last_name else '')
+    ok = await asyncio.to_thread(
+        db.update_ticket_status, ticket_id, new_status, user.id, user_name.strip()
+    )
+
+    if not ok:
+        await query.answer("❌ Не удалось изменить статус", show_alert=True)
+        return
+
+    # Уведомляем автора при "решено" или "отклонено"
+    if new_status in ('resolved', 'rejected'):
+        ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+        if ticket:
+            author_id = ticket[1]
+            status_label = _ticket_status_label(new_status)
+            try:
+                await context.bot.send_message(
+                    chat_id=author_id,
+                    text=f"📩 <b>Тикет #{ticket_id}</b>\n\n"
+                         f"Статус изменён: {status_label}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn("📋 Мои обращения", 'ticket_my')]
+                    ]),
+                    parse_mode='HTML',
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось уведомить автора {author_id}: {e}")
+
+    await query.answer(f"✅ Статус: {_ticket_status_label(new_status)}")
+    await admin_ticket_view(query, context, ticket_id)
+
+
+# ══════════════════════════════════════════════════════════
+#  FAQ (частые вопросы)
+# ══════════════════════════════════════════════════════════
+
+async def menu_faq(query, context):
+    """Список частых вопросов для пользователя."""
+    items = await asyncio.to_thread(db.get_faq_list, 30)
+
+    if not items:
+        kb = [[btn("🏠 Главное меню", 'back_to_main')]]
+        await safe_edit(
+            query,
+            "❓ <b>ЧАСТЫЕ ВОПРОСЫ</b>\n\n"
+            "Пока здесь пусто.\n\n"
+            "Если у вас есть вопрос — напишите нам через «📩 Задать вопрос».",
+            kb,
+        )
+        return
+
+    lines = [f"❓ <b>ЧАСТЫЕ ВОПРОСЫ</b> ({len(items)})\n"]
+    kb = []
+    for it in items:
+        fid, question, answer, views, created = it
+        short_q = question if len(question) <= 60 else question[:58] + '…'
+        lines.append(f"<b>#{fid}</b> · {html.escape(short_q)}")
+        kb.append([btn(f"❓ {short_q[:40]}", f'faq_view_{fid}')])
+
+    kb.append([btn("📩 Задать свой вопрос", 'ticket_new')])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
+
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def show_faq_item(query, context, faq_id: int):
+    """Просмотр одного FAQ."""
+    item = await asyncio.to_thread(db.get_faq, faq_id)
+    if not item:
+        await safe_edit(query, "⚠️ Вопрос не найден.", [[btn("◀️ К списку", 'menu_faq')]])
+        return
+
+    fid, question, answer, views, created, author = item
+
+    # Увеличиваем счётчик
+    await asyncio.to_thread(db.increment_faq_view, fid)
+
+    text = (
+        f"❓ <b>{html.escape(question)}</b>\n\n"
+        f"💬 <b>Ответ:</b>\n{html.escape(answer)}\n\n"
+        f"<i>👁 Просмотров: {views + 1}</i>"
+    )
+
+    kb = [
+        [btn("📩 Задать свой вопрос", 'ticket_new')],
+        [btn("◀️ К списку", 'menu_faq')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(query, text, kb)
+
+
+async def admin_faq_panel(query, context):
+    """Панель управления FAQ для админа."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    items = await asyncio.to_thread(db.get_faq_list, 30)
+
+    if not items:
+        kb = [
+            [btn("◀️ Админ-панель", 'admin_panel')],
+            [btn("🏠 Главное меню", 'back_to_main')],
+        ]
+        await safe_edit(
+            query,
+            "📌 <b>FAQ (ЧАСТЫЕ ВОПРОСЫ)</b>\n\n"
+            "Список пуст.\n\n"
+            "<i>Добавить вопрос в FAQ можно из просмотра любого тикета — "
+            "кнопка «📌 В FAQ».</i>",
+            kb,
+        )
+        return
+
+    lines = [f"📌 <b>FAQ (ЧАСТЫЕ ВОПРОСЫ)</b> ({len(items)})\n"]
+    kb = []
+    for it in items:
+        fid, question, answer, views, created = it
+        short_q = question if len(question) <= 50 else question[:48] + '…'
+        lines.append(f"<b>#{fid}</b> · {html.escape(short_q)} · 👁 {views}")
+        kb.append([
+            btn(f"👁 #{fid}", f'faq_view_{fid}'),
+            btn(f"🗑 #{fid}", f'faq_delete_{fid}'),
+        ])
+
+    kb.append([btn("◀️ Админ-панель", 'admin_panel')])
+    kb.append([btn("🏠 Главное меню", 'back_to_main')])
+
+    await safe_edit(query, "\n".join(lines), kb)
+
+
+async def admin_faq_delete_confirm(query, context, faq_id: int):
+    """Подтверждение удаления FAQ."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    item = await asyncio.to_thread(db.get_faq, faq_id)
+    if not item:
+        await safe_edit(query, "⚠️ Вопрос не найден.", [[btn("◀️ К списку", 'admin_faq')]])
+        return
+
+    question = item[1]
+    short_q = question if len(question) <= 100 else question[:98] + '…'
+
+    kb = [
+        [btn("✅ Удалить", f'faq_delete_confirm_{faq_id}')],
+        [btn("❌ Отмена", 'admin_faq')],
+    ]
+    await safe_edit(
+        query,
+        f"⚠️ <b>Удалить вопрос из FAQ?</b>\n\n"
+        f"❓ {html.escape(short_q)}",
+        kb,
+    )
+
+
+async def admin_faq_delete(query, context, faq_id: int):
+    """Удаляет FAQ."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    await asyncio.to_thread(db.delete_faq, faq_id)
+    await query.answer("✅ Вопрос удалён")
+    await admin_faq_panel(query, context)
+
+
+async def admin_ticket_to_faq(query, context, ticket_id: int):
+    """Начать добавление тикета в FAQ — спрашиваем короткий вопрос."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+    if not ticket:
+        await safe_edit(query, "⚠️ Тикет не найден.", [[btn("◀️ К тикетам", 'admin_tickets')]])
+        return
+
+    # Ищем последний ответ админа в тикете
+    messages = await asyncio.to_thread(db.get_ticket_messages, ticket_id)
+    last_admin_answer = None
+    for m in reversed(messages):
+        if m[1] == 'admin' and m[4]:  # sender='admin' и есть текст
+            last_admin_answer = m[4]
+            break
+
+    if not last_admin_answer:
+        await query.answer("⚠️ Сначала ответьте пользователю", show_alert=True)
+        return
+
+    context.user_data['awaiting_faq_question'] = True
+    context.user_data['faq_source_ticket'] = ticket_id
+    context.user_data['faq_answer'] = last_admin_answer
+
+    kb = [[btn("❌ Отмена", f'ticket_admin_view_{ticket_id}')]]
+    await safe_edit(
+        query,
+        f"📌 <b>ДОБАВЛЕНИЕ В FAQ</b>\n\n"
+        f"Последний ответ для FAQ:\n"
+        f"<i>«{html.escape(last_admin_answer[:200])}»</i>\n\n"
+        f"Напишите короткий вопрос для FAQ.\n"
+        f"Например: <i>«Как играть в Шифровальщик?»</i>",
+        kb,
+    )
+
+
+async def handle_faq_question_input(update: Update, context: CallbackContext) -> bool:
+    """Обрабатывает ввод вопроса для FAQ от админа."""
+    if not isinstance(context.user_data, dict):
+        return False
+    if not context.user_data.get('awaiting_faq_question'):
+        return False
+
+    user = update.effective_user
+    if not await is_bot_admin_async(user.id):
+        return False
+
+    question = (update.message.text or '').strip()
+    if not question or len(question) < 5:
+        await update.message.reply_text("⚠️ Напишите вопрос подробнее (минимум 5 символов).")
+        return True
+
+    if len(question) > 300:
+        question = question[:300]
+
+    answer = context.user_data.get('faq_answer', '')
+    ticket_id = context.user_data.get('faq_source_ticket')
+
+    context.user_data.pop('awaiting_faq_question', None)
+    context.user_data.pop('faq_source_ticket', None)
+    context.user_data.pop('faq_answer', None)
+
+    user_name = (user.first_name or '') + (' ' + user.last_name if user.last_name else '')
+
+    faq_id = await asyncio.to_thread(
+        db.add_faq, question, answer, ticket_id, user.id, user_name.strip()
+    )
+
+    if not faq_id:
+        await update.message.reply_text("❌ Не удалось добавить вопрос в FAQ.")
+        return True
+
+    kb = [
+        [btn("📌 Открыть FAQ", 'admin_faq')],
+        [btn(f"📖 К тикету #{ticket_id}", f'ticket_admin_view_{ticket_id}')],
+    ]
+    await update.message.reply_text(
+        f"✅ <b>Вопрос добавлен в FAQ!</b>\n\n"
+        f"❓ {html.escape(question)}\n\n"
+        f"<i>Теперь он доступен всем пользователям в разделе «❓ Частые вопросы».</i>",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode='HTML',
+    )
+    return True
+
+
+async def admin_ticket_delete_confirm(query, context, ticket_id: int):
+    """Подтверждение удаления тикета."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    ticket = await asyncio.to_thread(db.get_ticket, ticket_id)
+    if not ticket:
+        await safe_edit(query, "⚠️ Тикет не найден.", [[btn("◀️ К тикетам", 'admin_tickets')]])
+        return
+
+    t_id, t_user_id, t_user_name, t_cat, t_status = ticket[0], ticket[1], ticket[2], ticket[3], ticket[4]
+    cat_lbl = _ticket_category_label(t_cat)
+    safe_name = html.escape(t_user_name or 'Аноним')
+
+    kb = [
+        [btn("✅ Удалить навсегда", f'ticket_admin_delete_confirm_{ticket_id}')],
+        [btn("❌ Отмена", f'ticket_admin_view_{ticket_id}')],
+    ]
+    await safe_edit(
+        query,
+        f"⚠️ <b>УДАЛИТЬ ТИКЕТ #{t_id}?</b>\n\n"
+        f"Категория: {cat_lbl}\n"
+        f"Автор: <b>{safe_name}</b> · <code>{t_user_id}</code>\n\n"
+        f"<b>Вся переписка будет удалена безвозвратно.</b>\n"
+        f"<i>Отменить действие не получится.</i>",
+        kb,
+    )
+
+
+async def admin_ticket_delete(query, context, ticket_id: int):
+    """Удаляет тикет."""
+    if not await is_bot_admin_async(query.from_user.id):
+        await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
+        return
+
+    ok = await asyncio.to_thread(db.delete_ticket, ticket_id)
+
+    if not ok:
+        await query.answer("❌ Не удалось удалить тикет", show_alert=True)
+        return
+
+    await query.answer(f"✅ Тикет #{ticket_id} удалён")
+    await admin_tickets_panel(query, context)
+
+
+# ══════════════════════════════════════════════════════════
+#  ПОДМЕНЮ: Обращения / Материалы / Профиль
+# ══════════════════════════════════════════════════════════
+
+async def menu_contacts(query, context):
+    """Подменю «Обращения»: тикеты, FAQ."""
+    kb = [
+        [btn("📩 Задать вопрос", 'ticket_new'), btn("📋 Мои обращения", 'ticket_my')],
+        [btn("❓ Частые вопросы", 'menu_faq')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "📩 <b>ОБРАЩЕНИЯ</b>\n\n"
+        "Связаться с администрацией или посмотреть ответы:",
+        kb,
+    )
+
+
+async def menu_materials(query, context):
+    """Подменю «Материалы»: ресурсные центры, обновления."""
+    kb = [
+        [btn("📚 Ресурсные центры", 'menu_resource_centers')],
+        [btn("🆕 Обновления бота", 'menu_updates')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        "📚 <b>МАТЕРИАЛЫ</b>\n\n"
+        "Учебные материалы и информация о развитии бота:",
+        kb,
+    )
+
+
+async def menu_user_profile(query, context):
+    """Подменю «Профиль»: избранное, данные."""
+    user = query.from_user
+    profile = await asyncio.to_thread(db.get_user_profile, user.id) if hasattr(db, 'get_user_profile') else None
+
+    # Имя для отображения
+    if profile and profile.get('display_name'):
+        name = profile['display_name']
+    elif user.first_name:
+        name = user.first_name
+    else:
+        name = 'Гость'
+
+    kb = [
+        [btn("⭐ Избранное", 'menu_my')],
+        [btn("👤 Мои данные", 'menu_profile')],
+        [btn("🏠 Главное меню", 'back_to_main')],
+    ]
+    await safe_edit(
+        query,
+        f"👤 <b>ПРОФИЛЬ</b>\n\n"
+        f"<b>{html.escape(name)}</b>\n\n"
+        f"Выберите раздел:",
+        kb,
+    )
+
+
 async def show_admin_panel(query):
     if not await is_bot_admin_async(query.from_user.id):
         await safe_edit(query, "⛔ Доступ запрещён.", BACK_TO_MAIN)
@@ -6112,6 +7113,7 @@ async def show_admin_panel(query):
 
     kb = [
         [btn("🗂 Контент", 'admin_content_panel'), btn("🎮 Игры", 'admin_games_panel')],
+        [btn("📬 Тикеты", 'admin_tickets'), btn("📌 FAQ", 'admin_faq')],
         [btn("👤 Мой игровой режим", 'admin_my_game_role')],
         [btn("⚙️ Система", 'admin_system_panel')],
         [btn("🏠 Главное меню",  'back_to_main')],
@@ -6791,14 +7793,146 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         await admin_do_clear_subs(query, context)
         return
 
-    # ── Фото замен: подтверждение/отмена ──
-    if d == 'confirm_photo_subs' and user_is_admin:
-        await save_photo_subs(query, context)
+    # ── Тикеты: пользовательская часть ──
+    if d == 'ticket_new':
+        await menu_ticket_new(query, context)
         return
-    if d == 'cancel_photo_subs':
-        context.user_data.pop('pending_subs', None)
-        kb = [[btn("↩️ Контент", 'admin_content_panel')]]
-        await safe_edit(query, "❌ Сохранение отменено. Замены не добавлены.", kb)
+
+    if d.startswith('ticket_cat_'):
+        category = d.replace('ticket_cat_', '', 1)
+        await ticket_pick_category(query, context, category)
+        return
+
+    if d == 'ticket_my':
+        await show_my_tickets(query, context)
+        return
+
+    if d == 'ticket_cancel':
+        await ticket_cancel(query, context)
+        return
+
+    # ── FAQ: пользовательская часть ──
+    if d == 'menu_faq':
+        await menu_faq(query, context)
+        return
+
+    if d.startswith('faq_view_'):
+        try:
+            fid = int(d.replace('faq_view_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await show_faq_item(query, context, fid)
+        return
+
+    # ── FAQ: админ-часть ──
+    if d == 'admin_faq' and user_is_admin:
+        await admin_faq_panel(query, context)
+        return
+
+    if d.startswith('faq_delete_confirm_') and user_is_admin:
+        try:
+            fid = int(d.replace('faq_delete_confirm_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await admin_faq_delete(query, context, fid)
+        return
+
+    if d.startswith('faq_delete_') and user_is_admin:
+        try:
+            fid = int(d.replace('faq_delete_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await admin_faq_delete_confirm(query, context, fid)
+        return
+
+    if d.startswith('ticket_admin_delete_confirm_') and user_is_admin:
+        try:
+            tid = int(d.replace('ticket_admin_delete_confirm_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await admin_ticket_delete(query, context, tid)
+        return
+
+    if d.startswith('ticket_admin_delete_') and user_is_admin:
+        try:
+            tid = int(d.replace('ticket_admin_delete_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await admin_ticket_delete_confirm(query, context, tid)
+        return
+
+    if d.startswith('ticket_admin_to_faq_') and user_is_admin:
+        try:
+            tid = int(d.replace('ticket_admin_to_faq_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await admin_ticket_to_faq(query, context, tid)
+        return
+
+    # ── Тикеты: админ-часть ──
+    if d == 'admin_tickets' and user_is_admin:
+        await admin_tickets_panel(query, context)
+        return
+
+    if d.startswith('admin_tickets_') and user_is_admin:
+        status_filter = d.replace('admin_tickets_', '', 1)
+        await admin_tickets_list(query, context, status_filter)
+        return
+
+    if d.startswith('ticket_admin_view_') and user_is_admin:
+        try:
+            tid = int(d.replace('ticket_admin_view_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await admin_ticket_view(query, context, tid)
+        return
+
+    if d.startswith('ticket_admin_reply_') and user_is_admin:
+        try:
+            tid = int(d.replace('ticket_admin_reply_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await admin_ticket_reply_start(query, context, tid)
+        return
+
+    if d.startswith('ticket_admin_status_') and user_is_admin:
+        rest = d.replace('ticket_admin_status_', '')
+        # Формат: {id}_{status}
+        parts = rest.rsplit('_', 1)
+        if len(parts) == 2:
+            try:
+                tid = int(parts[0])
+                new_status = parts[1]
+            except ValueError:
+                await query.answer()
+                return
+            await admin_ticket_set_status(query, context, tid, new_status)
+            return
+
+    if d.startswith('ticket_view_'):
+        try:
+            tid = int(d.replace('ticket_view_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await show_ticket_view(query, context, tid)
+        return
+
+    if d.startswith('ticket_reply_'):
+        try:
+            tid = int(d.replace('ticket_reply_', ''))
+        except ValueError:
+            await query.answer()
+            return
+        await ticket_reply_start(query, context, tid)
         return
 
     # ── Рассылка ──
@@ -6828,6 +7962,9 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'teacher_unlink_do':      teacher_unlink_do,
         'menu_register':          menu_register,
         'menu_profile':           show_profile,
+        'menu_contacts':          menu_contacts,
+        'menu_materials':         menu_materials,
+        'menu_user_profile':      menu_user_profile,
         'reg_role_teacher':       reg_role_teacher,
         'reg_role_student':       reg_role_student,
         'reg_role_parent':        reg_role_parent,
@@ -6849,6 +7986,9 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'menu_resource_centers': menu_resource_centers,
         'menu_game':              menu_game,
         'menu_help':              menu_help,
+        'ticket_new':             menu_ticket_new,
+        'ticket_my':              show_my_tickets,
+        'ticket_cancel':          ticket_cancel,
         'admin_panel':                show_admin_panel,
         'admin_games_panel':          admin_games_panel,
         'admin_beta_requests':        admin_beta_requests,
@@ -6865,20 +8005,12 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
         'admin_enable_maintenance': admin_enable_maintenance,
         'admin_disable_maintenance': admin_disable_maintenance,
         'admin_generate_news_draft': admin_generate_news_draft,
+        'admin_tickets':          admin_tickets_panel,
+        'menu_faq':               menu_faq,
+        'admin_faq':              admin_faq_panel,
         'admin_publish_news':     start_publish_news,
         'admin_manage_news':      admin_manage_news,
         'admin_add_sub':          admin_add_sub_start,
-        'admin_photo_subs':       lambda q, c: safe_edit(q,
-            "📸 <b>ДОБАВЛЕНИЕ ЗАМЕН ИЗ ФОТО</b>\n\n"
-            "Отправьте фотографию листа с заменами в этот чат.\n\n"
-            "📌 <b>Советы для лучшего результата:</b>\n"
-            "• Фото при хорошем освещении\n"
-            "• Текст должен быть чётким и читаемым\n"
-            "• Держите камеру прямо над листом\n"
-            "• Весь лист должен быть в кадре\n\n"
-            "<i>После отправки фото ИИ автоматически распознает замены "
-            "и покажет предпросмотр для подтверждения.</i>",
-            [[btn("❌ Отмена", 'admin_content_panel')]]),
         'admin_analytics':        show_analytics,
         'admin_game_panel':       admin_game_panel,
         'game_mode_beta':         lambda q, c: admin_set_game_mode(q, c, 'beta'),
@@ -6921,6 +8053,18 @@ async def _button_handler_impl(update: Update, context: CallbackContext):
 #  ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ
 # ══════════════════════════════════════════════════════════
 async def handle_message(update: Update, context: CallbackContext):
+    # ── Обработка текста/фото в режиме тикета ──
+    if update.message and (update.message.text or update.message.photo):
+        try:
+            if await handle_faq_question_input(update, context):
+                return
+            if await handle_admin_ticket_reply(update, context):
+                return
+            if await handle_ticket_text(update, context):
+                return
+        except Exception as e:
+            logger.error(f"handle_ticket_text error: {e}")
+
     if not update.message or not update.message.text:
         return
     user = update.effective_user
@@ -7089,371 +8233,6 @@ async def handle_teacher_mentions(update: Update, context: CallbackContext):
 
 # ══════════════════════════════════════════════════════════
 #  ФОТО ЗАМЕН — GROQ VISION
-# ══════════════════════════════════════════════════════════
-
-PHOTO_SUB_PROMPT = """Ты — помощник для белорусской школы.
-На фото — расписание замен уроков.
-Извлеки все замены и верни ТОЛЬКО JSON-массив, без пояснений и markdown-блоков.
-
-Формат каждого элемента:
-{
-  "date": "YYYY-MM-DD или название дня (Понедельник/Вторник/...)",
-  "class": "название класса (например: 7а, 8б, 11)",
-  "lesson": номер урока (целое число),
-  "old_teacher": "фамилия И.О. заменяемого учителя или пустая строка",
-  "new_teacher": "фамилия И.О. нового учителя",
-  "subject": "название предмета"
-}
-
-Если дата не указана явно — используй ближайший будний день от сегодня.
-Если класс написан заглавными буквами (7А) — переводи в строчные (7а).
-Если данных нет или фото нечёткое — верни пустой массив [].
-Возвращай ТОЛЬКО валидный JSON без каких-либо пояснений."""
-
-
-async def parse_photo_substitutions(photo_bytes: bytes) -> list:
-    """Отправляет фото в Groq Vision и получает список замен."""
-    if not GROQ_API_KEY:
-        return []
-
-    import base64
-    b64 = base64.b64encode(photo_bytes).decode('utf-8')
-
-    payload = {
-        "model": "meta-llama/llama-4-scout-17b-16e-instruct",  # Groq vision модель
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{b64}"
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": PHOTO_SUB_PROMPT
-                    }
-                ]
-            }
-        ],
-        "max_tokens": 1500,
-        "temperature": 0.1,
-    }
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            r = await client.post(
-                "https://groq-proxy.uragud-2020.workers.dev",
-                json=payload, headers=headers
-            )
-            if r.status_code != 200:
-                logger.error(f"Groq Vision error {r.status_code}: {r.text[:200]}")
-                return []
-
-            raw = r.json()['choices'][0]['message']['content'].strip()
-            logger.info(f"Groq Vision ответ: {raw[:300]}")
-
-            # Убираем возможные markdown-блоки
-            raw = re.sub(r'```(?:json)?', '', raw).strip()
-            # Находим JSON-массив
-            match = re.search(r'\[.*\]', raw, re.DOTALL)
-            if not match:
-                logger.warning(f"JSON-массив не найден в ответе: {raw[:200]}")
-                return []
-
-            data = __import__('json').loads(match.group())
-            return data if isinstance(data, list) else []
-
-        except Exception as e:
-            logger.error(f"parse_photo_substitutions error: {e}")
-            return []
-
-
-def resolve_sub_date(date_str: str) -> tuple:
-    """
-    Преобразует строку даты из ответа ИИ в (date_iso, day_name).
-    Принимает: 'YYYY-MM-DD', 'Понедельник', 'пн', '15.01' и т.п.
-    """
-    today = datetime.now(TZ_MINSK).date()
-
-    # Уже ISO формат
-    try:
-        d = datetime.strptime(date_str, '%Y-%m-%d').date()
-        return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()] if d.weekday() < 5 else None
-    except ValueError:
-        pass
-
-    # ДД.ММ или ДД.ММ.ГГГГ
-    for fmt in ('%d.%m.%Y', '%d.%m'):
-        try:
-            d = datetime.strptime(date_str, fmt)
-            if fmt == '%d.%m':
-                d = d.replace(year=today.year)
-            return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()] if d.weekday() < 5 else None
-        except ValueError:
-            pass
-
-    # Название дня недели → ближайшая дата
-    day_aliases = {
-        'понедельник': 0, 'пн': 0,
-        'вторник': 1, 'вт': 1,
-        'среда': 2, 'ср': 2,
-        'четверг': 3, 'чт': 3,
-        'пятница': 4, 'пт': 4,
-    }
-    key = date_str.lower().strip()
-    if key in day_aliases:
-        target_wd = day_aliases[key]
-        diff = (target_wd - today.weekday()) % 7
-        if diff == 0 and datetime.now(TZ_MINSK).hour >= 14:
-            diff = 7   # уже прошло сегодня — следующая неделя
-        d = today + timedelta(days=diff)
-        return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()]
-
-    # Завтра по умолчанию
-    d = today + timedelta(days=1)
-    while d.weekday() >= 5:
-        d += timedelta(days=1)
-    return d.strftime('%Y-%m-%d'), DAYS_OF_WEEK[d.weekday()]
-
-
-def fuzzy_match_teacher(name: str) -> str:
-    """Находит ближайшее совпадение учителя из списка по фамилии."""
-    if not name:
-        return name
-    name_lower = name.lower()
-    # Точное совпадение
-    for t in ALL_TEACHERS:
-        if t.lower() == name_lower:
-            return t
-    # По первому слову (фамилии)
-    surname = name_lower.split()[0] if name_lower.split() else ''
-    for t in ALL_TEACHERS:
-        if t.lower().startswith(surname):
-            return t
-    return name  # вернуть как есть, если не нашли
-
-
-async def handle_photo_message(update: Update, context: CallbackContext):
-    """Обработчик фото — только для администраторов."""
-    user = update.effective_user
-    if not await is_bot_admin_async(user.id):
-        return
-
-    if await check_maintenance(update, context):
-        return
-
-    photo = update.message.photo[-1]  # берём максимальное качество
-    status_msg = await update.message.reply_text(
-        "📸 Фото получено. Анализирую замены...\n"
-        "<i>Это занимает 5–15 секунд</i>",
-        parse_mode='HTML'
-    )
-
-    try:
-        # Скачиваем фото
-        file = await context.bot.get_file(photo.file_id)
-        photo_bytes = await file.download_as_bytearray()
-
-        await status_msg.edit_text("🔍 Groq Vision читает расписание...")
-
-        # Отправляем в Groq Vision
-        parsed = await parse_photo_substitutions(bytes(photo_bytes))
-
-        if not parsed:
-            await status_msg.edit_text(
-                "❌ <b>Не удалось распознать замены.</b>\n\n"
-                "Попробуйте:\n"
-                "• Сфотографировать чётче, при хорошем освещении\n"
-                "• Убедитесь, что текст читается на фото\n"
-                "• Добавьте замены вручную через 👑 Админку",
-                parse_mode='HTML'
-            )
-            return
-
-        await status_msg.edit_text(
-            f"✅ Найдено замен: <b>{len(parsed)}</b>\n"
-            f"Проверяю данные...",
-            parse_mode='HTML'
-        )
-
-        # Сохраняем в context для подтверждения
-        context.user_data['pending_subs'] = parsed
-        context.user_data['pending_subs_saved'] = []
-
-        # Формируем предпросмотр
-        await show_photo_subs_preview(update, context, status_msg)
-
-    except Exception as e:
-        logger.error(f"handle_photo_message error: {e}")
-        await status_msg.edit_text(
-            f"❌ Ошибка при обработке фото: {str(e)[:100]}",
-            parse_mode='HTML'
-        )
-
-
-async def show_photo_subs_preview(update, context, status_msg=None):
-    """Показывает предпросмотр распознанных замен для подтверждения."""
-    parsed = context.user_data.get('pending_subs', [])
-    if not parsed:
-        return
-
-    lines = ["📋 <b>РАСПОЗНАННЫЕ ЗАМЕНЫ — ПРЕДПРОСМОТР</b>\n"]
-    valid_count = 0
-
-    for i, sub in enumerate(parsed, 1):
-        date_str = sub.get('date', '')
-        cls      = str(sub.get('class', '')).lower().strip()
-        lesson   = sub.get('lesson', 0)
-        subject  = sub.get('subject', '—')
-        old_t    = sub.get('old_teacher', '—')
-        new_t    = sub.get('new_teacher', '—')
-
-        date_iso, day_name = resolve_sub_date(date_str)
-        new_t_matched = fuzzy_match_teacher(new_t)
-        old_t_matched = fuzzy_match_teacher(old_t) if old_t and old_t != '—' else old_t
-
-        # Проверка валидности
-        is_valid = bool(cls and lesson and new_t and day_name and cls in ALL_CLASSES)
-        mark = "✅" if is_valid else "⚠️"
-        if is_valid:
-            valid_count += 1
-
-        try:
-            d_obj = datetime.strptime(date_iso, '%Y-%m-%d')
-            date_display = d_obj.strftime('%d.%m') + f" ({day_name or '?'})"
-        except Exception:
-            date_display = date_iso
-
-        lines.append(
-            f"{mark} <b>{i}.</b> {date_display}  {cls.upper()}  Урок {lesson}\n"
-            f"   📚 {subject}\n"
-            f"   👨‍🏫 {old_t_matched} → <b>{new_t_matched}</b>"
-        )
-        if not is_valid:
-            issues = []
-            if cls not in ALL_CLASSES:
-                issues.append(f"класс «{cls}» не найден")
-            if not lesson:
-                issues.append("нет номера урока")
-            if not day_name:
-                issues.append("не будний день")
-            lines.append(f"   ❗ Проблема: {', '.join(issues)}")
-        lines.append("")
-
-    lines.append(f"─────────────────────")
-    lines.append(f"✅ Валидных: <b>{valid_count}</b> из {len(parsed)}")
-    if valid_count < len(parsed):
-        lines.append(f"⚠️ Записи с проблемами будут пропущены")
-
-    text = "\n".join(lines)
-    kb = []
-    if valid_count > 0:
-        kb.append([btn(f"✅ Сохранить {valid_count} замен(ы)", 'confirm_photo_subs')])
-    kb.append([btn("❌ Отменить всё", 'cancel_photo_subs')])
-    kb.append([btn("✏️ Добавить вручную", 'admin_add_sub')])
-
-    markup = InlineKeyboardMarkup(kb)
-
-    if status_msg:
-        try:
-            await status_msg.edit_text(text, reply_markup=markup, parse_mode='HTML')
-            return
-        except Exception:
-            pass
-
-    chat_id = update.effective_chat.id
-    await context.bot.send_message(
-        chat_id=chat_id, text=text,
-        reply_markup=markup, parse_mode='HTML'
-    )
-
-
-async def save_photo_subs(query, context):
-    """Сохраняет подтверждённые замены из фото в БД."""
-    parsed = context.user_data.get('pending_subs', [])
-    if not parsed:
-        await safe_edit(query, "❌ Нет данных для сохранения.", BACK_TO_MAIN)
-        return
-
-    saved = 0
-    skipped = 0
-    errors = []
-    notified = []
-
-    for sub in parsed:
-        date_str = sub.get('date', '')
-        cls      = str(sub.get('class', '')).lower().strip()
-        lesson   = sub.get('lesson', 0)
-        subject  = sub.get('subject', 'Неизвестно')
-        old_t    = sub.get('old_teacher', '')
-        new_t    = sub.get('new_teacher', '')
-
-        date_iso, day_name = resolve_sub_date(date_str)
-        new_t = fuzzy_match_teacher(new_t)
-        old_t = fuzzy_match_teacher(old_t) if old_t else '—'
-
-        # Валидация
-        if not cls or not lesson or not new_t or not day_name:
-            skipped += 1
-            continue
-        if cls not in ALL_CLASSES:
-            skipped += 1
-            errors.append(f"Класс «{cls}» не найден")
-            continue
-
-        try:
-            await asyncio.to_thread(
-                db.add_substitution,
-                date_iso, day_name, int(lesson),
-                subject, subject, old_t, new_t, cls
-            )
-            saved += 1
-
-            # Уведомляем учителя
-            if new_t not in notified:
-                sub_data = {
-                    'date': date_iso, 'day': day_name,
-                    'class_name': cls, 'lesson': int(lesson),
-                    'old_subject': subject,
-                }
-                await notify_teacher_substitution(context, new_t, sub_data)
-                notified.append(new_t)
-
-        except Exception as e:
-            skipped += 1
-            errors.append(str(e)[:80])
-
-    context.user_data.pop('pending_subs', None)
-
-    lines = [f"✅ <b>ЗАМЕНЫ СОХРАНЕНЫ</b>\n"]
-    lines.append(f"📥 Сохранено: <b>{saved}</b>")
-    if skipped:
-        lines.append(f"⏭️ Пропущено: <b>{skipped}</b>")
-    if notified:
-        lines.append(f"🔔 Уведомлено учителей: <b>{len(notified)}</b> ({', '.join(notified[:3])}{'...' if len(notified) > 3 else ''})")
-    if errors:
-        lines.append(f"\n⚠️ Ошибки:\n" + "\n".join(f"• {e}" for e in errors[:3]))
-
-    kb = [
-        [btn("📋 Посмотреть замены", 'menu_substitutions')],
-        [btn("↩️ Админка", 'admin_panel')],
-    ]
-    await safe_edit(query, "\n".join(lines), kb)
-
-
-# ══════════════════════════════════════════════════════════
-#  MAIN
-# ══════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════
-#  HTTP ENDPOINT ДЛЯ СИНХРОНИЗАЦИИ ИЗ ИГРЫ
 # ══════════════════════════════════════════════════════════
 
 def _unauthorized_game_response(headers: dict, reason: str):
@@ -8386,7 +9165,6 @@ def main():
     app.add_handler(CommandHandler("claim_admin", cmd_claim_admin))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
     app.add_error_handler(global_error_handler)
 
@@ -8471,11 +9249,10 @@ def get_main_menu_kb(profile: dict | None, is_admin: bool = False,
     kb = [
         [btn("🕰 Сейчас", 'menu_now'), btn("📚 Расписание", 'menu_schedule')],
         [btn("👨‍🏫 Учителя", 'menu_teacher'), btn("🔄 Замены", 'menu_substitutions')],
-        [btn("🔍 Поиск", 'menu_search_teacher'), btn("📣 Новости", 'menu_news')],
-        [btn("🕐 Звонки", 'menu_bells'), btn("🤖 ИИ-помощник", 'menu_ai')],
-        [btn("⭐ Избранное", 'menu_my'), btn(f"👤 {profile_label}", 'menu_profile')],
-        [btn("🎮 Игры", 'menu_games'), btn("🆕 Обновления", 'menu_updates')],
-        [btn("📚 Ресурсные центры", 'menu_resource_centers')],
+        [btn("🕐 Звонки", 'menu_bells'), btn("🔍 Поиск", 'menu_search_teacher')],
+        [btn("📣 Новости", 'menu_news'), btn("🤖 ИИ-помощник", 'menu_ai')],
+        [btn("🎮 Игры", 'menu_games'), btn("📩 Обращения", 'menu_contacts')],
+        [btn("📚 Материалы", 'menu_materials'), btn(f"👤 {profile_label}", 'menu_user_profile')],
         [btn("🆘 Помощь", 'menu_help')],
     ]
 

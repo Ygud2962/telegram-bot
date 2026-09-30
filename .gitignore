@@ -58,3 +58,7 @@ bot.py.backup*
 cloudflared.deb
 compose.yaml.broken
 bot.py.before_time_test
+
+# Local DB backups
+*.sql
+tickets_backup.sql
